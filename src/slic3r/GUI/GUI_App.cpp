@@ -2586,6 +2586,7 @@ bool GUI_App::on_init_inner()
                 {
                  case wxID_YES:
                      wxLaunchDefaultBrowser(download_url);
+                     wxGetApp().mainframe->Close(true);
                      break;
                  case wxID_NO:
                      wxGetApp().mainframe->Close(true);
@@ -4936,106 +4937,69 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
 
 void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 {
+    std::string update_url = "";
+
+#ifdef __WINDOWS__
+    update_url = "https://public.resource.snapmaker.com/upgrade/packages/orca/win/manifest.json";
+#endif
+#ifdef __APPLE__
+    update_url = "https://public.resource.snapmaker.com/upgrade/packages/orca/mac/manifest.json";
+#endif
+#ifdef __LINUX__
+    update_url = "https://public.resource.snapmaker.com/upgrade/packages/orca/linux/manifest.json";
+#endif
+
     AppConfig* app_config = wxGetApp().app_config;
-    bool       check_stable_only = app_config->get_bool("check_stable_update_only");
-    auto       version_check_url = app_config->version_check_url(check_stable_only);
-    Http::get(version_check_url)
+
+    Http::get(update_url)
         .on_error([&](std::string body, std::string error, unsigned http_status) {
           (void)body;
           BOOST_LOG_TRIVIAL(error) << format("Error getting: `%1%`: HTTP %2%, %3%", "check_new_version_sf", http_status,
                                              error);
         })
         .timeout_connect(1)
-        .on_complete([this,by_user, check_stable_only](std::string body, unsigned http_status) {
+        .on_complete([this,by_user](std::string body, unsigned http_status) {
         // Http response OK
         if (http_status != 200) {
             BOOST_LOG_TRIVIAL(error) << format("status not 200 with: `%1%`: HTTP %2%", "check_new_version_sf", http_status);
             return;
           }
-          try {
-            boost::trim(body);
-            // Orca: parse github release, inspired by SS
-            boost::property_tree::ptree root;
-            std::stringstream json_stream(body);
-            boost::property_tree::read_json(json_stream, root);
+        try {
+            json jsonData = json::parse(body);
+            // auto isFullUpgrade  = jsonData["is_full_upgrade"];
+            auto isForceUpgrade      = jsonData["data"]["is_full_upgrade"];
+            version_info.version_str = jsonData["data"]["version"];
 
-            // at least two number, use '.' as separator. can be followed by -Az23 for prereleased and +Az42 for
-            // metadata
+            auto fileSize              = jsonData["data"]["full"]["file_size"];
+            auto fileMd5               = jsonData["data"]["full"]["file_md5"];
+            auto fileSha256            = jsonData["data"]["full"]["file_sha256"];
+            version_info.url           = jsonData["data"]["full"]["file_url"];
+            version_info.description   = jsonData["data"]["full"]["file_describe"];
+            version_info.force_upgrade = isForceUpgrade;
+
             std::regex matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
+            Semver     current_version = get_version(Snapmaker_VERSION, matcher);
 
-            Semver           current_version = get_version(Snapmaker_VERSION, matcher);
-            Semver best_pre(0, 0, 0);
-            Semver best_release(0, 0, 0);
-            std::string best_pre_url;
-            std::string best_release_url;
-            std::string best_release_content;
-            std::string best_pre_content;
-            const std::regex reg_num("([0-9]+)");
-            if (check_stable_only) {
-                std::string tag = root.get<std::string>("tag_name");
-                if (tag[0] == 'v')
-                    tag.erase(0, 1);
-                for (std::regex_iterator it = std::sregex_iterator(tag.begin(), tag.end(), reg_num); it != std::sregex_iterator(); ++it) {}
-                Semver tag_version = get_version(tag, matcher);
-                if (root.get<bool>("prerelease")) {
-                    if (best_pre < tag_version) {
-                        best_pre         = tag_version;
-                        best_pre_url     = root.get<std::string>("html_url");
-                        best_pre_content = root.get<std::string>("body");
-                        best_pre.set_prerelease("Preview");
-                    }
-                } else {
-                    if (best_release < tag_version) {
-                        best_release         = tag_version;
-                        best_release_url     = root.get<std::string>("html_url");
-                        best_release_content = root.get<std::string>("body");
-                    }
-                }
-            } else {
-                for (auto json_version : root) {
-                    std::string tag = json_version.second.get<std::string>("tag_name");
-                    if (tag[0] == 'v')
-                        tag.erase(0, 1);
-                    for (std::regex_iterator it = std::sregex_iterator(tag.begin(), tag.end(), reg_num); it != std::sregex_iterator();
-                         ++it) {}
-                    Semver tag_version = get_version(tag, matcher);
-                    if (json_version.second.get<bool>("prerelease")) {
-                        if (best_pre < tag_version) {
-                            best_pre         = tag_version;
-                            best_pre_url     = json_version.second.get<std::string>("html_url");
-                            best_pre_content = json_version.second.get<std::string>("body");
-                            best_pre.set_prerelease("Preview");
-                        }
-                    } else {
-                        if (best_release < tag_version) {
-                            best_release         = tag_version;
-                            best_release_url     = json_version.second.get<std::string>("html_url");
-                            best_release_content = json_version.second.get<std::string>("body");
-                        }
-                    }
-                }
-            }
+            Semver server_version = get_version(version_info.version_str, matcher);
 
-            // if release is more recent than beta, use release anyway
-            if (best_pre < best_release) {
-                best_pre         = best_release;
-                best_pre_url     = best_release_url;
-                best_pre_content = best_release_content;
-            }
-            // if we're the most recent, don't do anything
-            if ((check_stable_only ? best_release : best_pre) <= current_version) {
-                if (by_user)
-                    this->no_new_version();
+            if (current_version >= server_version) {
+                this->no_new_version();
                 return;
             }
 
-            version_info.url           = check_stable_only ? best_release_url : best_pre_url;
-            version_info.version_str   = check_stable_only ? best_release.to_string_sf() : best_pre.to_string_sf();
-            version_info.description   = check_stable_only ? best_release_content : best_pre_content;
-            version_info.force_upgrade = false;
+            if (isForceUpgrade)
+            {
+                wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);
+                wxGetApp().app_config->set("upgrade", "force_upgrade", true);
+                wxGetApp().app_config->set("upgrade", "description", version_info.description);
+                wxGetApp().app_config->set("upgrade", "version", version_info.version_str);
+                wxGetApp().app_config->set("upgrade", "url", version_info.url);
+                GUI::wxGetApp().enter_force_upgrade();
+                return;
+            }
 
             wxCommandEvent* evt = new wxCommandEvent(EVT_SLIC3R_VERSION_ONLINE);
-            evt->SetString((check_stable_only ? best_release : best_pre).to_string());
+            evt->SetString(version_info.url);
             GUI::wxGetApp().QueueEvent(evt);
           } catch (...) {}
         })
