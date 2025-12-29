@@ -2534,17 +2534,7 @@ bool GUI_App::on_init_inner()
         preset_updater = new PresetUpdater();
         Bind(EVT_SLIC3R_VERSION_ONLINE, [this](const wxCommandEvent& evt) {
             if (this->plater_ != nullptr) {
-                // this->plater_->get_notification_manager()->push_notification(NotificationType::NewAppAvailable);
-                //BBS show msg box to download new version
-               /* wxString tips = wxString::Format(_L("Click to download new version in default browser: %s"), version_info.version_str);
-                DownloadDialog dialog(this->mainframe,
-                    tips,
-                    _L("New version of Snapmaker Orca"),
-                    false,
-                    wxCENTER | wxICON_INFORMATION);
 
-
-                dialog.SetExtendedMessage(extmsg);*/
                 std::string skip_version_str = this->app_config->get("app", "skip_version");
                 bool skip_this_version = false;
                 if (!skip_version_str.empty()) {
@@ -2732,26 +2722,6 @@ bool GUI_App::on_init_inner()
     mainframe->Show(true);
     BOOST_LOG_TRIVIAL(info) << "main frame firstly shown";
 
-//#if BBL_HAS_FIRST_PAGE
-    //BBS: set tp3DEditor firstly
-    /*plater_->canvas3D()->enable_render(false);
-    mainframe->select_tab(size_t(MainFrame::tp3DEditor));
-    scrn->SetText(_L("Loading Opengl resourses..."));
-    plater_->select_view_3D("3D");
-    //BBS init the opengl resource here
-    Size canvas_size = plater_->canvas3D()->get_canvas_size();
-    wxGetApp().imgui()->set_display_size(static_cast<float>(canvas_size.get_width()), static_cast<float>(canvas_size.get_height()));
-    wxGetApp().init_opengl();
-    plater_->canvas3D()->init();
-    wxGetApp().imgui()->new_frame();
-    plater_->canvas3D()->enable_render(true);
-    plater_->canvas3D()->render();
-    if (is_editor())
-        mainframe->select_tab(size_t(0));*/
-//#else
-    //plater_->trigger_restore_project(1);
-//#endif
-
     obj_list()->set_min_height();
 
     update_mode(); // update view mode after fix of the object_list size
@@ -2826,28 +2796,6 @@ bool GUI_App::on_init_inner()
                        "The Snapmaker Orca configuration file may be corrupted and cannot be parsed.\nSnapmaker Orca has attempted to recreate the "
                        "configuration file.\nPlease note, application settings will be lost, but printer profiles will not be affected."));
     }
-
-
-    //启动定时器，轮询进行机器发现
-    // m_machine_find_timer = new wxTimer(this, m_machine_find_id);
-    
-    // Bind(wxEVT_TIMER, [this](wxTimerEvent& event) {
-    //         if (!m_machine_find_engine  && GUI_App::m_app_alive.load()) {
-    //         machine_find();
-    //     }
-    // }, m_machine_find_timer->GetId());
-
-    // if (!m_machine_find_engine && GUI_App::m_app_alive.load()) {
-    //     machine_find();
-    // }
-
-//#ifdef __APPLE__
-//    m_machine_find_timer->Start(1000 * 60 * 2);
-//#elif defined(__linux__)
-//    m_machine_find_timer->Start(1000 * 60 * 2);
-//#else
-//    m_machine_find_timer->Start(5000);
-//#endif
 
     return true;
 }
@@ -4999,9 +4947,11 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
         })
         .timeout_connect(1)
         .on_complete([this,by_user, check_stable_only](std::string body, unsigned http_status) {
-          // Http response OK
-          if (http_status != 200)
+        // Http response OK
+        if (http_status != 200) {
+            BOOST_LOG_TRIVIAL(error) << format("status not 200 with: `%1%`: HTTP %2%", "check_new_version_sf", http_status);
             return;
+          }
           try {
             boost::trim(body);
             // Orca: parse github release, inspired by SS
