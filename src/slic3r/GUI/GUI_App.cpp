@@ -909,44 +909,6 @@ void GUI_App::post_init()
     }
 //#endif
 
-    //BBS: remove GCodeViewer as seperate APP logic
-    /*if (this->init_params->start_as_gcodeviewer) {
-        if (! this->init_params->input_files.empty())
-            this->plater()->load_gcode(wxString::FromUTF8(this->init_params->input_files[0].c_str()));
-    }
-    else
-    {
-        if (! this->init_params->preset_substitutions.empty())
-            show_substitutions_info(this->init_params->preset_substitutions);
-
-#if 0
-        // Load the cummulative config over the currently active profiles.
-        //FIXME if multiple configs are loaded, only the last one will have an effect.
-        // We need to decide what to do about loading of separate presets (just print preset, just filament preset etc).
-        // As of now only the full configs are supported here.
-        if (!m_print_config.empty())
-            this->gui->mainframe->load_config(m_print_config);
-#endif
-        if (! this->init_params->load_configs.empty())
-            // Load the last config to give it a name at the UI. The name of the preset may be later
-            // changed by loading an AMF or 3MF.
-            //FIXME this is not strictly correct, as one may pass a print/filament/printer profile here instead of a full config.
-            this->mainframe->load_config_file(this->init_params->load_configs.back());
-        // If loading a 3MF file, the config is loaded from the last one.
-        if (!this->init_params->input_files.empty()) {
-            const std::vector<size_t> res = this->plater()->load_files(this->init_params->input_files);
-            if (!res.empty() && this->init_params->input_files.size() == 1) {
-                // Update application titlebar when opening a project file
-                const std::string& filename = this->init_params->input_files.front();
-                //BBS: remove amf logic as project
-                if (boost::algorithm::iends_with(filename, ".3mf"))
-                    this->plater()->set_project_filename(filename);
-            }
-        }
-        if (! this->init_params->extra_config.empty())
-            this->mainframe->load_config(this->init_params->extra_config);
-    }*/
-
     // BBS: to be checked
 #if 1
     // show "Did you know" notification
@@ -5024,7 +4986,7 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
 
 } // namespace
 
-void GUI_App::check_new_version_sf(bool show_tips, int by_user)
+void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 {
     AppConfig* app_config = wxGetApp().app_config;
     bool       check_stable_only = app_config->get_bool("check_stable_update_only");
@@ -5112,7 +5074,7 @@ void GUI_App::check_new_version_sf(bool show_tips, int by_user)
             }
             // if we're the most recent, don't do anything
             if ((check_stable_only ? best_release : best_pre) <= current_version) {
-                if (by_user != 0)
+                if (by_user)
                     this->no_new_version();
                 return;
             }
