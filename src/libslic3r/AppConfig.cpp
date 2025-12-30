@@ -39,7 +39,7 @@ namespace Slic3r {
 
 static const std::string VERSION_CHECK_URL_STABLE = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases/latest";
 static const std::string VERSION_CHECK_URL = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases";
-static const std::string PROFILE_UPDATE_URL = "https://api.github.com/repos/Snapmaker/Orca_Presets/releases/latest";
+static const std::string PROFILE_UPDATE_URL = "https://public.resource.snapmaker.com/upgrade/packages/profile/preset_config.json";
 static const std::string MODELS_STR = "models";
 
 const std::string AppConfig::SECTION_FILAMENTS = "filaments";

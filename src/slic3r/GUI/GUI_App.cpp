@@ -4747,6 +4747,9 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
           }
         try {
             json jsonData = json::parse(body);
+            auto errCode  = jsonData["code"];
+            if (errCode != 200)
+                return;
             // auto isFullUpgrade  = jsonData["is_full_upgrade"];
             auto isForceUpgrade      = jsonData["data"]["is_force_upgrade"];
             version_info.version_str = jsonData["data"]["version"];

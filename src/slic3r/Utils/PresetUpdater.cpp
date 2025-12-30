@@ -227,6 +227,7 @@ struct PresetUpdater::priv
 	void parse_version_string(const std::string& body) const;
     void sync_resources(std::string http_url, std::map<std::string, Resource> &resources, bool check_patch = false,  std::string current_version="", std::string changelog_file="");
     void sync_config();
+    bool download_file(const std::string& url, const std::string& target_path, int timeout_sec = 30, bool* cancel_flag = nullptr);
     void sync_tooltip(std::string http_url, std::string language);
     void sync_plugins(std::string http_url, std::string plugin_version);
     void sync_printer_config(std::string http_url);
@@ -649,8 +650,65 @@ void PresetUpdater::priv::sync_resources(std::string http_url, std::map<std::str
         }
     }
 }
+bool PresetUpdater::priv::download_file(const std::string& url,
+                                        const std::string& target_path,
+                                        int   timeout_sec,
+                                        bool* cancel_flag )
+{
+    bool res = false;
 
-// Orca: sync config update for currect App version
+    fs::path tmp_path = target_path + ".tmp";
+
+    BOOST_LOG_TRIVIAL(info) << "Downloading file from: " << url << " to: " << target_path;
+
+    Slic3r::Http::get(url)
+        .on_progress([cancel_flag](Slic3r::Http::Progress progress, bool& cancel_http) {
+            // BOOST_LOG_TRIVIAL(debug) << "Download progress: " << progress.dlnow << "/" << progress.dltotal;
+            if (cancel_flag && *cancel_flag) {
+                cancel_http = true;
+            }
+        })
+        .on_error([&url](std::string body, std::string error, unsigned http_status) {
+            BOOST_LOG_TRIVIAL(error) << "Download failed: " << url << ", HTTP status: " << http_status << ", error: " << error;
+        })
+        .on_complete([&](std::string body, unsigned http_status) {
+            if (http_status != 200) {
+                BOOST_LOG_TRIVIAL(error) << "Download failed with HTTP status: " << http_status;
+                return;
+            }
+            fs::path target(target_path);
+            if (!fs::exists(target.parent_path())) {
+                fs::create_directories(target.parent_path());
+            }
+
+            fs::fstream file(tmp_path, std::ios::out | std::ios::binary | std::ios::trunc);
+            if (!file.is_open()) {
+                BOOST_LOG_TRIVIAL(error) << "Failed to open file for writing: " << tmp_path;
+                return;
+            }
+            file.write(body.c_str(), body.size());
+            file.close();
+
+            boost::system::error_code ec;
+            fs::rename(tmp_path, target_path, ec);
+            if (ec) {
+                BOOST_LOG_TRIVIAL(error) << "Failed to rename temp file: " << ec.message();
+                return;
+            }
+            extract_file(target_path, "../ota/profiles/");
+            BOOST_LOG_TRIVIAL(info) << "Download completed: " << target_path;
+            res = true;
+        })
+        .timeout_max(timeout_sec)
+        .perform_sync();
+
+    if (fs::exists(tmp_path)) {
+        fs::remove(tmp_path);
+    }
+
+    return res;
+}
+    // Orca: sync config update for currect App version
 void PresetUpdater::priv::sync_config()
 {
     auto cache_profile_path        = cache_path;
@@ -680,18 +738,6 @@ void PresetUpdater::priv::sync_config()
         .on_error([cache_profile_path, cache_profile_update_file](std::string body, std::string error, unsigned http_status) {
             // Orca: we check the response body to see if it's "Not Found", if so, it means for the current Orca version we don't have OTA
             // updates, we can delete the cache file
-            if (!body.empty()) {
-                try {
-                    json j = json::parse(body);
-                    if (j.contains("message") && j["message"].get<std::string>() == "Not Found") {
-                        // The current Orca version does not have any OTA updates, delete the cache file
-                        if (fs::exists(cache_profile_path / "profiles"))
-                            fs::remove_all(cache_profile_path / "profiles");
-                        if (fs::exists(cache_profile_update_file))
-                            fs::remove(cache_profile_update_file);
-                    }
-                } catch (...) {}
-            }
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_config_orca", http_status, error);
         })
         .timeout_connect(5)
@@ -700,6 +746,27 @@ void PresetUpdater::priv::sync_config()
             if (http_status != 200)
                 return;
             try {
+
+                {
+
+                    json jsonData = json::parse(body);
+                    auto errCode  = jsonData["code"];
+                    if (errCode != 200)
+                        return;
+
+                    auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
+                    auto fileVersion    = jsonData["data"]["file_version"];
+                    auto fileSize       = jsonData["data"]["file_size"];
+                    auto fileMd5        = jsonData["data"]["file_md5"];
+                    auto fileSha256     = jsonData["data"]["file_sha256"];
+                    auto fileUrl        = jsonData["data"]["file_url"];
+                    auto description    = jsonData["data"]["file_describe"];
+
+                    std::string fileName = cache_profile_path.string() + "/profiles.zip";
+                    download_file(fileUrl, fileName);
+                }
+
+
                 json j = json::parse(body);
 
                 struct update
