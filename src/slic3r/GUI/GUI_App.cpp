@@ -4287,27 +4287,6 @@ std::string GUI_App::handle_web_request(std::string cmd)
     return "";
 }
 
-void GUI_App::handle_script_message(std::string msg)
-{
-    try {
-        json j = json::parse(msg);
-        if (j.contains("command")) {
-            wxString cmd = j["command"];
-            if (cmd == "user_login") {
-                if (m_agent) {
-                    m_agent->change_user(j.dump());
-                    if (m_agent->is_user_login()) {
-                        request_user_login(1);
-                    }
-                }
-            }
-        }
-    }
-    catch (...) {
-        ;
-    }
-}
-
 void GUI_App::request_model_download(wxString url)
 {
     if (plater_) {

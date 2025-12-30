@@ -561,7 +561,6 @@ private:
     void            request_user_logout();
     int             request_user_unbind(std::string dev_id);
     std::string     handle_web_request(std::string cmd);
-    void            handle_script_message(std::string msg);
     void            request_model_download(wxString url);
     void            download_project(std::string project_id);
     void            request_project_download(std::string project_id);

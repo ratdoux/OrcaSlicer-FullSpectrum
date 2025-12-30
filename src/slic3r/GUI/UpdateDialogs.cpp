@@ -121,7 +121,6 @@ MsgUpdateConfig::MsgUpdateConfig(const std::vector<Update> &updates, bool force_
 
     wxBoxSizer *m_sizer_right = new wxBoxSizer(wxVERTICAL);
 
-
     auto m_text_up_info = new wxStaticText(this, wxID_ANY, _L("A new configuration package is available. Do you want to install it?"), wxDefaultPosition, wxDefaultSize, 0);
     m_text_up_info->SetFont(::Label::Head_14);
     m_text_up_info->SetForegroundColour(wxColour(0x26, 0x2E, 0x30));
