@@ -92,8 +92,6 @@ bool MsgUpdateSlic3r::disable_version_check() const
 	return true;
 }
 
-// MsgUpdateConfig
-
 MsgUpdateConfig::MsgUpdateConfig(const std::vector<Update> &updates, bool force_before_wizard /* = false*/)
     : DPIDialog(wxGetApp().mainframe, wxID_ANY, _L("Configuration update"), wxDefaultPosition, wxDefaultSize, wxCAPTION)
 {

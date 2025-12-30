@@ -965,7 +965,6 @@ void GUI_App::post_init()
 
             this->check_new_version_sf();
             if (is_user_login() && !app_config->get_stealth_mode()) {
-              // this->check_privacy_version(0);
               request_user_handle(0);
             }
         });
@@ -4568,95 +4567,6 @@ void GUI_App::reset_to_active()
     last_active_point = std::chrono::system_clock::now();
 }
 
-void GUI_App::check_update(bool show_tips, int by_user)
-{
-    if (version_info.version_str.empty()) return;
-    if (version_info.url.empty()) return;
-
-    auto curr_version = Semver::parse(SLIC3R_VERSION);
-    auto remote_version = Semver::parse(version_info.version_str);
-    if (curr_version && remote_version && (*remote_version > *curr_version)) {
-        if (version_info.force_upgrade) {
-            wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);
-            wxGetApp().app_config->set("upgrade", "force_upgrade", true);
-            wxGetApp().app_config->set("upgrade", "description", version_info.description);
-            wxGetApp().app_config->set("upgrade", "version", version_info.version_str);
-            wxGetApp().app_config->set("upgrade", "url", version_info.url);
-            GUI::wxGetApp().enter_force_upgrade();
-        }
-        else {
-            GUI::wxGetApp().request_new_version(by_user);
-        }
-    } else {
-        wxGetApp().app_config->set("upgrade", "force_upgrade", false);
-        if (show_tips)
-            this->no_new_version();
-    }
-}
-
-void GUI_App::check_new_version(bool show_tips, int by_user)
-{
-    return; // orca: not used, see check_new_version_sf
-    std::string platform = "windows";
-
-#ifdef __WINDOWS__
-    platform = "windows";
-#endif
-#ifdef __APPLE__
-    platform = "macos";
-#endif
-#ifdef __LINUX__
-    platform = "linux";
-#endif
-    std::string query_params = (boost::format("?name=slicer&version=%1%&guide_version=%2%")
-        % VersionInfo::convert_full_version(SLIC3R_VERSION)
-        % VersionInfo::convert_full_version("0.0.0.1")
-        ).str();
-
-    std::string url = get_http_url(app_config->get_country_code()) + query_params;
-    Slic3r::Http http = Slic3r::Http::get(url);
-
-    http.header("accept", "application/json")
-        .timeout_connect(TIMEOUT_CONNECT)
-        .timeout_max(TIMEOUT_RESPONSE)
-        .on_complete([this, show_tips, by_user](std::string body, unsigned) {
-        try {
-            json j = json::parse(body);
-            if (j.contains("message")) {
-                if (j["message"].get<std::string>() == "success") {
-                    if (j.contains("software")) {
-                        if (j["software"].empty() && show_tips) {
-                            this->no_new_version();
-                        }
-                        else {
-                            if (j["software"].contains("url")
-                                && j["software"].contains("version")
-                                && j["software"].contains("description")) {
-                                version_info.url = j["software"]["url"].get<std::string>();
-                                version_info.version_str = j["software"]["version"].get<std::string>();
-                                version_info.description = j["software"]["description"].get<std::string>();
-                            }
-                            if (j["software"].contains("force_update")) {
-                                version_info.force_upgrade = j["software"]["force_update"].get<bool>();
-                            }
-                            CallAfter([this, show_tips, by_user](){
-                                this->check_update(show_tips, by_user);
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        catch (...) {
-            ;
-        }
-            })
-        .on_error([this](std::string body, std::string error, unsigned int status) {
-            handle_http_error(status, body);
-            BOOST_LOG_TRIVIAL(error) << "check new version error" << body;
-    }).perform();
-}
-
 //parse the string, if it doesn't contain a valid version string, return invalid version.
 Semver get_version(const std::string& str, const std::regex& regexp) {
     std::smatch match;
@@ -5010,15 +4920,6 @@ void GUI_App::process_network_msg(std::string dev_id, std::string msg)
     if (dev_id.empty()) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << msg;
     }
-}
-
-//BBS pop up a dialog and download files
-void GUI_App::request_new_version(int by_user)
-{
-    wxCommandEvent* evt = new wxCommandEvent(EVT_SLIC3R_VERSION_ONLINE);
-    evt->SetString(GUI::from_u8(version_info.version_str));
-    evt->SetInt(by_user);
-    GUI::wxGetApp().QueueEvent(evt);
 }
 
 void GUI_App::enter_force_upgrade()
