@@ -557,9 +557,7 @@ private:
     void            sm_request_login(bool show_user_info = false);
     void            sm_ShowUserLogin(bool show  =  true);
     void            sm_request_user_logout();
-
-    void            request_user_login(int online_login = 0);
-    void            request_user_handle(int online_login = 0);
+  
     void            request_user_logout();
     int             request_user_unbind(std::string dev_id);
     std::string     handle_web_request(std::string cmd);
@@ -573,10 +571,6 @@ private:
 
     void            handle_http_error(unsigned int status, std::string body);
     void            on_http_error(wxCommandEvent &evt);
-    void            on_set_selected_machine(wxCommandEvent& evt);
-    void            on_update_machine_list(wxCommandEvent& evt);
-    void            on_user_login(wxCommandEvent &evt);
-    void            on_user_login_handle(wxCommandEvent& evt);
     void            enable_user_preset_folder(bool enable);
 
     // BBS
@@ -606,12 +600,8 @@ private:
     void            start_page_http_server();
     void            stop_page_http_server();
     void            switch_staff_pick(bool on);
-
-    void            on_show_check_privacy_dlg(int online_login = 0);
-    void            show_check_privacy_dlg(wxCommandEvent& evt);
-    void            on_check_privacy_update(wxCommandEvent &evt);
     bool            check_privacy_update();
-    void            check_privacy_version(int online_login = 0);
+    
     void            check_track_enable();
 
     static bool     catch_error(std::function<void()> cb, const std::string& err);

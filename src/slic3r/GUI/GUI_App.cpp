@@ -964,14 +964,9 @@ void GUI_App::post_init()
             this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
 
             this->check_new_version_sf();
-            if (is_user_login() && !app_config->get_stealth_mode()) {
-              request_user_handle(0);
-            }
+     
         });
     }
-
-    if (is_user_login())
-        request_user_handle(0);
 
     if(!m_networking_need_update && m_agent) {
         m_agent->set_on_ssdp_msg_fn(
@@ -1612,37 +1607,11 @@ void GUI_App::init_networking_callbacks()
 {
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": enter, m_agent=%1%")%m_agent;
     if (m_agent) {
-        //set callbacks
-        //m_agent->set_on_user_login_fn([this](int online_login, bool login) {
-        //    GUI::wxGetApp().request_user_handle(online_login);
-        //    });
 
         m_agent->set_server_callback([](std::string url, int status) {
             BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(": server_callback, url=%1%, status=%2%") % url % status;
-            //CallAfter([this]() {
-            //    if (!m_server_error_dialog) {
-            //        /*m_server_error_dialog->EndModal(wxCLOSE);
-            //        m_server_error_dialog->Destroy();
-            //        m_server_error_dialog = nullptr;*/
-            //        m_server_error_dialog = new NetworkErrorDialog(mainframe);
-            //    }
-            //
-            //    if(plater()->get_select_machine_dialog() && plater()->get_select_machine_dialog()->IsShown()){
-            //        return;
-            //    }
-            //
-            //    if (m_server_error_dialog->m_show_again) {
-            //        return;
-            //    }
-            //
-            //    if (m_server_error_dialog->IsShown()) {
-            //        return;
-            //    }
-            //
-            //    m_server_error_dialog->ShowModal();
-            //});
-        });
 
+        });
 
         m_agent->set_on_server_connected_fn([this](int return_code, int reason_code) {
             if (m_is_closing) {
@@ -2621,13 +2590,6 @@ bool GUI_App::on_init_inner()
     preset_bundle->set_default_suppressed(true);
 
     preset_bundle->backup_user_folder();
-
-    Bind(EVT_SET_SELECTED_MACHINE, &GUI_App::on_set_selected_machine, this);
-    Bind(EVT_UPDATE_MACHINE_LIST, &GUI_App::on_update_machine_list, this);
-    Bind(EVT_USER_LOGIN, &GUI_App::on_user_login, this);
-    Bind(EVT_USER_LOGIN_HANDLE, &GUI_App::on_user_login_handle, this);
-    Bind(EVT_CHECK_PRIVACY_VER, &GUI_App::on_check_privacy_update, this);
-    Bind(EVT_CHECK_PRIVACY_SHOW, &GUI_App::show_check_privacy_dlg, this);
 
     Bind(EVT_SHOW_IP_DIALOG, &GUI_App::show_ip_address_enter_dialog_handler, this);
 
@@ -4092,20 +4054,6 @@ bool GUI_App::check_login()
     return result;
 }
 
-void GUI_App::request_user_handle(int online_login)
-{
-    auto evt = new wxCommandEvent(EVT_USER_LOGIN_HANDLE);
-    evt->SetInt(online_login);
-    wxQueueEvent(this, evt);
-}
-
-void GUI_App::request_user_login(int online_login)
-{
-    auto evt = new wxCommandEvent(EVT_USER_LOGIN);
-    evt->SetInt(online_login);
-    wxQueueEvent(this, evt);
-}
-
 void GUI_App::request_user_logout()
 {
     if (m_agent && m_agent->is_user_login()) {
@@ -4486,54 +4434,6 @@ void GUI_App::enable_user_preset_folder(bool enable)
     }
 }
 
-void GUI_App::on_set_selected_machine(wxCommandEvent &evt)
-{
-    // Orca: do not connect to default device during app startup, because some of the lan machines might not online yet
-    // and user will be prompted by several "Connect XXX failed" error message.
-    return;
-
-    DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (dev) {
-        dev->set_selected_machine(m_agent->get_user_selected_machine());
-    }
-}
-
-void GUI_App::on_update_machine_list(wxCommandEvent &evt)
-{
-    /* DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-     if (dev) {
-         dev->add_user_subscribe();
-     }*/
-}
-
-void GUI_App::on_user_login_handle(wxCommandEvent &evt)
-{
-    if (!m_agent) { return; }
-
-    int online_login = evt.GetInt();
-    m_agent->connect_server();
-
-    // get machine list
-    DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (!dev) return;
-
-    boost::thread update_thread = boost::thread([this, dev] {
-        dev->update_user_machine_list_info();
-        auto evt = new wxCommandEvent(EVT_SET_SELECTED_MACHINE);
-        wxQueueEvent(this, evt);
-    });
-
-    if (online_login) {
-        remove_user_presets();
-        enable_user_preset_folder(true);
-        preset_bundle->load_user_presets(m_agent->get_user_id(), ForwardCompatibilitySubstitutionRule::Enable);
-        mainframe->update_side_preset_ui();
-
-        GUI::wxGetApp().mainframe->show_sync_dialog();
-    }
-}
-
-
 void GUI_App::check_track_enable()
 {
     // Orca: alaways disable track event
@@ -4543,14 +4443,6 @@ void GUI_App::check_track_enable()
     }
 }
 
-void GUI_App::on_user_login(wxCommandEvent &evt)
-{
-    if (!m_agent) { return; }
-    int online_login = evt.GetInt();
-    // check privacy before handle
-    check_privacy_version(online_login);
-    check_track_enable();
-}
 
 bool GUI_App::is_studio_active()
 {
@@ -4877,7 +4769,7 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
         try {
             json jsonData = json::parse(body);
             // auto isFullUpgrade  = jsonData["is_full_upgrade"];
-            auto isForceUpgrade      = jsonData["data"]["is_full_upgrade"];
+            auto isForceUpgrade      = jsonData["data"]["is_force_upgrade"];
             version_info.version_str = jsonData["data"]["version"];
 
             auto fileSize              = jsonData["data"]["full"]["file_size"];
@@ -4938,33 +4830,6 @@ void GUI_App::set_skip_version(bool skip)
     }
 }
 
-void GUI_App::show_check_privacy_dlg(wxCommandEvent& evt)
-{
-    int online_login = evt.GetInt();
-    PrivacyUpdateDialog privacy_dlg(this->mainframe, wxID_ANY, _L("Privacy Policy Update"));
-    privacy_dlg.Bind(EVT_PRIVACY_UPDATE_CONFIRM, [this, online_login](wxCommandEvent &e) {
-        app_config->set("privacy_version", privacy_version_info.version_str);
-        app_config->set_bool("privacy_update_checked", true);
-        request_user_handle(online_login);
-        });
-    privacy_dlg.Bind(EVT_PRIVACY_UPDATE_CANCEL, [this](wxCommandEvent &e) {
-            app_config->set_bool("privacy_update_checked", false);
-            if (m_agent) {
-                m_agent->user_logout();
-            }
-        });
-
-    privacy_dlg.set_text(privacy_version_info.description);
-    privacy_dlg.on_show();
-}
-
-void GUI_App::on_show_check_privacy_dlg(int online_login)
-{
-    auto evt = new wxCommandEvent(EVT_CHECK_PRIVACY_SHOW);
-    evt->SetInt(online_login);
-    wxQueueEvent(this, evt);
-}
-
 bool GUI_App::check_privacy_update()
 {
     if (privacy_version_info.version_str.empty() || privacy_version_info.description.empty()
@@ -4981,66 +4846,6 @@ bool GUI_App::check_privacy_update()
         }
     }
     return false;
-}
-
-void GUI_App::on_check_privacy_update(wxCommandEvent& evt)
-{
-    int online_login = evt.GetInt();
-    bool result = check_privacy_update();
-    if (result)
-        on_show_check_privacy_dlg(online_login);
-    else
-        request_user_handle(online_login);
-}
-
-void GUI_App::check_privacy_version(int online_login)
-{
-    update_http_extra_header();
-    std::string query_params = "?policy/privacy=00.00.00.00";
-    std::string url = get_http_url(app_config->get_country_code()) + query_params;
-    Slic3r::Http http = Slic3r::Http::get(url);
-
-    http.header("accept", "application/json")
-        .timeout_connect(TIMEOUT_CONNECT)
-        .timeout_max(TIMEOUT_RESPONSE)
-        .on_complete([this, online_login](std::string body, unsigned) {
-            try {
-                json j = json::parse(body);
-                if (j.contains("message")) {
-                    if (j["message"].get<std::string>() == "success") {
-                        if (j.contains("resources")) {
-                            for (auto it = j["resources"].begin(); it != j["resources"].end(); it++) {
-                                if (it->contains("type")) {
-                                    if ((*it)["type"] == std::string("policy/privacy")
-                                        && it->contains("version")
-                                        && it->contains("description")
-                                        && it->contains("url")
-                                        && it->contains("force_update")) {
-                                        privacy_version_info.version_str = (*it)["version"].get<std::string>();
-                                        privacy_version_info.description = (*it)["description"].get<std::string>();
-                                        privacy_version_info.url = (*it)["url"].get<std::string>();
-                                        privacy_version_info.force_upgrade = (*it)["force_update"].get<bool>();
-                                        break;
-                                    }
-                                }
-                            }
-                            CallAfter([this, online_login]() {
-                                auto evt = new wxCommandEvent(EVT_CHECK_PRIVACY_VER);
-                                evt->SetInt(online_login);
-                                wxQueueEvent(this, evt);
-                            });
-                        }
-                    }
-                }
-            }
-            catch (...) {
-                request_user_handle(online_login);
-            }
-        })
-        .on_error([this, online_login](std::string body, std::string error, unsigned int status) {
-            request_user_handle(online_login);
-            BOOST_LOG_TRIVIAL(error) << "check privacy version error" << body;
-    }).perform();
 }
 
 void GUI_App::no_new_version()
