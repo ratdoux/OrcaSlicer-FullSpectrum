@@ -676,7 +676,7 @@ std::shared_ptr<HttpServer::Response> HttpServer::bbl_auth_handle_request(const 
             j["data"]["user"]["avatar"]     = user_avatar;
             agent->change_user(j.dump());
             if (agent->is_user_login()) {
-                wxGetApp().request_user_login(1);
+                //wxGetApp().request_user_login(1);
             }
             GUI::wxGetApp().CallAfter([] { wxGetApp().ShowUserLogin(false); });
             std::string location_str = (boost::format("%1%?result=success") % redirect_url).str();
