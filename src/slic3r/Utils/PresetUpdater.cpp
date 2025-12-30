@@ -746,93 +746,38 @@ void PresetUpdater::priv::sync_config()
             if (http_status != 200)
                 return;
             try {
-
-                {
-
-                    json jsonData = json::parse(body);
-                    auto errCode  = jsonData["code"];
-                    if (errCode != 200)
-                        return;
-
-                    auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
-                    auto fileVersion    = jsonData["data"]["file_version"];
-                    auto fileSize       = jsonData["data"]["file_size"];
-                    auto fileMd5        = jsonData["data"]["file_md5"];
-                    auto fileSha256     = jsonData["data"]["file_sha256"];
-                    auto fileUrl        = jsonData["data"]["file_url"];
-                    auto description    = jsonData["data"]["file_describe"];
-
-                    std::string fileName = cache_profile_path.string() + "/profiles.zip";
-                    download_file(fileUrl, fileName);
-                }
-
-
-                json j = json::parse(body);
-
-                struct update
-                {
-                    std::string url;
-                    std::string name;
-                    int         ver = -9999;
-                } latest_update;
-
-                if (!(j.contains("message") && j["message"].get<std::string>() == "Not Found")) {
-                    json assets = j.at("assets");
-                    if (assets.is_array()) {
-                        for (auto asset : assets) {
-                            std::string name          = asset["name"].get<std::string>();
-                            int         versionNumber = -1;
-                            std::regex  regexPattern("Snapmaker_Orca-profiles_ota_.*\\.([0-9]+)\\.zip$");
-                            std::smatch matches;
-                            if (std::regex_search(name, matches, regexPattern) && matches.size() > 1) {
-                                versionNumber = std::stoi(matches[1].str());
-                            }
-                            if (versionNumber > 0 && versionNumber > latest_update.ver) {
-                                latest_update.url  = asset["browser_download_url"].get<std::string>();
-                                latest_update.name = name;
-                                latest_update.ver  = versionNumber;
-                            }
-                        }
-                    }
-                }
-
-                if (cancel)
+                json jsonData = json::parse(body);
+                auto errCode  = jsonData["code"];
+                if (errCode != 200)
                     return;
 
-                if (latest_update.ver > 0) {
-                    if (latest_update.name == asset_name)
-                        return;
-                    if (fs::exists(cache_profile_path / "profiles"))
-                        fs::remove_all(cache_profile_path / "profiles");
-                    fs::create_directories(cache_profile_path / "profiles");
-                    // download the file
-                    std::string download_url  = latest_update.url;
-                    std::string download_file = (cache_path / (latest_update.name + TMP_EXTENSION)).string();
-                    if (!get_file(download_url, download_file)) {
-                        return;
-                    }
+                auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
+                auto fileVersion    = jsonData["data"]["file_version"];
+                auto fileSize       = jsonData["data"]["file_size"];
+                auto fileMd5        = jsonData["data"]["file_md5"];
+                auto fileSha256     = jsonData["data"]["file_sha256"];
+                auto fileUrl        = jsonData["data"]["file_url"];
+                auto description    = jsonData["data"]["file_describe"];
 
-                    // extract the file downloaded
-                    BOOST_LOG_TRIVIAL(info) << "[Orca Updater]start to unzip the downloaded file " << download_file;
-                    if (!extract_file(download_file, cache_profile_path)) {
-                        BOOST_LOG_TRIVIAL(warning) << "[Orca Updater]extract downloaded file"
-                                                   << " failed, path: " << download_file;
+                auto        localProfilesjson    = cache_path / "profiles/Snapmaker.json";
+                std::string json_path            = data_dir() + "/system/Snapmaker.json";
+                std::string fileName             = cache_profile_path.string() + "/profiles.zip";                
+                Semver      currentPresetVersion = get_version_from_json(json_path);
+                Semver      remoteVersion(fileVersion);
+
+                std::string localOtaPresetVersion = "";
+                if (fs::exists(localProfilesjson)) {
+                    Semver localOtaVersion = get_version_from_json(localProfilesjson.string());                               
+
+                    if (localOtaVersion >= remoteVersion) {
+                        BOOST_LOG_TRIVIAL(info) << format("this the newest preset config for snapmaker orca");
                         return;
                     }
-                    BOOST_LOG_TRIVIAL(info) << "[Orca Updater]finished unzip the downloaded file " << download_file;
-                    boost::nowide::ofstream f(cache_profile_update_file.string());
-                    json                    data;
-                    data["name"] = latest_update.name;
-                    f << data << std::endl;
-                    f.close();
-                } else {
-                    // The current Orca version does not have any OTA updates, delete the cache file
-                    if (fs::exists(cache_profile_path / "profiles"))
-                        fs::remove_all(cache_profile_path / "profiles");
-                    if (fs::exists(cache_profile_update_file))
-                        fs::remove(cache_profile_update_file);
                 }
 
+                if (currentPresetVersion < remoteVersion)
+                    download_file(fileUrl, fileName);
+               
             } catch (...) {}
         })
         .perform_sync();
