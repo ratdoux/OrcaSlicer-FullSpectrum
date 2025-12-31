@@ -4716,6 +4716,13 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
 
 } // namespace
 
+bool GUI_App::check_preset_version()
+{ 
+  bool is_newest_version = false;
+
+
+  return is_newest_version;
+}
 void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 {
     std::string update_url = "";

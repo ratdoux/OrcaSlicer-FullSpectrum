@@ -712,22 +712,7 @@ bool PresetUpdater::priv::download_file(const std::string& url,
 void PresetUpdater::priv::sync_config()
 {
     auto cache_profile_path        = cache_path;
-    auto cache_profile_update_file = cache_path / "profiles_update.json";
-    std::string asset_name;
-    if (fs::exists(cache_profile_update_file)) {
-        try {
-            boost::nowide::ifstream f(cache_profile_update_file.string());
-            json                    data = json::parse(f);
-            if (data.contains("name"))
-                asset_name = data["name"].get<std::string>();
-            f.close();
-        } catch (const std::exception& ex) {
-            BOOST_LOG_TRIVIAL(error) << "[Orca Updater]: failed to read profiles_update.json when sync_config: " << ex.what() << std::endl;
-        } catch (...) {
-            // catch any other errors (that we have no information about)
-            BOOST_LOG_TRIVIAL(error) << "[Orca Updater]: unknown failure when reading profiles_update.json in sync_config" << std::endl;
-        }
-    }
+  
     AppConfig *app_config = GUI::wxGetApp().app_config;
 
     // auto profile_update_url = app_config->profile_update_url() + "/" + Snapmaker_VERSION;
@@ -735,13 +720,13 @@ void PresetUpdater::priv::sync_config()
     // parse the assets section and get the latest asset by comparing the name
 
     Http::get(profile_update_url)
-        .on_error([cache_profile_path, cache_profile_update_file](std::string body, std::string error, unsigned http_status) {
+        .on_error([cache_profile_path ](std::string body, std::string error, unsigned http_status) {
             // Orca: we check the response body to see if it's "Not Found", if so, it means for the current Orca version we don't have OTA
             // updates, we can delete the cache file
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_config_orca", http_status, error);
         })
         .timeout_connect(5)
-        .on_complete([this, asset_name, cache_profile_path, cache_profile_update_file](std::string body, unsigned http_status) {
+        .on_complete([this, cache_profile_path](std::string body, unsigned http_status) {
             // Http response OK
             if (http_status != 200)
                 return;

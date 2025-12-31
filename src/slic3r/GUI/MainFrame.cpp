@@ -2297,6 +2297,17 @@ static wxMenu* generate_help_menu()
             return true;
         });
 
+    append_menu_item(
+        helpMenu, wxID_ANY, _L("Check for Preset Update"), _L("Check for Preset Update"),
+        [](wxCommandEvent&) { 
+
+            wxString   msg = _L("This is the newest version.");
+            InfoDialog dlg(nullptr, _L("Info"), msg);
+            dlg.ShowModal();
+        },
+        "", nullptr, []() { return true; });
+
+
     append_menu_item(helpMenu, wxID_ANY, _L("Import Profile"), _L("Import Profile"), [](wxCommandEvent&) {
         wxGetApp().import_presets();
     });
