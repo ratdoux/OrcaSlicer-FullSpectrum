@@ -2300,10 +2300,8 @@ static wxMenu* generate_help_menu()
     append_menu_item(
         helpMenu, wxID_ANY, _L("Check for Preset Update"), _L("Check for Preset Update"),
         [](wxCommandEvent&) { 
+            wxGetApp().check_preset_version();
 
-            wxString   msg = _L("This is the newest version.");
-            InfoDialog dlg(nullptr, _L("Info"), msg);
-            dlg.ShowModal();
         },
         "", nullptr, []() { return true; });
 

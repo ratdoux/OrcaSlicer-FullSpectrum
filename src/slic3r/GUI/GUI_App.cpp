@@ -2578,6 +2578,12 @@ bool GUI_App::on_init_inner()
             });
             dlg.ShowModal();
         });
+
+            Bind(EVT_NO_PRESET_UPDATE, [this](const wxCommandEvent& evt) {
+            wxString   msg = _L("This is the newest version.");
+            InfoDialog dlg(nullptr, _L("Info"), msg);
+            dlg.ShowModal();
+        });
     }
     else {
 #ifdef __WXMSW__
@@ -4716,12 +4722,10 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
 
 } // namespace
 
-bool GUI_App::check_preset_version()
-{ 
-  bool is_newest_version = false;
-
-
-  return is_newest_version;
+void GUI_App::check_preset_version()
+{    
+    if (preset_updater != nullptr)
+        preset_updater->sync_config_async();
 }
 void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 {

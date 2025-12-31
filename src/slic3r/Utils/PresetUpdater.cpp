@@ -182,6 +182,7 @@ struct Updates
 };
 
 
+wxDEFINE_EVENT(EVT_NO_PRESET_UPDATE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SLIC3R_VERSION_ONLINE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SLIC3R_EXPERIMENTAL_VERSION_ONLINE, wxCommandEvent);
 
@@ -226,7 +227,7 @@ struct PresetUpdater::priv
 	void sync_version() const;
 	void parse_version_string(const std::string& body) const;
     void sync_resources(std::string http_url, std::map<std::string, Resource> &resources, bool check_patch = false,  std::string current_version="", std::string changelog_file="");
-    void sync_config();
+    void sync_config(bool isAuto_check = true);
     bool download_file(const std::string& url, const std::string& target_path, int timeout_sec = 30, bool* cancel_flag = nullptr);
     void sync_tooltip(std::string http_url, std::string language);
     void sync_plugins(std::string http_url, std::string plugin_version);
@@ -709,7 +710,7 @@ bool PresetUpdater::priv::download_file(const std::string& url,
     return res;
 }
     // Orca: sync config update for currect App version
-void PresetUpdater::priv::sync_config()
+void PresetUpdater::priv::sync_config(bool isAuto_check)
 {
     auto cache_profile_path        = cache_path;
   
@@ -720,13 +721,13 @@ void PresetUpdater::priv::sync_config()
     // parse the assets section and get the latest asset by comparing the name
 
     Http::get(profile_update_url)
-        .on_error([cache_profile_path ](std::string body, std::string error, unsigned http_status) {
+        .on_error([cache_profile_path, isAuto_check](std::string body, std::string error, unsigned http_status) {
             // Orca: we check the response body to see if it's "Not Found", if so, it means for the current Orca version we don't have OTA
             // updates, we can delete the cache file
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_config_orca", http_status, error);
         })
         .timeout_connect(5)
-        .on_complete([this, cache_profile_path](std::string body, unsigned http_status) {
+        .on_complete([this, cache_profile_path, isAuto_check](std::string body, unsigned http_status) {
             // Http response OK
             if (http_status != 200)
                 return;
@@ -755,13 +756,27 @@ void PresetUpdater::priv::sync_config()
                     Semver localOtaVersion = get_version_from_json(localProfilesjson.string());                               
 
                     if (localOtaVersion >= remoteVersion) {
-                        BOOST_LOG_TRIVIAL(info) << format("this the newest preset config for snapmaker orca");
+                        if (!isAuto_check) 
+                        {
+                            wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                            GUI::wxGetApp().QueueEvent(evt);
+
+                            BOOST_LOG_TRIVIAL(info) << format("use check the preset update.");
+                        }
                         return;
                     }
                 }
 
                 if (currentPresetVersion < remoteVersion)
                     download_file(fileUrl, fileName);
+                {
+                    if (!isAuto_check) {
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                        GUI::wxGetApp().QueueEvent(evt);
+
+                        BOOST_LOG_TRIVIAL(info) << format("use check the preset update local no profiles.");
+                    }
+                }
                
             } catch (...) {}
         })
@@ -1538,6 +1553,26 @@ PresetUpdater::UpdateResult PresetUpdater::config_update(const Semver& old_slic3
 bool PresetUpdater::install_bundles_rsrc(std::vector<std::string> bundles, bool snapshot) const
 {
 	return p->install_bundles_rsrc(bundles, snapshot);
+}
+
+
+void PresetUpdater::sync_config_async()
+{
+	if (p->thread.joinable()) {
+		p->cancel = true;
+		p->thread.join();
+	}
+	
+	p->cancel = false;
+	p->thread = std::thread([this]() {
+		BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_config_async started";
+		this->p->sync_config(false);
+		
+		GUI::wxGetApp().CallAfter([] {
+            BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_config_async completed, checking updates...";
+			GUI::wxGetApp().check_config_updates_from_updater();
+		});
+	});
 }
 
 void PresetUpdater::on_update_notification_confirm()
