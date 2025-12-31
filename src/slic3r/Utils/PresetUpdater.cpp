@@ -181,7 +181,7 @@ struct Updates
 	std::vector<Update> updates;
 };
 
-
+wxDEFINE_EVENT(EVT_NO_WEB_RESOURCE_UPDATE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_NO_PRESET_UPDATE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SLIC3R_VERSION_ONLINE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SLIC3R_EXPERIMENTAL_VERSION_ONLINE, wxCommandEvent);
@@ -228,6 +228,7 @@ struct PresetUpdater::priv
 	void parse_version_string(const std::string& body) const;
     void sync_resources(std::string http_url, std::map<std::string, Resource> &resources, bool check_patch = false,  std::string current_version="", std::string changelog_file="");
     void sync_config(bool isAuto_check = true);
+    void sync_update_flutter_resource(bool isAuto_check = true);
     bool download_file(const std::string& url, const std::string& target_path, int timeout_sec = 30, bool* cancel_flag = nullptr);
     void sync_tooltip(std::string http_url, std::string language);
     void sync_plugins(std::string http_url, std::string plugin_version);
@@ -709,6 +710,77 @@ bool PresetUpdater::priv::download_file(const std::string& url,
 
     return res;
 }
+
+
+void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
+{
+    auto cache_profile_path = cache_path;
+
+    AppConfig* app_config = GUI::wxGetApp().app_config;
+
+    auto preset_update_url = app_config->flutter_resource_update_url();
+
+    Http::get(preset_update_url)
+        .on_error([cache_profile_path, isAuto_check](std::string body, std::string error, unsigned http_status) {
+            BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_update_flutter_resource", http_status, error);
+        })
+        .timeout_connect(5)
+        .on_complete([this, cache_profile_path, isAuto_check](std::string body, unsigned http_status) {
+            // Http response OK
+            if (http_status != 200)
+                return;
+            try {
+                json jsonData = json::parse(body);
+                auto errCode  = jsonData["code"];
+                if (errCode != 200)
+                    return;
+
+                auto buildNumber = jsonData["data"]["build_number"];
+                auto supportPcVersion = jsonData["data"]["support_snapmaker_version"];
+                auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
+                auto fileVersion    = jsonData["data"]["file_version"];
+                auto fileSize       = jsonData["data"]["file_size"];
+                auto fileMd5        = jsonData["data"]["file_md5"];
+                auto fileSha256     = jsonData["data"]["file_sha256"];
+                auto fileUrl        = jsonData["data"]["file_url"];
+                auto description    = jsonData["data"]["file_describe"];
+
+                auto        localProfilesjson    = cache_path / "flutter_web/version.json";
+                std::string json_path            = data_dir() + "/web/flutter_web/version.json";
+                std::string fileName             = cache_profile_path.string() + "/flutter_web.zip";
+                Semver      currentPresetVersion = get_version_from_json(json_path);
+                Semver      remoteVersion(fileVersion);
+
+                std::string localOtaPresetVersion = "";
+                if (fs::exists(localProfilesjson)) {
+                    Semver localOtaVersion = get_version_from_json(localProfilesjson.string());
+
+                    if (localOtaVersion >= remoteVersion) {
+                        if (!isAuto_check) {
+                            wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
+                            GUI::wxGetApp().QueueEvent(evt);
+
+                            BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
+                        }
+                        return;
+                    }
+                }
+
+                if (currentPresetVersion < remoteVersion)
+                    download_file(fileUrl, fileName);
+                else {
+                    if (!isAuto_check) {
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
+                        GUI::wxGetApp().QueueEvent(evt);
+
+                        BOOST_LOG_TRIVIAL(info) << format("use check the web update local no profiles.");
+                    }
+                }
+
+            } catch (...) {}
+        })
+        .perform_sync();
+}
     // Orca: sync config update for currect App version
 void PresetUpdater::priv::sync_config(bool isAuto_check)
 {
@@ -769,7 +841,7 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
 
                 if (currentPresetVersion < remoteVersion)
                     download_file(fileUrl, fileName);
-                {
+                else {
                     if (!isAuto_check) {
                         wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
                         GUI::wxGetApp().QueueEvent(evt);
@@ -777,7 +849,7 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                         BOOST_LOG_TRIVIAL(info) << format("use check the preset update local no profiles.");
                     }
                 }
-               
+                               
             } catch (...) {}
         })
         .perform_sync();
@@ -1555,6 +1627,25 @@ bool PresetUpdater::install_bundles_rsrc(std::vector<std::string> bundles, bool 
 	return p->install_bundles_rsrc(bundles, snapshot);
 }
 
+void PresetUpdater::sync_web_async() 
+{
+    if (p->thread.joinable()) {
+        p->cancel = true;
+        p->thread.join();
+    }
+
+    p->cancel = false;
+    p->thread = std::thread([this]() {
+        BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async started";
+        this->p->sync_update_flutter_resource(false);
+
+        GUI::wxGetApp().CallAfter([this] {
+            std::string zipfilepath = this->p->cache_path.string() + "/flutter_web.zip";
+            BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async completed, checking updates...";
+            load_lutter_web(zipfilepath);
+        });
+    });
+}
 
 void PresetUpdater::sync_config_async()
 {
@@ -1634,31 +1725,20 @@ bool PresetUpdater::version_check_enabled() const
 	return p->enabled_version_check;
 }
 
-void PresetUpdater::import_flutter_web()
+
+void PresetUpdater::load_lutter_web(const std::string& zip_file)
 {
-    // 1. 弹出文件选择框
-    wxFileDialog dialog(nullptr, _L("Please choose a web resource package file:"), "", "", "resource packages (*.zip)|*.zip",
-                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-
-    if (dialog.ShowModal() != wxID_OK)
-        return;
-
-    std::string zip_file = dialog.GetPath().ToUTF8().data();
-
-    // 2. 创建临时目录用于解压
     boost::filesystem::path temp_path = boost::filesystem::temp_directory_path() / "orca_temp_flutter_import";
     try {
         if (boost::filesystem::exists(temp_path))
             boost::filesystem::remove_all(temp_path);
         boost::filesystem::create_directories(temp_path);
 
-        // 3. 解压zip文件到临时目录
         if (!p->extract_file(zip_file, temp_path.string())) {
             GUI::MessageDialog(nullptr, _L("Import Failed")).ShowModal();
             return;
         }
 
-        // 4. 检查版本并导入
         std::vector<std::string> outdated_presets;
         Updates                  updates;
 
@@ -1667,40 +1747,33 @@ void PresetUpdater::import_flutter_web()
             GUI::MessageDialog(nullptr, _L("Import Failed")).ShowModal();
         }
 
-        // 读取当前flutter资源包版本
-        std::string ori_version_str = "0";
+        std::string ori_version_str      = "0";
         std::string ori_build_number_str = "0";
 
-        auto ori_version_file = boost::filesystem::path(data_dir()) / "web" / "flutter_web" / "version.json";
+        auto                        ori_version_file = boost::filesystem::path(data_dir()) / "web" / "flutter_web" / "version.json";
         boost::property_tree::ptree ori_config;
         boost::property_tree::read_json(ori_version_file.string(), ori_config);
         ori_version_str      = ori_config.get<std::string>("version", "0");
         ori_build_number_str = ori_config.get<std::string>("build_number", "0");
 
-        // 遍历解压的文件夹
         for (auto& dir_entry : boost::filesystem::directory_iterator(temp_path / "flutter_web")) {
             if (dir_entry.path().filename() == "version.json") {
                 try {
-                    // 读取json文件获取版本信息
+
                     boost::property_tree::ptree config;
                     boost::property_tree::read_json(dir_entry.path().string(), config);
-                    std::string version_str = config.get<std::string>("version", "0");
+                    std::string version_str      = config.get<std::string>("version", "0");
                     std::string build_number_str = config.get<std::string>("build_number", "0");
 
-                    // std::string vendor      = dir_entry.path().stem().string();
-                    
-
-
-                    // 使用 Semver 进行版本比较
                     Semver online_version  = version_str;
                     Semver current_version = ori_version_str;
 
-                    if (/* current_version < online_version && */ori_build_number_str < build_number_str) {
+                    if (/* current_version < online_version && */ ori_build_number_str < build_number_str) {
                         auto source_folder_path = fs::path(dir_entry.path().parent_path());
                         auto target_folder_path = (boost::filesystem::path(data_dir()) / "web" / "flutter_web");
-                        // 创建Version对象
+
                         Version version;
-                        version.config_version = online_version; // 将Semver赋值给Version的config_version
+                        version.config_version = online_version; 
 
                         // changelog
                         std::string             changelog      = "";
@@ -1711,16 +1784,14 @@ void PresetUpdater::import_flutter_web()
                             oss << ifs.rdbuf();
                             changelog = oss.str();
                             ifs.close();
-                            // 替换所有的 \\n 为 \n
                             size_t pos = 0;
                             while ((pos = changelog.find("\\n", pos)) != std::string::npos) {
                                 changelog.replace(pos, 2, "\n");
-                                pos += 1; // 移动到下一个可能的位置
+                                pos += 1; 
                             }
                         }
 
-                        // 检查最小要求软件版本
-                        Semver min_ver = get_min_version_from_json(dir_entry.path().string());
+                        Semver min_ver  = get_min_version_from_json(dir_entry.path().string());
                         Semver soft_ver = Semver(std::string(Snapmaker_VERSION));
 
                         bool legal = true;
@@ -1731,13 +1802,10 @@ void PresetUpdater::import_flutter_web()
                                              .ToStdString();
                         }
 
-                        // 版本较新且兼容，添加到更新列表
-
-                        updates.updates.emplace_back(std::move(source_folder_path), std::move(target_folder_path), version, "flutter_web", changelog, "",
-                                                     false, true, legal);
+                        updates.updates.emplace_back(std::move(source_folder_path), std::move(target_folder_path), version, "flutter_web",
+                                                     changelog, "", false, true, legal);
 
                     } else {
-                        // 版本较旧或不兼容，添加到提示列表
                         outdated_presets.push_back("flutter_web");
                     }
                 } catch (std::exception& e) {
@@ -1747,7 +1815,6 @@ void PresetUpdater::import_flutter_web()
             }
         }
 
-        // 5. 执行更新并提示结果
         bool need_restart = false;
         if (!updates.updates.empty()) {
             std::vector<GUI::MsgUpdateConfig::Update> updates_msg;
@@ -1784,8 +1851,6 @@ void PresetUpdater::import_flutter_web()
             GUI::MessageDialog(nullptr, message).ShowModal();
         }
 
-        
-
         if (need_restart) {
             GUI::MessageDialog msg_wingow(nullptr,
                                           _L("Updating the web resources requires application restart.") + "\n" +
@@ -1797,15 +1862,27 @@ void PresetUpdater::import_flutter_web()
 
             app->recreate_GUI(_L("Update web resources"));
         }
-            
 
     } catch (std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Failed to importweb resources: " << e.what();
         GUI::MessageDialog(nullptr, _L("Import Failed")).ShowModal();
     }
 
-    // 6. 清理临时目录
     boost::filesystem::remove_all(temp_path);
+}
+
+
+void PresetUpdater::import_flutter_web()
+{
+    wxFileDialog dialog(nullptr, _L("Please choose a web resource package file:"), "", "", "resource packages (*.zip)|*.zip",
+                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    std::string zip_file = dialog.GetPath().ToUTF8().data();
+
+    load_lutter_web(zip_file);
 }
 
 void PresetUpdater::import_system_profile()

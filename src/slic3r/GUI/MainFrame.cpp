@@ -2305,6 +2305,12 @@ static wxMenu* generate_help_menu()
         },
         "", nullptr, []() { return true; });
 
+    append_menu_item(
+        helpMenu, wxID_ANY, _L("Check for Web Update"), _L("Check for Web Update"),
+        [](wxCommandEvent&) { 
+            wxGetApp().check_web_version();
+        },
+        "", nullptr, []() { return true; });
 
     append_menu_item(helpMenu, wxID_ANY, _L("Import Profile"), _L("Import Profile"), [](wxCommandEvent&) {
         wxGetApp().import_presets();

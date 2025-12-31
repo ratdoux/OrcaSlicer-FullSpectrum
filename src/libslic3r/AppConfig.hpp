@@ -328,6 +328,8 @@ public:
 	// Get the Orca profile update url.
 	std::string 		profile_update_url() const;
 
+	std::string 		flutter_resource_update_url() const;
+
 	// Returns the original Slic3r version found in the ini file before it was overwritten
 	// by the current version
 	Semver 				orig_version() const { return m_orig_version; }

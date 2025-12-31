@@ -40,6 +40,7 @@ namespace Slic3r {
 static const std::string VERSION_CHECK_URL_STABLE = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases/latest";
 static const std::string VERSION_CHECK_URL = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases";
 static const std::string PROFILE_UPDATE_URL = "https://public.resource.snapmaker.com/upgrade/packages/profile/preset_config.json";
+static const std::string FLUTTER_UPDATE_URL = "https://public.resource.snapmaker.com/upgrade/packages/flutter/flutter_config.json";
 static const std::string MODELS_STR = "models";
 
 const std::string AppConfig::SECTION_FILAMENTS = "filaments";
@@ -1427,6 +1428,11 @@ std::string AppConfig::version_check_url(bool stable_only/* = false*/) const
 {
     auto from_settings = get("version_check_url");
     return from_settings.empty() ? stable_only ? VERSION_CHECK_URL_STABLE : VERSION_CHECK_URL : from_settings;
+}
+
+std::string AppConfig::flutter_resource_update_url() const 
+{ 
+    return FLUTTER_UPDATE_URL;
 }
 
 std::string AppConfig::profile_update_url() const

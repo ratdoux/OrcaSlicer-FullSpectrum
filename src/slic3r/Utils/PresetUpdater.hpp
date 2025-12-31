@@ -65,13 +65,16 @@ public:
 
 	void import_flutter_web();
 
+	void load_lutter_web(const std::string& zip_file);
+
     void sync_config_async();
 
+    void sync_web_async();
 public:
 	struct priv;
 	std::unique_ptr<priv> p;
 };
-
+wxDECLARE_EVENT(EVT_NO_WEB_RESOURCE_UPDATE, wxCommandEvent);
 wxDECLARE_EVENT(EVT_NO_PRESET_UPDATE, wxCommandEvent);
 wxDECLARE_EVENT(EVT_SLIC3R_VERSION_ONLINE, wxCommandEvent);
 wxDECLARE_EVENT(EVT_SLIC3R_EXPERIMENTAL_VERSION_ONLINE, wxCommandEvent);
