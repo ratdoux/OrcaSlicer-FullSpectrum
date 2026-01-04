@@ -1653,7 +1653,7 @@ void PresetUpdater::sync_web_async()
         GUI::wxGetApp().CallAfter([this] {
             std::string zipfilepath = this->p->cache_path.string() + "/flutter_web.zip";
             BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async completed, checking updates...";
-            load_lutter_web(zipfilepath);
+            load_lutter_web(zipfilepath, true);
         });
     });
 }
@@ -1737,7 +1737,7 @@ bool PresetUpdater::version_check_enabled() const
 }
 
 
-void PresetUpdater::load_lutter_web(const std::string& zip_file)
+void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpdate)
 {
     boost::filesystem::path temp_path = boost::filesystem::temp_directory_path() / "orca_temp_flutter_import";
     try {
@@ -1854,7 +1854,7 @@ void PresetUpdater::load_lutter_web(const std::string& zip_file)
         }
 
         wxString message;
-        if (!outdated_presets.empty()) {
+        if (!outdated_presets.empty() && !serverUpdate) {
             message = _L("This web resouce could not be imported due to outdated versions.") + "\n";
             for (const auto& preset : outdated_presets) {
                 message += "• " + preset + "\n";
