@@ -1930,7 +1930,7 @@ void PresetUpdater::import_system_profile()
         }
 
         // 遍历解压的文件夹
-        for (auto& dir_entry : boost::filesystem::directory_iterator(temp_path / "profiles")) {
+        for (auto& dir_entry : boost::filesystem::directory_iterator(temp_path)) {
             if (dir_entry.path().extension() == ".json") {
                 try {
                     // 读取json文件获取版本信息
