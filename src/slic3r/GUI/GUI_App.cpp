@@ -164,6 +164,8 @@ typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS2)(
     #include <gtk/gtk.h>
 #endif
 
+#define UPDATE_BY_USER 1
+
 using namespace std::literals;
 namespace pt = boost::property_tree;
 
@@ -2580,9 +2582,15 @@ bool GUI_App::on_init_inner()
         });
 
         Bind(EVT_NO_PRESET_UPDATE, [this](const wxCommandEvent& evt) {
-        wxString   msg = _L("This is the newest version.");
-        InfoDialog dlg(nullptr, _L("Info"), msg);
-        dlg.ShowModal();
+            wxString   msg = _L("The configuration is up to date.");
+            InfoDialog dlg(nullptr, _L("Info"), msg);
+            dlg.ShowModal();
+        });
+
+        Bind(EVT_NO_WEB_RESOURCE_UPDATE, [this](const wxCommandEvent& evt) {
+            wxString   msg = _L("This is the newest version.");
+            InfoDialog dlg(nullptr, _L("Info"), msg);
+            dlg.ShowModal();
         });
     }
     else {
@@ -4783,7 +4791,7 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 
             Semver server_version = get_version(version_info.version_str, matcher);
 
-            if (current_version >= server_version) {
+            if (current_version >= server_version && by_user) {
                 this->no_new_version();
                 return;
             }
@@ -4801,6 +4809,8 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 
             wxCommandEvent* evt = new wxCommandEvent(EVT_SLIC3R_VERSION_ONLINE);
             evt->SetString(version_info.url);
+            if (by_user)
+                evt->SetInt(UPDATE_BY_USER);
             GUI::wxGetApp().QueueEvent(evt);
           } catch (...) {}
         })
@@ -6904,8 +6914,7 @@ void GUI_App::check_updates(const bool verbose)
             m_app_conf_exists = true;
 		}
 		else if (verbose && updater_result == PresetUpdater::R_NOOP) {
-			MsgNoUpdates dlg;
-			dlg.ShowModal();
+
 		}
 	}
 	catch (const std::exception & ex) {

@@ -782,7 +782,7 @@ private:
     bool            check_networking_version();
     void            cancel_networking_install();
     void            restart_networking();
-    void            check_config_updates_from_updater() { check_updates(false); }
+    void            check_config_updates_from_updater(bool updateByuser = false) { check_updates(updateByuser); }
 
 private:
     int             updating_bambu_networking();

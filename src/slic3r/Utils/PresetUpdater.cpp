@@ -735,9 +735,10 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                 if (errCode != 200)
                     return;
 
-                auto buildNumber = jsonData["data"]["build_number"];
-                auto supportPcVersion = jsonData["data"]["support_snapmaker_version"];
+                auto buildNumber = jsonData["data"]["build_number"];                
                 auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
+                auto minSupportPcVersion = jsonData["data"]["min_support_pc_version"];
+                auto maxSupportPcVersion = jsonData["data"]["max_support_pc_version"];
                 auto fileVersion    = jsonData["data"]["file_version"];
                 auto fileSize       = jsonData["data"]["file_size"];
                 auto fileMd5        = jsonData["data"]["file_md5"];
@@ -810,6 +811,8 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                     return;
 
                 auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
+                auto minSupportPcVersion = jsonData["data"]["min_support_pc_version"];
+                auto maxSupportPcVersion = jsonData["data"]["max_support_pc_version"];
                 auto fileVersion    = jsonData["data"]["file_version"];
                 auto fileSize       = jsonData["data"]["file_size"];
                 auto fileMd5        = jsonData["data"]["file_md5"];
@@ -826,17 +829,20 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                 std::string localOtaPresetVersion = "";
                 if (fs::exists(localProfilesjson)) {
                     Semver localOtaVersion = get_version_from_json(localProfilesjson.string());                               
-
-                    if (localOtaVersion >= remoteVersion) {
-                        if (!isAuto_check) 
-                        {
-                            wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
-                            GUI::wxGetApp().QueueEvent(evt);
-
-                            BOOST_LOG_TRIVIAL(info) << format("use check the preset update.");
-                        }
+                    //don't allow jump version. first upgrade localOta
+                    if (localOtaVersion >= currentPresetVersion)
                         return;
-                    }
+                    else
+                    {
+                        if (currentPresetVersion >= remoteVersion) {
+                            if (!isAuto_check) {//show tipsdlg by user check upgrade
+                                wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                                GUI::wxGetApp().QueueEvent(evt);
+                                BOOST_LOG_TRIVIAL(info) << format("use check the preset update.");                               
+                            }
+                            return;
+                        }
+                    }                   
                 }
 
                 if (currentPresetVersion < remoteVersion)
@@ -1661,7 +1667,7 @@ void PresetUpdater::sync_config_async()
 		
 		GUI::wxGetApp().CallAfter([] {
             BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_config_async completed, checking updates...";
-			GUI::wxGetApp().check_config_updates_from_updater();
+			GUI::wxGetApp().check_config_updates_from_updater(true);
 		});
 	});
 }
