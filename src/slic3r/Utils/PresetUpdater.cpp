@@ -756,14 +756,19 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                 if (fs::exists(localProfilesjson)) {
                     Semver localOtaVersion = get_version_from_json(localProfilesjson.string());
 
-                    if (localOtaVersion >= remoteVersion) {
-                        if (!isAuto_check) {
-                            wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
-                            GUI::wxGetApp().QueueEvent(evt);
-
-                            BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
-                        }
+                    if (localOtaVersion >= remoteVersion)
                         return;
+                    else {
+                        if (currentPresetVersion >= remoteVersion){                        
+                            if (!isAuto_check) {
+                                wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
+                                GUI::wxGetApp().QueueEvent(evt);
+
+                                BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
+                            }
+                            return;
+                        }
+                        
                     }
                 }
 
