@@ -1440,20 +1440,22 @@ std::string AppConfig::config_path()
 
 std::string AppConfig::get_preset_upgrade_url() 
 {
-    std::string url         = APP_UPDATE_URL_BASE_EN + PROFILE_UPDATE_URL;
+    std::string localLanguage = get("language");
+    std::string url           = APP_UPDATE_URL_BASE_EN + PROFILE_UPDATE_URL + std::string("/?language=") + localLanguage;
     auto        countryArea = get_country_code();
     if (countryArea == std::string("CN"))
-        url = APP_UPDATE_URL_BASE_CN + PROFILE_UPDATE_URL;
+        url = APP_UPDATE_URL_BASE_CN + PROFILE_UPDATE_URL + std::string("/?language=") + localLanguage;
 
     return url;
 }
 
 std::string AppConfig::get_web_resource_upgrade_url()
 {
-    std::string url         = APP_UPDATE_URL_BASE_EN + FLUTTER_UPDATE_URL;
+    std::string localLanguage = get("language");
+    std::string url           = APP_UPDATE_URL_BASE_EN + FLUTTER_UPDATE_URL + std::string("/?language=") + localLanguage;
     auto        countryArea = get_country_code();
     if (countryArea == std::string("CN"))
-        url = APP_UPDATE_URL_BASE_CN + FLUTTER_UPDATE_URL;
+        url = APP_UPDATE_URL_BASE_CN + FLUTTER_UPDATE_URL + std::string("/?language=") + localLanguage;
 
     return url;
 }
@@ -1461,10 +1463,11 @@ std::string AppConfig::get_web_resource_upgrade_url()
 std::string AppConfig::get_version_upgrade_url(bool stable_only /* = false*/) 
 { 
     //get local area and get the resource from diff server
-    std::string url = APP_UPDATE_URL_BASE_EN + APP_UPDATE_URL;
+    std::string localLanguage = get("language");
+    std::string url           = APP_UPDATE_URL_BASE_EN + APP_UPDATE_URL + std::string("/?language=") + localLanguage;
     auto countryArea = get_country_code();
     if (countryArea == std::string("CN"))
-        url = APP_UPDATE_URL_BASE_CN + APP_UPDATE_URL;    
+        url = APP_UPDATE_URL_BASE_CN + APP_UPDATE_URL + std::string("/?language=") + localLanguage;  
 
     return url; 
 }
