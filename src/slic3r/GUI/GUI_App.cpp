@@ -2592,6 +2592,12 @@ bool GUI_App::on_init_inner()
             InfoDialog dlg(nullptr, _L("Info"), msg);
             dlg.ShowModal();
         });
+
+        Bind(EVT_REQUEST_SERVER_FAIL, [this](const wxCommandEvent& evt) {
+            wxString   msg = evt.GetString();
+            InfoDialog dlg(nullptr, _L("Error"), msg);
+            dlg.ShowModal();
+        });
     }
     else {
 #ifdef __WXMSW__
@@ -4751,27 +4757,23 @@ void GUI_App::check_preset_version()
 }
 void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 {
-    std::string update_url = "";
-
-#ifdef __WINDOWS__
-    update_url = "https://public.resource.snapmaker.com/upgrade/packages/orca/win/manifest.json";
-#endif
-#ifdef __APPLE__
-    update_url = "https://public.resource.snapmaker.com/upgrade/packages/orca/mac/manifest.json";
-#endif
-#ifdef __LINUX__
-    update_url = "https://public.resource.snapmaker.com/upgrade/packages/orca/linux/manifest.json";
-#endif
+    std::string update_url = app_config->get_version_upgrade_url();
 
     AppConfig* app_config = wxGetApp().app_config;
 
     Http::get(update_url)
         .on_error([&](std::string body, std::string error, unsigned http_status) {
           (void)body;
+
+            wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
+            wxString errorMsg   = wxString::Format(_L("request to server update soft fail with body:%s,error:%s,status:%d"), body,
+                                                   error, http_status);
+            evt->SetString(errorMsg);
+            GUI::wxGetApp().QueueEvent(evt);
           BOOST_LOG_TRIVIAL(error) << format("Error getting: `%1%`: HTTP %2%, %3%", "check_new_version_sf", http_status,
                                              error);
         })
-        .timeout_connect(1)
+        .timeout_connect(TIMEOUT_CONNECT)
         .on_complete([this,by_user](std::string body, unsigned http_status) {
         // Http response OK
         if (http_status != 200) {

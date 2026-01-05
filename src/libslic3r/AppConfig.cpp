@@ -43,6 +43,20 @@ static const std::string PROFILE_UPDATE_URL = "https://public.resource.snapmaker
 static const std::string FLUTTER_UPDATE_URL = "https://public.resource.snapmaker.com/upgrade/packages/flutter/flutter_config.json";
 static const std::string MODELS_STR = "models";
 
+#define APP_UPDATE_URL_BASE_CN "https://public.resource.snapmaker.com/upgrade/packages/orca"
+#define APP_UPDATE_URL_BASE_EN "https://public.resource.snapmaker.com/upgrade/packages/orca"
+
+#if defined(_WIN32)
+static const std::string APP_UPDATE_URL = std::string("/win/manifest.json");
+#elif defined(__APPLE__)
+static const std::string APP_UPDATE_URL = std::string("/mac/manifest.json");
+#elif defined(__linux__)
+static const std::string APP_UPDATE_URL = std::string("/linux/manifest.json");
+#else
+static const std::string APP_UPDATE_URL = "";
+#endif
+
+
 const std::string AppConfig::SECTION_FILAMENTS = "filaments";
 const std::string AppConfig::SECTION_MATERIALS = "sla_materials";
 const std::string AppConfig::SECTION_EMBOSS_STYLE = "font";
@@ -1422,6 +1436,17 @@ std::string AppConfig::config_path()
 #endif
 
     return path;
+}
+
+std::string AppConfig::get_version_upgrade_url(bool stable_only /* = false*/) 
+{ 
+    //get local area and get the resource from diff server
+    std::string url = APP_UPDATE_URL_BASE_EN + APP_UPDATE_URL;
+    auto countryArea = get_country_code();
+    if (countryArea == std::string("CN"))
+        url = APP_UPDATE_URL_BASE_CN + APP_UPDATE_URL;    
+
+    return url; 
 }
 
 std::string AppConfig::version_check_url(bool stable_only/* = false*/) const
