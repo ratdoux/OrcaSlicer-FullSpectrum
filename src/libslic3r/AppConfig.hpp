@@ -325,11 +325,8 @@ public:
 	// This returns a hardcoded string unless it is overriden by "version_check_url" in the ini file.
 	std::string 		version_check_url(bool stable_only = false) const;
 	std::string 		get_version_upgrade_url(bool stable_only = false);
-
-	// Get the Orca profile update url.
-	std::string 		profile_update_url() const;
-
-	std::string 		flutter_resource_update_url() const;
+	std::string 		get_preset_upgrade_url();
+	std::string 		get_web_resource_upgrade_url();
 
 	// Returns the original Slic3r version found in the ini file before it was overwritten
 	// by the current version
