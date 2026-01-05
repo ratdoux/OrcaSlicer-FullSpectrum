@@ -267,7 +267,7 @@ void PresetUpdater::priv::set_download_prefs(AppConfig *app_config)
 {
 	version_check_url = app_config->version_check_url();
 
-	auto profile_update_url = app_config->profile_update_url();
+	auto profile_update_url = app_config->get_preset_upgrade_url();
 	if (!profile_update_url.empty())
 		enabled_config_update = true;
 	else
@@ -719,7 +719,7 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
 
     AppConfig* app_config = GUI::wxGetApp().app_config;
 
-    auto preset_update_url = app_config->flutter_resource_update_url();
+    auto preset_update_url = app_config->get_web_resource_upgrade_url();
 
     Http::get(preset_update_url)
         .on_error([cache_profile_path, isAuto_check](std::string body, std::string error, unsigned http_status) {
@@ -800,8 +800,7 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
   
     AppConfig *app_config = GUI::wxGetApp().app_config;
 
-    // auto profile_update_url = app_config->profile_update_url() + "/" + Snapmaker_VERSION;
-    auto profile_update_url = app_config->profile_update_url();
+    auto profile_update_url = app_config->get_preset_upgrade_url();
     // parse the assets section and get the latest asset by comparing the name
 
     Http::get(profile_update_url)

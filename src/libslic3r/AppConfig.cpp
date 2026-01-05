@@ -39,19 +39,19 @@ namespace Slic3r {
 
 static const std::string VERSION_CHECK_URL_STABLE = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases/latest";
 static const std::string VERSION_CHECK_URL = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases";
-static const std::string PROFILE_UPDATE_URL = "https://public.resource.snapmaker.com/upgrade/packages/profile/preset_config.json";
-static const std::string FLUTTER_UPDATE_URL = "https://public.resource.snapmaker.com/upgrade/packages/flutter/flutter_config.json";
+static const std::string PROFILE_UPDATE_URL = "/upgrade/packages/profile/preset_config.json";
+static const std::string FLUTTER_UPDATE_URL = "/upgrade/packages/flutter/flutter_config.json";
 static const std::string MODELS_STR = "models";
 
-#define APP_UPDATE_URL_BASE_CN "https://public.resource.snapmaker.com/upgrade/packages/orca"
-#define APP_UPDATE_URL_BASE_EN "https://public.resource.snapmaker.com/upgrade/packages/orca"
+#define APP_UPDATE_URL_BASE_CN "https://public.resource.snapmaker.com"
+#define APP_UPDATE_URL_BASE_EN "https://public.resource.snapmaker.com"
 
 #if defined(_WIN32)
-static const std::string APP_UPDATE_URL = std::string("/win/manifest.json");
+static const std::string APP_UPDATE_URL = std::string("/upgrade/packages/orca/win/manifest.json");
 #elif defined(__APPLE__)
-static const std::string APP_UPDATE_URL = std::string("/mac/manifest.json");
+static const std::string APP_UPDATE_URL = std::string("/upgrade/packages/orca/mac/manifest.json");
 #elif defined(__linux__)
-static const std::string APP_UPDATE_URL = std::string("/linux/manifest.json");
+static const std::string APP_UPDATE_URL = std::string("/upgrade/packages/orca/linux/manifest.json");
 #else
 static const std::string APP_UPDATE_URL = "";
 #endif
@@ -1438,6 +1438,26 @@ std::string AppConfig::config_path()
     return path;
 }
 
+std::string AppConfig::get_preset_upgrade_url() 
+{
+    std::string url         = APP_UPDATE_URL_BASE_EN + PROFILE_UPDATE_URL;
+    auto        countryArea = get_country_code();
+    if (countryArea == std::string("CN"))
+        url = APP_UPDATE_URL_BASE_CN + PROFILE_UPDATE_URL;
+
+    return url;
+}
+
+std::string AppConfig::get_web_resource_upgrade_url()
+{
+    std::string url         = APP_UPDATE_URL_BASE_EN + FLUTTER_UPDATE_URL;
+    auto        countryArea = get_country_code();
+    if (countryArea == std::string("CN"))
+        url = APP_UPDATE_URL_BASE_CN + FLUTTER_UPDATE_URL;
+
+    return url;
+}
+
 std::string AppConfig::get_version_upgrade_url(bool stable_only /* = false*/) 
 { 
     //get local area and get the resource from diff server
@@ -1453,16 +1473,6 @@ std::string AppConfig::version_check_url(bool stable_only/* = false*/) const
 {
     auto from_settings = get("version_check_url");
     return from_settings.empty() ? stable_only ? VERSION_CHECK_URL_STABLE : VERSION_CHECK_URL : from_settings;
-}
-
-std::string AppConfig::flutter_resource_update_url() const 
-{ 
-    return FLUTTER_UPDATE_URL;
-}
-
-std::string AppConfig::profile_update_url() const
-{
-    return PROFILE_UPDATE_URL;
 }
 
 bool AppConfig::exists()
