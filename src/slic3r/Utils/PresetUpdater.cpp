@@ -181,6 +181,7 @@ struct Updates
 	std::vector<Update> updates;
 };
 
+wxDEFINE_EVENT(EVT_REQUEST_SERVER_FAIL, wxCommandEvent);
 wxDEFINE_EVENT(EVT_NO_WEB_RESOURCE_UPDATE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_NO_PRESET_UPDATE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SLIC3R_VERSION_ONLINE, wxCommandEvent);
@@ -722,9 +723,14 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
 
     Http::get(preset_update_url)
         .on_error([cache_profile_path, isAuto_check](std::string body, std::string error, unsigned http_status) {
+            wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
+            wxString errorMsg = wxString::Format(_L("request to server update web resource fail with body:%s,error:%s,status:%d"), body, error, http_status);
+            evt->SetString(errorMsg);
+            GUI::wxGetApp().QueueEvent(evt);
+            GUI::wxGetApp().QueueEvent(evt);
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_update_flutter_resource", http_status, error);
         })
-        .timeout_connect(5)
+        .timeout_connect(TIMEOUT_CONNECT)
         .on_complete([this, cache_profile_path, isAuto_check](std::string body, unsigned http_status) {
             // Http response OK
             if (http_status != 200)
@@ -756,7 +762,7 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                 if (fs::exists(localProfilesjson)) {
                     Semver localOtaVersion = get_version_from_json(localProfilesjson.string());
 
-                    if (localOtaVersion >= remoteVersion)
+                    if (localOtaVersion > remoteVersion)
                         return;
                     else {
                         if (currentPresetVersion >= remoteVersion){                        
@@ -802,9 +808,13 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
         .on_error([cache_profile_path, isAuto_check](std::string body, std::string error, unsigned http_status) {
             // Orca: we check the response body to see if it's "Not Found", if so, it means for the current Orca version we don't have OTA
             // updates, we can delete the cache file
+            wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
+            wxString errorMsg   = wxString::Format(_L("request to server update preset resource fail with body:%s,error:%s,status:%d"), body,error, http_status);
+            evt->SetString(errorMsg);
+            GUI::wxGetApp().QueueEvent(evt);
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_config_orca", http_status, error);
         })
-        .timeout_connect(5)
+        .timeout_connect(TIMEOUT_CONNECT)
         .on_complete([this, cache_profile_path, isAuto_check](std::string body, unsigned http_status) {
             // Http response OK
             if (http_status != 200)
@@ -835,7 +845,7 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                 if (fs::exists(localProfilesjson)) {
                     Semver localOtaVersion = get_version_from_json(localProfilesjson.string());                               
                     //don't allow jump version. first upgrade localOta
-                    if (localOtaVersion >= currentPresetVersion)
+                    if (localOtaVersion > currentPresetVersion)
                         return;
                     else
                     {
