@@ -7072,7 +7072,7 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
     auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
 
     set_privacy_policy(isAgree == "true");    
-
+    BOOST_LOG_TRIVIAL(warning) << "run_wizard changed the privacy policy with: " << (isAgree);
     return res;
 }
 
@@ -7292,7 +7292,7 @@ bool GUI_App::config_wizard_startup()
 {
     auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
     set_privacy_policy(isAgree == "true");   
-
+    BOOST_LOG_TRIVIAL(warning) << "config_wizard_startup changed the privacy policy with: " << (isAgree);
     if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {
         BOOST_LOG_TRIVIAL(info) << "run wizard...";
         run_wizard(ConfigWizard::RR_DATA_EMPTY);
