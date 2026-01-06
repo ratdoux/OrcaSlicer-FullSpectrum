@@ -736,27 +736,42 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
             if (http_status != 200)
                 return;
             try {
-                json jsonData = json::parse(body);
-                auto errCode  = jsonData["code"];
+                json jsonObj = json::parse(body);
+                auto errCode = jsonObj["code"];
                 if (errCode != 200)
                     return;
 
-                auto buildNumber = jsonData["data"]["build_number"];                
-                auto isForceUpgrade = jsonData["data"]["is_force_upgrade"];
-                auto minSupportPcVersion = jsonData["data"]["min_support_pc_version"];
-                auto maxSupportPcVersion = jsonData["data"]["max_support_pc_version"];
-                auto fileVersion    = jsonData["data"]["file_version"];
-                auto fileSize       = jsonData["data"]["file_size"];
-                auto fileMd5        = jsonData["data"]["file_md5"];
-                auto fileSha256     = jsonData["data"]["file_sha256"];
-                auto fileUrl        = jsonData["data"]["file_url"];
-                auto description    = jsonData["data"]["file_describe"];
+                auto dataObj = jsonObj.value("data", json::object());
+                auto buildNumer = dataObj.value("build_number", "");
+                auto minSupportPcVersion = dataObj.value("min_support_pc_version", "");
+                auto maxSupportPcVersion = dataObj.value("max_support_pc_version", "");
+
+                auto isForceUpgrade      = dataObj.value("is_force_upgrade", false);
+                auto fileVersion         = dataObj.value("file_version", "");
+                auto fileSize            = dataObj.value("file_size", 0);
+                auto fileMd5             = dataObj.value("file_md5", "");
+                auto fileSha256          = dataObj.value("file_sha256", "");
+                auto fileUrl             = dataObj.value("file_url", "");
+                auto description         = dataObj.value("file_describe", "");
+                auto reserveData         = dataObj.value("reserve_1", "");
+                auto reserveData2        = dataObj.value("reserve_2", "");
 
                 auto        localProfilesjson    = cache_path / "flutter_web/version.json";
                 std::string json_path            = data_dir() + "/web/flutter_web/version.json";
                 std::string fileName             = cache_profile_path.string() + "/flutter_web.zip";
                 Semver      currentPresetVersion = get_version_from_json(json_path);
                 Semver      remoteVersion(fileVersion);
+
+                if (fileVersion.empty())
+                {
+                    if (!isAuto_check) {
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
+                        GUI::wxGetApp().QueueEvent(evt);
+
+                        BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
+                    }
+                    return;
+                }
 
                 std::string localOtaPresetVersion = "";
                 if (fs::exists(localProfilesjson)) {
@@ -833,6 +848,8 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                 auto fileSha256     = jsonData["data"]["file_sha256"];
                 auto fileUrl        = jsonData["data"]["file_url"];
                 auto description    = jsonData["data"]["file_describe"];
+                auto reserverData         = jsonData["data"]["reserver_1"];
+                auto reserverData2         = jsonData["data"]["reserver_2"];
 
                 auto        localProfilesjson    = cache_path / "profiles/Snapmaker.json";
                 std::string json_path            = data_dir() + "/system/Snapmaker.json";
