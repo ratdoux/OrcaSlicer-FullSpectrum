@@ -4785,14 +4785,17 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             auto errCode  = jsonData["code"];
             if (errCode != 200)
                 return;
-            // auto isFullUpgrade  = jsonData["is_full_upgrade"];
+            auto isFullUpgrade       = jsonData["data"]["is_full_upgrade"];
             auto isForceUpgrade      = jsonData["data"]["is_force_upgrade"];
+            auto versionType         = jsonData["data"]["stable"];
+            auto softPlatform         = jsonData["data"]["platform_type"];
             version_info.version_str = jsonData["data"]["version"];
 
             auto fileSize              = jsonData["data"]["full"]["file_size"];
             auto fileMd5               = jsonData["data"]["full"]["file_md5"];
             auto fileSha256            = jsonData["data"]["full"]["file_sha256"];
-            version_info.url           = jsonData["data"]["full"]["file_url"];
+            //windows x86_x64,  mac arm/x86_x64  universal
+            version_info.url           = jsonData["data"]["full"]["file_url"];            
             version_info.description   = jsonData["data"]["full"]["file_describe"];
             version_info.force_upgrade = isForceUpgrade;
 
