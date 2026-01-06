@@ -4773,22 +4773,35 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             return;
           }
         try {
-            json jsonData = json::parse(body);
-            auto errCode  = jsonData["code"];
+            json jsonObj = json::parse(body);
+            auto errCode = jsonObj["code"];
             if (errCode != 200)
                 return;
-            auto isFullUpgrade       = jsonData["data"]["is_full_upgrade"];
-            auto isForceUpgrade      = jsonData["data"]["is_force_upgrade"];
-            auto versionType         = jsonData["data"]["stable"];
-            auto softPlatform         = jsonData["data"]["platform_type"];
-            version_info.version_str = jsonData["data"]["version"];
 
-            auto fileSize              = jsonData["data"]["full"]["file_size"];
-            auto fileMd5               = jsonData["data"]["full"]["file_md5"];
-            auto fileSha256            = jsonData["data"]["full"]["file_sha256"];
-            //windows x86_x64,  mac arm/x86_x64  universal
-            version_info.url           = jsonData["data"]["full"]["file_url"];            
-            version_info.description   = jsonData["data"]["full"]["file_describe"];
+            auto dataObj              = jsonObj.value("data", json::object());
+
+            auto isFullUpgrade       = dataObj.value("is_full_upgrade", true);
+            auto isForceUpgrade      = dataObj.value("is_force_upgrade", false);
+
+            version_info.version_str = dataObj.value("version", "");
+            auto releaseType         = dataObj.value("release_type", "");
+            auto platformType        = dataObj.value("platform_type", "");
+            int  fileSize            = 0;
+            std::string fileMd5             = "";
+            std::string fileSha256          = "";
+            std::string reservedData        = "";
+            std::string reservedData2        = "";
+
+            auto fullObj = dataObj.value("full", json::object());
+            fileSize   = fullObj.value("file_size", 0);
+            fileMd5    = fullObj.value("file_md5", "");
+            fileSha256 = fullObj.value("file_sha256", "");
+            // windows x86_x64,  mac arm/x86_x64  universal
+            version_info.url         = fullObj.value("file_url", "");
+            version_info.description = fullObj.value("file_describe", "");
+            reservedData             = fullObj.value("reserved_1", "");
+            reservedData2            = fullObj.value("reserved_2", "");
+
             version_info.force_upgrade = isForceUpgrade;
 
             std::regex matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
