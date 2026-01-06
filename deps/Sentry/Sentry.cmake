@@ -81,7 +81,7 @@ endif()
 
 Snapmaker_Orca_add_cmake_project(Sentry
   GIT_REPOSITORY      https://github.com/getsentry/sentry-native.git
-  GIT_TAG             0.12.1
+  GIT_TAG             0.12.2
   GIT_SHALLOW         ON
   PATCH_COMMAND       ${SENTRY_PATCH_COMMAND}
   CMAKE_ARGS

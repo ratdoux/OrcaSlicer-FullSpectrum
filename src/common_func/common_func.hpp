@@ -25,6 +25,10 @@ namespace common
 
 	std::string getMachineId();
 
+	std::string getLocalArea();
+
+	std::string getLanguage();
+
     } // namespace common
 
 #endif
