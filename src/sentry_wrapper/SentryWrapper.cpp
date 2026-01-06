@@ -246,6 +246,10 @@ void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
                          const std::string& logTagValue,
                          const std::string& logTraceId)
 {
+    if (!get_privacy_policy()) {
+        return;
+    }
+
     sentry_level_t sentry_msg_level;
     sentry_value_t tags = sentry_value_new_object();
 
