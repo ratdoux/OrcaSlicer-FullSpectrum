@@ -644,6 +644,10 @@ void SSWCP_Instance::sw_GetActiveFile()
 
         if (iszip) {
             std::weak_ptr<SSWCP_Instance> weak_self = shared_from_this();
+
+            if (m_work_thread.joinable())
+                m_work_thread.join();
+
             m_work_thread          = std::thread([file_path, file_name, weak_self]() {
                 auto        self       = weak_self.lock();
                 std::string zipname    = generate_zip_path(file_path, file_name);
@@ -766,6 +770,8 @@ void SSWCP_Instance::sw_GetFileStream() {
             auto targetname = SSWCP::get_display_filename();
 
             std::weak_ptr<SSWCP_Instance> weak_self = shared_from_this();
+            if (m_work_thread.joinable())
+                m_work_thread.join();
             m_work_thread                           = std::thread([oriname, targetname, weak_self]() {
                 auto self = weak_self.lock();
                 if (self) {
@@ -784,6 +790,8 @@ void SSWCP_Instance::sw_GetFileStream() {
                 }
             });
         } else {
+            if (m_work_thread.joinable())
+                m_work_thread.join();
             m_work_thread = std::thread([file_path, weak_self]() {
                 auto self = weak_self.lock();
                 if (self) {
@@ -2703,6 +2711,9 @@ void SSWCP_MachineOption_Instance::sw_GetPrintZip()
 
 
         std::weak_ptr<SSWCP_Instance> weak_self           = shared_from_this();
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread       = std::thread([oriname, targetname, weak_self]() {
             auto self = weak_self.lock();
             if (self) {
@@ -3915,6 +3926,8 @@ void SSWCP_MachineConnect_Instance::sw_test_connect() {
                 // 错误处理
                 finish_job();
             } else {
+                if (m_work_thread.joinable())
+                    m_work_thread.join();
                 m_work_thread = std::thread([this, host] {
                     wxString msg;
                     bool        res = host->test(msg);
@@ -3967,6 +3980,10 @@ void SSWCP_MachineConnect_Instance::sw_disconnect() {
     std::string dev_id = m_param_data.count("dev_id") ? m_param_data["dev_id"] : "";
 
     auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
+
+    if (m_work_thread.joinable())
+        m_work_thread.join();
+
     m_work_thread = std::thread([weak_self, need_reload, dev_id](){
         auto                       self = weak_self.lock();
 
@@ -4724,6 +4741,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_connect()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread = std::thread([weak_ptr, engine]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -4776,6 +4797,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_disconnect()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -4850,6 +4875,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_subscribe()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine, topic, qos]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -4923,6 +4952,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_unsubscribe() {
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine, topic]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -5110,6 +5143,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_set_engine()
                     } else {
                         auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
                         // 设置断联回调
+
+                        if (m_work_thread.joinable())
+                            m_work_thread.join();
+
                         m_work_thread = std::thread([weak_self, host, connect_params, link_mode, id, userid, reload_device_view] {
                             auto     self = weak_self.lock();
                             wxString msg  = "";
@@ -5583,6 +5620,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_publish()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine, topic, payload, qos]() {
             if (!weak_ptr.lock()) {
                 return;

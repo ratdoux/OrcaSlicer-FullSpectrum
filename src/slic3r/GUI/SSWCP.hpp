@@ -185,7 +185,7 @@ public:
     void update_filament_info(const json& objects, bool send_message = false);
 
 protected:
-    std::thread                                  m_work_thread; // Worker thread
+    std::thread m_work_thread; // Worker thread
 
 public:
     std::string m_cmd;           // Command to execute
