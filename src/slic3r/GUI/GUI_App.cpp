@@ -4092,14 +4092,6 @@ void GUI_App::sm_request_user_logout()
         m_login_userinfo.set_user_login(false);
     }
     try {
-        //if (!sm_login_dlg) {
-        //    sm_login_dlg = new SMUserLogin(true);
-        //} else {
-        //    delete sm_login_dlg;
-        //    sm_login_dlg = new SMUserLogin(true);
-        //}
-        //// sm_login_dlg->ShowModal();
-
         wxString region = wxString::FromUTF8(app_config->get_country_code());
         std::string url    = "";
         if (region == "CN") {

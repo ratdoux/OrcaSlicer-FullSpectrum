@@ -497,10 +497,6 @@ void about()
 
 void login()
 {
-	//LoginDialog dlg;
-	//dlg.ShowModal();
-
-	// ZUserLogin dlg;
 	SMUserLogin dlg;
     dlg.run();
 }
