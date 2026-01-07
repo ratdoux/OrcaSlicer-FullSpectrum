@@ -1330,7 +1330,10 @@ void GLCanvas3D::reset_volumes()
     m_volumes.clear();
     m_dirty = true;
 
-    _set_warning_notification(EWarning::ObjectOutside, false);
+    if (wxGetApp.plater() && wxGetApp().plater()->get_notification_manager())
+    {
+        _set_warning_notification(EWarning::ObjectOutside, false);
+    }
 }
 
 //BBS: get current plater's bounding box
@@ -9695,7 +9698,14 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
     //BBS: this may happened when exit the app, plater is null
     if (!wxGetApp().plater())
         return;
+    NotificationManager* notification_managerEx = wxGetApp().plater()->get_notification_manager();
     auto& notification_manager = *wxGetApp().plater()->get_notification_manager();
+
+    if (!notification_managerEx)
+    {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << boost::format("notification_manager is null");
+        return;
+    }
 
     switch (error)
     {
