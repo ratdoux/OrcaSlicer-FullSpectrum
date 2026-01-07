@@ -196,8 +196,8 @@ void initSentryEx()
         sentry_options_set_debug(options, 0);
 #endif
 
-        sentry_options_set_environment(options, "develop");
-        //sentry_options_set_environment(options, "Release");
+        //sentry_options_set_environment(options, "develop");
+        sentry_options_set_environment(options, "Release");
 
         sentry_options_set_auto_session_tracking(options, 0);
         sentry_options_set_symbolize_stacktraces(options, 1);
@@ -235,11 +235,11 @@ void exitSentryEx()
     sentry_close();
 }
 void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
-                         const std::string& logContent,
-                         const std::string& funcModule,
-                         const std::string& logTagKey,
-                         const std::string& logTagValue,
-                         const std::string& logTraceId)
+                       const std::string& logContent,
+                       const std::string& funcModule,
+                       const std::string& logTagKey,
+                       const std::string& logTagValue,
+                       const std::string& logTraceId)
 {
     if (!get_privacy_policy()) {
         return;
@@ -248,62 +248,76 @@ void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
     sentry_level_t sentry_msg_level;
     sentry_value_t tags = sentry_value_new_object();
 
-     if (!funcModule.empty())
-        sentry_value_set_by_key(tags, "function_module", sentry_value_new_string(funcModule.c_str()));
+    if (!funcModule.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(funcModule.c_str()), NULL);
+        sentry_value_set_by_key(tags, "function_module", attr);
+    }
 
-    if (!logTraceId.empty())
-        sentry_value_set_by_key(tags, "snapmaker_trace_id", sentry_value_new_string(logTraceId.c_str()));
+    if (!logTraceId.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(logTraceId.c_str()), NULL);
+        sentry_value_set_by_key(tags, "snapmaker_trace_id", attr);
+    }
 
-    if (!logTagKey.empty())
-        sentry_value_set_by_key(tags, logTagKey.c_str(), sentry_value_new_string(logTagValue.c_str()));
+    if (!logTagKey.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(logTagValue.c_str()), NULL);
+        sentry_value_set_by_key(tags, logTagKey.c_str(), attr);
+    }
 
-    sentry_value_set_by_key(tags, "snapmaker_version", sentry_value_new_string(Snapmaker_VERSION));
+    sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(Snapmaker_VERSION), NULL);
+    sentry_value_set_by_key(tags, "snapmaker_version", attr);
 
     std::string flutterVersion = common::get_flutter_version();
-    if (!flutterVersion.empty())
-        sentry_value_set_by_key(tags, "flutter_version", sentry_value_new_string(flutterVersion.c_str()));
-
+    if (!flutterVersion.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(flutterVersion.c_str()), NULL);
+        sentry_value_set_by_key(tags, "flutter_version", attr);
+    }
     std::string pcName = common::get_pc_name();
-    if (!pcName.empty())
-        sentry_value_set_by_key(tags, "pc_name", sentry_value_new_string(pcName.c_str()));
-
+    if (!pcName.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(pcName.c_str()), NULL);
+        sentry_value_set_by_key(tags, "pc_name", attr);
+    }
     std::string machineID = common::getMachineId();
-    if (!machineID.empty())
-        sentry_value_set_by_key(tags, "machine_id", sentry_value_new_string(machineID.c_str()));
-
+    if (!machineID.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(machineID.c_str()), NULL);
+        sentry_value_set_by_key(tags, "machine_id", attr);
+    }
     std::string currentLanguage = common::getLanguage();
-    if (!currentLanguage.empty())
-        sentry_value_set_by_key(tags, "current_language", sentry_value_new_string(currentLanguage.c_str()));
-
+    if (!currentLanguage.empty()) {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(currentLanguage.c_str()), NULL);
+        sentry_value_set_by_key(tags, "current_language", attr);
+    }
     std::string localArea = common::getLocalArea();
-    if (!localArea.empty())
-        sentry_value_set_by_key(tags, "local_area", sentry_value_new_string(localArea.c_str()));
-
+    if (!localArea.empty()) 
+    {
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(localArea.c_str()), NULL);
+        sentry_value_set_by_key(tags, "local_area", attr);
+    }
     switch (logLevel) {
     case SENTRY_LOG_TRACE:
         sentry_msg_level = SENTRY_LEVEL_TRACE;
-        sentry_value_set_by_key(tags, BURY_POINT, sentry_value_new_string("snapmaker_bury_point"));
-        sentry_log_trace(logContent.c_str(), tags, 3);
+        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string("snapmaker_bury_point"), NULL);
+        sentry_value_set_by_key(tags, BURY_POINT, attr);
+        sentry_log_trace(logContent.c_str(), tags);
         break;
     case SENTRY_LOG_DEBUG:
         sentry_msg_level = SENTRY_LEVEL_DEBUG;
-        sentry_log_debug(logContent.c_str(), tags, 3);
+        sentry_log_debug(logContent.c_str(), tags);
         break;
     case SENTRY_LOG_INFO:
         sentry_msg_level = SENTRY_LEVEL_INFO;
-        sentry_log_info(logContent.c_str(), tags, 3);
+        sentry_log_info(logContent.c_str(), tags);
         break;
     case SENTRY_LOG_WARNING:
         sentry_msg_level = SENTRY_LEVEL_WARNING;
-        sentry_log_warn(logContent.c_str(), tags, 3);
+        sentry_log_warn(logContent.c_str(), tags);
         break;
     case SENTRY_LOG_ERROR:
         sentry_msg_level = SENTRY_LEVEL_ERROR;
-        sentry_log_error(logContent.c_str(), tags, 3);
+        sentry_log_error(logContent.c_str(), tags);
         break;
     case SENTRY_LOG_FATAL:
         sentry_msg_level = SENTRY_LEVEL_FATAL;
-        sentry_log_fatal(logContent.c_str(), tags, 3);
+        sentry_log_fatal(logContent.c_str(), tags);
         break;
     default: return;
     }
