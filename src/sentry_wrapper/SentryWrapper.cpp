@@ -126,11 +126,6 @@ void initSentryEx()
     sentry_options_t* options = sentry_options_new();
     std::string       dsn = std::string("https://c74b617c2aedc291444d3a238d23e780@o4508125599563776.ingest.us.sentry.io/4510425163956224");
     {
-#ifdef __APPLE__        
-
-#elif _WIN32
-        
-#endif
         sentry_options_set_dsn(options, dsn.c_str());
         std::string handlerDir  = "";
         std::string dataBaseDir = "";
