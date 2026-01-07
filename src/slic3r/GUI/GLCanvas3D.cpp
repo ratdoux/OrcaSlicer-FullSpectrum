@@ -1330,7 +1330,9 @@ void GLCanvas3D::reset_volumes()
     m_volumes.clear();
     m_dirty = true;
 
-    if (wxGetApp.plater() && wxGetApp().plater()->get_notification_manager())
+    auto pLater = wxGetApp().plater();
+
+    if (pLater && wxGetApp().plater()->get_notification_manager())
     {
         _set_warning_notification(EWarning::ObjectOutside, false);
     }
