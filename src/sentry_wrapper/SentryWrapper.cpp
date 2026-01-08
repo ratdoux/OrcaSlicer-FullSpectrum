@@ -15,6 +15,9 @@
 #ifdef _WIN32
 #include <Windows.h>
 #include <shlobj.h>
+#include <stdlib.h>
+#include <iphlpapi.h>
+#pragma comment(lib, "iphlpapi.lib")
 #endif
 
 #ifdef __APPLE__
@@ -174,14 +177,20 @@ void initSentryEx()
 
         handlerDir = wstringTostring(desDir);
 
-        wchar_t appDataPath[MAX_PATH] = {0};
-        auto    hr                    = SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath);
-        char*   path                  = new char[MAX_PATH];
-        size_t  pathLength;
-        wcstombs_s(&pathLength, path, MAX_PATH, appDataPath, MAX_PATH);
+        PWSTR   pszPath = nullptr;
+        char*   path    = new char[MAX_PATH]();
+        size_t  pathLength = 0;
+        HRESULT hr      = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &pszPath);
+
+        if (SUCCEEDED(hr)) {
+            wcstombs_s(&pathLength, path, MAX_PATH, pszPath, MAX_PATH);
+            CoTaskMemFree(pszPath);
+        } 
+
         std::string filePath = path;
         std::string appName  = "\\" + std::string("Snapmaker_Orca\\");
         dataBaseDir          = filePath + appName;
+        delete[] path;
 #endif
 
         if (!handlerDir.empty())
@@ -276,17 +285,28 @@ void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
         sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(pcName.c_str()), NULL);
         sentry_value_set_by_key(tags, "pc_name", attr);
     }
-    std::string machineID = common::getMachineId();
+    static std::string machineID = "";
+    if (machineID.empty())
+        machineID = common::getMachineId();
+
     if (!machineID.empty()) {
         sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(machineID.c_str()), NULL);
         sentry_value_set_by_key(tags, "machine_id", attr);
     }
-    std::string currentLanguage = common::getLanguage();
+
+    static std::string currentLanguage = "";
+    if (currentLanguage.empty())
+        currentLanguage = common::getLanguage();
+
     if (!currentLanguage.empty()) {
         sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(currentLanguage.c_str()), NULL);
         sentry_value_set_by_key(tags, "current_language", attr);
     }
-    std::string localArea = common::getLocalArea();
+
+    static std::string localArea = "";
+    if (localArea.empty())
+        localArea = common::getLocalArea();
+
     if (!localArea.empty()) 
     {
         sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(localArea.c_str()), NULL);
