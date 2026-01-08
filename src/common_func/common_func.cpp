@@ -120,6 +120,8 @@ namespace common
     { 
         std::string localArea = "";
         std::string cfgfile = "";
+        std::string versionFilePath = "";
+
 #ifdef _WIN32
 
         PWSTR   pszPath = nullptr;
@@ -137,7 +139,7 @@ namespace common
 
 #elif __APPLE__
         const char* home_env = getenv("HOME");
-        cfgfile              = home_env;
+        versionFilePath      = home_env;
         cfgfile              = versionFilePath + "/Library/Application Support/Snapmaker_Orca/Snapmaker_Orca.conf";
 #else
 
@@ -160,7 +162,7 @@ namespace common
     std::string getLanguage() 
     {
         std::string localLanguage = "";
-
+        std::string versionFilePath = "";
         std::string cfgfile       = "";
 #ifdef _WIN32
 
@@ -179,7 +181,7 @@ namespace common
 
 #elif __APPLE__
         const char* home_env = getenv("HOME");
-        cfgfile              = home_env;
+        versionFilePath      = home_env;
         cfgfile              = versionFilePath + "/Library/Application Support/Snapmaker_Orca/Snapmaker_Orca.conf";
 #else
 

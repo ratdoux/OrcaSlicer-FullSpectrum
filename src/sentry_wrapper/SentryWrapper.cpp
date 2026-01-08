@@ -313,31 +313,35 @@ void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
         sentry_value_set_by_key(tags, "local_area", attr);
     }
     switch (logLevel) {
-    case SENTRY_LOG_TRACE:
-        sentry_msg_level = SENTRY_LEVEL_TRACE;
+    case SENTRY_LOG_TRACE: {
+        sentry_msg_level    = SENTRY_LEVEL_TRACE;
         sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string("snapmaker_bury_point"), NULL);
         sentry_value_set_by_key(tags, BURY_POINT, attr);
         sentry_log_trace(logContent.c_str(), tags);
-        break;
-    case SENTRY_LOG_DEBUG:
+    } break;
+    case SENTRY_LOG_DEBUG: {
         sentry_msg_level = SENTRY_LEVEL_DEBUG;
         sentry_log_debug(logContent.c_str(), tags);
-        break;
-    case SENTRY_LOG_INFO:
+    } break;
+    case SENTRY_LOG_INFO: {
         sentry_msg_level = SENTRY_LEVEL_INFO;
         sentry_log_info(logContent.c_str(), tags);
-        break;
-    case SENTRY_LOG_WARNING:
+    } break;
+    case SENTRY_LOG_WARNING: {
         sentry_msg_level = SENTRY_LEVEL_WARNING;
         sentry_log_warn(logContent.c_str(), tags);
-        break;
+    } break;
     case SENTRY_LOG_ERROR:
+    {
         sentry_msg_level = SENTRY_LEVEL_ERROR;
         sentry_log_error(logContent.c_str(), tags);
+    }
         break;
-    case SENTRY_LOG_FATAL:
+    case SENTRY_LOG_FATAL: 
+    {
         sentry_msg_level = SENTRY_LEVEL_FATAL;
         sentry_log_fatal(logContent.c_str(), tags);
+    }
         break;
     default: return;
     }
