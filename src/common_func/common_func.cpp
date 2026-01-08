@@ -78,13 +78,19 @@ namespace common
             std::string versionFilePath = "";
 
 #ifdef _WIN32
-            wchar_t appDataPath[MAX_PATH] = {0};
-            auto    hr                    = SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath);
-            char*   path                  = new char[MAX_PATH];
-            size_t  pathLength;
-            wcstombs_s(&pathLength, path, MAX_PATH, appDataPath, MAX_PATH);
+            PWSTR   pszPath = nullptr;
+            char*   path    = new char[MAX_PATH]();
+            size_t  pathLength = 0;
+            HRESULT hr         = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &pszPath);
+            if (SUCCEEDED(hr)) {
+                wcstombs_s(&pathLength, path, MAX_PATH, pszPath, MAX_PATH);
+                CoTaskMemFree(pszPath);
+            }                      
+            
             std::string filePath = path;
             versionFilePath      = filePath + "\\" + std::string("Snapmaker_Orca\\web\\flutter_web\\version.json");
+
+            delete[] path;
 #elif __APPLE__
             const char* home_env = getenv("HOME");
             versionFilePath      = home_env;
@@ -114,17 +120,26 @@ namespace common
     { 
         std::string localArea = "";
         std::string cfgfile = "";
+        std::string versionFilePath = "";
+
 #ifdef _WIN32
-        wchar_t appDataPath[MAX_PATH] = {0};
-        auto    hr                    = SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath);
-        char*   path                  = new char[MAX_PATH];
-        size_t  pathLength;
-        wcstombs_s(&pathLength, path, MAX_PATH, appDataPath, MAX_PATH);
+
+        PWSTR   pszPath = nullptr;
+        char*   path    = new char[MAX_PATH]();
+        size_t  pathLength = 0;
+        HRESULT hr         = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &pszPath);
+        if (SUCCEEDED(hr)) {
+            wcstombs_s(&pathLength, path, MAX_PATH, pszPath, MAX_PATH);
+            CoTaskMemFree(pszPath);
+        } 
+
         std::string filePath = path;
         cfgfile              = filePath + "\\" + std::string("Snapmaker_Orca\\Snapmaker_Orca.conf");
+        delete[] path;
+
 #elif __APPLE__
         const char* home_env = getenv("HOME");
-        cfgfile              = home_env;
+        versionFilePath      = home_env;
         cfgfile              = versionFilePath + "/Library/Application Support/Snapmaker_Orca/Snapmaker_Orca.conf";
 #else
 
@@ -147,19 +162,26 @@ namespace common
     std::string getLanguage() 
     {
         std::string localLanguage = "";
-
+        std::string versionFilePath = "";
         std::string cfgfile       = "";
 #ifdef _WIN32
-        wchar_t appDataPath[MAX_PATH] = {0};
-        auto    hr                    = SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath);
-        char*   path                  = new char[MAX_PATH];
-        size_t  pathLength;
-        wcstombs_s(&pathLength, path, MAX_PATH, appDataPath, MAX_PATH);
+
+        PWSTR   pszPath = nullptr;
+        char*   path    = new char[MAX_PATH]();
+        size_t  pathLength = 0;
+        HRESULT hr         = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &pszPath);
+        if (SUCCEEDED(hr)) {
+            wcstombs_s(&pathLength, path, MAX_PATH, pszPath, MAX_PATH);
+            CoTaskMemFree(pszPath);
+        } 
+
         std::string filePath = path;
         cfgfile              = filePath + "\\" + std::string("Snapmaker_Orca\\Snapmaker_Orca.conf");
+        delete[] path;
+
 #elif __APPLE__
         const char* home_env = getenv("HOME");
-        cfgfile              = home_env;
+        versionFilePath      = home_env;
         cfgfile              = versionFilePath + "/Library/Application Support/Snapmaker_Orca/Snapmaker_Orca.conf";
 #else
 
