@@ -7063,7 +7063,7 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
     }
     auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
 
-    set_privacy_policy(isAgree == "true");    
+    user_update_privacy_notify(isAgree == "true");    
     BOOST_LOG_TRIVIAL(warning) << "run_wizard changed the privacy policy with: " << (isAgree);
     return res;
 }
@@ -7268,6 +7268,23 @@ void GUI_App::cache_notify(const std::string& key, const json& res)
     }
 }
 
+void GUI_App::user_update_privacy_notify(const bool& res)
+{
+    set_privacy_policy(res);
+
+    json data;
+
+    data["privacy_policy_isagree"] = res;
+    
+    for (const auto& instance : m_user_update_privacy_subscribers) {
+        auto ptr = instance.second.lock();
+        if (ptr) {
+            ptr->m_res_data = data;
+            ptr->send_to_js();
+        }
+    }
+
+}
 
 void GUI_App::user_login_notify(const json& res)
 {
@@ -7283,7 +7300,7 @@ void GUI_App::user_login_notify(const json& res)
 bool GUI_App::config_wizard_startup()
 {
     auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
-    set_privacy_policy(isAgree == "true");   
+    user_update_privacy_notify(isAgree == "true");   
     BOOST_LOG_TRIVIAL(warning) << "config_wizard_startup changed the privacy policy with: " << (isAgree);
     if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {
         BOOST_LOG_TRIVIAL(info) << "run wizard...";

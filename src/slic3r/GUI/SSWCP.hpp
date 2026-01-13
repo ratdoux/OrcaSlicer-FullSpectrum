@@ -23,6 +23,8 @@ using namespace nlohmann;
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
+#define UPDATE_PRIVACY_STATUS "sw_SubUserUpdatePrivacy"
+
 namespace Slic3r { namespace GUI {
 
 class WCP_Logger
@@ -524,6 +526,8 @@ private:
     void sw_GetUserLoginState();
 
     void sw_SubscribeUserLoginState();
+
+    void sw_SubUserUpdatePrivacy();
 
 };
 
