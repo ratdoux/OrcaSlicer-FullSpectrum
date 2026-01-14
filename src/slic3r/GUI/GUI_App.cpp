@@ -4151,13 +4151,18 @@ wxString GUI_App::get_international_url(const wxString& origin_url) {
 
     string dark_mode = wxGetApp().app_config->get("dark_color_mode");
 
+    auto   isAgree   = wxGetApp().app_config->get("app", "privacy_policy_isagree");
+    std::string  useAgree = (isAgree == "true" ? "1" : "0");
+
     if (baseUrl.find("?") != std::string::npos) {
         return baseUrl + wxString::FromUTF8("&locale=") + lang + wxString::FromUTF8("-") + region +
-               wxString::FromUTF8("&dark_mode=" + dark_mode);
+               wxString::FromUTF8("&dark_mode=" + dark_mode) + wxString::FromUTF8("&privacy_policy_isagree=" + useAgree);
     } else {
         return baseUrl + wxString::FromUTF8("?locale=") + lang + wxString::FromUTF8("-") + region +
-               wxString::FromUTF8("&dark_mode=" + dark_mode); 
+               wxString::FromUTF8("&dark_mode=" + dark_mode) + wxString::FromUTF8("&privacy_policy_isagree=" + useAgree);
     }
+
+
 }
 
 bool GUI_App::is_user_login()

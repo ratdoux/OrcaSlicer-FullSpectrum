@@ -183,7 +183,7 @@ void PrinterWebView::OnError(wxWebViewEvent &evt)
         e = "wxWEBVIEW_NAV_ERR_OTHER";
         break;
       }
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": error loading page %1% %2% %3% %4%") %evt.GetURL() %evt.GetTarget() %e %evt.GetString();
+    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") %evt.GetURL() %evt.GetTarget() %e %evt.GetString();
 }
 
 void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
