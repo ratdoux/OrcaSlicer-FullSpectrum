@@ -5,7 +5,7 @@
 #include "libslic3r/AppConfig.hpp"
 #include "slic3r/GUI/wxExtensions.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
-#include "common_func/common_func.hpp"
+#include "sentry_wrapper/SentryWrapper.hpp"
 
 #include <wx/sizer.h>
 #include <wx/toolbar.h>
@@ -375,6 +375,7 @@ void ZUserLogin::OnError(wxWebViewEvent &event)
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":ZUserLogin error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init ZUserLogin webview fail", BP_WEB_VIEW);
 }
 
 void ZUserLogin::OnScriptResponseMessage(wxCommandEvent &WXUNUSED(evt))

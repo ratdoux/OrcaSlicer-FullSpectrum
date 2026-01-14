@@ -6,6 +6,7 @@
 #include <wx/sizer.h>
 #include <slic3r/GUI/Widgets/WebView.hpp>
 #include "NotificationManager.hpp"
+#include "sentry_wrapper/SentryWrapper.hpp"
 
 namespace Slic3r { namespace GUI {
 
@@ -166,6 +167,7 @@ void WebPreprintDialog::OnError(wxWebViewEvent &event)
     }
 
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":WebPreprintDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init WebPreprintDialog webview fail", BP_WEB_VIEW);
 }
 
 void WebPreprintDialog::OnScriptMessage(wxWebViewEvent &evt)

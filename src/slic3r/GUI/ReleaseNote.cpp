@@ -24,6 +24,7 @@
 #include "Plater.hpp"
 #include "BitmapCache.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "sentry_wrapper/SentryWrapper.hpp"
 
 namespace Slic3r { namespace GUI {
 
@@ -457,6 +458,7 @@ void UpdateVersionDialog::OnError(wxWebViewEvent& event)
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":UpdateVersionDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e %event.GetString();
+    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init UpdateVersionDialog webview fail", BP_WEB_VIEW);
     event.Skip();
 }
 

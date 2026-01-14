@@ -34,7 +34,7 @@
 #include <libslic3r/Utils.hpp>
 #include "CreatePresetsDialog.hpp"
 #include <mutex>
-#include "bury_cfg/bury_point.hpp"
+#include "sentry_wrapper/SentryWrapper.hpp"
 
 using namespace nlohmann;
 
@@ -611,6 +611,7 @@ void GuideFrame::OnError(wxWebViewEvent& event)
     }
 
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":GuideFrame error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init GuideFrame webview fail", BP_WEB_VIEW);
 }
 
 void GuideFrame::OnScriptResponseMessage(wxCommandEvent &WXUNUSED(evt))
