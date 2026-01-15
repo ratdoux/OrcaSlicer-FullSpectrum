@@ -964,8 +964,8 @@ void GUI_App::post_init()
             std::string network_ver = Slic3r::NetworkAgent::get_version();
             bool        sys_preset  = app_config->get("sync_system_preset") == "true";
             this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
-
-            this->check_new_version_sf();
+            this->preset_updater->sync_web_async(true);
+            this->check_new_version_sf(false, false);
      
         });
     }
@@ -4754,14 +4754,15 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
     AppConfig* app_config = wxGetApp().app_config;
 
     Http::get(update_url)
-        .on_error([&](std::string body, std::string error, unsigned http_status) {
+        .on_error([&, by_user](std::string body, std::string error, unsigned http_status) {
           (void)body;
 
             wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
             wxString errorMsg   = wxString::Format(_L("request to server update soft fail with body:%s,error:%s,status:%d"), body,
                                                    error, http_status);
             evt->SetString(errorMsg);
-            GUI::wxGetApp().QueueEvent(evt);
+            if(by_user)
+                GUI::wxGetApp().QueueEvent(evt);
           BOOST_LOG_TRIVIAL(error) << format("Error getting: `%1%`: HTTP %2%, %3%", "check_new_version_sf", http_status,
                                              error);
         })
@@ -4778,10 +4779,10 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             if (errCode != 200)
                 return;
 
-            auto dataObj              = jsonObj.value("data", json::object());
-
+            auto dataObj             = jsonObj.value("data", json::object());
             auto isFullUpgrade       = dataObj.value("is_full_upgrade", true);
             auto isForceUpgrade      = dataObj.value("is_force_upgrade", false);
+            version_info.force_upgrade  = isForceUpgrade;
 
             version_info.version_str = dataObj.value("version", "");
             auto releaseType         = dataObj.value("release_type", "");
@@ -4792,17 +4793,61 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             std::string reservedData        = "";
             std::string reservedData2        = "";
 
+            // win x86_x64,  mac arm/x86_x64  universal
             auto fullObj = dataObj.value("full", json::object());
-            fileSize   = fullObj.value("file_size", 0);
-            fileMd5    = fullObj.value("file_md5", "");
-            fileSha256 = fullObj.value("file_sha256", "");
-            // windows x86_x64,  mac arm/x86_x64  universal
-            version_info.url         = fullObj.value("file_url", "");
+            auto defaultObj = fullObj.value("default", json::object());
+            auto armObj     = fullObj.value("arm", json::object());
+            auto intelObj   = fullObj.value("intel", json::object());
             version_info.description = fullObj.value("file_describe", "");
-            reservedData             = fullObj.value("reserved_1", "");
-            reservedData2            = fullObj.value("reserved_2", "");
 
-            version_info.force_upgrade = isForceUpgrade;
+            if (platformType == "win") {
+                fileSize   = defaultObj.value("file_size", 0);
+                fileMd5    = defaultObj.value("file_md5", "");
+                fileSha256 = defaultObj.value("file_sha256", "");            
+                version_info.url         = defaultObj.value("file_url", "");            
+
+                reservedData             = defaultObj.value("reserved_1", "");
+                reservedData2            = defaultObj.value("reserved_2", "");         
+            }
+            else if (platformType == "mac")
+            {
+                
+                if (platformType == "arm")
+                {
+                    fileSize         = armObj.value("file_size", 0);
+                    fileMd5          = armObj.value("file_md5", "");
+                    fileSha256       = armObj.value("file_sha256", "");
+                    version_info.url = armObj.value("file_url", "");
+
+                    reservedData             = armObj.value("reserved_1", "");
+                    reservedData2            = armObj.value("reserved_2", "");
+                }
+                else if (platformType == "intel")
+                {
+                    fileSize         = intelObj.value("file_size", 0);
+                    fileMd5          = intelObj.value("file_md5", "");
+                    fileSha256       = intelObj.value("file_sha256", "");
+                    version_info.url = intelObj.value("file_url", "");
+
+                    reservedData  = intelObj.value("reserved_1", "");
+                    reservedData2 = intelObj.value("reserved_2", "");
+                }
+
+                if (intelObj.empty() && armObj.empty()) {
+                    fileSize         = defaultObj.value("file_size", 0);
+                    fileMd5          = defaultObj.value("file_md5", "");
+                    fileSha256       = defaultObj.value("file_sha256", "");
+                    version_info.url = defaultObj.value("file_url", "");
+
+                    reservedData  = defaultObj.value("reserved_1", "");
+                    reservedData2 = defaultObj.value("reserved_2", "");  
+                }
+            }
+            else
+            {
+                BOOST_LOG_TRIVIAL(warning) << "don't support linux upgrade";
+                return;
+            }
 
             std::regex matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
             Semver     current_version = get_version(Snapmaker_VERSION, matcher);

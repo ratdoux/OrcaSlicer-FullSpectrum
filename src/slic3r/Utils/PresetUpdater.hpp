@@ -69,7 +69,7 @@ public:
 
     void sync_config_async();
 
-    void sync_web_async();
+    void sync_web_async(bool isAutoUpdata = false);
 public:
 	struct priv;
 	std::unique_ptr<priv> p;

@@ -726,7 +726,8 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
             wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
             wxString errorMsg = wxString::Format(_L("request to server update web resource fail with body:%s,error:%s,status:%d"), body, error, http_status);
             evt->SetString(errorMsg);
-            GUI::wxGetApp().QueueEvent(evt);
+            if (!isAuto_check)
+                GUI::wxGetApp().QueueEvent(evt);
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_update_flutter_resource", http_status, error);
         })
         .timeout_connect(TIMEOUT_CONNECT)
@@ -760,6 +761,24 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                 std::string fileName             = cache_profile_path.string() + "/flutter_web.zip";
                 Semver      currentPresetVersion = get_version_from_json(json_path);
                 Semver      remoteVersion(fileVersion);
+                Semver      minSpVersion(minSupportPcVersion);
+                Semver      maxSpVersion(maxSupportPcVersion);
+                std::regex  matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
+
+                auto  get_version = [this](const std::string& str, const std::regex& regexp)
+                {
+                    std::smatch match;
+                    if (std::regex_match(str, match, regexp)) {
+                        std::string                   version_cleaned = match[0];
+                        const boost::optional<Semver> version         = Semver::parse(version_cleaned);
+                        if (version.has_value()) {
+                            return *version;
+                        }
+                    }
+                    return Semver::invalid();
+                };
+     
+                Semver      currentSoftVersion = get_version(Snapmaker_VERSION, matcher);
 
                 if (fileVersion.empty())
                 {
@@ -772,24 +791,14 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                     return;
                 }
 
-                std::string localOtaPresetVersion = "";
-                if (fs::exists(localProfilesjson)) {
-                    Semver localOtaVersion = get_version_from_json(localProfilesjson.string());
+                if (currentSoftVersion > maxSpVersion || currentSoftVersion < minSpVersion) {
+                    if (!isAuto_check) {
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                        GUI::wxGetApp().QueueEvent(evt);
 
-                    if (localOtaVersion > remoteVersion)
-                        return;
-                    else {
-                        if (currentPresetVersion >= remoteVersion){                        
-                            if (!isAuto_check) {
-                                wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
-                                GUI::wxGetApp().QueueEvent(evt);
-
-                                BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
-                            }
-                            return;
-                        }
-                        
+                        BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
                     }
+                    return;
                 }
 
                 if (currentPresetVersion < remoteVersion)
@@ -824,7 +833,8 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
             wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
             wxString errorMsg   = wxString::Format(_L("request to server update preset resource fail with body:%s,error:%s,status:%d"), body,error, http_status);
             evt->SetString(errorMsg);
-            GUI::wxGetApp().QueueEvent(evt);
+            if (!isAuto_check)
+                GUI::wxGetApp().QueueEvent(evt);
             BOOST_LOG_TRIVIAL(info) << format("Error getting: `%1%`: HTTP %2%, %3%", "sync_config_orca", http_status, error);
         })
         .timeout_connect(TIMEOUT_CONNECT)
@@ -857,6 +867,24 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                 std::string fileName             = cache_profile_path.string() + "/profiles.zip";                
                 Semver      currentPresetVersion = get_version_from_json(json_path);
                 Semver      remoteVersion(fileVersion);
+                Semver      minSpVersion(minSupportPcVersion);
+                Semver      maxSpVersion(maxSupportPcVersion);
+
+                std::regex matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
+
+                auto get_version = [this](const std::string& str, const std::regex& regexp) {
+                    std::smatch match;
+                    if (std::regex_match(str, match, regexp)) {
+                        std::string                   version_cleaned = match[0];
+                        const boost::optional<Semver> version         = Semver::parse(version_cleaned);
+                        if (version.has_value()) {
+                            return *version;
+                        }
+                    }
+                    return Semver::invalid();
+                };
+
+                Semver currentSoftVersion = get_version(Snapmaker_VERSION, matcher);
 
                 if (fileVersion.empty()) {
                     if (!isAuto_check) {
@@ -868,23 +896,15 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                     return;
                 }
 
-                std::string localOtaPresetVersion = "";
-                if (fs::exists(localProfilesjson)) {
-                    Semver localOtaVersion = get_version_from_json(localProfilesjson.string());                               
-                    //don't allow jump version. first upgrade localOta
-                    if (localOtaVersion > currentPresetVersion)
-                        return;
-                    else
-                    {
-                        if (currentPresetVersion >= remoteVersion) {
-                            if (!isAuto_check) {//show tipsdlg by user check upgrade
-                                wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
-                                GUI::wxGetApp().QueueEvent(evt);
-                                BOOST_LOG_TRIVIAL(info) << format("use check the preset update.");                               
-                            }
-                            return;
-                        }
-                    }                   
+                if (currentSoftVersion > maxSpVersion || currentSoftVersion < minSpVersion) 
+                {
+                    if (!isAuto_check) {
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                        GUI::wxGetApp().QueueEvent(evt);
+
+                        BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
+                    }
+                    return;
                 }
 
                 if (currentPresetVersion < remoteVersion)
@@ -1675,7 +1695,7 @@ bool PresetUpdater::install_bundles_rsrc(std::vector<std::string> bundles, bool 
 	return p->install_bundles_rsrc(bundles, snapshot);
 }
 
-void PresetUpdater::sync_web_async() 
+void PresetUpdater::sync_web_async(bool isAutoUpdata)
 {
     if (p->thread.joinable()) {
         p->cancel = true;
@@ -1683,9 +1703,9 @@ void PresetUpdater::sync_web_async()
     }
 
     p->cancel = false;
-    p->thread = std::thread([this]() {
+    p->thread = std::thread([this, isAutoUpdata]() {
         BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async started";
-        this->p->sync_update_flutter_resource(false);
+        this->p->sync_update_flutter_resource(isAutoUpdata);
 
         GUI::wxGetApp().CallAfter([this] {
             std::string zipfilepath = this->p->cache_path.string() + "/flutter_web.zip";
@@ -1783,7 +1803,8 @@ void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpda
         boost::filesystem::create_directories(temp_path);
 
         if (!p->extract_file(zip_file, temp_path.string())) {
-            GUI::MessageDialog(nullptr, _L("Import Failed")).ShowModal();
+            if (!serverUpdate)
+                GUI::MessageDialog(nullptr, _L("Import Failed")).ShowModal();
             return;
         }
 
