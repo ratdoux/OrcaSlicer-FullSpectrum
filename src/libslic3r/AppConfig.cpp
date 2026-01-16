@@ -1441,11 +1441,12 @@ std::string AppConfig::config_path()
 std::string AppConfig::get_preset_upgrade_url() 
 {
     std::string localLanguage = get("language");
-    //("/upgrade/orca/win/");
-    std::string url         = APP_UPDATE_URL_BASE_EN + PROFILE_UPDATE_URL + std::string("version.json");
-    auto        countryArea = get_country_code();
+    if (localLanguage != "zh_CN")
+        localLanguage = "en";
+    std::string url = APP_UPDATE_URL_BASE_EN + PROFILE_UPDATE_URL + localLanguage + std::string("/version.json");
+    auto countryArea = get_country_code();
     if (countryArea == std::string("CN"))
-        url = APP_UPDATE_URL_BASE_CN + PROFILE_UPDATE_URL + std::string("version.json");
+        url = APP_UPDATE_URL_BASE_CN + PROFILE_UPDATE_URL + localLanguage + std::string("/version.json");
 
     return url;
 }
@@ -1453,10 +1454,12 @@ std::string AppConfig::get_preset_upgrade_url()
 std::string AppConfig::get_web_resource_upgrade_url()
 {
     std::string localLanguage = get("language");
-    std::string url           = APP_UPDATE_URL_BASE_EN + FLUTTER_UPDATE_URL + std::string("version.json");
-    auto        countryArea = get_country_code();
+    if (localLanguage != "zh_CN")
+        localLanguage = "en";
+    std::string url  = APP_UPDATE_URL_BASE_EN + FLUTTER_UPDATE_URL + localLanguage + std::string("/version.json");
+    auto countryArea = get_country_code();
     if (countryArea == std::string("CN"))
-        url = APP_UPDATE_URL_BASE_CN + FLUTTER_UPDATE_URL  + std::string("version.json");
+        url = APP_UPDATE_URL_BASE_CN + FLUTTER_UPDATE_URL + localLanguage + std::string("/version.json");
 
     return url;
 }
@@ -1465,7 +1468,9 @@ std::string AppConfig::get_version_upgrade_url(bool stable_only /* = false*/)
 { 
     //get local area and get the resource from diff server
     std::string localLanguage = get("language");
-    std::string url           = APP_UPDATE_URL_BASE_EN + APP_UPDATE_URL + localLanguage + std::string("/version.json");
+    if (localLanguage != "zh_CN")
+        localLanguage = "en";
+    std::string url = APP_UPDATE_URL_BASE_EN + APP_UPDATE_URL + localLanguage + std::string("/version.json");
     auto countryArea = get_country_code();
     if (countryArea == std::string("CN"))
         url = APP_UPDATE_URL_BASE_CN + APP_UPDATE_URL + localLanguage + std::string("/version.json");

@@ -2549,7 +2549,7 @@ bool GUI_App::on_init_inner()
                     false,
                     wxCENTER | wxICON_INFORMATION);
                 dialog.SetExtendedMessage(description_text);
-
+                
                 int result = dialog.ShowModal();
                 switch (result)
                 {
@@ -4862,6 +4862,7 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
                 return;
             }
 
+            //if (true)
             if (isForceUpgrade)
             {
                 wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);
