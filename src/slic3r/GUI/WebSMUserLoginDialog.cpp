@@ -91,7 +91,7 @@ SMUserLogin::SMUserLogin(bool isLogout) : wxDialog((wxWindow *) (wxGetApp().main
     Bind(wxEVT_WEBVIEW_NEWWINDOW, &SMUserLogin::OnNewWindow, this, m_browser->GetId());
     Bind(wxEVT_WEBVIEW_TITLE_CHANGED, &SMUserLogin::OnTitleChanged, this, m_browser->GetId());
     Bind(wxEVT_WEBVIEW_FULLSCREEN_CHANGED, &SMUserLogin::OnFullScreenChanged, this, m_browser->GetId());
-    Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &SMUserLogin::OnScriptMessage, this, m_browser->GetId());
+    //Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &SMUserLogin::OnScriptMessage, this, m_browser->GetId());
 
     // Connect the idle events
     // Bind(wxEVT_IDLE, &SMUserLogin::OnIdle, this);
@@ -305,7 +305,6 @@ void SMUserLogin::OnScriptMessage(wxWebViewEvent &evt)
         }
         if (strCmd == "user_login") {
             j["data"]["autotest_token"] = m_AutotestToken;
-            wxGetApp().handle_script_message(j.dump());
             Close();
         }
         else if (strCmd == "get_localhost_url") {

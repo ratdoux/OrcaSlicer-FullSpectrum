@@ -77,17 +77,15 @@
 #include "sentry_wrapper/SentryWrapper.hpp"
 
 
+#define UPDATE_BUSER    true
+#define UPDATE_BUAUTO   false
+
 namespace Slic3r {
 namespace GUI {
 
 wxDEFINE_EVENT(EVT_SELECT_TAB, wxCommandEvent);
 wxDEFINE_EVENT(EVT_HTTP_ERROR, wxCommandEvent);
-wxDEFINE_EVENT(EVT_USER_LOGIN, wxCommandEvent);
-wxDEFINE_EVENT(EVT_USER_LOGIN_HANDLE, wxCommandEvent);
-wxDEFINE_EVENT(EVT_CHECK_PRIVACY_VER, wxCommandEvent);
-wxDEFINE_EVENT(EVT_CHECK_PRIVACY_SHOW, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SHOW_IP_DIALOG, wxCommandEvent);
-wxDEFINE_EVENT(EVT_SET_SELECTED_MACHINE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_UPDATE_MACHINE_LIST, wxCommandEvent);
 wxDEFINE_EVENT(EVT_UPDATE_PRESET_CB, SimpleEvent);
 
@@ -2294,10 +2292,25 @@ static wxMenu* generate_help_menu()
     // Check New Version
     append_menu_item(helpMenu, wxID_ANY, _L("Check for Update"), _L("Check for Update"),
         [](wxCommandEvent&) {
-            wxGetApp().check_new_version_sf(true, 1);
+            wxGetApp().check_new_version_sf(true, UPDATE_BUSER);
         }, "", nullptr, []() {
             return true;
         });
+
+    append_menu_item(
+        helpMenu, wxID_ANY, _L("Check for Preset Update"), _L("Check for Preset Update"),
+        [](wxCommandEvent&) { 
+            wxGetApp().check_preset_version();
+
+        },
+        "", nullptr, []() { return true; });
+
+    append_menu_item(
+        helpMenu, wxID_ANY, _L("Check for Web Update"), _L("Check for Web Update"),
+        [](wxCommandEvent&) { 
+            wxGetApp().check_web_version();
+        },
+        "", nullptr, []() { return true; });
 
     append_menu_item(helpMenu, wxID_ANY, _L("Import Profile"), _L("Import Profile"), [](wxCommandEvent&) {
         wxGetApp().import_presets();

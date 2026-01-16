@@ -279,7 +279,6 @@ void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
         }
         if (strCmd == "user_login") {
             j["data"]["autotest_token"] = m_AutotestToken;
-            wxGetApp().handle_script_message(j.dump());
             Close();
         }
         else if (strCmd == "get_localhost_url") {
