@@ -2521,7 +2521,6 @@ bool GUI_App::on_init_inner()
                     UpdateVersionDialog dialog(this->mainframe);
                     wxString            extmsg = wxString::FromUTF8(version_info.description);
                     dialog.update_version_info(extmsg, version_info.version_str);
-                    //dialog.update_version_info(version_info.description);
                     if (evt.GetInt() != 0) {
                         dialog.m_button_skip_version->Hide();
                     }
@@ -2560,6 +2559,9 @@ bool GUI_App::on_init_inner()
                      break;
                  case wxID_NO:
                      wxGetApp().mainframe->Close(true);
+                     break;
+                 case wxID_CANCEL:
+                     wxGetApp().mainframe->Close(true); 
                      break;
                  default:
                      wxGetApp().mainframe->Close(true);

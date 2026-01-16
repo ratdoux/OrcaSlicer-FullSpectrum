@@ -96,7 +96,6 @@ ReleaseNoteDialog::ReleaseNoteDialog(Plater *plater /*= nullptr*/)
 
 ReleaseNoteDialog::~ReleaseNoteDialog() {}
 
-
 void ReleaseNoteDialog::on_dpi_changed(const wxRect &suggested_rect)
 {
 }
@@ -129,18 +128,13 @@ UpdatePluginDialog::UpdatePluginDialog(wxWindow* parent /*= nullptr*/)
     m_sizer_main->Add(0, 0, 0, wxTOP, FromDIP(30));
 
     wxBoxSizer* m_sizer_body = new wxBoxSizer(wxHORIZONTAL);
-
-
-
     auto sm = create_scaled_bitmap("Snapmaker_Orca", nullptr, 55);
     auto brand = new wxStaticBitmap(this, wxID_ANY, sm, wxDefaultPosition, wxSize(FromDIP(55), FromDIP(55)));
-
     wxBoxSizer* m_sizer_right = new wxBoxSizer(wxVERTICAL);
 
     m_text_up_info = new Label(this, Label::Head_13, wxEmptyString, LB_AUTO_WRAP);
     m_text_up_info->SetMaxSize(wxSize(FromDIP(260), -1));
     m_text_up_info->SetForegroundColour(wxColour(0x26, 0x2E, 0x30));
-
 
     operation_tips = new ::Label(this, Label::Body_12, _L("Click OK to update the Network plug-in when Snapmaker Orca launches next time."), LB_AUTO_WRAP);
     operation_tips->SetMinSize(wxSize(FromDIP(260), -1));
@@ -213,7 +207,6 @@ UpdatePluginDialog::UpdatePluginDialog(wxWindow* parent /*= nullptr*/)
 
 UpdatePluginDialog::~UpdatePluginDialog() {}
 
-
 void UpdatePluginDialog::on_dpi_changed(const wxRect& suggested_rect)
 {
 }
@@ -269,18 +262,11 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     auto        m_line_top   = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
     m_line_top->SetBackgroundColour(wxColour(166, 169, 170));
     
-
-    wxBoxSizer *m_sizer_body = new wxBoxSizer(wxHORIZONTAL);
-
-    
-
+    wxBoxSizer *m_sizer_body = new wxBoxSizer(wxHORIZONTAL);   
     auto sm    = create_scaled_bitmap("Snapmaker_Orca", nullptr, 70);
-    m_brand = new wxStaticBitmap(this, wxID_ANY, sm, wxDefaultPosition, wxSize(FromDIP(70), FromDIP(70)));
-
-    
+    m_brand = new wxStaticBitmap(this, wxID_ANY, sm, wxDefaultPosition, wxSize(FromDIP(70), FromDIP(70)));    
 
     wxBoxSizer *m_sizer_right = new wxBoxSizer(wxVERTICAL);
-
     m_text_up_info = new Label(this, Label::Head_14, wxEmptyString, LB_AUTO_WRAP);
     m_text_up_info->SetForegroundColour(wxColour(0x26, 0x2E, 0x30));
 
@@ -423,7 +409,6 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
 }
 
 UpdateVersionDialog::~UpdateVersionDialog() {}
-
 
 wxWebView* UpdateVersionDialog::CreateTipView(wxWindow* parent)
 {
