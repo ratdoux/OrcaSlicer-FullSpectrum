@@ -4811,37 +4811,33 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             }
             else if (platformType == "mac")
             {
+                bool isArm64 = false;
+#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+                isArm64 = true;
+#else
+                isArm64 = false;
+#endif
+                json platformObj = defaultObj;
+                if (isArm64) {
+                    if (!armObj.empty()) {
+                        platformObj = armObj;
+                    }
+                }
+                else
+                {
+                    if (!intelObj.empty()) {
+                        platformObj = intelObj;
+                    }
+                }
+
+                fileSize         = platformObj.value("file_size", 0);
+                fileMd5          = platformObj.value("file_md5", "");
+                fileSha256       = platformObj.value("file_sha256", "");
+                version_info.url = platformObj.value("file_url", "");
+
+                reservedData  = platformObj.value("reserved_1", "");
+                reservedData2 = platformObj.value("reserved_2", "");  
                 
-                if (platformType == "arm")
-                {
-                    fileSize         = armObj.value("file_size", 0);
-                    fileMd5          = armObj.value("file_md5", "");
-                    fileSha256       = armObj.value("file_sha256", "");
-                    version_info.url = armObj.value("file_url", "");
-
-                    reservedData             = armObj.value("reserved_1", "");
-                    reservedData2            = armObj.value("reserved_2", "");
-                }
-                else if (platformType == "intel")
-                {
-                    fileSize         = intelObj.value("file_size", 0);
-                    fileMd5          = intelObj.value("file_md5", "");
-                    fileSha256       = intelObj.value("file_sha256", "");
-                    version_info.url = intelObj.value("file_url", "");
-
-                    reservedData  = intelObj.value("reserved_1", "");
-                    reservedData2 = intelObj.value("reserved_2", "");
-                }
-
-                if (intelObj.empty() && armObj.empty()) {
-                    fileSize         = defaultObj.value("file_size", 0);
-                    fileMd5          = defaultObj.value("file_md5", "");
-                    fileSha256       = defaultObj.value("file_sha256", "");
-                    version_info.url = defaultObj.value("file_url", "");
-
-                    reservedData  = defaultObj.value("reserved_1", "");
-                    reservedData2 = defaultObj.value("reserved_2", "");  
-                }
             }
             else
             {
