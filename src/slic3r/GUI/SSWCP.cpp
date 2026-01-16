@@ -644,6 +644,10 @@ void SSWCP_Instance::sw_GetActiveFile()
 
         if (iszip) {
             std::weak_ptr<SSWCP_Instance> weak_self = shared_from_this();
+
+            if (m_work_thread.joinable())
+                m_work_thread.join();
+
             m_work_thread          = std::thread([file_path, file_name, weak_self]() {
                 auto        self       = weak_self.lock();
                 std::string zipname    = generate_zip_path(file_path, file_name);
@@ -766,6 +770,8 @@ void SSWCP_Instance::sw_GetFileStream() {
             auto targetname = SSWCP::get_display_filename();
 
             std::weak_ptr<SSWCP_Instance> weak_self = shared_from_this();
+            if (m_work_thread.joinable())
+                m_work_thread.join();
             m_work_thread                           = std::thread([oriname, targetname, weak_self]() {
                 auto self = weak_self.lock();
                 if (self) {
@@ -784,6 +790,8 @@ void SSWCP_Instance::sw_GetFileStream() {
                 }
             });
         } else {
+            if (m_work_thread.joinable())
+                m_work_thread.join();
             m_work_thread = std::thread([file_path, weak_self]() {
                 auto self = weak_self.lock();
                 if (self) {
@@ -1167,6 +1175,7 @@ void SSWCP_Instance::sw_UnsubscribeAll() {
     wxGetApp().m_recent_file_subscribers.clear();
     wxGetApp().m_user_login_subscribers.clear();
     wxGetApp().m_cache_subscribers.clear();
+    wxGetApp().m_user_update_privacy_subscribers.clear();
 
     send_to_js();
     finish_job();
@@ -1209,6 +1218,15 @@ void SSWCP_Instance::sw_Webview_Unsubscribe() {
         }
     }
 
+    auto& privacy_map = wxGetApp().m_user_update_privacy_subscribers;
+    for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+        if (iter->first == m_webview) {
+            iter = privacy_map.erase(iter);
+        } else {
+            iter++;
+        }
+    }
+
     send_to_js();
     finish_job();
 }
@@ -1225,6 +1243,7 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
 
         auto&       device_map = wxGetApp().m_device_card_subscribers;
         auto&       login_map  = wxGetApp().m_user_login_subscribers;
+        auto&       privacy_map     = wxGetApp().m_user_update_privacy_subscribers;
         auto&       recent_file_map = wxGetApp().m_recent_file_subscribers;
         auto&       cache_map       = wxGetApp().m_cache_subscribers;
 
@@ -1257,6 +1276,23 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                         }
                     } else {
                         iter = login_map.erase(iter);
+                    }
+                } else {
+                    iter++;
+                }
+            }
+
+             for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+                if (iter->first == m_webview) {
+                    auto ptr = iter->second.lock();
+                    if (ptr) {
+                        if (ptr->m_event_id == event_id) {
+                            iter = privacy_map.erase(iter);
+                        } else {
+                            iter++;
+                        }
+                    } else {
+                        iter = privacy_map.erase(iter);
                     }
                 } else {
                     iter++;
@@ -1331,7 +1367,26 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                     iter++;
                 }
             }
-        } else if (cmd == "sw_SubscribeLocalDevices") {
+        } else if (cmd == UPDATE_PRIVACY_STATUS) {
+
+             for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+                if (iter->first == m_webview) {
+                    auto ptr = iter->second.lock();
+                    if (ptr) {
+                        if (event_id == "" || (event_id != "" && event_id == ptr->m_event_id)) {
+                            iter = privacy_map.erase(iter);
+                        } else {
+                            iter++;
+                        }
+                    } else {
+                        iter = privacy_map.erase(iter);
+                    }
+                } else {
+                    iter++;
+                }
+            }
+
+        }else if (cmd == "sw_SubscribeLocalDevices") {
             for (auto iter = device_map.begin(); iter != device_map.end();) {
                 if (iter->first == m_webview) {
                     auto ptr = iter->second.lock();
@@ -1365,7 +1420,7 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                     iter++;
                 }
             }
-        }
+        } 
 
         send_to_js();
         finish_job();
@@ -2703,6 +2758,9 @@ void SSWCP_MachineOption_Instance::sw_GetPrintZip()
 
 
         std::weak_ptr<SSWCP_Instance> weak_self           = shared_from_this();
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread       = std::thread([oriname, targetname, weak_self]() {
             auto self = weak_self.lock();
             if (self) {
@@ -3915,6 +3973,8 @@ void SSWCP_MachineConnect_Instance::sw_test_connect() {
                 // 错误处理
                 finish_job();
             } else {
+                if (m_work_thread.joinable())
+                    m_work_thread.join();
                 m_work_thread = std::thread([this, host] {
                     wxString msg;
                     bool        res = host->test(msg);
@@ -3967,6 +4027,10 @@ void SSWCP_MachineConnect_Instance::sw_disconnect() {
     std::string dev_id = m_param_data.count("dev_id") ? m_param_data["dev_id"] : "";
 
     auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
+
+    if (m_work_thread.joinable())
+        m_work_thread.join();
+
     m_work_thread = std::thread([weak_self, need_reload, dev_id](){
         auto                       self = weak_self.lock();
 
@@ -4724,6 +4788,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_connect()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread = std::thread([weak_ptr, engine]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -4776,6 +4844,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_disconnect()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -4850,6 +4922,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_subscribe()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine, topic, qos]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -4923,6 +4999,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_unsubscribe() {
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine, topic]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -5110,6 +5190,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_set_engine()
                     } else {
                         auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
                         // 设置断联回调
+
+                        if (m_work_thread.joinable())
+                            m_work_thread.join();
+
                         m_work_thread = std::thread([weak_self, host, connect_params, link_mode, id, userid, reload_device_view] {
                             auto     self = weak_self.lock();
                             wxString msg  = "";
@@ -5583,6 +5667,10 @@ void SSWCP_MqttAgent_Instance::sw_mqtt_publish()
 
         std::weak_ptr<SSWCP_Instance> weak_ptr = shared_from_this();
         auto                          engine   = get_current_engine();
+
+        if (m_work_thread.joinable())
+            m_work_thread.join();
+
         m_work_thread                          = std::thread([weak_ptr, engine, topic, payload, qos]() {
             if (!weak_ptr.lock()) {
                 return;
@@ -5895,6 +5983,15 @@ void SSWCP::on_webview_delete(wxWebView* view)
     for (auto iter = login_map.begin(); iter != login_map.end();) {
         if (iter->first == view) {
             iter = login_map.erase(iter);
+        } else {
+            iter++;
+        }
+    }
+
+    auto& privacy_map = wxGetApp().m_user_update_privacy_subscribers;
+    for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+        if (iter->first == view) {
+            iter = privacy_map.erase(iter);
         } else {
             iter++;
         }

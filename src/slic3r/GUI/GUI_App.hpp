@@ -834,7 +834,7 @@ public:
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_user_login_subscribers;
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_device_card_subscribers;
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_page_state_subscribers;
-
+    std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_user_update_privacy_subscribers;
     struct CachePairCompare
     {
         bool operator()(const std::pair<void*, std::weak_ptr<SSWCP_Instance>>& lhs,
@@ -850,7 +850,7 @@ public:
     void device_card_notify(const json& res);
     void page_state_notify_webview(wxWebView* webview, const std::string& state);
     void cache_notify(const std::string& key, const json& res);
-
+    void user_update_privacy_notify(const bool& res);
 
 public:
     bool sm_disconnect_current_machine(bool need_reload_printerview = true);

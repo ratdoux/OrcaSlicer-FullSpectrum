@@ -5,6 +5,7 @@
 #include "SSWCP.hpp"
 #include <wx/sizer.h>
 #include <slic3r/GUI/Widgets/WebView.hpp>
+#include "sentry_wrapper/SentryWrapper.hpp"
 
 namespace Slic3r { namespace GUI {
 
@@ -105,7 +106,19 @@ void WebDeviceDialog::OnDocumentLoaded(wxWebViewEvent &evt)
 
 void WebDeviceDialog::OnError(wxWebViewEvent &evt)
 {
-    wxLogError("Web View Error: %s", evt.GetString());
+    auto e = "unknown error";
+    switch (evt.GetInt()) {
+    case wxWEBVIEW_NAV_ERR_CONNECTION: e = "wxWEBVIEW_NAV_ERR_CONNECTION"; break;
+    case wxWEBVIEW_NAV_ERR_CERTIFICATE: e = "wxWEBVIEW_NAV_ERR_CERTIFICATE"; break;
+    case wxWEBVIEW_NAV_ERR_AUTH: e = "wxWEBVIEW_NAV_ERR_AUTH"; break;
+    case wxWEBVIEW_NAV_ERR_SECURITY: e = "wxWEBVIEW_NAV_ERR_SECURITY"; break;
+    case wxWEBVIEW_NAV_ERR_NOT_FOUND: e = "wxWEBVIEW_NAV_ERR_NOT_FOUND"; break;
+    case wxWEBVIEW_NAV_ERR_REQUEST: e = "wxWEBVIEW_NAV_ERR_REQUEST"; break;
+    case wxWEBVIEW_NAV_ERR_USER_CANCELLED: e = "wxWEBVIEW_NAV_ERR_USER_CANCELLED"; break;
+    case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
+    }
+    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":WebDeviceDialog error loading page %1% %2% %3% %4%") % evt.GetURL() % evt.GetTarget() % e %evt.GetString();
+    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init WebDeviceDialog webview fail", BP_WEB_VIEW);
 }
 
 void WebDeviceDialog::OnScriptMessage(wxWebViewEvent &evt)

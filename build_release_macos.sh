@@ -82,7 +82,7 @@ if [ -z "$DEPS_CMAKE_GENERATOR" ]; then
 fi
 
 if [ -z "$OSX_DEPLOYMENT_TARGET" ]; then
-  export OSX_DEPLOYMENT_TARGET="11.3"
+  export OSX_DEPLOYMENT_TARGET="12.0"
 fi
 
 echo "Build params:"

@@ -23,6 +23,8 @@ using namespace nlohmann;
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
+#define UPDATE_PRIVACY_STATUS "sw_SubUserUpdatePrivacy"
+
 namespace Slic3r { namespace GUI {
 
 class WCP_Logger
@@ -185,7 +187,7 @@ public:
     void update_filament_info(const json& objects, bool send_message = false);
 
 protected:
-    std::thread                                  m_work_thread; // Worker thread
+    std::thread m_work_thread; // Worker thread
 
 public:
     std::string m_cmd;           // Command to execute
@@ -524,6 +526,8 @@ private:
     void sw_GetUserLoginState();
 
     void sw_SubscribeUserLoginState();
+
+    void sw_SubUserUpdatePrivacy();
 
 };
 
