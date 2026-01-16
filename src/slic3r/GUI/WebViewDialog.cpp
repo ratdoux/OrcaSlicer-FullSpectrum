@@ -4,7 +4,7 @@
 #include "slic3r/GUI/wxExtensions.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
-#include "common_func/common_func.hpp"
+#include "sentry_wrapper/SentryWrapper.hpp"
 #include "../Utils/Http.hpp"
 #include "SSWCP.hpp"
 
@@ -894,37 +894,21 @@ void WebViewPanel::OnSelectAll(wxCommandEvent& WXUNUSED(evt))
 /**
     * Callback invoked when a loading error occurs
     */
-void WebViewPanel::OnError(wxWebViewEvent& evt)
+void WebViewPanel::OnError(wxWebViewEvent& event)
 {
-#define WX_ERROR_CASE(type) \
-    case type: \
-    category = #type; \
-    break;
-
-    wxString category;
-    switch (evt.GetInt())
-    {
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_CONNECTION);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_CERTIFICATE);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_AUTH);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_SECURITY);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_NOT_FOUND);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_REQUEST);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_USER_CANCELLED);
-        WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_OTHER);
+    auto e = "unknown error";
+    switch (event.GetInt()) {
+    case wxWEBVIEW_NAV_ERR_CONNECTION: e = "wxWEBVIEW_NAV_ERR_CONNECTION"; break;
+    case wxWEBVIEW_NAV_ERR_CERTIFICATE: e = "wxWEBVIEW_NAV_ERR_CERTIFICATE"; break;
+    case wxWEBVIEW_NAV_ERR_AUTH: e = "wxWEBVIEW_NAV_ERR_AUTH"; break;
+    case wxWEBVIEW_NAV_ERR_SECURITY: e = "wxWEBVIEW_NAV_ERR_SECURITY"; break;
+    case wxWEBVIEW_NAV_ERR_NOT_FOUND: e = "wxWEBVIEW_NAV_ERR_NOT_FOUND"; break;
+    case wxWEBVIEW_NAV_ERR_REQUEST: e = "wxWEBVIEW_NAV_ERR_REQUEST"; break;
+    case wxWEBVIEW_NAV_ERR_USER_CANCELLED: e = "wxWEBVIEW_NAV_ERR_USER_CANCELLED"; break;
+    case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
-
-    BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": [" << category << "] " << evt.GetString().ToUTF8().data();
-
-    if (wxGetApp().get_mode() == comDevelop) 
-    {
-        wxLogMessage("%s", "Error; url='" + evt.GetURL() + "', error='" + category + " (" + evt.GetString() + ")'");
-
-        // Show the info bar with an error
-        m_info->ShowMessage(_L("An error occurred loading ") + evt.GetURL() + "\n" + "'" + category + "'", wxICON_ERROR);
-    }
-
-    UpdateState();
+    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init WebViewPanel webview fail", BP_WEB_VIEW);
 }
 
 

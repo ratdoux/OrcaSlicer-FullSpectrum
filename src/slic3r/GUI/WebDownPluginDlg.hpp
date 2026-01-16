@@ -29,7 +29,7 @@
 #include "GUI_App.hpp"
 
 namespace Slic3r { namespace GUI {
-
+//not use on snapmaker orca
 class DownPluginFrame : public wxDialog
 {
 public:

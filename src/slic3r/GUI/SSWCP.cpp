@@ -1175,6 +1175,7 @@ void SSWCP_Instance::sw_UnsubscribeAll() {
     wxGetApp().m_recent_file_subscribers.clear();
     wxGetApp().m_user_login_subscribers.clear();
     wxGetApp().m_cache_subscribers.clear();
+    wxGetApp().m_user_update_privacy_subscribers.clear();
 
     send_to_js();
     finish_job();
@@ -1217,6 +1218,15 @@ void SSWCP_Instance::sw_Webview_Unsubscribe() {
         }
     }
 
+    auto& privacy_map = wxGetApp().m_user_update_privacy_subscribers;
+    for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+        if (iter->first == m_webview) {
+            iter = privacy_map.erase(iter);
+        } else {
+            iter++;
+        }
+    }
+
     send_to_js();
     finish_job();
 }
@@ -1233,6 +1243,7 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
 
         auto&       device_map = wxGetApp().m_device_card_subscribers;
         auto&       login_map  = wxGetApp().m_user_login_subscribers;
+        auto&       privacy_map     = wxGetApp().m_user_update_privacy_subscribers;
         auto&       recent_file_map = wxGetApp().m_recent_file_subscribers;
         auto&       cache_map       = wxGetApp().m_cache_subscribers;
 
@@ -1265,6 +1276,23 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                         }
                     } else {
                         iter = login_map.erase(iter);
+                    }
+                } else {
+                    iter++;
+                }
+            }
+
+             for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+                if (iter->first == m_webview) {
+                    auto ptr = iter->second.lock();
+                    if (ptr) {
+                        if (ptr->m_event_id == event_id) {
+                            iter = privacy_map.erase(iter);
+                        } else {
+                            iter++;
+                        }
+                    } else {
+                        iter = privacy_map.erase(iter);
                     }
                 } else {
                     iter++;
@@ -1339,7 +1367,26 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                     iter++;
                 }
             }
-        } else if (cmd == "sw_SubscribeLocalDevices") {
+        } else if (cmd == UPDATE_PRIVACY_STATUS) {
+
+             for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+                if (iter->first == m_webview) {
+                    auto ptr = iter->second.lock();
+                    if (ptr) {
+                        if (event_id == "" || (event_id != "" && event_id == ptr->m_event_id)) {
+                            iter = privacy_map.erase(iter);
+                        } else {
+                            iter++;
+                        }
+                    } else {
+                        iter = privacy_map.erase(iter);
+                    }
+                } else {
+                    iter++;
+                }
+            }
+
+        }else if (cmd == "sw_SubscribeLocalDevices") {
             for (auto iter = device_map.begin(); iter != device_map.end();) {
                 if (iter->first == m_webview) {
                     auto ptr = iter->second.lock();
@@ -1373,7 +1420,7 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                     iter++;
                 }
             }
-        }
+        } 
 
         send_to_js();
         finish_job();
@@ -5936,6 +5983,15 @@ void SSWCP::on_webview_delete(wxWebView* view)
     for (auto iter = login_map.begin(); iter != login_map.end();) {
         if (iter->first == view) {
             iter = login_map.erase(iter);
+        } else {
+            iter++;
+        }
+    }
+
+    auto& privacy_map = wxGetApp().m_user_update_privacy_subscribers;
+    for (auto iter = privacy_map.begin(); iter != privacy_map.end();) {
+        if (iter->first == view) {
+            iter = privacy_map.erase(iter);
         } else {
             iter++;
         }
