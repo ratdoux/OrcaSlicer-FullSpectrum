@@ -127,7 +127,7 @@ static sentry_value_t before_send(sentry_value_t event, void* hint, void* data)
 void initSentryEx()
 {
     sentry_options_t* options = sentry_options_new();
-    std::string       dsn = std::string("https://c74b617c2aedc291444d3a238d23e780@o4508125599563776.ingest.us.sentry.io/4510425163956224");
+    std::string       dsn = std::string("https://282935326eecb9758e7f84a2ad3ae0ab@o4508125599563776.ingest.us.sentry.io/4510425163956224");
     {
         sentry_options_set_dsn(options, dsn.c_str());
         std::string handlerDir  = "";

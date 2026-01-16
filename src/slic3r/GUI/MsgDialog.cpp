@@ -441,7 +441,7 @@ DownloadDialog::DownloadDialog(wxWindow *parent, const wxString &msg, const wxSt
     : MsgDialog(parent, title, msg, style), msg(msg)
 {
     add_button(wxID_YES, true, _L("Download"));
-    add_button(wxID_CANCEL, true, _L("Skip"));
+    //add_button(wxID_CANCEL, true, _L("Skip"));
     
     finalize();
 }
