@@ -1858,7 +1858,7 @@ void SSWCP_MachineFind_Instance::sw_StopMachineFind()
 void SSWCP_MachineFind_Instance::add_machine_to_list(const json& machine_info)
 {
     try {
-        BOOST_LOG_TRIVIAL(info) << "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT" << machine_info.dump();
+        BOOST_LOG_TRIVIAL(info) << "check the machine list on json: " << machine_info.dump();
         for (const auto& [key, value] : machine_info.items()) {
             std::string sn        = value["sn"].get<std::string>();
             bool        need_send = false;
@@ -1881,7 +1881,7 @@ void SSWCP_MachineFind_Instance::add_machine_to_list(const json& machine_info)
                     m_res_data[key]["connected"] = true;
                 }
                 std::string ip = value["ip"].get<std::string>();
-                if (info.ip != ip && info.link_mode != "wan") {
+                if (0) {
                     info.ip = ip;
                     wxGetApp().app_config->save_device_info(info);
 
