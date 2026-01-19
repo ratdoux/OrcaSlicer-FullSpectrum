@@ -203,6 +203,8 @@ struct PresetUpdater::priv
 	bool cancel;
 	std::thread thread;
 
+    bool m_web_thread_cancel;
+    std::thread m_web_resource_thread;
 	bool has_waiting_updates { false };
 	Updates waiting_updates;
 	bool has_waiting_printer_updates { false };
@@ -1536,6 +1538,12 @@ PresetUpdater::~PresetUpdater()
 		p->cancel = true;
 		p->thread.join();
 	}
+
+    if (p && p->m_web_resource_thread.joinable())
+    {
+        p->m_web_thread_cancel = true;
+        p->m_web_resource_thread.join();
+    }
 }
 
 //BBS: change directories by design
@@ -1697,13 +1705,13 @@ bool PresetUpdater::install_bundles_rsrc(std::vector<std::string> bundles, bool 
 
 void PresetUpdater::sync_web_async(bool isAutoUpdata)
 {
-    if (p->thread.joinable()) {
-        p->cancel = true;
-        p->thread.join();
+    if (p->m_web_resource_thread.joinable()) {
+        p->m_web_thread_cancel = true;
+        p->m_web_resource_thread.join();
     }
 
-    p->cancel = false;
-    p->thread = std::thread([this, isAutoUpdata]() {
+    p->m_web_thread_cancel   = false;
+    p->m_web_resource_thread = std::thread([this, isAutoUpdata]() {
         BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async started";
         this->p->sync_update_flutter_resource(isAutoUpdata);
 
