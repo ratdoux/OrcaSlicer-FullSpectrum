@@ -1567,16 +1567,16 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
                 if (is_snapmaker_u1) {
                     // Show red warning notification
                     if (wxGetApp().plater() && wxGetApp().plater()->get_notification_manager()) {
-                        std::string warning_text = _u8L("Warning: Printing by object with caution. This function may cause the print head to collide with printed parts during switching.");
-                        wxGetApp().plater()->get_notification_manager()->push_plater_error_notification(warning_text);
+                        wxString warning_text = _L("Printing by object with caution. This function may cause the print head to collide with printed parts during switching.");
+                        wxGetApp().plater()->get_notification_manager()->push_plater_error_notification(warning_text.ToStdString());
                     }
                 }
             }
         } else {
             // Clear warning when switching away from ByObject
             if (wxGetApp().plater() && wxGetApp().plater()->get_notification_manager()) {
-                std::string warning_text = _u8L("Warning: Printing by object with caution. This function may cause the print head to collide with printed parts during switching.");
-                wxGetApp().plater()->get_notification_manager()->close_plater_error_notification(warning_text);
+                wxString warning_text = _L("Printing by object with caution. This function may cause the print head to collide with printed parts during switching.");
+                wxGetApp().plater()->get_notification_manager()->close_plater_error_notification(warning_text.ToStdString());
             }
         }
     }
