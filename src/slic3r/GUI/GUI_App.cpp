@@ -164,6 +164,8 @@ typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS2)(
     #include <gtk/gtk.h>
 #endif
 
+#define UPDATE_BY_USER 1
+
 using namespace std::literals;
 namespace pt = boost::property_tree;
 
@@ -909,44 +911,6 @@ void GUI_App::post_init()
     }
 //#endif
 
-    //BBS: remove GCodeViewer as seperate APP logic
-    /*if (this->init_params->start_as_gcodeviewer) {
-        if (! this->init_params->input_files.empty())
-            this->plater()->load_gcode(wxString::FromUTF8(this->init_params->input_files[0].c_str()));
-    }
-    else
-    {
-        if (! this->init_params->preset_substitutions.empty())
-            show_substitutions_info(this->init_params->preset_substitutions);
-
-#if 0
-        // Load the cummulative config over the currently active profiles.
-        //FIXME if multiple configs are loaded, only the last one will have an effect.
-        // We need to decide what to do about loading of separate presets (just print preset, just filament preset etc).
-        // As of now only the full configs are supported here.
-        if (!m_print_config.empty())
-            this->gui->mainframe->load_config(m_print_config);
-#endif
-        if (! this->init_params->load_configs.empty())
-            // Load the last config to give it a name at the UI. The name of the preset may be later
-            // changed by loading an AMF or 3MF.
-            //FIXME this is not strictly correct, as one may pass a print/filament/printer profile here instead of a full config.
-            this->mainframe->load_config_file(this->init_params->load_configs.back());
-        // If loading a 3MF file, the config is loaded from the last one.
-        if (!this->init_params->input_files.empty()) {
-            const std::vector<size_t> res = this->plater()->load_files(this->init_params->input_files);
-            if (!res.empty() && this->init_params->input_files.size() == 1) {
-                // Update application titlebar when opening a project file
-                const std::string& filename = this->init_params->input_files.front();
-                //BBS: remove amf logic as project
-                if (boost::algorithm::iends_with(filename, ".3mf"))
-                    this->plater()->set_project_filename(filename);
-            }
-        }
-        if (! this->init_params->extra_config.empty())
-            this->mainframe->load_config(this->init_params->extra_config);
-    }*/
-
     // BBS: to be checked
 #if 1
     // show "Did you know" notification
@@ -999,18 +963,12 @@ void GUI_App::post_init()
             std::string language = GUI::into_u8(current_language_code());
             std::string network_ver = Slic3r::NetworkAgent::get_version();
             bool        sys_preset  = app_config->get("sync_system_preset") == "true";
-            this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
-
-            this->check_new_version_sf();
-            if (is_user_login() && !app_config->get_stealth_mode()) {
-              // this->check_privacy_version(0);
-              request_user_handle(0);
-            }
+            //this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
+            this->preset_updater->sync_web_async(true);
+            this->check_new_version_sf(false, false);
+     
         });
     }
-
-    if (is_user_login())
-        request_user_handle(0);
 
     if(!m_networking_need_update && m_agent) {
         m_agent->set_on_ssdp_msg_fn(
@@ -1651,37 +1609,11 @@ void GUI_App::init_networking_callbacks()
 {
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": enter, m_agent=%1%")%m_agent;
     if (m_agent) {
-        //set callbacks
-        //m_agent->set_on_user_login_fn([this](int online_login, bool login) {
-        //    GUI::wxGetApp().request_user_handle(online_login);
-        //    });
 
         m_agent->set_server_callback([](std::string url, int status) {
             BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(": server_callback, url=%1%, status=%2%") % url % status;
-            //CallAfter([this]() {
-            //    if (!m_server_error_dialog) {
-            //        /*m_server_error_dialog->EndModal(wxCLOSE);
-            //        m_server_error_dialog->Destroy();
-            //        m_server_error_dialog = nullptr;*/
-            //        m_server_error_dialog = new NetworkErrorDialog(mainframe);
-            //    }
-            //
-            //    if(plater()->get_select_machine_dialog() && plater()->get_select_machine_dialog()->IsShown()){
-            //        return;
-            //    }
-            //
-            //    if (m_server_error_dialog->m_show_again) {
-            //        return;
-            //    }
-            //
-            //    if (m_server_error_dialog->IsShown()) {
-            //        return;
-            //    }
-            //
-            //    m_server_error_dialog->ShowModal();
-            //});
-        });
 
+        });
 
         m_agent->set_on_server_connected_fn([this](int return_code, int reason_code) {
             if (m_is_closing) {
@@ -2572,17 +2504,7 @@ bool GUI_App::on_init_inner()
         preset_updater = new PresetUpdater();
         Bind(EVT_SLIC3R_VERSION_ONLINE, [this](const wxCommandEvent& evt) {
             if (this->plater_ != nullptr) {
-                // this->plater_->get_notification_manager()->push_notification(NotificationType::NewAppAvailable);
-                //BBS show msg box to download new version
-               /* wxString tips = wxString::Format(_L("Click to download new version in default browser: %s"), version_info.version_str);
-                DownloadDialog dialog(this->mainframe,
-                    tips,
-                    _L("New version of Snapmaker Orca"),
-                    false,
-                    wxCENTER | wxICON_INFORMATION);
 
-
-                dialog.SetExtendedMessage(extmsg);*/
                 std::string skip_version_str = this->app_config->get("app", "skip_version");
                 bool skip_this_version = false;
                 if (!skip_version_str.empty()) {
@@ -2599,7 +2521,6 @@ bool GUI_App::on_init_inner()
                     UpdateVersionDialog dialog(this->mainframe);
                     wxString            extmsg = wxString::FromUTF8(version_info.description);
                     dialog.update_version_info(extmsg, version_info.version_str);
-                    //dialog.update_version_info(version_info.description);
                     if (evt.GetInt() != 0) {
                         dialog.m_button_skip_version->Hide();
                     }
@@ -2628,15 +2549,19 @@ bool GUI_App::on_init_inner()
                     false,
                     wxCENTER | wxICON_INFORMATION);
                 dialog.SetExtendedMessage(description_text);
-
+                
                 int result = dialog.ShowModal();
                 switch (result)
                 {
                  case wxID_YES:
                      wxLaunchDefaultBrowser(download_url);
+                     wxGetApp().mainframe->Close(true);
                      break;
                  case wxID_NO:
                      wxGetApp().mainframe->Close(true);
+                     break;
+                 case wxID_CANCEL:
+                     wxGetApp().mainframe->Close(true); 
                      break;
                  default:
                      wxGetApp().mainframe->Close(true);
@@ -2657,6 +2582,24 @@ bool GUI_App::on_init_inner()
             });
             dlg.ShowModal();
         });
+
+        Bind(EVT_NO_PRESET_UPDATE, [this](const wxCommandEvent& evt) {
+            wxString   msg = _L("The configuration is up to date.");
+            InfoDialog dlg(nullptr, _L("Info"), msg);
+            dlg.ShowModal();
+        });
+
+        Bind(EVT_NO_WEB_RESOURCE_UPDATE, [this](const wxCommandEvent& evt) {
+            wxString   msg = _L("This is the newest version.");
+            InfoDialog dlg(nullptr, _L("Info"), msg);
+            dlg.ShowModal();
+        });
+
+        Bind(EVT_REQUEST_SERVER_FAIL, [this](const wxCommandEvent& evt) {
+            wxString   msg = evt.GetString();
+            InfoDialog dlg(nullptr, _L("Error"), msg);
+            dlg.ShowModal();
+        });
     }
     else {
 #ifdef __WXMSW__
@@ -2669,13 +2612,6 @@ bool GUI_App::on_init_inner()
     preset_bundle->set_default_suppressed(true);
 
     preset_bundle->backup_user_folder();
-
-    Bind(EVT_SET_SELECTED_MACHINE, &GUI_App::on_set_selected_machine, this);
-    Bind(EVT_UPDATE_MACHINE_LIST, &GUI_App::on_update_machine_list, this);
-    Bind(EVT_USER_LOGIN, &GUI_App::on_user_login, this);
-    Bind(EVT_USER_LOGIN_HANDLE, &GUI_App::on_user_login_handle, this);
-    Bind(EVT_CHECK_PRIVACY_VER, &GUI_App::on_check_privacy_update, this);
-    Bind(EVT_CHECK_PRIVACY_SHOW, &GUI_App::show_check_privacy_dlg, this);
 
     Bind(EVT_SHOW_IP_DIALOG, &GUI_App::show_ip_address_enter_dialog_handler, this);
 
@@ -2770,26 +2706,6 @@ bool GUI_App::on_init_inner()
     mainframe->Show(true);
     BOOST_LOG_TRIVIAL(info) << "main frame firstly shown";
 
-//#if BBL_HAS_FIRST_PAGE
-    //BBS: set tp3DEditor firstly
-    /*plater_->canvas3D()->enable_render(false);
-    mainframe->select_tab(size_t(MainFrame::tp3DEditor));
-    scrn->SetText(_L("Loading Opengl resourses..."));
-    plater_->select_view_3D("3D");
-    //BBS init the opengl resource here
-    Size canvas_size = plater_->canvas3D()->get_canvas_size();
-    wxGetApp().imgui()->set_display_size(static_cast<float>(canvas_size.get_width()), static_cast<float>(canvas_size.get_height()));
-    wxGetApp().init_opengl();
-    plater_->canvas3D()->init();
-    wxGetApp().imgui()->new_frame();
-    plater_->canvas3D()->enable_render(true);
-    plater_->canvas3D()->render();
-    if (is_editor())
-        mainframe->select_tab(size_t(0));*/
-//#else
-    //plater_->trigger_restore_project(1);
-//#endif
-
     obj_list()->set_min_height();
 
     update_mode(); // update view mode after fix of the object_list size
@@ -2864,28 +2780,6 @@ bool GUI_App::on_init_inner()
                        "The Snapmaker Orca configuration file may be corrupted and cannot be parsed.\nSnapmaker Orca has attempted to recreate the "
                        "configuration file.\nPlease note, application settings will be lost, but printer profiles will not be affected."));
     }
-
-
-    //启动定时器，轮询进行机器发现
-    // m_machine_find_timer = new wxTimer(this, m_machine_find_id);
-    
-    // Bind(wxEVT_TIMER, [this](wxTimerEvent& event) {
-    //         if (!m_machine_find_engine  && GUI_App::m_app_alive.load()) {
-    //         machine_find();
-    //     }
-    // }, m_machine_find_timer->GetId());
-
-    // if (!m_machine_find_engine && GUI_App::m_app_alive.load()) {
-    //     machine_find();
-    // }
-
-//#ifdef __APPLE__
-//    m_machine_find_timer->Start(1000 * 60 * 2);
-//#elif defined(__linux__)
-//    m_machine_find_timer->Start(1000 * 60 * 2);
-//#else
-//    m_machine_find_timer->Start(5000);
-//#endif
 
     return true;
 }
@@ -4187,20 +4081,6 @@ bool GUI_App::check_login()
     return result;
 }
 
-void GUI_App::request_user_handle(int online_login)
-{
-    auto evt = new wxCommandEvent(EVT_USER_LOGIN_HANDLE);
-    evt->SetInt(online_login);
-    wxQueueEvent(this, evt);
-}
-
-void GUI_App::request_user_login(int online_login)
-{
-    auto evt = new wxCommandEvent(EVT_USER_LOGIN);
-    evt->SetInt(online_login);
-    wxQueueEvent(this, evt);
-}
-
 void GUI_App::request_user_logout()
 {
     if (m_agent && m_agent->is_user_login()) {
@@ -4434,27 +4314,6 @@ std::string GUI_App::handle_web_request(std::string cmd)
     return "";
 }
 
-void GUI_App::handle_script_message(std::string msg)
-{
-    try {
-        json j = json::parse(msg);
-        if (j.contains("command")) {
-            wxString cmd = j["command"];
-            if (cmd == "user_login") {
-                if (m_agent) {
-                    m_agent->change_user(j.dump());
-                    if (m_agent->is_user_login()) {
-                        request_user_login(1);
-                    }
-                }
-            }
-        }
-    }
-    catch (...) {
-        ;
-    }
-}
-
 void GUI_App::request_model_download(wxString url)
 {
     if (plater_) {
@@ -4581,54 +4440,6 @@ void GUI_App::enable_user_preset_folder(bool enable)
     }
 }
 
-void GUI_App::on_set_selected_machine(wxCommandEvent &evt)
-{
-    // Orca: do not connect to default device during app startup, because some of the lan machines might not online yet
-    // and user will be prompted by several "Connect XXX failed" error message.
-    return;
-
-    DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (dev) {
-        dev->set_selected_machine(m_agent->get_user_selected_machine());
-    }
-}
-
-void GUI_App::on_update_machine_list(wxCommandEvent &evt)
-{
-    /* DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-     if (dev) {
-         dev->add_user_subscribe();
-     }*/
-}
-
-void GUI_App::on_user_login_handle(wxCommandEvent &evt)
-{
-    if (!m_agent) { return; }
-
-    int online_login = evt.GetInt();
-    m_agent->connect_server();
-
-    // get machine list
-    DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (!dev) return;
-
-    boost::thread update_thread = boost::thread([this, dev] {
-        dev->update_user_machine_list_info();
-        auto evt = new wxCommandEvent(EVT_SET_SELECTED_MACHINE);
-        wxQueueEvent(this, evt);
-    });
-
-    if (online_login) {
-        remove_user_presets();
-        enable_user_preset_folder(true);
-        preset_bundle->load_user_presets(m_agent->get_user_id(), ForwardCompatibilitySubstitutionRule::Enable);
-        mainframe->update_side_preset_ui();
-
-        GUI::wxGetApp().mainframe->show_sync_dialog();
-    }
-}
-
-
 void GUI_App::check_track_enable()
 {
     // Orca: alaways disable track event
@@ -4638,14 +4449,6 @@ void GUI_App::check_track_enable()
     }
 }
 
-void GUI_App::on_user_login(wxCommandEvent &evt)
-{
-    if (!m_agent) { return; }
-    int online_login = evt.GetInt();
-    // check privacy before handle
-    check_privacy_version(online_login);
-    check_track_enable();
-}
 
 bool GUI_App::is_studio_active()
 {
@@ -4660,95 +4463,6 @@ bool GUI_App::is_studio_active()
 void GUI_App::reset_to_active()
 {
     last_active_point = std::chrono::system_clock::now();
-}
-
-void GUI_App::check_update(bool show_tips, int by_user)
-{
-    if (version_info.version_str.empty()) return;
-    if (version_info.url.empty()) return;
-
-    auto curr_version = Semver::parse(SLIC3R_VERSION);
-    auto remote_version = Semver::parse(version_info.version_str);
-    if (curr_version && remote_version && (*remote_version > *curr_version)) {
-        if (version_info.force_upgrade) {
-            wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);
-            wxGetApp().app_config->set("upgrade", "force_upgrade", true);
-            wxGetApp().app_config->set("upgrade", "description", version_info.description);
-            wxGetApp().app_config->set("upgrade", "version", version_info.version_str);
-            wxGetApp().app_config->set("upgrade", "url", version_info.url);
-            GUI::wxGetApp().enter_force_upgrade();
-        }
-        else {
-            GUI::wxGetApp().request_new_version(by_user);
-        }
-    } else {
-        wxGetApp().app_config->set("upgrade", "force_upgrade", false);
-        if (show_tips)
-            this->no_new_version();
-    }
-}
-
-void GUI_App::check_new_version(bool show_tips, int by_user)
-{
-    return; // orca: not used, see check_new_version_sf
-    std::string platform = "windows";
-
-#ifdef __WINDOWS__
-    platform = "windows";
-#endif
-#ifdef __APPLE__
-    platform = "macos";
-#endif
-#ifdef __LINUX__
-    platform = "linux";
-#endif
-    std::string query_params = (boost::format("?name=slicer&version=%1%&guide_version=%2%")
-        % VersionInfo::convert_full_version(SLIC3R_VERSION)
-        % VersionInfo::convert_full_version("0.0.0.1")
-        ).str();
-
-    std::string url = get_http_url(app_config->get_country_code()) + query_params;
-    Slic3r::Http http = Slic3r::Http::get(url);
-
-    http.header("accept", "application/json")
-        .timeout_connect(TIMEOUT_CONNECT)
-        .timeout_max(TIMEOUT_RESPONSE)
-        .on_complete([this, show_tips, by_user](std::string body, unsigned) {
-        try {
-            json j = json::parse(body);
-            if (j.contains("message")) {
-                if (j["message"].get<std::string>() == "success") {
-                    if (j.contains("software")) {
-                        if (j["software"].empty() && show_tips) {
-                            this->no_new_version();
-                        }
-                        else {
-                            if (j["software"].contains("url")
-                                && j["software"].contains("version")
-                                && j["software"].contains("description")) {
-                                version_info.url = j["software"]["url"].get<std::string>();
-                                version_info.version_str = j["software"]["version"].get<std::string>();
-                                version_info.description = j["software"]["description"].get<std::string>();
-                            }
-                            if (j["software"].contains("force_update")) {
-                                version_info.force_upgrade = j["software"]["force_update"].get<bool>();
-                            }
-                            CallAfter([this, show_tips, by_user](){
-                                this->check_update(show_tips, by_user);
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        catch (...) {
-            ;
-        }
-            })
-        .on_error([this](std::string body, std::string error, unsigned int status) {
-            handle_http_error(status, body);
-            BOOST_LOG_TRIVIAL(error) << "check new version error" << body;
-    }).perform();
 }
 
 //parse the string, if it doesn't contain a valid version string, return invalid version.
@@ -5029,125 +4743,151 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
 
 } // namespace
 
-void GUI_App::check_new_version_sf(bool show_tips, int by_user)
+void GUI_App::check_web_version()
 {
+    if (preset_updater != nullptr)
+        preset_updater->sync_web_async();
+}
+
+void GUI_App::check_preset_version()
+{    
+    if (preset_updater != nullptr)
+        preset_updater->sync_config_async();
+}
+void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
+{
+    std::string update_url = app_config->get_version_upgrade_url();
+
     AppConfig* app_config = wxGetApp().app_config;
-    bool       check_stable_only = app_config->get_bool("check_stable_update_only");
-    auto       version_check_url = app_config->version_check_url(check_stable_only);
-    Http::get(version_check_url)
-        .on_error([&](std::string body, std::string error, unsigned http_status) {
+
+    Http::get(update_url)
+        .on_error([&, by_user](std::string body, std::string error, unsigned http_status) {
           (void)body;
+
+            wxCommandEvent* evt = new wxCommandEvent(EVT_REQUEST_SERVER_FAIL);
+            wxString errorMsg   = wxString::Format(_L("request to server update soft fail with body:%s,error:%s,status:%d"), body,
+                                                   error, http_status);
+            evt->SetString(errorMsg);
+            if(by_user)
+                GUI::wxGetApp().QueueEvent(evt);
           BOOST_LOG_TRIVIAL(error) << format("Error getting: `%1%`: HTTP %2%, %3%", "check_new_version_sf", http_status,
                                              error);
         })
-        .timeout_connect(1)
-        .on_complete([this,by_user, check_stable_only](std::string body, unsigned http_status) {
-          // Http response OK
-          if (http_status != 200)
+        .timeout_connect(TIMEOUT_CONNECT)
+        .on_complete([this,by_user](std::string body, unsigned http_status) {
+        // Http response OK
+        if (http_status != 200) {
+            BOOST_LOG_TRIVIAL(error) << format("status not 200 with: `%1%`: HTTP %2%", "check_new_version_sf", http_status);
             return;
-          try {
-            boost::trim(body);
-            // Orca: parse github release, inspired by SS
-            boost::property_tree::ptree root;
-            std::stringstream json_stream(body);
-            boost::property_tree::read_json(json_stream, root);
+          }
+        try {
+            json jsonObj = json::parse(body);
+            auto errCode = jsonObj["code"];
+            if (errCode != 200)
+                return;
 
-            // at least two number, use '.' as separator. can be followed by -Az23 for prereleased and +Az42 for
-            // metadata
-            std::regex matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
+            auto dataObj             = jsonObj.value("data", json::object());
+            auto isFullUpgrade       = dataObj.value("is_full_upgrade", true);
+            auto isForceUpgrade      = dataObj.value("is_force_upgrade", false);
+            version_info.force_upgrade  = isForceUpgrade;
 
-            Semver           current_version = get_version(Snapmaker_VERSION, matcher);
-            Semver best_pre(0, 0, 0);
-            Semver best_release(0, 0, 0);
-            std::string best_pre_url;
-            std::string best_release_url;
-            std::string best_release_content;
-            std::string best_pre_content;
-            const std::regex reg_num("([0-9]+)");
-            if (check_stable_only) {
-                std::string tag = root.get<std::string>("tag_name");
-                if (tag[0] == 'v')
-                    tag.erase(0, 1);
-                for (std::regex_iterator it = std::sregex_iterator(tag.begin(), tag.end(), reg_num); it != std::sregex_iterator(); ++it) {}
-                Semver tag_version = get_version(tag, matcher);
-                if (root.get<bool>("prerelease")) {
-                    if (best_pre < tag_version) {
-                        best_pre         = tag_version;
-                        best_pre_url     = root.get<std::string>("html_url");
-                        best_pre_content = root.get<std::string>("body");
-                        best_pre.set_prerelease("Preview");
-                    }
-                } else {
-                    if (best_release < tag_version) {
-                        best_release         = tag_version;
-                        best_release_url     = root.get<std::string>("html_url");
-                        best_release_content = root.get<std::string>("body");
+            version_info.version_str = dataObj.value("version", "");
+            auto releaseType         = dataObj.value("release_type", "");
+            auto platformType        = dataObj.value("platform_type", "");
+            int  fileSize            = 0;
+            std::string fileMd5             = "";
+            std::string fileSha256          = "";
+            std::string reservedData        = "";
+            std::string reservedData2        = "";
+
+            // win x86_x64,  mac arm/x86_x64  universal
+            auto fullObj = dataObj.value("full", json::object());
+            auto defaultObj = fullObj.value("default", json::object());
+            auto armObj     = fullObj.value("arm", json::object());
+            auto intelObj   = fullObj.value("intel", json::object());
+            version_info.description = fullObj.value("file_describe", "");
+
+            if (platformType == "win") {
+                fileSize   = defaultObj.value("file_size", 0);
+                fileMd5    = defaultObj.value("file_md5", "");
+                fileSha256 = defaultObj.value("file_sha256", "");            
+                version_info.url         = defaultObj.value("file_url", "");            
+
+                reservedData             = defaultObj.value("reserved_1", "");
+                reservedData2            = defaultObj.value("reserved_2", "");         
+            }
+            else if (platformType == "mac")
+            {
+                bool isArm64 = false;
+#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+                isArm64 = true;
+#else
+                isArm64 = false;
+#endif
+                json platformObj = defaultObj;
+                if (isArm64) {
+                    if (!armObj.empty()) {
+                        platformObj = armObj;
                     }
                 }
-            } else {
-                for (auto json_version : root) {
-                    std::string tag = json_version.second.get<std::string>("tag_name");
-                    if (tag[0] == 'v')
-                        tag.erase(0, 1);
-                    for (std::regex_iterator it = std::sregex_iterator(tag.begin(), tag.end(), reg_num); it != std::sregex_iterator();
-                         ++it) {}
-                    Semver tag_version = get_version(tag, matcher);
-                    if (json_version.second.get<bool>("prerelease")) {
-                        if (best_pre < tag_version) {
-                            best_pre         = tag_version;
-                            best_pre_url     = json_version.second.get<std::string>("html_url");
-                            best_pre_content = json_version.second.get<std::string>("body");
-                            best_pre.set_prerelease("Preview");
-                        }
-                    } else {
-                        if (best_release < tag_version) {
-                            best_release         = tag_version;
-                            best_release_url     = json_version.second.get<std::string>("html_url");
-                            best_release_content = json_version.second.get<std::string>("body");
-                        }
+                else
+                {
+                    if (!intelObj.empty()) {
+                        platformObj = intelObj;
                     }
                 }
-            }
 
-            // if release is more recent than beta, use release anyway
-            if (best_pre < best_release) {
-                best_pre         = best_release;
-                best_pre_url     = best_release_url;
-                best_pre_content = best_release_content;
+                fileSize         = platformObj.value("file_size", 0);
+                fileMd5          = platformObj.value("file_md5", "");
+                fileSha256       = platformObj.value("file_sha256", "");
+                version_info.url = platformObj.value("file_url", "");
+
+                reservedData  = platformObj.value("reserved_1", "");
+                reservedData2 = platformObj.value("reserved_2", "");  
+                
             }
-            // if we're the most recent, don't do anything
-            if ((check_stable_only ? best_release : best_pre) <= current_version) {
-                if (by_user != 0)
-                    this->no_new_version();
+            else
+            {
+                BOOST_LOG_TRIVIAL(warning) << "don't support linux upgrade";
                 return;
             }
 
-            version_info.url           = check_stable_only ? best_release_url : best_pre_url;
-            version_info.version_str   = check_stable_only ? best_release.to_string_sf() : best_pre.to_string_sf();
-            version_info.description   = check_stable_only ? best_release_content : best_pre_content;
-            version_info.force_upgrade = false;
+            std::regex matcher("[0-9]+\\.[0-9]+(\\.[0-9]+)*(-[A-Za-z0-9]+)?(\\+[A-Za-z0-9]+)?");
+            Semver     current_version = get_version(Snapmaker_VERSION, matcher);
+
+            Semver server_version = get_version(version_info.version_str, matcher);
+
+            if (current_version >= server_version && by_user) {
+                this->no_new_version();
+                return;
+            }
+
+            //if (true)
+            if (isForceUpgrade)
+            {
+                wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);
+                wxGetApp().app_config->set("upgrade", "force_upgrade", true);
+                wxGetApp().app_config->set("upgrade", "description", version_info.description);
+                wxGetApp().app_config->set("upgrade", "version", version_info.version_str);
+                wxGetApp().app_config->set("upgrade", "url", version_info.url);
+                GUI::wxGetApp().enter_force_upgrade();
+                return;
+            }
 
             wxCommandEvent* evt = new wxCommandEvent(EVT_SLIC3R_VERSION_ONLINE);
-            evt->SetString((check_stable_only ? best_release : best_pre).to_string());
+            evt->SetString(version_info.url);
+            if (by_user)
+                evt->SetInt(UPDATE_BY_USER);
             GUI::wxGetApp().QueueEvent(evt);
           } catch (...) {}
         })
-        .perform();
+        .perform_sync();
 }
 void GUI_App::process_network_msg(std::string dev_id, std::string msg)
 {
     if (dev_id.empty()) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << msg;
     }
-}
-
-//BBS pop up a dialog and download files
-void GUI_App::request_new_version(int by_user)
-{
-    wxCommandEvent* evt = new wxCommandEvent(EVT_SLIC3R_VERSION_ONLINE);
-    evt->SetString(GUI::from_u8(version_info.version_str));
-    evt->SetInt(by_user);
-    GUI::wxGetApp().QueueEvent(evt);
 }
 
 void GUI_App::enter_force_upgrade()
@@ -5166,33 +4906,6 @@ void GUI_App::set_skip_version(bool skip)
     }
 }
 
-void GUI_App::show_check_privacy_dlg(wxCommandEvent& evt)
-{
-    int online_login = evt.GetInt();
-    PrivacyUpdateDialog privacy_dlg(this->mainframe, wxID_ANY, _L("Privacy Policy Update"));
-    privacy_dlg.Bind(EVT_PRIVACY_UPDATE_CONFIRM, [this, online_login](wxCommandEvent &e) {
-        app_config->set("privacy_version", privacy_version_info.version_str);
-        app_config->set_bool("privacy_update_checked", true);
-        request_user_handle(online_login);
-        });
-    privacy_dlg.Bind(EVT_PRIVACY_UPDATE_CANCEL, [this](wxCommandEvent &e) {
-            app_config->set_bool("privacy_update_checked", false);
-            if (m_agent) {
-                m_agent->user_logout();
-            }
-        });
-
-    privacy_dlg.set_text(privacy_version_info.description);
-    privacy_dlg.on_show();
-}
-
-void GUI_App::on_show_check_privacy_dlg(int online_login)
-{
-    auto evt = new wxCommandEvent(EVT_CHECK_PRIVACY_SHOW);
-    evt->SetInt(online_login);
-    wxQueueEvent(this, evt);
-}
-
 bool GUI_App::check_privacy_update()
 {
     if (privacy_version_info.version_str.empty() || privacy_version_info.description.empty()
@@ -5209,66 +4922,6 @@ bool GUI_App::check_privacy_update()
         }
     }
     return false;
-}
-
-void GUI_App::on_check_privacy_update(wxCommandEvent& evt)
-{
-    int online_login = evt.GetInt();
-    bool result = check_privacy_update();
-    if (result)
-        on_show_check_privacy_dlg(online_login);
-    else
-        request_user_handle(online_login);
-}
-
-void GUI_App::check_privacy_version(int online_login)
-{
-    update_http_extra_header();
-    std::string query_params = "?policy/privacy=00.00.00.00";
-    std::string url = get_http_url(app_config->get_country_code()) + query_params;
-    Slic3r::Http http = Slic3r::Http::get(url);
-
-    http.header("accept", "application/json")
-        .timeout_connect(TIMEOUT_CONNECT)
-        .timeout_max(TIMEOUT_RESPONSE)
-        .on_complete([this, online_login](std::string body, unsigned) {
-            try {
-                json j = json::parse(body);
-                if (j.contains("message")) {
-                    if (j["message"].get<std::string>() == "success") {
-                        if (j.contains("resources")) {
-                            for (auto it = j["resources"].begin(); it != j["resources"].end(); it++) {
-                                if (it->contains("type")) {
-                                    if ((*it)["type"] == std::string("policy/privacy")
-                                        && it->contains("version")
-                                        && it->contains("description")
-                                        && it->contains("url")
-                                        && it->contains("force_update")) {
-                                        privacy_version_info.version_str = (*it)["version"].get<std::string>();
-                                        privacy_version_info.description = (*it)["description"].get<std::string>();
-                                        privacy_version_info.url = (*it)["url"].get<std::string>();
-                                        privacy_version_info.force_upgrade = (*it)["force_update"].get<bool>();
-                                        break;
-                                    }
-                                }
-                            }
-                            CallAfter([this, online_login]() {
-                                auto evt = new wxCommandEvent(EVT_CHECK_PRIVACY_VER);
-                                evt->SetInt(online_login);
-                                wxQueueEvent(this, evt);
-                            });
-                        }
-                    }
-                }
-            }
-            catch (...) {
-                request_user_handle(online_login);
-            }
-        })
-        .on_error([this, online_login](std::string body, std::string error, unsigned int status) {
-            request_user_handle(online_login);
-            BOOST_LOG_TRIVIAL(error) << "check privacy version error" << body;
-    }).perform();
 }
 
 void GUI_App::no_new_version()
@@ -7345,8 +6998,7 @@ void GUI_App::check_updates(const bool verbose)
             m_app_conf_exists = true;
 		}
 		else if (verbose && updater_result == PresetUpdater::R_NOOP) {
-			MsgNoUpdates dlg;
-			dlg.ShowModal();
+
 		}
 	}
 	catch (const std::exception & ex) {

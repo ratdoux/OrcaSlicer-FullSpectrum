@@ -39,8 +39,23 @@ namespace Slic3r {
 
 static const std::string VERSION_CHECK_URL_STABLE = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases/latest";
 static const std::string VERSION_CHECK_URL = "https://api.github.com/repos/Snapmaker/OrcaSlicer/releases";
-static const std::string PROFILE_UPDATE_URL = "https://api.github.com/repos/Snapmaker/Orca_Presets/releases/latest";
+static const std::string PROFILE_UPDATE_URL = "/upgrade/profile/";
+static const std::string FLUTTER_UPDATE_URL = "/upgrade/flutter/";
 static const std::string MODELS_STR = "models";
+
+#define APP_UPDATE_URL_BASE_CN "https://meta-cfg.snapmaker.cn"
+#define APP_UPDATE_URL_BASE_EN "https://meta-cfg.snapmaker.com"
+
+#if defined(_WIN32)
+static const std::string APP_UPDATE_URL = std::string("/upgrade/orca/win/");
+#elif defined(__APPLE__)
+static const std::string APP_UPDATE_URL = std::string("/upgrade/orca/mac/");
+#elif defined(__linux__)
+static const std::string APP_UPDATE_URL = std::string("/upgrade/orca/linux/");
+#else
+static const std::string APP_UPDATE_URL = "";
+#endif
+
 
 const std::string AppConfig::SECTION_FILAMENTS = "filaments";
 const std::string AppConfig::SECTION_MATERIALS = "sla_materials";
@@ -1423,15 +1438,50 @@ std::string AppConfig::config_path()
     return path;
 }
 
+std::string AppConfig::get_preset_upgrade_url() 
+{
+    std::string localLanguage = get("language");
+    if (localLanguage != "zh_CN")
+        localLanguage = "en";
+    std::string url = APP_UPDATE_URL_BASE_EN + PROFILE_UPDATE_URL + localLanguage + std::string("/version.json");
+    auto countryArea = get_country_code();
+    if (countryArea == std::string("CN"))
+        url = APP_UPDATE_URL_BASE_CN + PROFILE_UPDATE_URL + localLanguage + std::string("/version.json");
+
+    return url;
+}
+
+std::string AppConfig::get_web_resource_upgrade_url()
+{
+    std::string localLanguage = get("language");
+    if (localLanguage != "zh_CN")
+        localLanguage = "en";
+    std::string url  = APP_UPDATE_URL_BASE_EN + FLUTTER_UPDATE_URL + localLanguage + std::string("/version.json");
+    auto countryArea = get_country_code();
+    if (countryArea == std::string("CN"))
+        url = APP_UPDATE_URL_BASE_CN + FLUTTER_UPDATE_URL + localLanguage + std::string("/version.json");
+
+    return url;
+}
+
+std::string AppConfig::get_version_upgrade_url(bool stable_only /* = false*/) 
+{ 
+    //get local area and get the resource from diff server
+    std::string localLanguage = get("language");
+    if (localLanguage != "zh_CN")
+        localLanguage = "en";
+    std::string url = APP_UPDATE_URL_BASE_EN + APP_UPDATE_URL + localLanguage + std::string("/version.json");
+    auto countryArea = get_country_code();
+    if (countryArea == std::string("CN"))
+        url = APP_UPDATE_URL_BASE_CN + APP_UPDATE_URL + localLanguage + std::string("/version.json");
+
+    return url; 
+}
+
 std::string AppConfig::version_check_url(bool stable_only/* = false*/) const
 {
     auto from_settings = get("version_check_url");
     return from_settings.empty() ? stable_only ? VERSION_CHECK_URL_STABLE : VERSION_CHECK_URL : from_settings;
-}
-
-std::string AppConfig::profile_update_url() const
-{
-    return PROFILE_UPDATE_URL;
 }
 
 bool AppConfig::exists()
