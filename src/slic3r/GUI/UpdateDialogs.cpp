@@ -154,7 +154,7 @@ MsgUpdateConfig::MsgUpdateConfig(const std::vector<Update> &updates, bool force_
     m_butto_ok->SetFont(Label::Body_12);
     m_butto_ok->SetSize(wxSize(FromDIP(58), FromDIP(24)));
     m_butto_ok->SetMinSize(wxSize(FromDIP(58), FromDIP(24)));
-
+    m_butto_ok->SetCursor(wxCURSOR_HAND);
 
     auto m_button_cancel = new Button(this, _L("Cancel"));
     m_button_cancel->SetBackgroundColor(*wxWHITE);
@@ -162,7 +162,7 @@ MsgUpdateConfig::MsgUpdateConfig(const std::vector<Update> &updates, bool force_
     m_button_cancel->SetFont(Label::Body_12);
     m_button_cancel->SetSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_cancel->SetMinSize(wxSize(FromDIP(58), FromDIP(24)));
-
+    m_button_cancel->SetCursor(wxCURSOR_HAND);
 
     sizer_button->Add(m_butto_ok, 0, wxALL, 5);
     sizer_button->Add(m_button_cancel, 0, wxALL, 5);
