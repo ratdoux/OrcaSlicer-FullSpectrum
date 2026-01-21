@@ -330,6 +330,7 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_download->SetSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_download->SetMinSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_download->SetCornerRadius(FromDIP(12));
+    m_button_download->SetCursor(wxCURSOR_HAND);
 
     m_button_download->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) {
         EndModal(wxID_YES);
@@ -342,6 +343,7 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_skip_version->SetSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_skip_version->SetMinSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_skip_version->SetCornerRadius(FromDIP(12));
+    m_button_skip_version->SetCursor(wxCURSOR_HAND);
 
     m_button_skip_version->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) { 
         wxGetApp().set_skip_version(true);
@@ -372,6 +374,7 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_cancel->SetSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_cancel->SetMinSize(wxSize(FromDIP(58), FromDIP(24)));
     m_button_cancel->SetCornerRadius(FromDIP(12));
+    m_button_cancel->SetCursor(wxCURSOR_HAND);
 
     m_button_cancel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) {
         EndModal(wxID_NO);

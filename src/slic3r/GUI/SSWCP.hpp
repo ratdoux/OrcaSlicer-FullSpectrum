@@ -23,7 +23,13 @@ using namespace nlohmann;
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
+
+//WCP Interface definition
 #define UPDATE_PRIVACY_STATUS "sw_SubUserUpdatePrivacy"
+#define UPLOAD_CAMERA_TIMELAPSE "sw_UploadCameraTimelapse"
+#define DELETE_CAMERA_TIMELAPSE "sw_DeleteCameraTimelapse"
+#define GETCAMERA_TIMELAPSE_INSTANCE "sw_GetCameraTimelapseInstance"
+#define GET_DEVICEDATA_STORAGESPACE "sw_GetDeviceDataStorageSpace"
 
 namespace Slic3r { namespace GUI {
 
@@ -422,6 +428,7 @@ private:
 
     void sw_DefectDetactionConfig();
 
+    void CmdForwarding();
 
     // Download machine file
     void sw_DownloadMachineFile();
