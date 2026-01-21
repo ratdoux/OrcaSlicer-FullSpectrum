@@ -165,6 +165,17 @@ static int log_trace(CURL* handle, curl_infotype type,
 	return 0;
 }
 
+// Domains that should bypass proxy and connect directly
+// This helps when users have Shadowsocks/Clash/V2Ray proxy enabled
+static const char* NOPROXY_DOMAINS = 
+    "snapmaker.cn,"
+    "snapmaker.com,"
+    "*.snapmaker.cn,"
+    "*.snapmaker.com,"
+    "localhost,"
+    "127.0.0.1,"
+    "::1";
+
 Http::priv::priv(const std::string &url)
 	: curl(::curl_easy_init())
 	, form(nullptr)
@@ -193,6 +204,11 @@ Http::priv::priv(const std::string &url)
 	::curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
 	::curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
 	::curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+
+	// Bypass proxy for Snapmaker domains - this fixes issues when users have
+	// Shadowsocks/Clash/V2Ray or other proxy software enabled
+	// The domains in NOPROXY_DOMAINS will connect directly without going through proxy
+	::curl_easy_setopt(curl, CURLOPT_NOPROXY, NOPROXY_DOMAINS);
 
 	// https://everything.curl.dev/http/post/expect100.html
 	// remove the Expect: header, it will add a second delay to each request,

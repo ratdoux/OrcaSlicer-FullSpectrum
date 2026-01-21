@@ -2081,8 +2081,12 @@ void SSWCP_MachineOption_Instance::process()
         sw_ServerClientManagerSetUserinfo();
     } else if (m_cmd == "sw_DefectDetactionConfig"){
         sw_DefectDetactionConfig();
+    } else if (m_cmd == GETCAMERA_TIMELAPSE_INSTANCE) {
+        CmdForwarding();
+    }    
+    else if (m_cmd == GET_DEVICEDATA_STORAGESPACE) {
+        CmdForwarding();
     }
-    
     else {
         handle_general_fail();
     }
@@ -3691,6 +3695,28 @@ void SSWCP_MachineOption_Instance::sw_GetTimelapseInstance()
         handle_general_fail();
     }
 }
+void SSWCP_MachineOption_Instance::CmdForwarding() {
+    try {
+        std::shared_ptr<PrintHost> host = nullptr;
+        wxGetApp().get_connect_host(host);
+
+        if (!host) {
+            handle_general_fail(-1, "Connection lost!");
+            return;
+        }
+
+        auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
+        host->async_delete_camera_timelapse(m_param_data, [weak_self](const json& response) {
+            auto self = weak_self.lock();
+            if (self) {
+                SSWCP_Instance::on_mqtt_msg_arrived(self, response);
+            }
+        });
+    } catch (std::exception& e) {
+        handle_general_fail();
+    }
+}
+
 
 void SSWCP_MachineOption_Instance::sw_DeleteCameraTimelapse()
 {
@@ -5779,7 +5805,9 @@ std::unordered_set<std::string> SSWCP::m_machine_option_cmd_list = {
     "sw_DeleteCameraTimelapse",
     "sw_GetTimelapseInstance",
     "sw_ServerClientManagerSetUserinfo",
-    "sw_DefectDetactionConfig"
+    "sw_DefectDetactionConfig",
+    GETCAMERA_TIMELAPSE_INSTANCE,
+    GET_DEVICEDATA_STORAGESPACE
 };
 
 std::unordered_set<std::string> SSWCP::m_machine_connect_cmd_list = {

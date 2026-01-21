@@ -963,7 +963,7 @@ void GUI_App::post_init()
             std::string language = GUI::into_u8(current_language_code());
             std::string network_ver = Slic3r::NetworkAgent::get_version();
             bool        sys_preset  = app_config->get("sync_system_preset") == "true";
-            //this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
+            this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
             this->preset_updater->sync_web_async(true);
             this->check_new_version_sf(false, false);
      

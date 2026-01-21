@@ -7782,9 +7782,9 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
             }
             else if (is_finished && evt.finished())
             {
-                auto strTime = get_works_time(duration_ms);
-                auto slice_time = BP_SLICE_DURATION_TIME + std::string(":") + strTime;
-                sentryReportLog(SENTRY_LOG_TRACE, slice_time, BP_SLICE_DURATION);
+                //auto strTime = get_works_time(duration_ms);
+                //auto slice_time = BP_SLICE_DURATION_TIME + std::string(":") + strTime;
+                //sentryReportLog(SENTRY_LOG_TRACE, slice_time, BP_SLICE_DURATION);
 
                 m_slice_start_time    = {};
                 m_slice_timing_active = false; 
