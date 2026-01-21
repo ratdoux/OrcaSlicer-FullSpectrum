@@ -1056,6 +1056,18 @@ int GuideFrame::LoadProfileData()
         }
         loaded_vendors.insert(PresetBundle::ORCA_FILAMENT_LIBRARY);
 
+        // Load Snapmaker vendor first to ensure it appears at the top of the machine list
+        auto sm_bundle_name = boost::filesystem::path(PresetBundle::SM_BUNDLE).replace_extension(".json");
+        if (boost::filesystem::exists(vendor_dir / sm_bundle_name)) {
+            LoadProfileFamily(PresetBundle::SM_BUNDLE, (vendor_dir / sm_bundle_name).string());
+            loaded_vendors.insert(PresetBundle::SM_BUNDLE);
+        } else if (boost::filesystem::exists(rsrc_vendor_dir / sm_bundle_name)) {
+            LoadProfileFamily(PresetBundle::SM_BUNDLE, (rsrc_vendor_dir / sm_bundle_name).string());
+            loaded_vendors.insert(PresetBundle::SM_BUNDLE);
+        }
+        if (m_destroy)
+            return 0;
+
         //load custom bundle from user data path
         boost::filesystem::directory_iterator endIter;
         for (boost::filesystem::directory_iterator iter(vendor_dir); iter != endIter; iter++) {

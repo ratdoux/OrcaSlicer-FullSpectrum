@@ -4948,8 +4948,8 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
                             if (is_snapmaker_u1) {
                                 if (q->get_notification_manager()) {
-                                    std::string warning_text = _u8L("Warning: Printing by object with caution. This function may cause the print head to collide with printed parts during switching.");
-                                    q->get_notification_manager()->push_plater_error_notification(warning_text);
+                                    wxString warning_text = _L("Printing by object with caution. This function may cause the print head to collide with printed parts during switching.");
+                                    q->get_notification_manager()->push_plater_error_notification(warning_text.ToStdString());
                                 }
                             }
                         }
