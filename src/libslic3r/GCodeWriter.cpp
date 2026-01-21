@@ -1,11 +1,15 @@
 #include "GCodeWriter.hpp"
 #include "CustomGCode.hpp"
+#include "BoundaryValidator.hpp"
+#include "BuildVolume.hpp"
+#include "Print.hpp"
+#include "GCode/GCodeProcessor.hpp"
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <assert.h>
-#include <GCode/GCodeProcessor.hpp>
+#include <cmath>
 
 #ifdef __APPLE__
     #include <boost/spirit/include/karma.hpp>
@@ -545,29 +549,116 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const std::string &co
         if (delta(2) > 0 && delta_no_z.norm() != 0.0f)    {
             //BBS: SpiralLift
             if (m_to_lift_type == LiftType::SpiralLift && this->is_current_position_clear()) {
-                //BBS: todo: check the arc move all in bed area, if not, then use lazy lift
+                // Calculate the radius of the spiral arc
                 double radius = delta(2) / (2 * PI * atan(this->extruder()->travel_slope()));
+
+                // Calculate arc center and angles for precise boundary validation
                 Vec2d ij_offset = radius * delta_no_z.normalized();
                 ij_offset = { -ij_offset(1), ij_offset(0) };
-                slop_move = this->_spiral_travel_to_z(target(2), ij_offset, "spiral lift Z");
+                
+                // Arc center is source + ij_offset (in unscaled coordinates)
+                Vec3d arc_center = source + Vec3d(ij_offset(0), ij_offset(1), 0);
+                
+                // Calculate start and end angles
+                // ij_offset is perpendicular to delta_no_z, so the arc starts from -ij_offset direction
+                double start_angle = std::atan2(-ij_offset(1), -ij_offset(0));
+                double end_angle = start_angle + 2 * PI; // Full circle
+                
+                // Snapmaker: Use BoundaryValidator for precise arc validation
+                bool arc_valid = true;
+                if (m_boundary_validator) {
+                    arc_valid = m_boundary_validator->validate_arc(
+                        arc_center, radius, start_angle, end_angle, source.z()
+                    );
+                    
+                    if (!arc_valid) {
+                        // Record boundary violation
+                        if (m_print_ptr) {
+                            Vec3d violation_pos = arc_center + Vec3d(radius, 0, source.z());
+                            ConflictResult violation = ConflictResult::create_boundary_violation(
+                                static_cast<int>(BoundaryValidator::ViolationType::SpiralLift),
+                                violation_pos,
+                                source.z(),
+                                "Spiral Lift"
+                            );
+                            m_print_ptr->add_boundary_violation(violation);
+                        }
+                        BOOST_LOG_TRIVIAL(warning) << "Spiral lift arc exceeds build volume boundaries, "
+                            << "downgrading to lazy lift. Center: (" << arc_center.x() << ", " << arc_center.y() 
+                            << "), Radius: " << radius << " mm";
+                        // Fall through to LazyLift check below
+                        m_to_lift_type = LiftType::LazyLift;
+                    }
+                } else {
+                    // Fallback: Simple radius check if validator not available
+                    constexpr double MAX_SAFE_SPIRAL_RADIUS = 50.0; // mm
+                    if (radius > MAX_SAFE_SPIRAL_RADIUS) {
+                        BOOST_LOG_TRIVIAL(warning) << "Spiral lift radius (" << radius
+                            << " mm) exceeds safe limit (" << MAX_SAFE_SPIRAL_RADIUS
+                            << " mm), downgrading to lazy lift to prevent boundary violations";
+                        m_to_lift_type = LiftType::LazyLift;
+                        arc_valid = false;
+                    }
+                }
+                
+                if (arc_valid) {
+                    slop_move = this->_spiral_travel_to_z(target(2), ij_offset, "spiral lift Z");
+                }
             }
             //BBS: LazyLift
-            else if (m_to_lift_type == LiftType::LazyLift &&
-                this->is_current_position_clear() && 
+            if (m_to_lift_type == LiftType::LazyLift &&
+                this->is_current_position_clear() &&
                 atan2(delta(2), delta_no_z.norm()) < this->extruder()->travel_slope()) {
-                //BBS: check whether we can make a travel like
-                //   _____
-                //  /       to make the z list early to avoid to hit some warping place when travel is long.
+                // Calculate the slope top point
                 Vec2d temp = delta_no_z.normalized() * delta(2) / tan(this->extruder()->travel_slope());
                 Vec3d slope_top_point = Vec3d(temp(0), temp(1), delta(2)) + source;
-                GCodeG1Formatter w0;
-                w0.emit_xyz(slope_top_point);
-                w0.emit_f(travel_speed * 60.0);
-                //BBS
-                w0.emit_comment(GCodeWriter::full_gcode_comment, comment);
-                slop_move = w0.string();
+
+                // Snapmaker: Use BoundaryValidator for precise line validation
+                bool slope_valid = true;
+                if (m_boundary_validator) {
+                    // Validate the entire slope line from source to slope_top_point
+                    slope_valid = m_boundary_validator->validate_line(source, slope_top_point);
+                    
+                    if (!slope_valid) {
+                        // Record boundary violation
+                        if (m_print_ptr) {
+                            ConflictResult violation = ConflictResult::create_boundary_violation(
+                                static_cast<int>(BoundaryValidator::ViolationType::LazyLift),
+                                slope_top_point,
+                                source.z(),
+                                "Lazy Lift"
+                            );
+                            m_print_ptr->add_boundary_violation(violation);
+                        }
+                        BOOST_LOG_TRIVIAL(warning) << "Lazy lift slope exceeds build volume boundaries, "
+                            << "downgrading to normal lift. Slope point: (" << slope_top_point.x() 
+                            << ", " << slope_top_point.y() << ", " << slope_top_point.z() << ")";
+                        // Fall through to NormalLift
+                        m_to_lift_type = LiftType::NormalLift;
+                    }
+                } else {
+                    // Fallback: Simple distance check if validator not available
+                    constexpr double MAX_SAFE_SLOPE_DISTANCE = 100.0; // mm
+                    double slope_distance = temp.norm();
+                    if (slope_distance > MAX_SAFE_SLOPE_DISTANCE) {
+                        BOOST_LOG_TRIVIAL(warning) << "Lazy lift slope distance (" << slope_distance
+                            << " mm) exceeds safe limit (" << MAX_SAFE_SLOPE_DISTANCE
+                            << " mm), downgrading to normal lift to prevent boundary violations";
+                        m_to_lift_type = LiftType::NormalLift;
+                        slope_valid = false;
+                    }
+                }
+                
+                if (slope_valid) {
+                    GCodeG1Formatter w0;
+                    w0.emit_xyz(slope_top_point);
+                    w0.emit_f(travel_speed * 60.0);
+                    //BBS
+                    w0.emit_comment(GCodeWriter::full_gcode_comment, comment);
+                    slop_move = w0.string();
+                }
             }
-            else if (m_to_lift_type == LiftType::NormalLift) {
+            if (m_to_lift_type == LiftType::NormalLift) {
                 slop_move = _travel_to_z(target.z(), "normal lift Z");
             }
         }
@@ -734,6 +825,59 @@ std::string GCodeWriter::extrude_to_xy(const Vec2d &point, double dE, const std:
 //center_offset is I and J axis
 std::string GCodeWriter::extrude_arc_to_xy(const Vec2d& point, const Vec2d& center_offset, double dE, const bool is_ccw, const std::string& comment, bool force_no_extrusion)
 {
+    // Snapmaker: Validate arc path against build volume boundaries
+    if (m_boundary_validator) {
+        // Calculate arc center (center_offset is relative to start point)
+        Vec2d start_point = { m_pos(0) - m_x_offset, m_pos(1) - m_y_offset };
+        Vec3d arc_center = Vec3d(start_point(0) + center_offset(0), start_point(1) + center_offset(1), m_pos(2));
+        
+        // Calculate radius from center offset
+        double radius = std::sqrt(center_offset(0) * center_offset(0) + center_offset(1) * center_offset(1));
+        
+        // Calculate start and end angles
+        Vec2d start_vec = start_point - Vec2d(arc_center.x(), arc_center.y());
+        Vec2d end_vec = Vec2d(point(0) - m_x_offset, point(1) - m_y_offset) - Vec2d(arc_center.x(), arc_center.y());
+        
+        double start_angle = std::atan2(start_vec(1), start_vec(0));
+        double end_angle = std::atan2(end_vec(1), end_vec(0));
+        
+        // Handle CCW vs CW and angle wrapping
+        if (is_ccw) {
+            // For CCW, ensure end_angle > start_angle (wrapping if needed)
+            if (end_angle < start_angle) {
+                end_angle += 2 * PI;
+            }
+        } else {
+            // For CW, ensure end_angle < start_angle (wrapping if needed)
+            if (end_angle > start_angle) {
+                end_angle -= 2 * PI;
+            }
+        }
+        
+        // Validate the arc
+        bool arc_valid = m_boundary_validator->validate_arc(
+            arc_center, radius, start_angle, end_angle, m_pos(2)
+        );
+        
+        if (!arc_valid) {
+            // Record boundary violation
+            if (m_print_ptr) {
+                Vec3d violation_pos = arc_center + Vec3d(radius, 0, m_pos(2));
+                ConflictResult violation = ConflictResult::create_boundary_violation(
+                    static_cast<int>(BoundaryValidator::ViolationType::ArcMove),
+                    violation_pos,
+                    m_pos(2),
+                    "Arc Extrusion"
+                );
+                m_print_ptr->add_boundary_violation(violation);
+            }
+            BOOST_LOG_TRIVIAL(warning) << "Arc extrusion path exceeds build volume boundaries. "
+                << "Center: (" << arc_center.x() << ", " << arc_center.y() 
+                << "), Radius: " << radius << " mm, Z: " << m_pos(2) << " mm";
+            // Continue anyway (don't fail, just warn)
+        }
+    }
+    
     m_pos(0) = point(0);
     m_pos(1) = point(1);
     if (!force_no_extrusion)

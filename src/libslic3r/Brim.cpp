@@ -8,6 +8,9 @@
 #include "libslic3r.h"
 #include "PrintConfig.hpp"
 #include "Model.hpp"
+#include "BoundaryValidator.hpp"
+#include "BuildVolume.hpp"
+#include "GCode/GCodeProcessor.hpp"
 #include <algorithm>
 #include <numeric>
 #include <unordered_set>
@@ -987,7 +990,7 @@ static ExPolygons outer_inner_brim_area(const Print& print,
                         polygons_reverse(ex_poly_holes_reversed);
 
                         if (has_outer_brim) {
-                            // BBS: inner and outer boundary are offset from the same polygon incase of round off error.
+                            // Snapmaker: inner and outer boundary are offset from the same polygon incase of round off error.
                             auto innerExpoly = offset_ex(ex_poly.contour, brim_offset, jtRound, SCALED_RESOLUTION);
                             ExPolygons outerExpoly;
                             if (use_brim_ears) {
@@ -1690,7 +1693,8 @@ void make_brim(const Print& print, PrintTryCancel try_cancel, Polygons& islands_
     std::map<ObjectID, ExtrusionEntityCollection>& brimMap,
     std::map<ObjectID, ExtrusionEntityCollection>& supportBrimMap,
     std::vector<std::pair<ObjectID, unsigned int>> &objPrintVec,
-    std::vector<unsigned int>& printExtruders)
+    std::vector<unsigned int>& printExtruders,
+    Print* print_ptr)
 {
 
     double brim_width_max = 0;
@@ -1738,13 +1742,68 @@ void make_brim(const Print& print, PrintTryCancel try_cancel, Polygons& islands_
     for (size_t iia = 0; iia < islands_area.size(); ++iia)
         islands_area[iia].translate(plate_shift);
 
+    // Snapmaker: Create BuildVolume and BoundaryValidator for brim boundary checking
+    BuildVolume build_volume(print.config().printable_area.values, print.config().printable_height);
+    BuildVolumeBoundaryValidator validator(build_volume);
+    double first_layer_height = print.skirt_first_layer_height();
+    
     for (auto iter = brimAreaMap.begin(); iter != brimAreaMap.end(); ++iter) {
         if (!iter->second.empty()) {
+            // Snapmaker: Validate brim area against build volume boundaries
+            for (const ExPolygon& expoly : iter->second) {
+                if (!validator.validate_polygon(expoly.contour, first_layer_height)) {
+                    // Record boundary violation
+                    if (print_ptr) {
+                        BoundingBox bbox = get_extents(expoly.contour);
+                        Vec3d violation_pos(
+                            unscale<double>(bbox.center().x()),
+                            unscale<double>(bbox.center().y()),
+                            first_layer_height
+                        );
+                        PrintObject* obj = const_cast<PrintObject*>(print.get_object(iter->first));
+                        std::string obj_name = obj ? obj->model_object()->name : "Unknown";
+                        ConflictResult violation = ConflictResult::create_boundary_violation(
+                            static_cast<int>(BoundaryValidator::ViolationType::Brim),
+                            violation_pos,
+                            first_layer_height,
+                            obj_name
+                        );
+                        print_ptr->add_boundary_violation(violation);
+                        BOOST_LOG_TRIVIAL(warning) << "Brim for object " << obj_name 
+                            << " exceeds build volume boundaries at z=" << first_layer_height << " mm";
+                    }
+                }
+            }
             brimMap.insert(std::make_pair(iter->first, makeBrimInfill(iter->second, print, islands_area)));
         };
     }
     for (auto iter = supportBrimAreaMap.begin(); iter != supportBrimAreaMap.end(); ++iter) {
         if (!iter->second.empty()) {
+            // Snapmaker: Validate support brim area against build volume boundaries
+            for (const ExPolygon& expoly : iter->second) {
+                if (!validator.validate_polygon(expoly.contour, first_layer_height)) {
+                    // Record boundary violation
+                    if (print_ptr) {
+                        BoundingBox bbox = get_extents(expoly.contour);
+                        Vec3d violation_pos(
+                            unscale<double>(bbox.center().x()),
+                            unscale<double>(bbox.center().y()),
+                            first_layer_height
+                        );
+                        PrintObject* obj = const_cast<PrintObject*>(print.get_object(iter->first));
+                        std::string obj_name = obj ? obj->model_object()->name : "Unknown";
+                        ConflictResult violation = ConflictResult::create_boundary_violation(
+                            static_cast<int>(BoundaryValidator::ViolationType::Brim),
+                            violation_pos,
+                            first_layer_height,
+                            obj_name + " (support brim)"
+                        );
+                        print_ptr->add_boundary_violation(violation);
+                        BOOST_LOG_TRIVIAL(warning) << "Support brim for object " << obj_name 
+                            << " exceeds build volume boundaries at z=" << first_layer_height << " mm";
+                    }
+                }
+            }
             supportBrimMap.insert(std::make_pair(iter->first, makeBrimInfill(iter->second, print, islands_area)));
         };
     }

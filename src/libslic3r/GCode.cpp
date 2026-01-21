@@ -21,6 +21,8 @@
 #include "libslic3r/format.hpp"
 #include "Time.hpp"
 #include "GCode/ExtrusionProcessor.hpp"
+#include "BoundaryValidator.hpp"
+#include "BuildVolume.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -1863,6 +1865,11 @@ void GCode::_do_export(Print& print, GCodeOutputStream &file, ThumbnailsGenerato
     m_fan_mover.release();
     
     m_writer.set_is_bbl_machine(is_bbl_printers);
+
+    // Snapmaker: Initialize boundary validator for arc path validation
+    BuildVolume build_volume(print.config().printable_area.values, print.config().printable_height);
+    BuildVolumeBoundaryValidator validator(build_volume);
+    m_writer.set_boundary_validator(&validator, &print);
 
     // How many times will be change_layer() called?
     // change_layer() in turn increments the progress bar status.

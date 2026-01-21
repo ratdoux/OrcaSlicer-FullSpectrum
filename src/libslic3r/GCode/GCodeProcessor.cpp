@@ -574,6 +574,7 @@ void GCodeProcessorResult::reset() {
     custom_gcode_per_print_z = std::vector<CustomGCode::Item>();
     spiral_vase_layers = std::vector<std::pair<float, std::pair<size_t, size_t>>>();
     time = 0;
+    boundary_violations.clear();
 
     //BBS: add mutex for protection of gcode result
     unlock();
@@ -607,6 +608,7 @@ void GCodeProcessorResult::reset() {
     spiral_vase_layers = std::vector<std::pair<float, std::pair<size_t, size_t>>>();
     bed_match_result = BedMatchResult(true);
     warnings.clear();
+    boundary_violations.clear();
 
     //BBS: add mutex for protection of gcode result
     unlock();

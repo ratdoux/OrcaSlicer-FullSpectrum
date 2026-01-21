@@ -2,6 +2,9 @@
 #include "Print.hpp"
 #include "BoundingBox.hpp"
 #include "ClipperUtils.hpp"
+#include "BoundaryValidator.hpp"
+#include "BuildVolume.hpp"
+#include "GCode/GCodeProcessor.hpp"
 #include "ElephantFootCompensation.hpp"
 #include "Geometry.hpp"
 #include "I18N.hpp"
@@ -670,6 +673,57 @@ void PrintObject::generate_support_material()
 
             this->_generate_support_material();
             m_print->throw_if_canceled();
+            
+            // Snapmaker: Validate support material against build volume boundaries
+            if (!m_support_layers.empty()) {
+                BuildVolume build_volume(m_print->config().printable_area.values, m_print->config().printable_height);
+                BuildVolumeBoundaryValidator validator(build_volume);
+                
+                for (const SupportLayer* layer : m_support_layers) {
+                    // Check support fills polygons
+                    for (const Polygon& support_contour : layer->support_fills.polygons_covered_by_spacing()) {
+                        // Apply instance transforms and check boundary
+                        for (const PrintInstance& instance : this->instances()) {
+                            Polygon translated_contour = support_contour;
+                            translated_contour.translate(instance.shift);
+                            
+                            // Convert to unscaled coordinates for validation
+                            Vec3d plate_origin = m_print->get_plate_origin();
+                            double z_height = layer->print_z;
+                            
+                            // Check if any point of the contour exceeds boundaries
+                            bool has_violation = false;
+                            Vec3d violation_pos;
+                            for (const Point& pt : translated_contour.points) {
+                                Vec3d pt_unscaled(
+                                    unscale<double>(pt.x()) + plate_origin.x(),
+                                    unscale<double>(pt.y()) + plate_origin.y(),
+                                    z_height
+                                );
+                                if (!validator.validate_point(pt_unscaled)) {
+                                    has_violation = true;
+                                    violation_pos = pt_unscaled;
+                                    break;
+                                }
+                            }
+                            
+                            if (has_violation) {
+                                ConflictResult violation = ConflictResult::create_boundary_violation(
+                                    static_cast<int>(BoundaryValidator::ViolationType::Support),
+                                    violation_pos,
+                                    z_height,
+                                    this->model_object()->name
+                                );
+                                m_print->add_boundary_violation(violation);
+                                BOOST_LOG_TRIVIAL(warning) << "Support material for object " << this->model_object()->name 
+                                    << " exceeds build volume boundaries at z=" << z_height << " mm";
+                                // Only report once per layer to avoid spam
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
         this->set_done(posSupportMaterial);
     }

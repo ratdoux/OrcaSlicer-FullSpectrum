@@ -4331,6 +4331,72 @@ msgstr ""
 msgid "A G-code path goes beyond the plate boundaries."
 msgstr ""
 
+msgid "G-code boundary violations detected:\n\n"
+msgstr ""
+
+msgid "Travel Move"
+msgstr ""
+
+msgid "Extrude Move"
+msgstr ""
+
+msgid "Spiral Lift"
+msgstr ""
+
+msgid "Lazy Lift"
+msgstr ""
+
+msgid "Wipe Tower"
+msgstr ""
+
+msgid "Skirt"
+msgstr ""
+
+msgid "Arc Move"
+msgstr ""
+
+msgid "violation(s)"
+msgstr ""
+
+msgid "violations"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "at Z"
+msgstr ""
+
+msgid "%.2f mm out"
+msgstr ""
+
+msgid "... and more"
+msgstr ""
+
+msgid "beyond X minimum"
+msgstr ""
+
+msgid "beyond X maximum"
+msgstr ""
+
+msgid "beyond Y minimum"
+msgstr ""
+
+msgid "beyond Y maximum"
+msgstr ""
+
+msgid "above Z maximum"
+msgstr ""
+
+msgid "beyond bed radius"
+msgstr ""
+
+msgid "outside boundaries"
+msgstr ""
+
 msgid "Only the object being edited is visible."
 msgstr ""
 

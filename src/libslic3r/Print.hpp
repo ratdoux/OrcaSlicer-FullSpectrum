@@ -970,6 +970,23 @@ public:
     static StringObjectException sequential_print_clearance_valid(const Print &print, Polygons *polygons = nullptr, std::vector<std::pair<Polygon, float>>* height_polygons = nullptr);
     ConflictResultOpt            get_conflict_result() const { return m_conflict_result; }
 
+    // Snapmaker: boundary violations tracking
+    void add_boundary_violation(const ConflictResult& violation) {
+        m_boundary_violations.push_back(violation);
+    }
+
+    const std::vector<ConflictResult>& get_boundary_violations() const {
+        return m_boundary_violations;
+    }
+
+    void clear_boundary_violations() {
+        m_boundary_violations.clear();
+    }
+
+    bool has_boundary_violations() const {
+        return !m_boundary_violations.empty();
+    }
+
     // Return 4 wipe tower corners in the world coordinates (shifted and rotated), including the wipe tower brim.
     Points first_layer_wipe_tower_corners(bool check_wipe_tower_existance=true) const;
 
@@ -1061,6 +1078,8 @@ private:
     int     m_modified_count {0};
     //BBS
     ConflictResultOpt m_conflict_result;
+    //Snapmaker: boundary violations tracking
+    std::vector<ConflictResult> m_boundary_violations;
     FakeWipeTower     m_fake_wipe_tower;
     
     //SoftFever: calibration
