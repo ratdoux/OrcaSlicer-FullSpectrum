@@ -1421,7 +1421,10 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                 }
             }
         } 
-
+        else
+        {
+            BOOST_LOG_TRIVIAL(warning) << "no this cmd for:" << cmd;
+        }
         send_to_js();
         finish_job();
     }
@@ -3695,6 +3698,7 @@ void SSWCP_MachineOption_Instance::sw_GetTimelapseInstance()
         handle_general_fail();
     }
 }
+
 void SSWCP_MachineOption_Instance::CmdForwarding() {
     try {
         std::shared_ptr<PrintHost> host = nullptr;
@@ -3885,6 +3889,7 @@ void SSWCP_MachineConnect_Instance::sw_get_pin_code()
                                         self->m_res_data = response["result"];
                                         self->send_to_js();
                                         self->finish_job();
+
 
                                         std::string dc_msg = "success";
                                         bool flag = mqtt_client->Disconnect(dc_msg);
@@ -4267,7 +4272,12 @@ void SSWCP_UserLogin_Instance::process()
         sw_GetUserLoginState();
     } else if (m_cmd == "sw_SubscribeUserLoginState") {
         sw_SubscribeUserLoginState();
-    } else {
+    }
+    else if (m_cmd == UPDATE_PRIVACY_STATUS)
+    {
+        sw_SubUserUpdatePrivacy();
+    }
+    else {
         handle_general_fail();
     }
 }
@@ -4330,6 +4340,17 @@ void SSWCP_UserLogin_Instance::sw_GetUserLoginState()
     catch (std::exception& e) {
         handle_general_fail();
     }
+}
+
+void SSWCP_UserLogin_Instance::sw_SubUserUpdatePrivacy()
+{
+    try {
+        std::weak_ptr<SSWCP_Instance> weak_ptr         = shared_from_this();
+        wxGetApp().m_user_update_privacy_subscribers[m_webview] = weak_ptr;
+    } catch (std::exception& e) {
+        handle_general_fail();
+    }
+
 }
 
 void SSWCP_UserLogin_Instance::sw_SubscribeUserLoginState()
@@ -5823,9 +5844,8 @@ std::unordered_set<std::string> SSWCP::m_project_cmd_list = {
     "sw_NewProject", "sw_OpenProject", "sw_GetRecentProjects", "sw_OpenRecentFile", "sw_DeleteRecentFiles", "sw_SubscribeRecentFiles",
 };
 
-std::unordered_set<std::string> SSWCP::m_login_cmd_list = {
-    "sw_UserLogin", "sw_UserLogout", "sw_GetUserLoginState", "sw_SubscribeUserLoginState"
-};
+std::unordered_set<std::string> SSWCP::m_login_cmd_list = {"sw_UserLogin", "sw_UserLogout", "sw_GetUserLoginState",
+                                                           "sw_SubscribeUserLoginState", UPDATE_PRIVACY_STATUS};
 
 std::unordered_set<std::string> SSWCP::m_machine_manage_cmd_list = {
     "sw_GetLocalDevices", "sw_AddDevice", "sw_SubscribeLocalDevices", "sw_RenameDevice", "sw_SwitchModel", "sw_DeleteDevices"

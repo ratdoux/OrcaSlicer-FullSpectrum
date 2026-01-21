@@ -310,9 +310,6 @@ private:
     void sw_mqtt_publish();
     void sw_mqtt_set_engine();
 
-
-
-
 private:
     void clean_current_engine();
 
@@ -426,7 +423,7 @@ private:
     void sw_DeleteCameraTimelapse();
     void sw_GetTimelapseInstance();
 
-    void sw_DefectDetactionConfig();
+    void sw_DefectDetactionConfig();    
 
     void CmdForwarding();
 
@@ -535,7 +532,6 @@ private:
     void sw_SubscribeUserLoginState();
 
     void sw_SubUserUpdatePrivacy();
-
 };
 
 // Instance class for homepage business
