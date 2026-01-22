@@ -3152,6 +3152,12 @@ int CLI::run(int argc, char **argv)
         ConfigOptionFloat* volume_option = print_config.option<ConfigOptionFloat>("prime_volume", true);
         float wipe_volume = volume_option->value;
 
+        ConfigOptionFloat* brim_chamfer_max_width_option = print_config.option<ConfigOptionFloat>("prime_tower_brim_chamfer_max_width", true);
+        float brim_chamfer_max_width = brim_chamfer_max_width_option->value;
+
+        ConfigOptionBool* brim_chamfer_option = print_config.option<ConfigOptionBool>("prime_tower_brim_chamfer", true);
+        bool brim_chamfer = brim_chamfer_option->value;
+
         Vec3d wipe_tower_size = plate->estimate_wipe_tower_size(print_config, plate_obj_size_info.wipe_width, wipe_volume, filaments_cnt);
         plate_obj_size_info.wipe_depth = wipe_tower_size(1);
 
@@ -3882,6 +3888,8 @@ int CLI::run(int argc, char **argv)
                     ConfigOptionFloat* width_option = m_print_config.option<ConfigOptionFloat>("prime_tower_width", true);
                     ConfigOptionFloat* rotation_angle_option = m_print_config.option<ConfigOptionFloat>("wipe_tower_rotation_angle", true);
                     ConfigOptionFloat* volume_option = m_print_config.option<ConfigOptionFloat>("prime_volume", true);
+                    ConfigOptionFloat* brim_chamfer_max_width_option = m_print_config.option<ConfigOptionFloat>("prime_tower_brim_chamfer_max_width", true);
+                    ConfigOptionBool* brim_chamfer_option = m_print_config.option<ConfigOptionBool>("prime_tower_brim_chamfer", true);
 
                     BOOST_LOG_TRIVIAL(info) << boost::format("prime_tower_width %1% wipe_tower_rotation_angle %2% prime_volume %3%") % width_option->value % rotation_angle_option->value % volume_option->value;
 
@@ -4136,6 +4144,8 @@ int CLI::run(int argc, char **argv)
                         ConfigOptionFloat* width_option = m_print_config.option<ConfigOptionFloat>("prime_tower_width", true);
                         ConfigOptionFloat* rotation_angle_option = m_print_config.option<ConfigOptionFloat>("wipe_tower_rotation_angle", true);
                         ConfigOptionFloat* volume_option = m_print_config.option<ConfigOptionFloat>("prime_volume", true);
+                        ConfigOptionFloat* brim_chamfer_max_width_option = m_print_config.option<ConfigOptionFloat>("prime_tower_brim_chamfer_max_width", true);
+                        ConfigOptionBool* brim_chamfer_option = m_print_config.option<ConfigOptionBool>("prime_tower_brim_chamfer", true);
 
                         BOOST_LOG_TRIVIAL(info) << boost::format("prime_tower_width %1% wipe_tower_rotation_angle %2% prime_volume %3%")%width_option->value %rotation_angle_option->value %volume_option->value ;
 

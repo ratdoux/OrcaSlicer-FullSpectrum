@@ -189,6 +189,8 @@ private:
 	float  m_wipe_tower_cone_angle = 0.f;
     float  m_wipe_tower_brim_width      = 0.f; 	// Width of brim (mm) from config
     float  m_wipe_tower_brim_width_real = 0.f; 	// Width of brim (mm) after generation
+    bool   m_prime_tower_brim_chamfer          = true;   // Enable/disable brim chamfer
+    float  m_prime_tower_brim_chamfer_max_width = 4.f;   // Max chamfer width (mm)
 	float  m_wipe_tower_rotation_angle = 0.f; // Wipe tower rotation angle in degrees (with respect to x axis)
     float  m_internal_rotation  = 0.f;
 	float  m_y_shift			= 0.f;  // y shift passed to writer

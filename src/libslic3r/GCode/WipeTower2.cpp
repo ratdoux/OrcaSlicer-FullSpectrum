@@ -1255,6 +1255,8 @@ WipeTower2::WipeTower2(const PrintConfig& config, const PrintRegionConfig& defau
     m_wipe_tower_width(float(config.prime_tower_width)),
     m_wipe_tower_rotation_angle(float(config.wipe_tower_rotation_angle)),
     m_wipe_tower_brim_width(float(config.prime_tower_brim_width)),
+    m_prime_tower_brim_chamfer(config.prime_tower_brim_chamfer),
+    m_prime_tower_brim_chamfer_max_width(float(config.prime_tower_brim_chamfer_max_width)),
     m_wipe_tower_cone_angle(float(config.wipe_tower_cone_angle)),
     m_extra_flow(float(config.wipe_tower_extra_flow/100.)),
     m_extra_spacing_wipe(float(config.wipe_tower_extra_spacing/100. * config.wipe_tower_extra_flow/100.)),
@@ -2081,27 +2083,53 @@ WipeTower::ToolChangeResult WipeTower2::finish_layer()
         poly = generate_support_rib_wall(writer, wt_box, feedrate, first_layer, m_wall_type == (int)wtwRib, true, false);
     }
 
-    // brim (first layer only)
-    if (first_layer) {
+    // brim with chamfer (gradual layer-by-layer reduction)
+    int loops_num = (m_wipe_tower_brim_width + spacing/2.f) / spacing;
+
+    // Apply chamfer reduction if feature is enabled and brim width is configured
+    if (m_wipe_tower_brim_width > 0 && m_prime_tower_brim_chamfer) {
+        if (!first_layer) {
+            // Calculate distance from first layer with tool changes
+            size_t current_idx = m_layer_info - m_plan.begin();
+            int dist_to_1st = (int)current_idx - (int)m_first_layer_idx;
+
+            // Stop print chamfer if depth changes
+            bool depth_changed = (m_layer_info->depth != m_plan[m_first_layer_idx].depth);
+            if (depth_changed) {
+                loops_num = 0;
+            }
+            else {
+                // Limit max chamfer width to configured value
+                int chamfer_loops_num = (int)(m_prime_tower_brim_chamfer_max_width / spacing);
+                loops_num = std::min(loops_num, chamfer_loops_num) - dist_to_1st;
+                // Ensure loops_num doesn't go negative
+                if (loops_num < 0) loops_num = 0;
+            }
+        }
+    }
+
+    if (loops_num > 0) {
         writer.append("; WIPE_TOWER_BRIM_START\n");
-        size_t loops_num = (m_wipe_tower_brim_width + spacing/2.f) / spacing;
-        
-        for (size_t i = 0; i < loops_num; ++ i) {
+
+        for (int i = 0; i < loops_num; ++i) {
             poly = offset(poly, scale_(spacing)).front();
             int cp = poly.closest_point_index(Point::new_scale(writer.x(), writer.y()));
             writer.travel(unscale(poly.points[cp]).cast<float>());
-            for (int i=cp+1; true; ++i ) {
-                if (i==int(poly.points.size()))
-                    i = 0;
-                writer.extrude(unscale(poly.points[i]).cast<float>());
-                if (i == cp)
+            for (int j = cp+1; true; ++j) {
+                if (j == int(poly.points.size()))
+                    j = 0;
+                writer.extrude(unscale(poly.points[j]).cast<float>());
+                if (j == cp)
                     break;
             }
         }
+
         writer.append("; WIPE_TOWER_BRIM_END\n");
-        // Save actual brim width to be later passed to the Print object, which will use it
-        // for skirt calculation and pass it to GLCanvas for precise preview box
-        m_wipe_tower_brim_width_real = loops_num * spacing;
+
+        // Save actual brim width only on first layer
+        if (first_layer) {
+            m_wipe_tower_brim_width_real = loops_num * spacing;
+        }
     }
 
     // Now prepare future wipe.

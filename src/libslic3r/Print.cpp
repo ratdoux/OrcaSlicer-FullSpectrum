@@ -294,6 +294,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_no_sparse_layers"
             || opt_key == "flush_volumes_matrix"
             || opt_key == "prime_volume"
+            || opt_key == "prime_tower_brim_chamfer"
+            || opt_key == "prime_tower_brim_chamfer_max_width"
             || opt_key == "flush_into_infill"
             || opt_key == "flush_into_support"
             || opt_key == "initial_layer_infill_speed"
