@@ -4273,9 +4273,10 @@ void SSWCP_UserLogin_Instance::process()
     } else if (m_cmd == "sw_SubscribeUserLoginState") {
         sw_SubscribeUserLoginState();
     }
-    else if (m_cmd == UPDATE_PRIVACY_STATUS)
-    {
+    else if (m_cmd == UPDATE_PRIVACY_STATUS) {
         sw_SubUserUpdatePrivacy();
+    } else if (m_cmd == GET_PRIVACY_STATUS) {
+        sw_GetUserUpdatePrivacy();
     }
     else {
         handle_general_fail();
@@ -4340,6 +4341,22 @@ void SSWCP_UserLogin_Instance::sw_GetUserLoginState()
     catch (std::exception& e) {
         handle_general_fail();
     }
+}
+void SSWCP_UserLogin_Instance::sw_GetUserUpdatePrivacy()
+{
+    json data;
+    auto isAgree     = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
+    bool isUserAgree               = false;
+
+    if (isAgree == "true")
+        isUserAgree = true;
+
+    data[PRIVACY_POLICY_FLAGS] = isUserAgree;
+
+    m_res_data = data;
+    send_to_js();
+    finish_job();
+
 }
 
 void SSWCP_UserLogin_Instance::sw_SubUserUpdatePrivacy()
@@ -5844,8 +5861,8 @@ std::unordered_set<std::string> SSWCP::m_project_cmd_list = {
     "sw_NewProject", "sw_OpenProject", "sw_GetRecentProjects", "sw_OpenRecentFile", "sw_DeleteRecentFiles", "sw_SubscribeRecentFiles",
 };
 
-std::unordered_set<std::string> SSWCP::m_login_cmd_list = {"sw_UserLogin", "sw_UserLogout", "sw_GetUserLoginState",
-                                                           "sw_SubscribeUserLoginState", UPDATE_PRIVACY_STATUS};
+std::unordered_set<std::string> SSWCP::m_login_cmd_list = {"sw_UserLogin", "sw_UserLogout", "sw_GetUserLoginState", "sw_SubscribeUserLoginState",
+                                                           UPDATE_PRIVACY_STATUS,  GET_PRIVACY_STATUS};
 
 std::unordered_set<std::string> SSWCP::m_machine_manage_cmd_list = {
     "sw_GetLocalDevices", "sw_AddDevice", "sw_SubscribeLocalDevices", "sw_RenameDevice", "sw_SwitchModel", "sw_DeleteDevices"

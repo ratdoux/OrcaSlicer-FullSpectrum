@@ -46,6 +46,8 @@
     #define _MSW_DARK_MODE            1
 #endif // _MSW_DARK_MODE
 
+#define PRIVACY_POLICY_FLAGS "privacy_policy_isagree"
+
 class wxMenuItem;
 class wxMenuBar;
 class wxTopLevelWindow;

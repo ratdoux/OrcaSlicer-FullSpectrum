@@ -4045,17 +4045,13 @@ wxString GUI_App::get_international_url(const wxString& origin_url) {
 
     string dark_mode = wxGetApp().app_config->get("dark_color_mode");
 
-    auto   isAgree   = wxGetApp().app_config->get("app", "privacy_policy_isagree");
-    std::string  useAgree = (isAgree == "true" ? "1" : "0");
-
     if (baseUrl.find("?") != std::string::npos) {
         return baseUrl + wxString::FromUTF8("&locale=") + lang + wxString::FromUTF8("-") + region +
-               wxString::FromUTF8("&dark_mode=" + dark_mode) + wxString::FromUTF8("&privacy_policy_isagree=" + useAgree);
+               wxString::FromUTF8("&dark_mode=" + dark_mode);
     } else {
         return baseUrl + wxString::FromUTF8("?locale=") + lang + wxString::FromUTF8("-") + region +
-               wxString::FromUTF8("&dark_mode=" + dark_mode) + wxString::FromUTF8("&privacy_policy_isagree=" + useAgree);
+               wxString::FromUTF8("&dark_mode=" + dark_mode);
     }
-
 
 }
 
@@ -6719,7 +6715,7 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
         mainframe->refresh_plugin_tips();
         // BBS: remove SLA related message
     }
-    auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
+    auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
 
     user_update_privacy_notify(isAgree == "true");    
     BOOST_LOG_TRIVIAL(warning) << "run_wizard changed the privacy policy with: " << (isAgree);
@@ -6932,7 +6928,7 @@ void GUI_App::user_update_privacy_notify(const bool& res)
 
     json data;
 
-    data["privacy_policy_isagree"] = res;
+    data[PRIVACY_POLICY_FLAGS] = res;
     
     for (const auto& instance : m_user_update_privacy_subscribers) {
         auto ptr = instance.second.lock();
@@ -6957,7 +6953,7 @@ void GUI_App::user_login_notify(const json& res)
 
 bool GUI_App::config_wizard_startup()
 {
-    auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
+    auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
     user_update_privacy_notify(isAgree == "true");   
     BOOST_LOG_TRIVIAL(warning) << "config_wizard_startup changed the privacy policy with: " << (isAgree);
     if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {

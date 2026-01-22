@@ -26,6 +26,7 @@ using tcp = asio::ip::tcp;
 
 //WCP Interface definition
 #define UPDATE_PRIVACY_STATUS "sw_SubUserUpdatePrivacy"
+#define GET_PRIVACY_STATUS "sw_GetUserUpdatePrivacy"
 #define UPLOAD_CAMERA_TIMELAPSE "sw_UploadCameraTimelapse"
 #define DELETE_CAMERA_TIMELAPSE "sw_DeleteCameraTimelapse"
 #define GETCAMERA_TIMELAPSE_INSTANCE "sw_GetCameraTimelapseInstance"
@@ -530,6 +531,8 @@ private:
     void sw_GetUserLoginState();
 
     void sw_SubscribeUserLoginState();
+
+    void sw_GetUserUpdatePrivacy();
 
     void sw_SubUserUpdatePrivacy();
 };

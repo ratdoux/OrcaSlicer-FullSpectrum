@@ -748,9 +748,9 @@ wxBoxSizer *PreferencesDialog::create_item_checkbox(wxString title, wxWindow *pa
         app_config->set_bool(param, checkbox->GetValue());
         app_config->save();
 
-        if (param == "privacy_policy_isagree")
+        if (param == PRIVACY_POLICY_FLAGS)
             {
-                app_config->set("app", "privacy_policy_isagree", checkbox->GetValue());            
+            app_config->set("app", PRIVACY_POLICY_FLAGS, checkbox->GetValue());            
                 BOOST_LOG_TRIVIAL(warning) <<"create_item_checkbox changed the privacy policy with: "<<(checkbox->GetValue()?"true" : "false");
                 wxGetApp().user_update_privacy_notify(checkbox->GetValue());    
             }
@@ -1300,7 +1300,7 @@ wxWindow* PreferencesDialog::create_general_page()
     std::string region = app_config->get("language");
 
     auto title_user_experience = create_item_title(_L("User Experience"), page, _L("User Experience"));
-    auto item_priv_policy      = create_item_checkbox(_L("Join Customer Experience Improvement Program."), page, _L(""), 50, "privacy_policy_isagree");
+    auto             item_priv_policy      = create_item_checkbox(_L("Join Customer Experience Improvement Program."), page, _L(""), 50,PRIVACY_POLICY_FLAGS);
     wxHyperlinkCtrl* hyperlink = nullptr;
     if (region.empty() || region != "zh_CN")
         hyperlink = new wxHyperlinkCtrl(page, wxID_ANY, _L("What data would be collected?"), enUrl);
