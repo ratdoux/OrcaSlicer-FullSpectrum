@@ -1901,14 +1901,17 @@ void Tab::apply_config_from_cache()
         was_applied = static_cast<TabPrinter*>(this)->apply_extruder_cnt_from_cache();
 
     if (!m_cache_config.empty()) {
+        // Apply to edited preset (官方版本的简单实现)
         m_presets->get_edited_preset().config.apply(m_cache_config);
         m_cache_config.clear();
-
         was_applied = true;
     }
 
-    if (was_applied)
+    if (was_applied) {
         update_dirty();
+        // 标记为 dirty 以保留修改
+        m_presets->get_edited_preset().is_dirty = true;
+    }
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<<boost::format(": exit, was_applied=%1%")%was_applied;
 }
 
@@ -5338,37 +5341,34 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
         // check if there is something in the cache to move to the new selected preset
         apply_config_from_cache();
 
-        size_t old_filament_count = m_preset_bundle->filament_presets.size();
-
-        load_current_preset();
-
         // Orca: update presets for the selected printer
         if (m_type == Preset::TYPE_PRINTER && wxGetApp().app_config->get_bool("remember_printer_config")) {
-            /*m_preset_bundle->update_selections(*wxGetApp().app_config);
-            int extruders_count =
-                m_preset_bundle->printers.get_edited_preset().config.opt<ConfigOptionFloats>("nozzle_diameter")->values.size();
-            bool support_multi_material =
-                m_preset_bundle->printers.get_edited_preset().config.opt<ConfigOptionBool>("single_extruder_multi_material")->getBool();
-
-            if (!support_multi_material) {
-                m_preset_bundle->set_num_filaments(extruders_count);
-            } 
-            wxGetApp().plater()->sidebar().on_filaments_change(m_preset_bundle->filament_presets.size());*/
-
             if (preset_name.find("Snapmaker U1") != std::string::npos) {
+                // 在 update_selections() 改变耗材数量之前先保存旧数量和颜色
+                size_t old_filament_count = m_preset_bundle->filament_presets.size();
+                std::vector<std::string> old_filament_colors = wxGetApp().plater()->get_extruder_colors_from_plater_config();
+                std::vector<std::string> old_filament_presets = m_preset_bundle->filament_presets;
+
                 m_preset_bundle->update_selections(*wxGetApp().app_config);
-                if (old_filament_count > m_preset_bundle->filament_presets.size()) {
-                    m_preset_bundle->filament_presets.resize(old_filament_count, m_preset_bundle->filament_presets[0]);
-                }
+
+                // 恢复耗材预设到原来的数量和预设名称（保持类型自适应）
+                m_preset_bundle->filament_presets = old_filament_presets;
+
+                // 恢复原来的颜色，保持用户设置的耗材颜色不变
+                wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour")->values = old_filament_colors;
+
+                // 重要：立即保存颜色到配置文件，这样下次切换时也会保持
+                std::string filament_colors_str = boost::algorithm::join(old_filament_colors, ",");
+                wxGetApp().app_config->set_printer_setting(preset_name, "filament_colors", filament_colors_str);
+
                 wxGetApp().plater()->sidebar().on_filaments_change(m_preset_bundle->filament_presets.size());
             } else {
+                // 非 U1 机型：使用默认行为
                 m_preset_bundle->update_selections(*wxGetApp().app_config);
                 wxGetApp().plater()->sidebar().on_filaments_change(m_preset_bundle->filament_presets.size());
             }
-
-            
-            
         }
+        load_current_preset();
 
         if (delete_third_printer) {
             wxGetApp().CallAfter([filament_presets, process_presets]() {
@@ -5400,6 +5400,8 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
             });
         }
 
+        // Trigger the on_presets_changed event to apply cached config for dependent tabs
+        on_presets_changed();
     }
 
     if (technology_changed)
@@ -5416,11 +5418,6 @@ bool Tab::may_discard_current_dirty_preset(PresetCollection* presets /*= nullptr
     if (presets == nullptr) presets = m_presets;
 
     UnsavedChangesDialog dlg(m_type, presets, new_printer_name, no_transfer);
-    
-    if (dlg.getUpdateItemCount() == 0) {
-        // no need to save
-        return true;
-    }
 
     if (dlg.ShowModal() == wxID_CANCEL)
         return false;
