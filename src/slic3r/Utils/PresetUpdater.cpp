@@ -814,7 +814,10 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                     }
                 }
 
-            } catch (...) {}
+            } catch (const std::exception& ex) {
+                std::string errorMsg = ex.what();
+                BOOST_LOG_TRIVIAL(fatal) << "request server flutter update data error:" << errorMsg;
+            }
         })
         .perform_sync();
 }
@@ -920,7 +923,10 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                     }
                 }
                                
-            } catch (...) {}
+            } catch (const std::exception& ex) {
+                std::string errorMsg = ex.what();
+                BOOST_LOG_TRIVIAL(fatal) << "request server preset update data error:" << errorMsg;
+            }
         })
         .perform_sync();
 }

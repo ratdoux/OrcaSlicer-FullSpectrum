@@ -4876,7 +4876,10 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             if (by_user)
                 evt->SetInt(UPDATE_BY_USER);
             GUI::wxGetApp().QueueEvent(evt);
-          } catch (...) {}
+        } catch (const std::exception& ex) {
+            std::string errorMsg = ex.what();
+            BOOST_LOG_TRIVIAL(fatal) << "request server soft update data error:" << errorMsg;            
+          }
         })
         .perform_sync();
 }
