@@ -6,6 +6,7 @@
 #include "libslic3r/ExtrusionEntity.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/CustomGCode.hpp"
+#include "libslic3r/BoundaryValidator.hpp"
 
 #include <cstdint>
 #include <array>
@@ -104,18 +105,66 @@ class Print;
         }
     };
 
+    // Forward declaration for BoundaryValidator
+    class BoundaryValidator;
+
     struct ConflictResult
     {
+        // ===== Existing fields for object collision =====
         std::string        _objName1;
         std::string        _objName2;
         double             _height;
         const void *_obj1; // nullptr means wipe tower
         const void *_obj2;
         int                layer = -1;
+
+        // ===== New fields for boundary violations =====
+        enum class ConflictType {
+            ObjectCollision,      // Original: collision between objects
+            BoundaryViolation     // New: path exceeds build volume boundaries
+        };
+
+        ConflictType conflict_type = ConflictType::ObjectCollision;
+
+        // Only valid when conflict_type == BoundaryViolation
+        int violation_type_int = -1;  // Stores BoundaryValidator::ViolationType as int
+        Vec3d violation_position{Vec3d::Zero()};  // Position where violation occurs (unscaled)
+
+        // ===== Constructors =====
         ConflictResult(const std::string &objName1, const std::string &objName2, double height, const void *obj1, const void *obj2)
-            : _objName1(objName1), _objName2(objName2), _height(height), _obj1(obj1), _obj2(obj2)
+            : _objName1(objName1), _objName2(objName2), _height(height), _obj1(obj1), _obj2(obj2),
+              conflict_type(ConflictType::ObjectCollision)
         {}
+
         ConflictResult() = default;
+
+        // New: Static factory method for boundary violations
+        // Note: violation_type should be cast from BoundaryValidator::ViolationType
+        static ConflictResult create_boundary_violation(
+            int violation_type,
+            const Vec3d& pos,
+            double height,
+            const std::string& obj_name = ""
+        ) {
+            ConflictResult result;
+            result.conflict_type = ConflictType::BoundaryViolation;
+            result.violation_type_int = violation_type;
+            result.violation_position = pos;
+            result._height = height;
+            result._objName1 = obj_name;
+            result.layer = -1;  // Will be computed later if needed
+            return result;
+        }
+
+        // Helper method to check if this is a boundary violation
+        bool is_boundary_violation() const {
+            return conflict_type == ConflictType::BoundaryViolation;
+        }
+
+        // Helper method to check if this is an object collision
+        bool is_object_collision() const {
+            return conflict_type == ConflictType::ObjectCollision;
+        }
     };
 
     struct BedMatchResult
@@ -191,6 +240,18 @@ class Print;
             std::vector<std::string> params;    // extra msg info
         };
 
+        // Snapmaker: Detailed boundary violation information for better user feedback
+        // Uses BoundaryValidator enums to avoid duplication
+        struct BoundaryViolationInfo {
+            BoundaryValidator::ViolationType violation_type{BoundaryValidator::ViolationType::Unknown};
+            BoundaryValidator::BoundaryDirection direction{BoundaryValidator::BoundaryDirection::Unknown};
+            Vec3d position{Vec3d::Zero()};          // Position where violation occurs (mm)
+            double distance_out{0.0};               // How far outside (mm)
+            std::string component_name;             // e.g., "Skirt", "Brim", "Support", "Wipe Tower"
+            int layer_num{-1};                      // Layer number (if applicable)
+            float print_z{-1.0f};                   // Z height at violation (mm)
+        };
+
         std::string filename;
         unsigned int id;
         std::vector<MoveVertex> moves;
@@ -222,6 +283,8 @@ class Print;
         std::vector<std::pair<float, std::pair<size_t, size_t>>> spiral_vase_layers;
         //BBS
         std::vector<SliceWarning> warnings;
+        // Snapmaker: Detailed boundary violation information
+        std::vector<BoundaryViolationInfo> boundary_violations;
         int nozzle_hrc;
         NozzleType nozzle_type;
         BedType bed_type = BedType::btCount;
@@ -255,6 +318,7 @@ class Print;
             custom_gcode_per_print_z = other.custom_gcode_per_print_z;
             spiral_vase_layers = other.spiral_vase_layers;
             warnings = other.warnings;
+            boundary_violations = other.boundary_violations;
             bed_type = other.bed_type;
             bed_match_result = other.bed_match_result;
 #if ENABLE_GCODE_VIEWER_STATISTICS

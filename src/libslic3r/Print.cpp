@@ -36,6 +36,7 @@
 #include "nlohmann/json.hpp"
 
 #include "GCode/ConflictChecker.hpp"
+#include "BoundaryValidator.hpp"
 
 #include <codecvt>
 
@@ -293,6 +294,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_no_sparse_layers"
             || opt_key == "flush_volumes_matrix"
             || opt_key == "prime_volume"
+            || opt_key == "prime_tower_brim_chamfer"
+            || opt_key == "prime_tower_brim_chamfer_max_width"
             || opt_key == "flush_into_infill"
             || opt_key == "flush_into_support"
             || opt_key == "initial_layer_infill_speed"
@@ -1285,6 +1288,45 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
                 }
             }
         }
+
+        // Snapmaker: Critical fix - Validate wipe tower position is within build volume boundaries
+        // This addresses vulnerability #3: Wipe tower position was not validated against bed boundaries
+        {
+            const size_t plate_index = this->get_plate_index();
+            const Vec3d plate_origin = this->get_plate_origin();
+            const float x = m_config.wipe_tower_x.get_at(plate_index) + plate_origin(0);
+            const float y = m_config.wipe_tower_y.get_at(plate_index) + plate_origin(1);
+            const float width = m_config.prime_tower_width.value;
+            const float brim_width = m_config.prime_tower_brim_width.value;
+            const float depth = this->wipe_tower_data(extruders.size()).depth;
+
+            // Check all four corners of wipe tower (including brim)
+            // Create a simple bounding box from printable_area config
+            BoundingBoxf bed_bbox;
+            for (const Vec2d& pt : m_config.printable_area.values) {
+                bed_bbox.merge(pt);
+            }
+
+            bool tower_outside = false;
+            // Check all corners
+            if (x - brim_width < bed_bbox.min.x() || x + width + brim_width > bed_bbox.max.x() ||
+                y - brim_width < bed_bbox.min.y() || y + depth + brim_width > bed_bbox.max.y()) {
+                tower_outside = true;
+            }
+
+            if (tower_outside) {
+                const float total_width = width + 2 * brim_width;
+                const float total_depth = depth + 2 * brim_width;
+                return StringObjectException{
+                    Slic3r::format(_u8L("The prime tower at position (%.2f, %.2f) with dimensions %.2f x %.2f mm "
+                                       "(including %.2f mm brim) exceeds the bed boundaries. "
+                                       "Please adjust the prime tower position in the configuration."),
+                                   x, y, total_width, total_depth, brim_width),
+                    nullptr,
+                    "wipe_tower_x"
+                };
+            }
+        }
     }
 
 	{
@@ -2146,7 +2188,7 @@ void Print::process(long long *time_cost_with_cache, bool use_cache)
         if (this->has_brim()) {
             Polygons islands_area;
             make_brim(*this, this->make_try_cancel(), islands_area, m_brimMap,
-                m_supportBrimMap, objPrintVec, printExtruders);
+                m_supportBrimMap, objPrintVec, printExtruders, this);
             for (Polygon& poly_ex : islands_area)
                 poly_ex.douglas_peucker(SCALED_RESOLUTION);
             for (Polygon &poly : union_(this->first_layer_islands(), islands_area))
@@ -2245,6 +2287,37 @@ std::string Print::export_gcode(const std::string& path_template, GCodeProcessor
 
     //BBS
     result->conflict_result = m_conflict_result;
+
+    // Snapmaker: Copy boundary violations from Print to GCodeProcessorResult
+    // This allows detailed violation information to be displayed in the GUI
+    if (!m_boundary_violations.empty()) {
+        result->boundary_violations.clear();
+        result->boundary_violations.reserve(m_boundary_violations.size());
+
+        for (const auto& conflict : m_boundary_violations) {
+            if (conflict.is_boundary_violation()) {
+                GCodeProcessorResult::BoundaryViolationInfo info;
+
+                // Directly copy the violation type (enums are now unified)
+                info.violation_type = static_cast<BoundaryValidator::ViolationType>(conflict.violation_type_int);
+
+                // Copy position and height
+                info.position = conflict.violation_position;
+                info.print_z = static_cast<float>(conflict._height);
+                info.layer_num = conflict.layer;
+
+                // Direction is not directly available in ConflictResult, leave as Unknown
+                info.direction = BoundaryValidator::BoundaryDirection::Unknown;
+                info.distance_out = 0.0;
+
+                result->boundary_violations.push_back(info);
+            }
+        }
+
+        BOOST_LOG_TRIVIAL(info) << "Copied " << result->boundary_violations.size()
+            << " boundary violations from Print to GCodeProcessorResult";
+    }
+
     return path.c_str();
 }
 
@@ -2341,6 +2414,11 @@ void Print::_make_skirt()
     // Draw outlines from outside to inside.
     // Loop while we have less skirts than required or any extruder hasn't reached the min length if any.
     std::vector<coordf_t> extruded_length(extruders.size(), 0.);
+    
+    // Create BuildVolume and BoundaryValidator for skirt boundary checking
+    BuildVolume build_volume(m_config.printable_area.values, m_config.printable_height);
+    BuildVolumeBoundaryValidator validator(build_volume);
+    
     if (m_config.skirt_type == stCombined) {
         for (size_t i = m_config.skirt_loops, extruder_idx = 0; i > 0; -- i) {
             this->throw_if_canceled();
@@ -2356,6 +2434,28 @@ void Print::_make_skirt()
 				    break;
 			    loop = loops.front();
             }
+            
+            // Snapmaker: Validate skirt loop against build volume boundaries
+            if (!validator.validate_polygon(loop, initial_layer_print_height)) {
+                // Record boundary violation
+                BoundingBox loop_bbox = get_extents(loop);
+                Vec3d violation_pos(
+                    unscale<double>(loop_bbox.center().x()),
+                    unscale<double>(loop_bbox.center().y()),
+                    initial_layer_print_height
+                );
+                ConflictResult violation = ConflictResult::create_boundary_violation(
+                    static_cast<int>(BoundaryValidator::ViolationType::Skirt),
+                    violation_pos,
+                    initial_layer_print_height,
+                    "Skirt"
+                );
+                this->add_boundary_violation(violation);
+                BOOST_LOG_TRIVIAL(warning) << "Skirt loop exceeds build volume boundaries at z=" 
+                    << initial_layer_print_height << " mm";
+                // Continue with remaining loops but record the violation
+            }
+            
             // Extrude the skirt loop.
             ExtrusionLoop eloop(elrSkirt);
             eloop.paths.emplace_back(ExtrusionPath(
@@ -2412,6 +2512,26 @@ void Print::_make_skirt()
                     if (loops.empty())
                         break;
                     loop = loops.front();
+                }
+
+                // Snapmaker: Validate per-object skirt loop against build volume boundaries
+                if (!validator.validate_polygon(loop, initial_layer_print_height)) {
+                    // Record boundary violation
+                    BoundingBox loop_bbox = get_extents(loop);
+                    Vec3d violation_pos(
+                        unscale<double>(loop_bbox.center().x()),
+                        unscale<double>(loop_bbox.center().y()),
+                        initial_layer_print_height
+                    );
+                    ConflictResult violation = ConflictResult::create_boundary_violation(
+                        static_cast<int>(BoundaryValidator::ViolationType::Skirt),
+                        violation_pos,
+                        initial_layer_print_height,
+                        object->model_object()->name
+                    );
+                    this->add_boundary_violation(violation);
+                    BOOST_LOG_TRIVIAL(warning) << "Per-object skirt loop for " << object->model_object()->name 
+                        << " exceeds build volume boundaries at z=" << initial_layer_print_height << " mm";
                 }
 
                 // Extrude the skirt loop.
