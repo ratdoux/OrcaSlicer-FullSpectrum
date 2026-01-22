@@ -4853,8 +4853,9 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 
             Semver server_version = get_version(version_info.version_str, matcher);
 
-            if (current_version >= server_version && by_user) {
-                this->no_new_version();
+            if (current_version >= server_version) {
+                if(by_user)
+                    this->no_new_version();
                 return;
             }
 

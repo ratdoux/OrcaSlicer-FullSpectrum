@@ -29,7 +29,6 @@ using tcp = asio::ip::tcp;
 #define GET_PRIVACY_STATUS "sw_GetUserUpdatePrivacy"
 #define UPLOAD_CAMERA_TIMELAPSE "sw_UploadCameraTimelapse"
 #define DELETE_CAMERA_TIMELAPSE "sw_DeleteCameraTimelapse"
-#define GETCAMERA_TIMELAPSE_INSTANCE "sw_GetCameraTimelapseInstance"
 #define GET_DEVICEDATA_STORAGESPACE "sw_GetDeviceDataStorageSpace"
 
 namespace Slic3r { namespace GUI {
@@ -425,6 +424,8 @@ private:
     void sw_GetTimelapseInstance();
 
     void sw_DefectDetactionConfig();    
+
+    void sw_GetDeviceDataStorageSpace();
 
     void CmdForwarding();
 
