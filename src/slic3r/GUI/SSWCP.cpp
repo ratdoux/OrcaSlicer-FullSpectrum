@@ -2078,8 +2078,8 @@ void SSWCP_MachineOption_Instance::process()
         sw_UploadCameraTimelapse();
     } else if (m_cmd == "sw_DeleteCameraTimelapse") {
         sw_DeleteCameraTimelapse();
-    } else if (m_cmd == "sw_GetTimelapseInstance") {
-        sw_GetTimelapseInstance();
+    } else if (m_cmd == "sw_GetCameraTimelapseInstance") {
+        sw_GetCameraTimelapseInstance();
     } else if (m_cmd == "sw_ServerClientManagerSetUserinfo") {
         sw_ServerClientManagerSetUserinfo();
     } else if (m_cmd == "sw_DefectDetactionConfig"){
@@ -3695,7 +3695,7 @@ void SSWCP_MachineOption_Instance::CmdForwarding()
     }
 }
 
-void SSWCP_MachineOption_Instance::sw_GetTimelapseInstance()
+void SSWCP_MachineOption_Instance::sw_GetCameraTimelapseInstance()
 {
     try {
         std::shared_ptr<PrintHost> host = nullptr;
@@ -5861,7 +5861,7 @@ std::unordered_set<std::string> SSWCP::m_machine_option_cmd_list = {
     "sw_UpdateMachineFilamentInfo",
     "sw_UploadCameraTimelapse",
     "sw_DeleteCameraTimelapse",
-    "sw_GetTimelapseInstance",
+    "sw_GetCameraTimelapseInstance",
     "sw_ServerClientManagerSetUserinfo",
     "sw_DefectDetactionConfig",
     GET_DEVICEDATA_STORAGESPACE

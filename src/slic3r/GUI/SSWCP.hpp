@@ -421,7 +421,7 @@ private:
     void sw_GetFileListPage();
     void sw_UploadCameraTimelapse();
     void sw_DeleteCameraTimelapse();
-    void sw_GetTimelapseInstance();
+    void sw_GetCameraTimelapseInstance();
 
     void sw_DefectDetactionConfig();    
 

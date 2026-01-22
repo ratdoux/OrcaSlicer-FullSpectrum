@@ -2403,7 +2403,7 @@ void Moonraker_Mqtt::async_get_timelapse_instance(const nlohmann::json& targets,
 void Moonraker_Mqtt::async_get_userdata_space(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)> callback)
 {
     auto&       wcp_loger = GUI::WCP_Logger::getInstance();
-    std::string method    = "camera.get_timelapse_instance";
+    std::string method    = "server.files.get_userdata_space";
 
     json params = json::object();
 
