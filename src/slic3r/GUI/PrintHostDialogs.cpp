@@ -68,7 +68,7 @@ void PrintHostSendDialog::init()
 
     const AppConfig* app_config = wxGetApp().app_config;
 
-    auto *label_dir_hint = new wxStaticText(this, wxID_ANY, _L("Please do not include the special characters #, *, and ;in filenames."));
+    auto *label_dir_hint = new wxStaticText(this, wxID_ANY, _L("Please do not include the special characters #, *, ;, \\, /, :, \", <, >, or | in filenames."));
     label_dir_hint->Wrap(CONTENT_WIDTH * wxGetApp().em_unit());
 
     content_sizer->Add(txt_filename, 0, wxEXPAND);
@@ -135,9 +135,9 @@ void PrintHostSendDialog::init()
     // .gcode suffix control
     auto validate_path = [this](const wxString &path) -> bool {
         // BBS: 检查文件名是否包含特殊字符
-        if (path.find_first_of("#*;") != wxString::npos) {
+        if (path.find_first_of("#*;\\/:\"<>|") != wxString::npos) {
             MessageDialog msg_window(this, 
-                wxString::Format(_L("The filename '%s' contains special characters (#, *, or ;) which may cause issues.Do you wish to continue?"), path), 
+                wxString::Format(_L("The filename '%s' contains special characters (#, *, ;, \\, /, :, \", <, >, or |) which may cause issues.Do you wish to continue?"), path), 
                 wxString(SLIC3R_APP_NAME), wxYES | wxNO | wxICON_WARNING);
             if (msg_window.ShowModal() == wxID_NO)
                 return false;

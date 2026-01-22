@@ -15309,8 +15309,11 @@ msgstr "面和面组装"
 msgid "Point and point assembly"
 msgstr "点和点组装"
 
-msgid "Please do not include the special characters #, *, and ;in filenames."
-msgstr "在文件名中勿使用特殊字符“#”、“*”和“；”。"
+msgid "Please do not include the special characters #, *, ;, \\, /, :, \", <, >, or | in filenames."
+msgstr "在文件名中勿使用特殊字符"#"*"""；""\\""/" ":"\""<"">"或"|"。"
+
+msgid "The filename '%s' contains special characters (#, *, ;, \\, /, :, \", <, >, or |) which may cause issues.Do you wish to continue?"
+msgstr "文件名"%s"包含特殊字符（# * ; \\ / : \" < > |）可能会导致问题。是否继续？"
 
 msgid "Connection has been disconnected and recovery attempt failed. Please reconnect."
 msgstr "已断开连接，尝试恢复连接失败。请重新连接。"

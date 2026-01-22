@@ -1150,12 +1150,15 @@ void PlaterPresetComboBox::update()
 
         for (auto iter = machine_filaments.begin(); iter != machine_filaments.end();) {
             std::string filament_name = iter->second.first;
-            auto        item_iter          = std::find_if(filaments.begin(), filaments.end(),
-                                                     [&filament_name, this](auto& f) { return f.name == filament_name; });
 
+            // First match: exact name + compatibility check
+            auto item_iter = std::find_if(filaments.begin(), filaments.end(),
+                                     [&filament_name, this](auto& f) { return f.name == filament_name && f.is_compatible; });
+
+            // Second match: if first fails, try with @U1 suffix + compatibility check
             if (item_iter == filaments.end()) {
                 item_iter = std::find_if(filaments.begin(), filaments.end(),
-                                    [&filament_name, this](auto& f) { return f.name == filament_name + " @U1"; });
+                                    [&filament_name, this](auto& f) { return f.name == filament_name + " @U1" && f.is_compatible; });
             }
 
             if (item_iter != filaments.end()) {
@@ -1721,12 +1724,15 @@ void TabPresetComboBox::update()
 
         for (auto iter = machine_filaments.begin(); iter != machine_filaments.end();) {
             std::string filament_name = iter->second.first;
-            auto        item_iter     = std::find_if(filaments.begin(), filaments.end(),
-                                                     [&filament_name, this](auto& f) { return f.name == filament_name; });
 
+            // First match: exact name + compatibility check
+            auto item_iter = std::find_if(filaments.begin(), filaments.end(),
+                                             [&filament_name, this](auto& f) { return f.name == filament_name && f.is_compatible; });
+
+            // Second match: if first fails, try with @U1 suffix + compatibility check
             if (item_iter == filaments.end()) {
                 item_iter = std::find_if(filaments.begin(), filaments.end(),
-                                         [&filament_name, this](auto& f) { return f.name == filament_name + " @U1"; });
+                                         [&filament_name, this](auto& f) { return f.name == filament_name + " @U1" && f.is_compatible; });
             }
 
             if (item_iter != filaments.end()) {
