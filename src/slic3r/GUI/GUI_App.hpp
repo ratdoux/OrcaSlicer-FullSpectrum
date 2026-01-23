@@ -57,7 +57,13 @@ class wxBookCtrlBase;
 class Notebook;
 struct wxLanguageInfo;
 
+namespace Slic3r {
+namespace GUI {
+    class UpdateVersionDialog;
+};
+};
 
+// namespace Slice3rnamespace GUI::Slice3rnamespace GUI
 namespace Slic3r {
 
 class AppConfig;
@@ -719,6 +725,7 @@ private:
     PresetUpdater*  preset_updater{ nullptr };
     MainFrame*      mainframe{ nullptr };
     Plater*         plater_{ nullptr };
+    UpdateVersionDialog* m_updateDialog{nullptr};
 
 	PresetUpdater*  get_preset_updater() { return preset_updater; }
 

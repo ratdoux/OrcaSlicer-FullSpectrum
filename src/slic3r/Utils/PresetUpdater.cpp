@@ -1428,8 +1428,7 @@ Updates PresetUpdater::priv::get_config_updates(const Semver &old_slic3r_version
                     }
                 }
 
-                bool version_match = ((vendor_ver.maj() == cache_ver.maj()) && (vendor_ver.min() == cache_ver.min()));
-                if (version_match && (vendor_ver < cache_ver)) {
+                if (vendor_ver < cache_ver) {
 
                     Semver min_ver  = get_min_version_from_json(file_path);
                     Semver soft_ver = Semver(std::string(Snapmaker_VERSION));

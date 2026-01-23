@@ -2516,24 +2516,16 @@ bool GUI_App::on_init_inner()
                         skip_this_version = false;
                     }
                 }
-                if (!skip_this_version
-                    || evt.GetInt() != 0) {
-                    UpdateVersionDialog dialog(this->mainframe);
+                if (!skip_this_version || evt.GetInt() != 0) {                    
                     wxString            extmsg = wxString::FromUTF8(version_info.description);
-                    dialog.update_version_info(extmsg, version_info.version_str);
+                    m_updateDialog->update_version_info(extmsg, version_info.version_str);
                     if (evt.GetInt() != 0) {
-                        dialog.m_button_skip_version->Hide();
+                        m_updateDialog->m_button_skip_version->Hide();
                     }
-                    switch (dialog.ShowModal())
-                    {
-                    case wxID_YES:
-                        wxLaunchDefaultBrowser(version_info.url);
-                        break;
-                    case wxID_NO:
-                        break;
-                    default:
-                        ;
-                    }
+                    m_updateDialog->Raise();
+                    m_updateDialog->Show();
+                    m_updateDialog->setUrl(version_info.url);                 
+                                                           
                 }
             }
             });
@@ -2669,6 +2661,13 @@ bool GUI_App::on_init_inner()
 
     BOOST_LOG_TRIVIAL(info) << "create the main window";
     mainframe = new MainFrame();
+    m_updateDialog = new UpdateVersionDialog(mainframe);
+    m_updateDialog->Hide();
+    m_updateDialog->Bind(EVT_DOWN_URL_PACK, [this](wxCommandEvent& event) {
+        auto downloadUlr = m_updateDialog->getUrl();
+        wxLaunchDefaultBrowser(downloadUlr);
+    });
+
     // hide settings tabs after first Layout
     if (is_editor()) {
         mainframe->select_tab(size_t(0));
@@ -4859,7 +4858,6 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
                 return;
             }
 
-            //if (true)
             if (isForceUpgrade)
             {
                 wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);

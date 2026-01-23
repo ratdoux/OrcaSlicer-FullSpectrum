@@ -44,6 +44,7 @@ wxDEFINE_EVENT(EVT_UPDATE_NOZZLE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_JUMP_TO_HMS, wxCommandEvent);
 wxDEFINE_EVENT(EVT_JUMP_TO_LIVEVIEW, wxCommandEvent);
 wxDEFINE_EVENT(EVT_UPDATE_TEXT_MSG, wxCommandEvent);
+wxDEFINE_EVENT(EVT_DOWN_URL_PACK, wxCommandEvent);
 
 ReleaseNoteDialog::ReleaseNoteDialog(Plater *plater /*= nullptr*/)
     : DPIDialog(static_cast<wxWindow *>(wxGetApp().mainframe), wxID_ANY, _L("Release Note"), wxDefaultPosition, wxDefaultSize, wxCAPTION | wxCLOSE_BOX)
@@ -333,7 +334,13 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_download->SetCursor(wxCURSOR_HAND);
 
     m_button_download->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) {
-        EndModal(wxID_YES);
+        wxCommandEvent event(EVT_DOWN_URL_PACK);
+
+        wxPostEvent(this, event);
+        if (isModal)
+            EndModal(wxID_NO);
+        else
+            Close();  
     });
 
     m_button_skip_version = new Button(this, _L("Skip this Version"));
@@ -347,7 +354,10 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
 
     m_button_skip_version->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) { 
         wxGetApp().set_skip_version(true);
-        EndModal(wxID_NO);
+        if (isModal)
+            EndModal(wxID_NO);
+        else
+            Close();        
     });
 
     m_cb_stable_only = new CheckBox(this);
@@ -377,7 +387,11 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_cancel->SetCursor(wxCURSOR_HAND);
 
     m_button_cancel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) {
-        EndModal(wxID_NO);
+        if (isModal)
+            EndModal(wxID_NO);
+        else
+            Close();
+
     });
 
     m_sizer_main->Add(m_line_top, 0, wxEXPAND | wxBOTTOM, 0);
