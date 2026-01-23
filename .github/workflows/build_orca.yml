@@ -144,32 +144,69 @@ jobs:
           APP_PATH="${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker Orca.app"
           ENTITLEMENTS_PATH="${{ github.workspace }}/scripts/disable_validation.entitlements"
           
+          # Verify entitlements file exists
+          if [ ! -f "$ENTITLEMENTS_PATH" ]; then
+            echo "Error: Entitlements file not found: $ENTITLEMENTS_PATH"
+            exit 1
+          fi
+          echo "Using entitlements: $ENTITLEMENTS_PATH"
+          
+          # Sign Frameworks (must succeed, no silent failures)
           echo "Signing Frameworks..."
           if [ -d "$APP_PATH/Contents/Frameworks" ]; then
             find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" | while read -r item; do
               if [ -f "$item" ] || [ -d "$item" ]; then
-                codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" 2>/dev/null || true
+                echo "  Signing: $item"
+                codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
+                  echo "Error: Failed to sign $item"
+                  exit 1
+                }
               fi
             done
           fi
           
+          # Sign MacOS executables (must succeed, no silent failures)
           echo "Signing MacOS executables..."
           if [ -d "$APP_PATH/Contents/MacOS" ]; then
             find "$APP_PATH/Contents/MacOS" -type f -perm +111 | while read -r item; do
-              codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" 2>/dev/null || true
+              echo "  Signing: $item"
+              codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
+                echo "Error: Failed to sign $item"
+                exit 1
+              }
             done
           fi
           
+          # Sign main app with entitlements
           echo "Signing main app with entitlements..."
-          codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "$APP_PATH"
+          codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "$APP_PATH" || {
+            echo "Error: Failed to sign main app"
+            exit 1
+          }
+          
+          # Verify signature
+          echo "Verifying signature..."
+          codesign --verify --verbose "$APP_PATH" || {
+            echo "Error: Signature verification failed"
+            exit 1
+          }
           
           # Verify entitlements are embedded
-          echo "Verifying entitlements..."
-          if codesign -d --entitlements - "$APP_PATH" 2>&1 | grep -q "com.apple.security.network.client"; then
+          echo "Verifying entitlements are embedded..."
+          EMBEDDED_ENTITLEMENTS=$(codesign -d --entitlements - "$APP_PATH" 2>&1)
+          if echo "$EMBEDDED_ENTITLEMENTS" | grep -q "com.apple.security.network.client"; then
             echo "✓ Entitlements successfully embedded"
+            echo "  Found network.client entitlement"
           else
-            echo "⚠ Warning: Entitlements may not be embedded correctly"
+            echo "✗ Error: Entitlements not embedded correctly"
+            echo "  Embedded entitlements output:"
+            echo "$EMBEDDED_ENTITLEMENTS" | head -20
+            exit 1
           fi
+          
+          # Display full entitlements for debugging
+          echo "Full embedded entitlements:"
+          codesign -d --entitlements - "$APP_PATH" 2>&1 | head -30
           
           # Sign Snapmaker_Orca_profile_validator.app if it exists
           if [ -f "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app/Contents/MacOS/Snapmaker_Orca_profile_validator" ]; then
@@ -179,7 +216,11 @@ jobs:
             if [ -d "$VALIDATOR_APP_PATH/Contents/Frameworks" ]; then
               find "$VALIDATOR_APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" | while read -r item; do
                 if [ -f "$item" ] || [ -d "$item" ]; then
-                  codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" 2>/dev/null || true
+                  echo "  Signing: $item"
+                  codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
+                    echo "Error: Failed to sign $item"
+                    exit 1
+                  }
                 fi
               done
             fi
@@ -187,12 +228,25 @@ jobs:
             echo "Signing profile validator MacOS executables..."
             if [ -d "$VALIDATOR_APP_PATH/Contents/MacOS" ]; then
               find "$VALIDATOR_APP_PATH/Contents/MacOS" -type f -perm +111 | while read -r item; do
-                codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" 2>/dev/null || true
+                echo "  Signing: $item"
+                codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
+                  echo "Error: Failed to sign $item"
+                  exit 1
+                }
               done
             fi
             
             echo "Signing profile validator app with entitlements..."
-            codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "$VALIDATOR_APP_PATH"
+            codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "$VALIDATOR_APP_PATH" || {
+              echo "Error: Failed to sign profile validator app"
+              exit 1
+            }
+            
+            # Verify profile validator signature
+            codesign --verify --verbose "$VALIDATOR_APP_PATH" || {
+              echo "Error: Profile validator signature verification failed"
+              exit 1
+            }
           fi
           
           # Create main Snapmaker Orca DMG without the profile validator helper
@@ -201,7 +255,19 @@ jobs:
           cp -R "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker Orca.app" "${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg/"
           ln -sfn /Applications ${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg/Applications
           hdiutil create -volname "Snapmaker_Orca" -srcfolder ${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg -ov -format UDZO "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg"
-          codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg"
+          
+          # Sign DMG (DMG files don't need entitlements, just signature)
+          echo "Signing DMG..."
+          codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg" || {
+            echo "Error: Failed to sign DMG"
+            exit 1
+          }
+          
+          # Verify DMG signature
+          codesign --verify --verbose "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg" || {
+            echo "Error: DMG signature verification failed"
+            exit 1
+          }
           
           # Create separate Snapmaker_Orca_profile_validator DMG if the app exists
           if [ -f "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app/Contents/MacOS/Snapmaker_Orca_profile_validator" ]; then
@@ -210,7 +276,19 @@ jobs:
             cp -R ${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg/
             ln -sfn /Applications ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg/Applications
             hdiutil create -volname "Snapmaker_Orca Profile Validator" -srcfolder ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg -ov -format UDZO "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg"
-            codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg"
+            
+            # Sign DMG (DMG files don't need entitlements, just signature)
+            echo "Signing profile validator DMG..."
+            codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg" || {
+              echo "Error: Failed to sign profile validator DMG"
+              exit 1
+            }
+            
+            # Verify DMG signature
+            codesign --verify --verbose "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg" || {
+              echo "Error: Profile validator DMG signature verification failed"
+              exit 1
+            }
           fi
           
           # Notarize main DMG
