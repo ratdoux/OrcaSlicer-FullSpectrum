@@ -795,7 +795,7 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
 
                 if (currentSoftVersion > maxSpVersion || currentSoftVersion < minSpVersion) {
                     if (!isAuto_check) {
-                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
                         GUI::wxGetApp().QueueEvent(evt);
 
                         BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
@@ -1851,7 +1851,7 @@ void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpda
                     Semver online_version  = version_str;
                     Semver current_version = ori_version_str;
 
-                    if (/* current_version < online_version && */ ori_build_number_str < build_number_str) {
+                    if (current_version < online_version) {
                         auto source_folder_path = fs::path(dir_entry.path().parent_path());
                         auto target_folder_path = (boost::filesystem::path(data_dir()) / "web" / "flutter_web");
 

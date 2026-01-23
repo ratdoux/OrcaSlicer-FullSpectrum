@@ -6690,15 +6690,6 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
 {
     wxCHECK_MSG(mainframe != nullptr, false, "Internal error: Main frame not created / null");
 
-    //if (reason == ConfigWizard::RR_USER) {
-    //    //TODO: turn off it currently, maybe need to turn on in the future
-    //    if (preset_updater->config_update(app_config->orig_version(), PresetUpdater::UpdateParams::FORCED_BEFORE_WIZARD) == PresetUpdater::R_ALL_CANCELED)
-    //        return false;
-    //}
-
-    //auto wizard_t = new ConfigWizard(mainframe);
-    //const bool res = wizard_t->run(reason, start_page);
-
     std::string strFinish = wxGetApp().app_config->get("firstguide", "finish");
     long        pStyle    = wxCAPTION | wxCLOSE_BOX | wxSYSTEM_MENU;
     if (strFinish == "false" || strFinish.empty())
