@@ -2264,7 +2264,7 @@ static wxMenu* generate_help_menu()
         "", nullptr, []() { return true; });
 
     append_menu_item(
-        helpMenu, wxID_ANY, _L("Check for Web ResourceUpdates"), _L("Check for Web ResourceUpdates"),
+        helpMenu, wxID_ANY, _L("Check for Web Resource Updates"), _L("Check for Web Resource Updates"),
         [](wxCommandEvent&) { 
             wxGetApp().check_web_version();
         },
