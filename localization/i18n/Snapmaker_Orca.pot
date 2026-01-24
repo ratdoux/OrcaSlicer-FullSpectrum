@@ -4340,6 +4340,12 @@ msgid ""
 "confirming that the height is within the build volume."
 msgstr ""
 
+msgid ""
+"An object is too close to the plate boundary. Spiral lift during printing "
+"may exceed the bed and cause a crash. Please move the object away from the "
+"edge (recommend keeping at least 3mm distance)."
+msgstr ""
+
 msgid "Calibration step selection"
 msgstr ""
 

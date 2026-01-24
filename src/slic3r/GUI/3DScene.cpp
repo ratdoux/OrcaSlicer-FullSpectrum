@@ -1110,6 +1110,32 @@ bool GLVolumeCollection::check_outside_state(const BuildVolume &build_volume, Mo
 
             int64_t comp_id = ((int64_t)volume->composite_id.object_id << 32) | ((int64_t)volume->composite_id.instance_id);
             volume->is_outside = state != BuildVolume::ObjectState::Inside;
+
+            // Snapmaker: 检测模型是否距离床边界太近（螺旋抬升风险）
+            volume->near_boundary_for_spiral_lift = false;
+            // 只对矩形床进行检测（Snapmaker U1）
+            if (plate_build_volume.type() == BuildVolume_Type::Rectangle && volume->composite_id.volume_id >= 0) {
+                constexpr double SPIRAL_LIFT_SAFETY_MARGIN = 3.5; // mm
+                const BoundingBoxf3& bb = volume_bbox(*volume);
+                const BoundingBoxf3& bed_bb = plate_build_volume.bounding_volume();
+
+                // 计算模型边界框与床边界的最小距离（使用绝对值处理超出边界的情况）
+                double min_distance_x = std::min({
+                    std::abs(bb.min.x() - bed_bb.min.x()),
+                    std::abs(bed_bb.max.x() - bb.max.x())
+                });
+                double min_distance_y = std::min({
+                    std::abs(bb.min.y() - bed_bb.min.y()),
+                    std::abs(bed_bb.max.y() - bb.max.y())
+                });
+
+                double min_distance = std::min({min_distance_x, min_distance_y});
+                // 如果最小距离小于安全余量，触发警告
+                if (min_distance < SPIRAL_LIFT_SAFETY_MARGIN) {
+                    volume->near_boundary_for_spiral_lift = true;
+                }
+            }
+
             //volume->partly_inside = (state == BuildVolume::ObjectState::Colliding);
             if (volume->printable) {
                 if (overall_state == ModelInstancePVS_Inside && volume->is_outside) {
@@ -1185,8 +1211,20 @@ void GLVolumeCollection::reset_outside_state()
         if (volume != nullptr) {
             volume->is_outside = false;
             volume->partly_inside = false;
+            volume->near_boundary_for_spiral_lift = false;  // Snapmaker: 初始化螺旋抬升边界状态
         }
     }
+}
+
+// Snapmaker: 检查是否有任何 volume 靠近边界（螺旋抬升风险）
+bool GLVolumeCollection::is_any_volume_near_boundary_for_spiral_lift() const
+{
+    for (const GLVolume* volume : this->volumes)
+    {
+        if (volume != nullptr && volume->near_boundary_for_spiral_lift)
+            return true;
+    }
+    return false;
 }
 
 void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig *config, bool is_update_alpha)

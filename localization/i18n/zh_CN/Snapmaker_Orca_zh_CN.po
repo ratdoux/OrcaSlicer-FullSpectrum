@@ -4267,6 +4267,13 @@ msgstr ""
 "对象被放置在构建板的边界上或超过高度限制。\n"
 "请通过将其完全移动到构建板内或构建板外，并确认高度在构建空间以内来解决问题。"
 
+msgid ""
+"An object is too close to the plate boundary. Spiral lift during printing "
+"may exceed the bed and cause a crash. Please move the object away from the "
+"edge (recommend keeping at least 3mm distance)."
+msgstr ""
+"模型距离打印床边界太近。打印过程中的螺旋抬升可能会超出床范围导致撞机。请将模型移离边缘（建议保持至少3mm的距离）。"
+
 msgid "Calibration step selection"
 msgstr "校准步骤选择"
 
