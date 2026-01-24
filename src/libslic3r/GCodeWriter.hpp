@@ -11,10 +11,6 @@
 
 namespace Slic3r {
 
-// Forward declarations
-class BoundaryValidator;
-class Print;
-
 class GCodeWriter {
 public:
     GCodeConfig config;
@@ -123,12 +119,6 @@ public:
     void set_is_first_layer(bool bval) { m_is_first_layer = bval; }
     GCodeFlavor get_gcode_flavor() const { return config.gcode_flavor; }
 
-    // Snapmaker: Set boundary validator for arc path validation
-    void set_boundary_validator(const BoundaryValidator* validator, Print* print_ptr = nullptr) {
-        m_boundary_validator = validator;
-        m_print_ptr = print_ptr;
-    }
-
     // Returns whether this flavor supports separate print and travel acceleration.
     static bool supports_separate_travel_acceleration(GCodeFlavor flavor);
   private:
@@ -179,10 +169,6 @@ public:
     bool            m_is_bbl_printers = false;
     double          m_current_speed;
     bool            m_is_first_layer = true;
-
-    // Snapmaker: Boundary validator for arc path validation
-    const BoundaryValidator* m_boundary_validator = nullptr;
-    Print* m_print_ptr = nullptr;
 
     enum class Acceleration {
         Travel,

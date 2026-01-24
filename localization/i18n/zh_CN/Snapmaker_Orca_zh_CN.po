@@ -4257,63 +4257,6 @@ msgstr "检测出超出打印高度的G-code路径。"
 msgid "A G-code path goes beyond the plate boundaries."
 msgstr "检测超出热床边界的G-code路径。"
 
-msgid "G-code boundary violations detected:\n\n"
-msgstr "检测到G-code超出边界：\n\n"
-
-msgid "Travel Move"
-msgstr "移动"
-
-msgid "Extrude Move"
-msgstr "挤出移动"
-
-msgid "Spiral Lift"
-msgstr "螺旋抬升"
-
-msgid "Lazy Lift"
-msgstr "惰性抬升"
-
-msgid "Wipe Tower"
-msgstr "擦料塔"
-
-msgid "Arc Move"
-msgstr "圆弧移动"
-
-msgid "violation(s)"
-msgstr "处违规"
-
-msgid "violations"
-msgstr "违规"
-
-msgid "at Z"
-msgstr "在Z"
-
-msgid "%.2f mm out"
-msgstr "超出%.2f毫米"
-
-msgid "... and more"
-msgstr "...以及更多"
-
-msgid "beyond X minimum"
-msgstr "超出X最小值"
-
-msgid "beyond X maximum"
-msgstr "超出X最大值"
-
-msgid "beyond Y minimum"
-msgstr "超出Y最小值"
-
-msgid "beyond Y maximum"
-msgstr "超出Y最大值"
-
-msgid "above Z maximum"
-msgstr "高于Z最大值"
-
-msgid "beyond bed radius"
-msgstr "超出热床半径"
-
-msgid "outside boundaries"
-msgstr "超出边界"
-
 msgid "Only the object being edited is visible."
 msgstr "只有正在编辑的对象是可见的。"
 
