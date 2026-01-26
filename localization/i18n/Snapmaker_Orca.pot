@@ -4341,9 +4341,8 @@ msgid ""
 msgstr ""
 
 msgid ""
-"An object is too close to the plate boundary. Spiral lift during printing "
-"may exceed the bed and cause a crash. Please move the object away from the "
-"edge (recommend keeping at least 3mm distance)."
+"Model too close to bed boundary. Disable spiral lifting or keep at least "
+"3.5mm gap to avoid collision."
 msgstr ""
 
 msgid "Calibration step selection"

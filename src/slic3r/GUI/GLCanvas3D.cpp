@@ -9706,9 +9706,7 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
         break;
     // Snapmaker: 螺旋抬升靠近边界警告
     case EWarning::SpiralLiftNearBoundary:
-        text = _u8L("An object is too close to the plate boundary. "
-                    "Spiral lift during printing may exceed the bed and cause a crash. "
-                    "Please move the object away from the edge (recommend keeping at least 3mm distance).");
+         text = _u8L("Model too close to bed boundary. Disable spiral lifting or keep at least 3.5mm gap to avoid collision.");
         error = ErrorType::SLICING_SERIOUS_WARNING;
         break;
     }

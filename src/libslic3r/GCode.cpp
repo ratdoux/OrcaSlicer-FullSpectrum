@@ -437,10 +437,6 @@ std::string WipeTowerIntegration::append_tcr(GCode& gcodegen, const WipeTower::T
 
     auto transform_wt_pt = [&alpha, this](const Vec2f& pt) -> Vec2f {
         Vec2f out = Eigen::Rotation2Df(alpha) * pt;
-        // Simple safety check to prevent extreme out-of-bounds coordinates
-        // This is a safety net for Rib wall geometry issues
-        out.x() = std::clamp(out.x(), -50.f, 500.f);
-        out.y() = std::clamp(out.y(), -50.f, 500.f);
         out += m_wipe_tower_pos;
         return out;
     };
@@ -701,10 +697,6 @@ std::string WipeTowerIntegration::append_tcr2(GCode& gcodegen, const WipeTower::
 
     auto transform_wt_pt = [&alpha, this](const Vec2f& pt) -> Vec2f {
         Vec2f out = Eigen::Rotation2Df(alpha) * pt;
-        // Simple safety check to prevent extreme out-of-bounds coordinates
-        // This is a safety net for Rib wall geometry issues
-        out.x() = std::clamp(out.x(), -50.f, 500.f);
-        out.y() = std::clamp(out.y(), -50.f, 500.f);
         out += m_wipe_tower_pos;
         return out;
     };
