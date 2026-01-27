@@ -381,7 +381,8 @@ class GLCanvas3D
         SomethingNotShown,
         ObjectClashed,
         GCodeConflict,
-        ToolHeightOutside
+        ToolHeightOutside,
+        SpiralLiftNearBoundary  // Snapmaker: 螺旋抬升靠近边界警告
     };
 
     class RenderStats
@@ -1238,6 +1239,8 @@ private:
     void _set_warning_notification(EWarning warning, bool state);
 
     bool _is_any_volume_outside() const;
+    // Snapmaker: 检查是否有任何 volume 靠近边界（螺旋抬升风险）
+    bool _is_any_volume_near_boundary_for_spiral_lift() const;
 
     // updates the selection from the content of m_hover_volume_idxs
     void _update_selection_from_hover();

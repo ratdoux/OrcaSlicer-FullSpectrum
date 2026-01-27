@@ -8,9 +8,6 @@
 #include "Geometry.hpp"
 #include "Point.hpp"
 #include "MutablePolygon.hpp"
-#include "BoundaryValidator.hpp"
-#include "BuildVolume.hpp"
-#include "GCode/GCodeProcessor.hpp"
 
 #include <cmath>
 #include <memory>
@@ -583,91 +580,6 @@ void PrintObjectSupportMaterial::generate(PrintObject &object)
         }
     }
 #endif /* SLIC3R_DEBUG */
-
-    // Snapmaker: Validate support polygons against build volume boundaries
-    // This addresses vulnerability #6: Support material boundary validation
-    BOOST_LOG_TRIVIAL(info) << "Support generator - Validating boundaries";
-    BuildVolume build_volume(object.print()->config().printable_area.values,
-                            object.print()->config().printable_height);
-    BuildVolumeBoundaryValidator validator(build_volume);
-
-    int support_violations = 0;
-    for (const SupportLayer* layer : object.support_layers()) {
-        if (!layer)
-            continue;
-
-        // Check support extrusions
-        const ExtrusionEntityCollection& support_fills = layer->support_fills;
-        for (const ExtrusionEntity* entity : support_fills.entities) {
-            if (!entity)
-                continue;
-
-            // Check each extrusion path or loop
-            if (const ExtrusionPath* path = dynamic_cast<const ExtrusionPath*>(entity)) {
-                // Check each point in the polyline
-                for (const Point& pt : path->polyline.points) {
-                    Vec3d pos(unscaled<double>(pt.x()), unscaled<double>(pt.y()), layer->print_z);
-                    if (!validator.validate_point(pos)) {
-                        support_violations++;
-                        if (support_violations <= 5) {  // Log first 5
-                            BOOST_LOG_TRIVIAL(warning) << "Support path at z=" << layer->print_z
-                                << " exceeds build volume boundaries";
-                        }
-                        break;  // Only record once per path
-                    }
-                }
-            } else if (const ExtrusionLoop* loop = dynamic_cast<const ExtrusionLoop*>(entity)) {
-                for (const ExtrusionPath& path : loop->paths) {
-                    // Check each point in the polyline
-                    for (const Point& pt : path.polyline.points) {
-                        Vec3d pos(unscaled<double>(pt.x()), unscaled<double>(pt.y()), layer->print_z);
-                        if (!validator.validate_point(pos)) {
-                            support_violations++;
-                            if (support_violations <= 5) {  // Log first 5
-                                BOOST_LOG_TRIVIAL(warning) << "Support loop path at z=" << layer->print_z
-                                    << " exceeds build volume boundaries";
-                            }
-                            break;  // Only record once per path
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check support base polygons
-        for (const ExPolygon& expoly : layer->lslices) {
-            if (!validator.validate_polygon(expoly.contour, layer->print_z)) {
-                support_violations++;
-                if (support_violations <= 5) {  // Log first 5
-                    BOOST_LOG_TRIVIAL(warning) << "Support polygon at z=" << layer->print_z
-                        << " exceeds build volume boundaries";
-                }
-            }
-            // Check holes
-            for (const Polygon& hole : expoly.holes) {
-                if (!validator.validate_polygon(hole, layer->print_z)) {
-                    support_violations++;
-                    if (support_violations <= 5) {  // Log first 5
-                        BOOST_LOG_TRIVIAL(warning) << "Support hole polygon at z=" << layer->print_z
-                            << " exceeds build volume boundaries";
-                    }
-                }
-            }
-        }
-    }
-
-    if (support_violations > 0) {
-        BOOST_LOG_TRIVIAL(warning) << "Found " << support_violations
-            << " support polygons/paths exceeding build volume boundaries";
-        // Record violation
-        ConflictResult violation = ConflictResult::create_boundary_violation(
-            static_cast<int>(BoundaryValidator::ViolationType::Support),
-            Vec3d(object.center_offset().x(), object.center_offset().y(), 0.0),
-            0.0,
-            object.model_object()->name
-        );
-        object.print()->add_boundary_violation(violation);
-    }
 
     BOOST_LOG_TRIVIAL(info) << "Support generator - End";
 }

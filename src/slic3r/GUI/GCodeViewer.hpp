@@ -849,12 +849,6 @@ public:
     //BBS: add only gcode mode
     bool is_only_gcode_in_preview() const { return m_only_gcode_in_preview; }
 
-    // Snapmaker: Get boundary violations from gcode_result
-    const std::vector<GCodeProcessorResult::BoundaryViolationInfo>& get_boundary_violations() const {
-        static const std::vector<GCodeProcessorResult::BoundaryViolationInfo> empty_violations;
-        return (m_gcode_result != nullptr) ? m_gcode_result->boundary_violations : empty_violations;
-    }
-
     EViewType get_view_type() const { return m_view_type; }
     void set_view_type(EViewType type, bool reset_feature_type_visible = true) {
         if (type == EViewType::Count)

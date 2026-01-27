@@ -4257,63 +4257,6 @@ msgstr "检测出超出打印高度的G-code路径。"
 msgid "A G-code path goes beyond the plate boundaries."
 msgstr "检测超出热床边界的G-code路径。"
 
-msgid "G-code boundary violations detected:\n\n"
-msgstr "检测到G-code超出边界：\n\n"
-
-msgid "Travel Move"
-msgstr "移动"
-
-msgid "Extrude Move"
-msgstr "挤出移动"
-
-msgid "Spiral Lift"
-msgstr "螺旋抬升"
-
-msgid "Lazy Lift"
-msgstr "惰性抬升"
-
-msgid "Wipe Tower"
-msgstr "擦料塔"
-
-msgid "Arc Move"
-msgstr "圆弧移动"
-
-msgid "violation(s)"
-msgstr "处违规"
-
-msgid "violations"
-msgstr "违规"
-
-msgid "at Z"
-msgstr "在Z"
-
-msgid "%.2f mm out"
-msgstr "超出%.2f毫米"
-
-msgid "... and more"
-msgstr "...以及更多"
-
-msgid "beyond X minimum"
-msgstr "超出X最小值"
-
-msgid "beyond X maximum"
-msgstr "超出X最大值"
-
-msgid "beyond Y minimum"
-msgstr "超出Y最小值"
-
-msgid "beyond Y maximum"
-msgstr "超出Y最大值"
-
-msgid "above Z maximum"
-msgstr "高于Z最大值"
-
-msgid "beyond bed radius"
-msgstr "超出热床半径"
-
-msgid "outside boundaries"
-msgstr "超出边界"
-
 msgid "Only the object being edited is visible."
 msgstr "只有正在编辑的对象是可见的。"
 
@@ -4323,6 +4266,12 @@ msgid ""
 msgstr ""
 "对象被放置在构建板的边界上或超过高度限制。\n"
 "请通过将其完全移动到构建板内或构建板外，并确认高度在构建空间以内来解决问题。"
+
+msgid ""
+"Model too close to bed boundary. Disable spiral lifting or keep at least "
+"3.5mm gap to avoid collision."
+msgstr ""
+"模型太靠近热床边界，建议暂时关闭螺旋抬升或至少距离边界3.5mm距离，防止超出打印区域引发撞击。"
 
 msgid "Calibration step selection"
 msgstr "校准步骤选择"
@@ -15313,7 +15262,7 @@ msgid "Please do not include the special characters #, *, ;, \\, /, :, \", <, >,
 msgstr "在文件名中勿使用特殊字符"#"*"""；""\\""/" ":"\""<"">"或"|"。"
 
 msgid "The filename '%s' contains special characters (#, *, ;, \\, /, :, \", <, >, or |) which may cause issues.Do you wish to continue?"
-msgstr "文件名”%s“包含特殊字符（# * ; \\ / : \" < > |）可能会导致问题。是否继续？"
+msgstr "文件名'%s'包含特殊字符（# * ; \\ / : \" < > |）可能会导致问题。是否继续？"
 
 msgid "Connection has been disconnected and recovery attempt failed. Please reconnect."
 msgstr "已断开连接，尝试恢复连接失败。请重新连接。"

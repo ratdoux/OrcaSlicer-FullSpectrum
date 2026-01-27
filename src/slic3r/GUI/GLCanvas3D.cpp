@@ -2823,6 +2823,13 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
             if (printer_technology != ptSLA || !contained_min_one)
                 _set_warning_notification(EWarning::SlaSupportsOutside, false);
 
+            // Snapmaker: 螺旋抬升边界警告 - 无论模型是否超出边界都检测
+            if (contained_min_one) {
+                _set_warning_notification(EWarning::SpiralLiftNearBoundary, _is_any_volume_near_boundary_for_spiral_lift());
+            } else {
+                _set_warning_notification(EWarning::SpiralLiftNearBoundary, false);
+            }
+
             post_event(Event<bool>(EVT_GLCANVAS_ENABLE_ACTION_BUTTONS,
                 contained_min_one && !m_model->objects.empty() && !partlyOut));
         }
@@ -2830,6 +2837,7 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
             _set_warning_notification(EWarning::ObjectOutside, false);
             _set_warning_notification(EWarning::ObjectClashed, false);
             _set_warning_notification(EWarning::SlaSupportsOutside, false);
+            _set_warning_notification(EWarning::SpiralLiftNearBoundary, false);  // Snapmaker: 清空警告
             post_event(Event<bool>(EVT_GLCANVAS_ENABLE_ACTION_BUTTONS, false));
         }
     }
@@ -9687,102 +9695,7 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
     }
     case EWarning::ObjectOutside:      text = _u8L("An object is laid over the plate boundaries."); break;
     case EWarning::ToolHeightOutside:  text = _u8L("A G-code path goes beyond the max print height."); error = ErrorType::SLICING_ERROR; break;
-    case EWarning::ToolpathOutside: {
-        error = ErrorType::SLICING_ERROR;
-        // Snapmaker: Enhanced boundary violation reporting with detailed information
-        static std::string prevBoundaryText;
-        text = prevBoundaryText;
-
-        // Helper function to get localized violation type name
-        auto get_localized_type_string = [](BoundaryValidator::ViolationType type) -> std::string {
-            switch (type) {
-                case BoundaryValidator::ViolationType::TravelMove:  return _u8L("Travel Move");
-                case BoundaryValidator::ViolationType::ExtrudeMove: return _u8L("Extrude Move");
-                case BoundaryValidator::ViolationType::SpiralLift:  return _u8L("Spiral Lift");
-                case BoundaryValidator::ViolationType::LazyLift:    return _u8L("Lazy Lift");
-                case BoundaryValidator::ViolationType::WipeTower:    return _u8L("Wipe Tower");
-                case BoundaryValidator::ViolationType::Skirt:        return _u8L("Skirt");
-                case BoundaryValidator::ViolationType::Brim:         return _u8L("Brim");
-                case BoundaryValidator::ViolationType::Support:      return _u8L("Support");
-                case BoundaryValidator::ViolationType::ArcMove:      return _u8L("Arc Move");
-                default: return _u8L("Unknown");
-            }
-        };
-
-        // Helper function to get localized direction string
-        auto get_localized_direction_string = [](BoundaryValidator::BoundaryDirection dir) -> std::string {
-            switch (dir) {
-                case BoundaryValidator::BoundaryDirection::X_Min:   return _u8L("beyond X minimum");
-                case BoundaryValidator::BoundaryDirection::X_Max:   return _u8L("beyond X maximum");
-                case BoundaryValidator::BoundaryDirection::Y_Min:   return _u8L("beyond Y minimum");
-                case BoundaryValidator::BoundaryDirection::Y_Max:   return _u8L("beyond Y maximum");
-                case BoundaryValidator::BoundaryDirection::Z_Max:   return _u8L("above Z maximum");
-                case BoundaryValidator::BoundaryDirection::Radius:  return _u8L("beyond bed radius");
-                default: return _u8L("outside boundaries");
-            }
-        };
-
-        // Try to get detailed violation information from gcode_result
-        const auto& violations = m_gcode_viewer.get_boundary_violations();
-        if (!violations.empty()) {
-
-            // Group violations by type for better summary
-            std::map<BoundaryValidator::ViolationType, int> violation_counts;
-            std::map<BoundaryValidator::ViolationType, std::string> type_names;
-            for (const auto& v : violations) {
-                violation_counts[v.violation_type]++;
-                if (type_names.find(v.violation_type) == type_names.end()) {
-                    type_names[v.violation_type] = get_localized_type_string(v.violation_type);
-                }
-            }
-
-            // Build detailed message
-            std::string msg = _u8L("G-code boundary violations detected:\n\n");
-            int total_count = 0;
-            for (const auto& [type, count] : violation_counts) {
-                msg += "• " + type_names[type] + ": " + std::to_string(count) + " " + _u8L("violation(s)") + "\n";
-                total_count += count;
-            }
-
-            if (total_count > 1) {
-                msg += "\n" + _u8L("Total") + ": " + std::to_string(total_count) + " " + _u8L("violations");
-            }
-
-            // Show details of first few violations
-            if (!violations.empty()) {
-                msg += "\n\n" + _u8L("Details") + ":\n";
-                int show_count = std::min((int)violations.size(), 5);
-                for (int i = 0; i < show_count; ++i) {
-                    const auto& v = violations[i];
-                    // Build localized description
-                    std::string desc;
-                    if (!v.component_name.empty()) {
-                        desc += v.component_name + " - ";
-                    }
-                    desc += get_localized_type_string(v.violation_type);
-                    desc += " " + get_localized_direction_string(v.direction);
-                    msg += "  " + std::to_string(i + 1) + ". " + desc;
-                    if (v.distance_out > 0.001) {
-                        msg += " (" + (boost::format(_u8L("%.2f mm out")) % v.distance_out).str() + ")";
-                    }
-                    if (v.print_z > 0) {
-                        msg += " " + _u8L("at Z") + "=" + (boost::format("%.1f") % v.print_z).str();
-                    }
-                    msg += "\n";
-                }
-                if ((int)violations.size() > show_count) {
-                    msg += "  " + _u8L("... and more");
-                }
-            }
-
-            text = msg;
-            prevBoundaryText = text;
-        } else {
-            // Fallback to generic message if no detailed info available
-            text = _u8L("A G-code path goes beyond the plate boundaries.");
-        }
-        break;
-    }
+    case EWarning::ToolpathOutside:    text = _u8L("A G-code path goes beyond the plate boundaries."); error = ErrorType::SLICING_ERROR; break;
     // BBS: remove _u8L() for SLA
     case EWarning::SlaSupportsOutside: text = ("SLA supports outside the print area were detected."); error = ErrorType::PLATER_ERROR; break;
     case EWarning::SomethingNotShown:  text = _u8L("Only the object being edited is visible."); break;
@@ -9790,6 +9703,11 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
         text = _u8L("An object is laid over the plate boundaries or exceeds the height limit.\n"
             "Please solve the problem by moving it totally on or off the plate, and confirming that the height is within the build volume.");
         error = ErrorType::PLATER_ERROR;
+        break;
+    // Snapmaker: 螺旋抬升靠近边界警告
+    case EWarning::SpiralLiftNearBoundary:
+         text = _u8L("Model too close to bed boundary. Disable spiral lifting or keep at least 3.5mm gap to avoid collision.");
+        error = ErrorType::SLICING_SERIOUS_WARNING;
         break;
     }
     //BBS: this may happened when exit the app, plater is null
@@ -9843,6 +9761,12 @@ bool GLCanvas3D::_is_any_volume_outside() const
     }
 
     return false;
+}
+
+// Snapmaker: 检查是否有任何 volume 靠近边界（螺旋抬升风险）
+bool GLCanvas3D::_is_any_volume_near_boundary_for_spiral_lift() const
+{
+    return m_volumes.is_any_volume_near_boundary_for_spiral_lift();
 }
 
 void GLCanvas3D::_update_selection_from_hover()
