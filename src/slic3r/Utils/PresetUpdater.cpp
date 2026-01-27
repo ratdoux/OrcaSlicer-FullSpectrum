@@ -1723,7 +1723,7 @@ void PresetUpdater::sync_web_async(bool isAutoUpdata)
         GUI::wxGetApp().CallAfter([this] {
             std::string zipfilepath = this->p->cache_path.string() + "/flutter_web.zip";
             BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async completed, checking updates...";
-            load_lutter_web(zipfilepath, true);
+            load_flutter_web(zipfilepath, true);
         });
     });
 }
@@ -1807,7 +1807,7 @@ bool PresetUpdater::version_check_enabled() const
 }
 
 
-void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpdate)
+void PresetUpdater::load_flutter_web(const std::string& zip_file, bool serverUpdate)
 {
     boost::filesystem::path temp_path = boost::filesystem::temp_directory_path() / "orca_temp_flutter_import";
     try {
@@ -1944,6 +1944,7 @@ void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpda
 
             app->recreate_GUI(_L("Update web resources"));
         }
+            
 
     } catch (std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Failed to importweb resources: " << e.what();
@@ -1964,7 +1965,7 @@ void PresetUpdater::import_flutter_web()
 
     std::string zip_file = dialog.GetPath().ToUTF8().data();
 
-    load_lutter_web(zip_file);
+    load_flutter_web(zip_file);
 }
 
 void PresetUpdater::import_system_profile()
@@ -2095,7 +2096,6 @@ void PresetUpdater::import_system_profile()
         }
 
         // 5. 执行更新并提示结果
-        bool need_restart = false;
         if (!updates.updates.empty()) {
             std::vector<GUI::MsgUpdateConfig::Update> updates_msg;
             for (const auto& update : updates.updates) {
@@ -2103,9 +2103,6 @@ void PresetUpdater::import_system_profile()
                 if (update.is_directory)
                     continue;
 
-                if (update.can_install) {
-                    need_restart = true;
-                }
                 std::string changelog = update.change_log;
                 updates_msg.emplace_back(update.vendor, update.version.config_version, update.descriptions, std::move(changelog));
             }
@@ -2116,12 +2113,16 @@ void PresetUpdater::import_system_profile()
 
             if (res == wxID_OK) {
                 p->perform_updates(std::move(updates));
+                // Use hot reload instead of restart
+                if (!reload_configs_update_gui()) {
+                    BOOST_LOG_TRIVIAL(warning) << "[Orca Updater]:reload_configs_update_gui failed for system profiles";
+                } else {
+                    BOOST_LOG_TRIVIAL(info) << "[Orca Updater]:System profiles updated successfully via hot reload";
+                }
             } else {
                 boost::filesystem::remove_all(temp_path);
                 return;
             }
-
-            
         }
 
         wxString message;
@@ -2131,18 +2132,6 @@ void PresetUpdater::import_system_profile()
                 message += "• " + preset + "\n";
             }
             GUI::MessageDialog(nullptr, message).ShowModal();
-        }
-
-        if (need_restart) {
-            GUI::MessageDialog msg_wingow(nullptr,
-                                          _L("Updating the system resources requires application restart.") + "\n" +
-                                              _L("Do you want to continue?"),
-                                          L("System resource update"), wxICON_QUESTION | wxOK | wxCANCEL);
-            if (msg_wingow.ShowModal() == wxID_CANCEL) {
-                return;
-            }
-
-            app->recreate_GUI(_L("Update system profiles"));
         }
 
     } catch (std::exception& e) {
