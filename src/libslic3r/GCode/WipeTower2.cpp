@@ -1354,10 +1354,9 @@ void WipeTower2::set_extruder(size_t idx, const PrintConfig& config)
     m_filpar.push_back(FilamentParameters());
 
     m_filpar[idx].material = config.filament_type.get_at(idx);
-    // m_filpar[idx].is_soluble = config.filament_soluble.get_at(idx);
-    m_filpar[idx].is_soluble                           = config.wipe_tower_filament == 0 ? config.filament_soluble.get_at(idx) :
-                                                                                           (idx != size_t(config.wipe_tower_filament - 1));
-    m_filpar[idx].temperature                          = config.nozzle_temperature.get_at(idx);
+    m_filpar[idx].is_soluble = config.wipe_tower_filament == 0 ? config.filament_soluble.get_at(idx) :
+                               (idx != size_t(config.wipe_tower_filament - 1));
+    m_filpar[idx].temperature = config.nozzle_temperature.get_at(idx);
     m_filpar[idx].first_layer_temperature              = config.nozzle_temperature_initial_layer.get_at(idx);
     m_filpar[idx].filament_minimal_purge_on_wipe_tower = config.filament_minimal_purge_on_wipe_tower.get_at(idx);
 
@@ -2329,7 +2328,12 @@ void WipeTower2::generate(std::vector<std::vector<WipeTower::ToolChangeResult>>&
         return;
 
     plan_tower();
-#if 1
+#if 0
+// BBS: Disabled 5-iteration loop - matching Bambu Studio's approach
+// This loop causes instability in depth calculations which leads to out-of-bounds coordinates
+// The loop recalculates required_depth in save_on_last_wipe() and propagates it downward via plan_tower()
+// After multiple iterations, depth can exceed reasonable bounds, causing m_y_shift to change
+// This in turn causes the rotate() function to generate negative coordinates
     for (int i = 0; i < 5; ++i) {
         save_on_last_wipe();
         plan_tower();
