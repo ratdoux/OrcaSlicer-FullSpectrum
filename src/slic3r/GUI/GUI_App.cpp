@@ -2516,24 +2516,16 @@ bool GUI_App::on_init_inner()
                         skip_this_version = false;
                     }
                 }
-                if (!skip_this_version
-                    || evt.GetInt() != 0) {
-                    UpdateVersionDialog dialog(this->mainframe);
+                if (!skip_this_version || evt.GetInt() != 0) {                    
                     wxString            extmsg = wxString::FromUTF8(version_info.description);
-                    dialog.update_version_info(extmsg, version_info.version_str);
+                    m_updateDialog->update_version_info(extmsg, version_info.version_str);
                     if (evt.GetInt() != 0) {
-                        dialog.m_button_skip_version->Hide();
+                        m_updateDialog->m_button_skip_version->Hide();
                     }
-                    switch (dialog.ShowModal())
-                    {
-                    case wxID_YES:
-                        wxLaunchDefaultBrowser(version_info.url);
-                        break;
-                    case wxID_NO:
-                        break;
-                    default:
-                        ;
-                    }
+                    m_updateDialog->Raise();
+                    m_updateDialog->Show();
+                    m_updateDialog->setUrl(version_info.url);                 
+                                                           
                 }
             }
             });
@@ -2669,6 +2661,13 @@ bool GUI_App::on_init_inner()
 
     BOOST_LOG_TRIVIAL(info) << "create the main window";
     mainframe = new MainFrame();
+    m_updateDialog = new UpdateVersionDialog(mainframe);
+    m_updateDialog->Hide();
+    m_updateDialog->Bind(EVT_DOWN_URL_PACK, [this](wxCommandEvent& event) {
+        auto downloadUlr = m_updateDialog->getUrl();
+        wxLaunchDefaultBrowser(downloadUlr);
+    });
+
     // hide settings tabs after first Layout
     if (is_editor()) {
         mainframe->select_tab(size_t(0));
@@ -4045,17 +4044,13 @@ wxString GUI_App::get_international_url(const wxString& origin_url) {
 
     string dark_mode = wxGetApp().app_config->get("dark_color_mode");
 
-    auto   isAgree   = wxGetApp().app_config->get("app", "privacy_policy_isagree");
-    std::string  useAgree = (isAgree == "true" ? "1" : "0");
-
     if (baseUrl.find("?") != std::string::npos) {
         return baseUrl + wxString::FromUTF8("&locale=") + lang + wxString::FromUTF8("-") + region +
-               wxString::FromUTF8("&dark_mode=" + dark_mode) + wxString::FromUTF8("&privacy_policy_isagree=" + useAgree);
+               wxString::FromUTF8("&dark_mode=" + dark_mode);
     } else {
         return baseUrl + wxString::FromUTF8("?locale=") + lang + wxString::FromUTF8("-") + region +
-               wxString::FromUTF8("&dark_mode=" + dark_mode) + wxString::FromUTF8("&privacy_policy_isagree=" + useAgree);
+               wxString::FromUTF8("&dark_mode=" + dark_mode);
     }
-
 
 }
 
@@ -4857,12 +4852,12 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 
             Semver server_version = get_version(version_info.version_str, matcher);
 
-            if (current_version >= server_version && by_user) {
-                this->no_new_version();
+            if (current_version >= server_version) {
+                if(by_user)
+                    this->no_new_version();
                 return;
             }
 
-            //if (true)
             if (isForceUpgrade)
             {
                 wxGetApp().app_config->set_bool("force_upgrade", version_info.force_upgrade);
@@ -4879,7 +4874,10 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             if (by_user)
                 evt->SetInt(UPDATE_BY_USER);
             GUI::wxGetApp().QueueEvent(evt);
-          } catch (...) {}
+        } catch (const std::exception& ex) {
+            std::string errorMsg = ex.what();
+            BOOST_LOG_TRIVIAL(fatal) << "request server soft update data error:" << errorMsg;            
+          }
         })
         .perform_sync();
 }
@@ -6690,15 +6688,6 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
 {
     wxCHECK_MSG(mainframe != nullptr, false, "Internal error: Main frame not created / null");
 
-    //if (reason == ConfigWizard::RR_USER) {
-    //    //TODO: turn off it currently, maybe need to turn on in the future
-    //    if (preset_updater->config_update(app_config->orig_version(), PresetUpdater::UpdateParams::FORCED_BEFORE_WIZARD) == PresetUpdater::R_ALL_CANCELED)
-    //        return false;
-    //}
-
-    //auto wizard_t = new ConfigWizard(mainframe);
-    //const bool res = wizard_t->run(reason, start_page);
-
     std::string strFinish = wxGetApp().app_config->get("firstguide", "finish");
     long        pStyle    = wxCAPTION | wxCLOSE_BOX | wxSYSTEM_MENU;
     if (strFinish == "false" || strFinish.empty())
@@ -6719,7 +6708,7 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
         mainframe->refresh_plugin_tips();
         // BBS: remove SLA related message
     }
-    auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
+    auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
 
     user_update_privacy_notify(isAgree == "true");    
     BOOST_LOG_TRIVIAL(warning) << "run_wizard changed the privacy policy with: " << (isAgree);
@@ -6932,7 +6921,7 @@ void GUI_App::user_update_privacy_notify(const bool& res)
 
     json data;
 
-    data["privacy_policy_isagree"] = res;
+    data[PRIVACY_POLICY_FLAGS] = res;
     
     for (const auto& instance : m_user_update_privacy_subscribers) {
         auto ptr = instance.second.lock();
@@ -6957,7 +6946,7 @@ void GUI_App::user_login_notify(const json& res)
 
 bool GUI_App::config_wizard_startup()
 {
-    auto isAgree = wxGetApp().app_config->get("app", "privacy_policy_isagree");
+    auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
     user_update_privacy_notify(isAgree == "true");   
     BOOST_LOG_TRIVIAL(warning) << "config_wizard_startup changed the privacy policy with: " << (isAgree);
     if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {

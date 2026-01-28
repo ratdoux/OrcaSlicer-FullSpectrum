@@ -795,7 +795,7 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
 
                 if (currentSoftVersion > maxSpVersion || currentSoftVersion < minSpVersion) {
                     if (!isAuto_check) {
-                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_PRESET_UPDATE);
+                        wxCommandEvent* evt = new wxCommandEvent(EVT_NO_WEB_RESOURCE_UPDATE);
                         GUI::wxGetApp().QueueEvent(evt);
 
                         BOOST_LOG_TRIVIAL(info) << format("use check the web update.");
@@ -814,7 +814,10 @@ void PresetUpdater::priv::sync_update_flutter_resource(bool isAuto_check)
                     }
                 }
 
-            } catch (...) {}
+            } catch (const std::exception& ex) {
+                std::string errorMsg = ex.what();
+                BOOST_LOG_TRIVIAL(fatal) << "request server flutter update data error:" << errorMsg;
+            }
         })
         .perform_sync();
 }
@@ -920,7 +923,10 @@ void PresetUpdater::priv::sync_config(bool isAuto_check)
                     }
                 }
                                
-            } catch (...) {}
+            } catch (const std::exception& ex) {
+                std::string errorMsg = ex.what();
+                BOOST_LOG_TRIVIAL(fatal) << "request server preset update data error:" << errorMsg;
+            }
         })
         .perform_sync();
 }
@@ -1422,8 +1428,7 @@ Updates PresetUpdater::priv::get_config_updates(const Semver &old_slic3r_version
                     }
                 }
 
-                bool version_match = ((vendor_ver.maj() == cache_ver.maj()) && (vendor_ver.min() == cache_ver.min()));
-                if (version_match && (vendor_ver < cache_ver)) {
+                if (vendor_ver < cache_ver) {
 
                     Semver min_ver  = get_min_version_from_json(file_path);
                     Semver soft_ver = Semver(std::string(Snapmaker_VERSION));
@@ -1718,7 +1723,7 @@ void PresetUpdater::sync_web_async(bool isAutoUpdata)
         GUI::wxGetApp().CallAfter([this] {
             std::string zipfilepath = this->p->cache_path.string() + "/flutter_web.zip";
             BOOST_LOG_TRIVIAL(debug) << "[Orca Updater] sync_web_async completed, checking updates...";
-            load_lutter_web(zipfilepath, true);
+            load_flutter_web(zipfilepath, true);
         });
     });
 }
@@ -1802,7 +1807,7 @@ bool PresetUpdater::version_check_enabled() const
 }
 
 
-void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpdate)
+void PresetUpdater::load_flutter_web(const std::string& zip_file, bool serverUpdate)
 {
     boost::filesystem::path temp_path = boost::filesystem::temp_directory_path() / "orca_temp_flutter_import";
     try {
@@ -1845,7 +1850,7 @@ void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpda
                     Semver online_version  = version_str;
                     Semver current_version = ori_version_str;
 
-                    if (/* current_version < online_version && */ ori_build_number_str < build_number_str) {
+                    if (current_version < online_version) {
                         auto source_folder_path = fs::path(dir_entry.path().parent_path());
                         auto target_folder_path = (boost::filesystem::path(data_dir()) / "web" / "flutter_web");
 
@@ -1939,6 +1944,7 @@ void PresetUpdater::load_lutter_web(const std::string& zip_file, bool serverUpda
 
             app->recreate_GUI(_L("Update web resources"));
         }
+            
 
     } catch (std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Failed to importweb resources: " << e.what();
@@ -1959,7 +1965,7 @@ void PresetUpdater::import_flutter_web()
 
     std::string zip_file = dialog.GetPath().ToUTF8().data();
 
-    load_lutter_web(zip_file);
+    load_flutter_web(zip_file);
 }
 
 void PresetUpdater::import_system_profile()
@@ -2090,7 +2096,6 @@ void PresetUpdater::import_system_profile()
         }
 
         // 5. 执行更新并提示结果
-        bool need_restart = false;
         if (!updates.updates.empty()) {
             std::vector<GUI::MsgUpdateConfig::Update> updates_msg;
             for (const auto& update : updates.updates) {
@@ -2098,9 +2103,6 @@ void PresetUpdater::import_system_profile()
                 if (update.is_directory)
                     continue;
 
-                if (update.can_install) {
-                    need_restart = true;
-                }
                 std::string changelog = update.change_log;
                 updates_msg.emplace_back(update.vendor, update.version.config_version, update.descriptions, std::move(changelog));
             }
@@ -2111,12 +2113,16 @@ void PresetUpdater::import_system_profile()
 
             if (res == wxID_OK) {
                 p->perform_updates(std::move(updates));
+                // Use hot reload instead of restart
+                if (!reload_configs_update_gui()) {
+                    BOOST_LOG_TRIVIAL(warning) << "[Orca Updater]:reload_configs_update_gui failed for system profiles";
+                } else {
+                    BOOST_LOG_TRIVIAL(info) << "[Orca Updater]:System profiles updated successfully via hot reload";
+                }
             } else {
                 boost::filesystem::remove_all(temp_path);
                 return;
             }
-
-            
         }
 
         wxString message;
@@ -2126,18 +2132,6 @@ void PresetUpdater::import_system_profile()
                 message += "• " + preset + "\n";
             }
             GUI::MessageDialog(nullptr, message).ShowModal();
-        }
-
-        if (need_restart) {
-            GUI::MessageDialog msg_wingow(nullptr,
-                                          _L("Updating the system resources requires application restart.") + "\n" +
-                                              _L("Do you want to continue?"),
-                                          L("System resource update"), wxICON_QUESTION | wxOK | wxCANCEL);
-            if (msg_wingow.ShowModal() == wxID_CANCEL) {
-                return;
-            }
-
-            app->recreate_GUI(_L("Update system profiles"));
         }
 
     } catch (std::exception& e) {

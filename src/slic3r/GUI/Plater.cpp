@@ -13818,16 +13818,6 @@ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn, bool us
         upload_job = PrintHostJob(physical_printer_config);
     }
 
-    //if (wxGetApp().app_config->get("use_new_connect") == "true") {
-    //    /*std::shared_ptr<PrintHost> temp;
-    //    wxGetApp().get_connect_host(temp);
-    //    upload_job.printhost = std::unique_ptr<PrintHost>(temp.get());*/
-    //    upload_job = PrintHostJob(wxGetApp().get_host_config());
-    //} else {
-    //    upload_job = PrintHostJob(physical_printer_config); //
-    //}
-    
-
     if (upload_job.empty())
         return;
 

@@ -51,6 +51,7 @@ wxDECLARE_EVENT(EVT_LOAD_VAMS_TRAY, wxCommandEvent);
 wxDECLARE_EVENT(EVT_JUMP_TO_HMS, wxCommandEvent);
 wxDECLARE_EVENT(EVT_JUMP_TO_LIVEVIEW, wxCommandEvent);
 wxDECLARE_EVENT(EVT_UPDATE_TEXT_MSG, wxCommandEvent);
+wxDECLARE_EVENT(EVT_DOWN_URL_PACK, wxCommandEvent);
 
 class ReleaseNoteDialog : public DPIDialog
 {
@@ -95,6 +96,10 @@ public:
     void update_version_info(wxString release_note, wxString version);
     std::vector<std::string> splitWithStl(std::string str, std::string pattern);
 
+    void setDialogMode(bool mode) { isModal = mode; }
+    std::string       getUrl() { return m_url; }
+    void              setUrl(const std::string downloadUrl) { m_url = downloadUrl; }
+    std::string       m_url{""};
     wxStaticBitmap*   m_brand{nullptr};
     Label *           m_text_up_info{nullptr};
     wxWebView*        m_vebview_release_note{nullptr};
@@ -108,6 +113,7 @@ public:
     Button*           m_button_download;
     Button*           m_button_cancel;
     std::string       url_line;
+    bool              isModal = true;
 };
 
 class SecondaryCheckDialog : public DPIFrame

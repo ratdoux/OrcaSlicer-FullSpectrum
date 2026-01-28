@@ -26,9 +26,9 @@ using tcp = asio::ip::tcp;
 
 //WCP Interface definition
 #define UPDATE_PRIVACY_STATUS "sw_SubUserUpdatePrivacy"
+#define GET_PRIVACY_STATUS "sw_GetUserUpdatePrivacy"
 #define UPLOAD_CAMERA_TIMELAPSE "sw_UploadCameraTimelapse"
 #define DELETE_CAMERA_TIMELAPSE "sw_DeleteCameraTimelapse"
-#define GETCAMERA_TIMELAPSE_INSTANCE "sw_GetCameraTimelapseInstance"
 #define GET_DEVICEDATA_STORAGESPACE "sw_GetDeviceDataStorageSpace"
 
 namespace Slic3r { namespace GUI {
@@ -310,9 +310,6 @@ private:
     void sw_mqtt_publish();
     void sw_mqtt_set_engine();
 
-
-
-
 private:
     void clean_current_engine();
 
@@ -424,9 +421,11 @@ private:
     void sw_GetFileListPage();
     void sw_UploadCameraTimelapse();
     void sw_DeleteCameraTimelapse();
-    void sw_GetTimelapseInstance();
+    void sw_GetCameraTimelapseInstance();
 
-    void sw_DefectDetactionConfig();
+    void sw_DefectDetactionConfig();    
+
+    void sw_GetDeviceDataStorageSpace();
 
     void CmdForwarding();
 
@@ -534,8 +533,9 @@ private:
 
     void sw_SubscribeUserLoginState();
 
-    void sw_SubUserUpdatePrivacy();
+    void sw_GetUserUpdatePrivacy();
 
+    void sw_SubUserUpdatePrivacy();
 };
 
 // Instance class for homepage business

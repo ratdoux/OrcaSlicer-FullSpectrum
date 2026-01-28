@@ -1421,7 +1421,10 @@ void SSWCP_Instance::sw_Unsubscribe_Filter() {
                 }
             }
         } 
-
+        else
+        {
+            BOOST_LOG_TRIVIAL(warning) << "no this cmd for:" << cmd;
+        }
         send_to_js();
         finish_job();
     }
@@ -2075,17 +2078,15 @@ void SSWCP_MachineOption_Instance::process()
         sw_UploadCameraTimelapse();
     } else if (m_cmd == "sw_DeleteCameraTimelapse") {
         sw_DeleteCameraTimelapse();
-    } else if (m_cmd == "sw_GetTimelapseInstance") {
-        sw_GetTimelapseInstance();
+    } else if (m_cmd == "sw_GetCameraTimelapseInstance") {
+        sw_GetCameraTimelapseInstance();
     } else if (m_cmd == "sw_ServerClientManagerSetUserinfo") {
         sw_ServerClientManagerSetUserinfo();
     } else if (m_cmd == "sw_DefectDetactionConfig"){
         sw_DefectDetactionConfig();
-    } else if (m_cmd == GETCAMERA_TIMELAPSE_INSTANCE) {
-        CmdForwarding();
-    }    
+    }   
     else if (m_cmd == GET_DEVICEDATA_STORAGESPACE) {
-        CmdForwarding();
+        sw_GetDeviceDataStorageSpace();
     }
     else {
         handle_general_fail();
@@ -3671,8 +3672,30 @@ void SSWCP_MachineOption_Instance::sw_UploadCameraTimelapse()
         handle_general_fail();
     }
 }
+void SSWCP_MachineOption_Instance::CmdForwarding() 
+{
+    try {
+        std::shared_ptr<PrintHost> host = nullptr;
+        wxGetApp().get_connect_host(host);
 
-void SSWCP_MachineOption_Instance::sw_GetTimelapseInstance()
+        if (!host) {
+            handle_general_fail(-1, "Connection lost!");
+            return;
+        }
+
+        auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
+        host->test_async_wcp_mqtt_moonraker(m_param_data, [weak_self](const json& response) {
+            auto self = weak_self.lock();
+            if (self) {
+                SSWCP_Instance::on_mqtt_msg_arrived(self, response);
+            }
+        });
+    } catch (std::exception& e) {
+        handle_general_fail();
+    }
+}
+
+void SSWCP_MachineOption_Instance::sw_GetCameraTimelapseInstance()
 {
     try {
         std::shared_ptr<PrintHost> host = nullptr;
@@ -3695,7 +3718,9 @@ void SSWCP_MachineOption_Instance::sw_GetTimelapseInstance()
         handle_general_fail();
     }
 }
-void SSWCP_MachineOption_Instance::CmdForwarding() {
+void SSWCP_MachineOption_Instance::sw_GetDeviceDataStorageSpace()
+{
+
     try {
         std::shared_ptr<PrintHost> host = nullptr;
         wxGetApp().get_connect_host(host);
@@ -3706,7 +3731,7 @@ void SSWCP_MachineOption_Instance::CmdForwarding() {
         }
 
         auto weak_self = std::weak_ptr<SSWCP_Instance>(shared_from_this());
-        host->async_delete_camera_timelapse(m_param_data, [weak_self](const json& response) {
+        host->async_get_userdata_space(m_param_data, [weak_self](const json& response) {
             auto self = weak_self.lock();
             if (self) {
                 SSWCP_Instance::on_mqtt_msg_arrived(self, response);
@@ -3716,7 +3741,6 @@ void SSWCP_MachineOption_Instance::CmdForwarding() {
         handle_general_fail();
     }
 }
-
 
 void SSWCP_MachineOption_Instance::sw_DeleteCameraTimelapse()
 {
@@ -3885,6 +3909,7 @@ void SSWCP_MachineConnect_Instance::sw_get_pin_code()
                                         self->m_res_data = response["result"];
                                         self->send_to_js();
                                         self->finish_job();
+
 
                                         std::string dc_msg = "success";
                                         bool flag = mqtt_client->Disconnect(dc_msg);
@@ -4267,7 +4292,13 @@ void SSWCP_UserLogin_Instance::process()
         sw_GetUserLoginState();
     } else if (m_cmd == "sw_SubscribeUserLoginState") {
         sw_SubscribeUserLoginState();
-    } else {
+    }
+    else if (m_cmd == UPDATE_PRIVACY_STATUS) {
+        sw_SubUserUpdatePrivacy();
+    } else if (m_cmd == GET_PRIVACY_STATUS) {
+        sw_GetUserUpdatePrivacy();
+    }
+    else {
         handle_general_fail();
     }
 }
@@ -4330,6 +4361,33 @@ void SSWCP_UserLogin_Instance::sw_GetUserLoginState()
     catch (std::exception& e) {
         handle_general_fail();
     }
+}
+void SSWCP_UserLogin_Instance::sw_GetUserUpdatePrivacy()
+{
+    json data;
+    auto isAgree     = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
+    bool isUserAgree               = false;
+
+    if (isAgree == "true")
+        isUserAgree = true;
+
+    data[PRIVACY_POLICY_FLAGS] = isUserAgree;
+
+    m_res_data = data;
+    send_to_js();
+    finish_job();
+
+}
+
+void SSWCP_UserLogin_Instance::sw_SubUserUpdatePrivacy()
+{
+    try {
+        std::weak_ptr<SSWCP_Instance> weak_ptr         = shared_from_this();
+        wxGetApp().m_user_update_privacy_subscribers[m_webview] = weak_ptr;
+    } catch (std::exception& e) {
+        handle_general_fail();
+    }
+
 }
 
 void SSWCP_UserLogin_Instance::sw_SubscribeUserLoginState()
@@ -5803,10 +5861,9 @@ std::unordered_set<std::string> SSWCP::m_machine_option_cmd_list = {
     "sw_UpdateMachineFilamentInfo",
     "sw_UploadCameraTimelapse",
     "sw_DeleteCameraTimelapse",
-    "sw_GetTimelapseInstance",
+    "sw_GetCameraTimelapseInstance",
     "sw_ServerClientManagerSetUserinfo",
     "sw_DefectDetactionConfig",
-    GETCAMERA_TIMELAPSE_INSTANCE,
     GET_DEVICEDATA_STORAGESPACE
 };
 
@@ -5823,9 +5880,8 @@ std::unordered_set<std::string> SSWCP::m_project_cmd_list = {
     "sw_NewProject", "sw_OpenProject", "sw_GetRecentProjects", "sw_OpenRecentFile", "sw_DeleteRecentFiles", "sw_SubscribeRecentFiles",
 };
 
-std::unordered_set<std::string> SSWCP::m_login_cmd_list = {
-    "sw_UserLogin", "sw_UserLogout", "sw_GetUserLoginState", "sw_SubscribeUserLoginState"
-};
+std::unordered_set<std::string> SSWCP::m_login_cmd_list = {"sw_UserLogin", "sw_UserLogout", "sw_GetUserLoginState", "sw_SubscribeUserLoginState",
+                                                           UPDATE_PRIVACY_STATUS,  GET_PRIVACY_STATUS};
 
 std::unordered_set<std::string> SSWCP::m_machine_manage_cmd_list = {
     "sw_GetLocalDevices", "sw_AddDevice", "sw_SubscribeLocalDevices", "sw_RenameDevice", "sw_SwitchModel", "sw_DeleteDevices"
@@ -5899,7 +5955,6 @@ void SSWCP::handle_web_message(std::string message, wxWebView* webview) {
         if (payload.count("event_id") && !payload["event_id"].is_null()) {
             event_id = payload["event_id"].get<std::string>();
         }
-
         std::shared_ptr<SSWCP_Instance> instance = create_sswcp_instance(cmd, header, params, event_id, webview);
         if (instance) {
             if (event_id != "") {

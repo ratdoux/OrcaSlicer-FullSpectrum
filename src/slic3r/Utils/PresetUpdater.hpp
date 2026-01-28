@@ -65,7 +65,7 @@ public:
 
 	void import_flutter_web();
 
-	void load_lutter_web(const std::string& zip_file,bool serverUpdate = false);
+	void load_flutter_web(const std::string& zip_file,bool serverUpdate = false);
 
     void sync_config_async();
 

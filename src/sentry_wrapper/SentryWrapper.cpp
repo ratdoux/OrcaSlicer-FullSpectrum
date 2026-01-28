@@ -30,7 +30,9 @@
 #include <cstdlib>
 #include <atomic>
 #include <random>
+#include <mutex>
 #include "common_func/common_func.hpp"
+#include <iostream>
 
 namespace Slic3r {
 
@@ -63,67 +65,6 @@ static sentry_value_t on_crash_callback(const sentry_ucontext_t* uctx, sentry_va
      return log;
  }
 
-static sentry_value_t before_send(sentry_value_t event, void* hint, void* data)
-{
-    sentry_value_t level_val = sentry_value_get_by_key(event, SENTRY_KEY_LEVEL);
-    std::string    levelName  = sentry_value_as_string(level_val);
-
-    std::string    eventLevel = sentry_value_as_string(sentry_value_get_by_key(event, SENTRY_KEY_LEVEL));
-
-    //module name
-    sentry_value_t moduleValue = sentry_value_get_by_key(event, "logger");
-    std::string    moduleName  = sentry_value_as_string(moduleValue);        
-
-    if (MACHINE_MODULE == moduleName)
-    {
-        srand((unsigned int) time(0));
-        int random_num = rand() % 100;
-        int randNumber = rand() % 100 + 1;
-        if (randNumber < 85) 
-        {
-            sentry_value_decref(event);
-            return sentry_value_new_null();
-        }
-        else
-        {
-            return event;
-        }
-    }
-
-    if (!get_privacy_policy() && levelName == SENTRY_EVENT_TRACE) {
-        
-        sentry_value_decref(event);
-        return sentry_value_new_null();
-    }
-
-    if (SENTRY_EVENT_FATAL == eventLevel ||
-        SENTRY_EVENT_ERROR == eventLevel || 
-        SENTRY_EVENT_TRACE == eventLevel)
-    {
-        return event;
-    } 
-    else if (SENTRY_EVENT_WARNING == eventLevel) 
-    {
-        srand((unsigned int) time(0));
-        int random_num = rand() % 100;
-        int randNumber = rand() % 100 + 1;
-        if (randNumber > 5) 
-        {
-            sentry_value_decref(event);
-            return sentry_value_new_null();
-        } 
-        else 
-        {
-            return event;
-        }
-    }
-
-    //info trace debug not report
-    sentry_value_decref(event);        
-    return sentry_value_new_null();
-
-}
-
 void initSentryEx()
 {
     sentry_options_t* options = sentry_options_new();
@@ -154,43 +95,134 @@ void initSentryEx()
         dataBaseDir = home_env;
         dataBaseDir = dataBaseDir + "/Library/Application Support/Snapmaker_Orca/SentryData";
 #elif _WIN32
-        wchar_t exeDir[MAX_PATH];
-        ::GetModuleFileNameW(nullptr, exeDir, MAX_PATH);
-        std::wstring wsExeDir(exeDir);
-        int          nPos     = wsExeDir.find_last_of('\\');
-        std::wstring wsDmpDir = wsExeDir.substr(0, nPos + 1);
-        std::wstring desDir   = wsDmpDir + L"crashpad_handler.exe";
-        wsDmpDir += L"dump";
+        // Use extended path length support for Windows (up to 32767 characters)
+        const DWORD MAX_PATH_EXTENDED = 32767;
+        wchar_t exeDir[MAX_PATH_EXTENDED];
+        DWORD pathLen = ::GetModuleFileNameW(nullptr, exeDir, MAX_PATH_EXTENDED);
+        
+        // GetModuleFileNameW returns 0 on error, or the number of characters written (excluding null terminator)
+        // If return value equals buffer size, the path was truncated
+        if (pathLen == 0) {
+            // Failed to get module path, use fallback
+            DWORD lastError = GetLastError();
+            std::cout<< "Failed to get module file name, error: " << lastError;
+            handlerDir = "";
+            dataBaseDir = "";
+        } else if (pathLen >= MAX_PATH_EXTENDED) {
+            // Path was truncated, which shouldn't happen with MAX_PATH_EXTENDED
+            std::cout<< "Module file path too long or truncated, length: " << pathLen;
+            handlerDir = "";
+            dataBaseDir = "";
+        } else {
+            // Ensure null termination (GetModuleFileNameW should do this, but be safe)
+            exeDir[pathLen] = L'\0';
+            
+            std::wstring wsExeDir(exeDir, pathLen);
+            size_t nPos = wsExeDir.find_last_of(L'\\');
+            
+            if (nPos == std::wstring::npos) {
+                // No backslash found, use current directory as fallback
+                std::cout<< "No backslash found in executable path, using current directory";
+                nPos = 0;
+            }
+            
+            // Ensure nPos + 1 doesn't exceed string length
+            if (nPos + 1 > wsExeDir.length()) {
+                std::cout<< "Invalid path position, using full path";
+                nPos = wsExeDir.length();
+            }
+            
+            std::wstring wsDmpDir = wsExeDir.substr(0, nPos + 1);
+            std::wstring desDir   = wsDmpDir + L"crashpad_handler.exe";
+            wsDmpDir += L"dump";
 
-        auto wstringTostring = [](std::wstring wTmpStr) -> std::string {
-            std::string resStr = std::string();
-            int         len    = WideCharToMultiByte(CP_UTF8, 0, wTmpStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            if (len <= 0)
-                return std::string();
+            auto wstringTostring = [](const std::wstring& wTmpStr) -> std::string {
+                if (wTmpStr.empty())
+                    return std::string();
+                    
+                int len = WideCharToMultiByte(CP_UTF8, 0, wTmpStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+                if (len <= 0) {
+                    std::cout<< "WideCharToMultiByte failed, error: " << GetLastError();
+                    return std::string();
+                }
 
-            std::string desStr(len, 0);
-            WideCharToMultiByte(CP_UTF8, 0, wTmpStr.c_str(), -1, &desStr[0], len, nullptr, nullptr);
-            resStr = desStr;
+                // Allocate buffer with size len (includes null terminator)
+                std::string desStr;
+                desStr.resize(len - 1); // Reserve space excluding null terminator
+                int result = WideCharToMultiByte(CP_UTF8, 0, wTmpStr.c_str(), -1, &desStr[0], len, nullptr, nullptr);
+                if (result == 0 || result != len) {
+                    std::cout<< "WideCharToMultiByte conversion failed, error: " << GetLastError();
+                    return std::string();
+                }
+                
+                // Remove null terminator if present (safely check before accessing)
+                if (!desStr.empty() && desStr.back() == '\0')
+                    desStr.pop_back();
 
-            return resStr;
-        };
+                return desStr;
+            };
 
-        handlerDir = wstringTostring(desDir);
+            handlerDir = wstringTostring(desDir);
+        }
 
+        // Get LocalAppData folder path
         PWSTR   pszPath = nullptr;
-        char*   path    = new char[MAX_PATH]();
+        char*   path    = nullptr;
         size_t  pathLength = 0;
         HRESULT hr      = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &pszPath);
 
-        if (SUCCEEDED(hr)) {
-            wcstombs_s(&pathLength, path, MAX_PATH, pszPath, MAX_PATH);
+        if (SUCCEEDED(hr) && pszPath != nullptr) {
+            // Calculate required buffer size first
+            size_t wcsLen = wcslen(pszPath);
+            if (wcsLen > 0 && wcsLen < SIZE_MAX / 3) { // Check for overflow
+                // Allocate buffer with extra space for safety
+                size_t requiredSize = wcsLen * 3 + 1; // UTF-8 can be up to 3 bytes per wchar
+                path = new (std::nothrow) char[requiredSize]();
+                
+                if (path != nullptr) {
+                    errno_t err = wcstombs_s(&pathLength, path, requiredSize, pszPath, _TRUNCATE);
+                    if (err != 0) {
+                        std::cout<< "wcstombs_s failed, error: " << err;
+                        delete[] path;
+                        path = nullptr;
+                    }
+                } else {
+                    std::cout<< "Failed to allocate memory for path conversion";
+                }
+            } else if (wcsLen == 0) {
+                std::cout<< "SHGetKnownFolderPath returned empty path";
+            } else {
+                std::cout<< "Path length overflow detected: " << wcsLen;
+            }
+            // Always free the path returned by SHGetKnownFolderPath
             CoTaskMemFree(pszPath);
-        } 
+            pszPath = nullptr;
+        } else {
+            std::cout<< "SHGetKnownFolderPath failed, hr: " << std::hex << hr;
+            // Ensure pszPath is freed even on failure (though it should be nullptr)
+            if (pszPath != nullptr) {
+                CoTaskMemFree(pszPath);
+                pszPath = nullptr;
+            }
+        }
 
-        std::string filePath = path;
-        std::string appName  = "\\" + std::string("Snapmaker_Orca\\");
-        dataBaseDir          = filePath + appName;
-        delete[] path;
+        if (path != nullptr) {
+            std::string filePath = path;
+            std::string appName  = "\\" + std::string("Snapmaker_Orca\\");
+            dataBaseDir          = filePath + appName;
+            delete[] path;
+            path = nullptr;
+        } else {
+            // Fallback: use temp directory
+            char tempPath[MAX_PATH];
+            if (GetTempPathA(MAX_PATH, tempPath) != 0) {
+                dataBaseDir = std::string(tempPath) + "Snapmaker_Orca\\";
+                std::cout<< "Using temp directory as fallback for Sentry data: " << dataBaseDir;
+            } else {
+                dataBaseDir = "";
+                std::cout<< "Failed to get temp path, Sentry data directory will be empty";
+            }
+        }
 #endif
 
         if (!handlerDir.empty())
@@ -211,7 +243,6 @@ void initSentryEx()
         sentry_options_set_auto_session_tracking(options, 0);
         sentry_options_set_symbolize_stacktraces(options, 1);
         sentry_options_set_on_crash(options, on_crash_callback, NULL);
-        sentry_options_set_before_send(options, before_send, NULL);
 
         sentry_options_set_sample_rate(options, 1.0);
         sentry_options_set_traces_sample_rate(options, 1.0);

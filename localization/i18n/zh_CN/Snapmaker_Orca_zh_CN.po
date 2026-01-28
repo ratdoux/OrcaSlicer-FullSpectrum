@@ -15297,6 +15297,15 @@ msgstr "OrcaSlicer 基于来自 Bambu Lab 的 Bambu Studio 开发而来。"
 msgid "Printing by object with caution. This function may cause the print head to collide with printed parts during switching."
 msgstr "谨慎使用逐件打印，该功能可能会导致打印头切换时与打印件碰撞"
 
+msgid "Check for Process Preset Updates"
+msgstr "检查工艺预设新版本"
+
+msgid "Check for Web Resource Updates"
+msgstr "检查Web资源新版本"
+
+msgid "Export Logs"
+msgstr "日志导出"
+
 #~ msgid "Improve shell precision by adjusting outer wall spacing. This also improves layer consistency."
 #~ msgstr "优化外墙刀路以提高外墙精度。这个优化同时减少层纹"
 

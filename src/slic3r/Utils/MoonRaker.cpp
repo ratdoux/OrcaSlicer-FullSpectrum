@@ -2399,6 +2399,30 @@ void Moonraker_Mqtt::async_get_timelapse_instance(const nlohmann::json& targets,
     }
 }
 
+//get the mechine local storage space
+void Moonraker_Mqtt::async_get_userdata_space(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)> callback)
+{
+    auto&       wcp_loger = GUI::WCP_Logger::getInstance();
+    std::string method    = "server.files.get_userdata_space";
+
+    json params = json::object();
+
+    params = targets;
+
+    if (!send_to_request(method, params, true, callback,
+                         [callback, &wcp_loger]() {
+                             BOOST_LOG_TRIVIAL(warning) << "[Moonraker_Mqtt] get uoser storage space";
+                             wcp_loger.add_log("get uoser storage space timeout", false, "", "Moonraker_Mqtt", "warning");
+                             json res;
+                             res["error"] = "timeout";
+                             callback(res);
+                         }) &&callback) {
+        BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt]send the cmd to get uoser storage space fail";
+        wcp_loger.add_log("send the cmd to get uoser storage space fail", false, "", "Moonraker_Mqtt", "error");
+        callback(json::value_t::null);
+    }
+}
+
 // 请求删除延时摄影文件
 void Moonraker_Mqtt::async_delete_camera_timelapse(const nlohmann::json&                               targets,
                                                    std::function<void(const nlohmann::json& response)> callback)

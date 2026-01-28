@@ -118,7 +118,7 @@ void WebDeviceDialog::OnError(wxWebViewEvent &evt)
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":WebDeviceDialog error loading page %1% %2% %3% %4%") % evt.GetURL() % evt.GetTarget() % e %evt.GetString();
-    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init WebDeviceDialog webview fail", BP_WEB_VIEW);
+    
 }
 
 void WebDeviceDialog::OnScriptMessage(wxWebViewEvent &evt)

@@ -185,7 +185,6 @@ void PrinterWebView::OnError(wxWebViewEvent &evt)
         break;
       }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") %evt.GetURL() %evt.GetTarget() %e %evt.GetString();
-      Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init PrinterWebView webview fail", BP_WEB_VIEW);
 }
 
 void PrinterWebView::OnLoaded(wxWebViewEvent &evt)

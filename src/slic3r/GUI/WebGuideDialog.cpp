@@ -611,7 +611,7 @@ void GuideFrame::OnError(wxWebViewEvent& event)
     }
 
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":GuideFrame error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
-    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init GuideFrame webview fail", BP_WEB_VIEW);
+    
 }
 
 void GuideFrame::OnScriptResponseMessage(wxCommandEvent &WXUNUSED(evt))
@@ -639,7 +639,7 @@ int GuideFrame::SaveProfile()
     //     m_MainPtr->app_config->set(std::string(m_SectionName.mb_str()), "privacyuse", "1");
     // } else
     //     m_MainPtr->app_config->set(std::string(m_SectionName.mb_str()), "privacyuse", "0");
-    m_MainPtr->app_config->set("app", "privacy_policy_isagree", PrivacyUse);
+    m_MainPtr->app_config->set("app", PRIVACY_POLICY_FLAGS, PrivacyUse);
     BOOST_LOG_TRIVIAL(warning) << "SaveProfile changed the privacy policy with: " << (PrivacyUse ? "true" : "false");
     wxGetApp().user_update_privacy_notify(PrivacyUse);
     m_MainPtr->app_config->set("region", m_Region);

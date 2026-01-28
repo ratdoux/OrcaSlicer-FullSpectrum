@@ -44,6 +44,7 @@ wxDEFINE_EVENT(EVT_UPDATE_NOZZLE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_JUMP_TO_HMS, wxCommandEvent);
 wxDEFINE_EVENT(EVT_JUMP_TO_LIVEVIEW, wxCommandEvent);
 wxDEFINE_EVENT(EVT_UPDATE_TEXT_MSG, wxCommandEvent);
+wxDEFINE_EVENT(EVT_DOWN_URL_PACK, wxCommandEvent);
 
 ReleaseNoteDialog::ReleaseNoteDialog(Plater *plater /*= nullptr*/)
     : DPIDialog(static_cast<wxWindow *>(wxGetApp().mainframe), wxID_ANY, _L("Release Note"), wxDefaultPosition, wxDefaultSize, wxCAPTION | wxCLOSE_BOX)
@@ -333,7 +334,13 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_download->SetCursor(wxCURSOR_HAND);
 
     m_button_download->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) {
-        EndModal(wxID_YES);
+        wxCommandEvent event(EVT_DOWN_URL_PACK);
+
+        wxPostEvent(this, event);
+        if (isModal)
+            EndModal(wxID_NO);
+        else
+            Close();  
     });
 
     m_button_skip_version = new Button(this, _L("Skip this Version"));
@@ -347,7 +354,10 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
 
     m_button_skip_version->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) { 
         wxGetApp().set_skip_version(true);
-        EndModal(wxID_NO);
+        if (isModal)
+            EndModal(wxID_NO);
+        else
+            Close();        
     });
 
     m_cb_stable_only = new CheckBox(this);
@@ -377,7 +387,11 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_button_cancel->SetCursor(wxCURSOR_HAND);
 
     m_button_cancel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &e) {
-        EndModal(wxID_NO);
+        if (isModal)
+            EndModal(wxID_NO);
+        else
+            Close();
+
     });
 
     m_sizer_main->Add(m_line_top, 0, wxEXPAND | wxBOTTOM, 0);
@@ -446,7 +460,6 @@ void UpdateVersionDialog::OnError(wxWebViewEvent& event)
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":UpdateVersionDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e %event.GetString();
-    Slic3r::sentryReportLog(Slic3r::SENTRY_LOG_FATAL, "bury_point_init UpdateVersionDialog webview fail", BP_WEB_VIEW);
     event.Skip();
 }
 
@@ -514,18 +527,6 @@ void UpdateVersionDialog::update_version_info(wxString release_note, wxString ve
     //bbs check whether the web display is used
     bool use_web_link = false;
     url_line          = "";
-    // Orca: not used in Orca Slicer
-    // auto split_array = splitWithStl(release_note.ToStdString(), "###");
-    // if (split_array.size() >= 3) {
-    //     for (auto i = 0; i < split_array.size(); i++) {
-    //         std::string url = split_array[i];
-    //         if (std::strstr(url.c_str(), "http://") != NULL || std::strstr(url.c_str(), "https://") != NULL) {
-    //             use_web_link = true;
-    //             url_line     = url;
-    //             break;
-    //         }
-    //     }
-    // }
 
     if (use_web_link) {
         m_brand->Hide();

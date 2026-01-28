@@ -172,7 +172,7 @@ Button* MsgDialog::add_button(wxWindowID btn_id, bool set_focus /*= false*/, con
         btn->SetFocus();
     btn_sizer->Add(btn, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(ButtonProps::ChoiceButtonGap()));
     btn->Bind(wxEVT_BUTTON, [this, btn_id](wxCommandEvent&) { EndModal(btn_id); });
-
+    btn->SetCursor(wxCURSOR_HAND);
     MsgButton *mb = new MsgButton;
     ButtonData *bd = new ButtonData;
 
