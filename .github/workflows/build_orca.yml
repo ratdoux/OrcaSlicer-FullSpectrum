@@ -192,6 +192,18 @@ jobs:
             exit 1
           }
           
+          # Verify Hardened Runtime is enabled
+          echo "Verifying Hardened Runtime is enabled..."
+          RUNTIME_CHECK=$(codesign -d --verbose=4 "$APP_PATH" 2>&1 | grep -i "runtime" || true)
+          if echo "$RUNTIME_CHECK" | grep -qi "runtime"; then
+            echo "✓ Hardened Runtime is enabled"
+            echo "  Runtime flags: $RUNTIME_CHECK"
+          else
+            echo "✗ Warning: Hardened Runtime status not clearly visible in signature"
+            echo "  Checking signature details..."
+            codesign -d --verbose=4 "$APP_PATH" 2>&1 | head -30
+          fi
+          
           # Verify entitlements are embedded
           echo "Verifying entitlements are embedded..."
           EMBEDDED_ENTITLEMENTS=$(codesign -d --entitlements - "$APP_PATH" 2>&1)
@@ -242,6 +254,15 @@ jobs:
               echo "Error: Validator signature verification failed"
               exit 1
             }
+            
+            # Verify Hardened Runtime is enabled for validator
+            echo "Verifying Hardened Runtime for validator app..."
+            VALIDATOR_RUNTIME_CHECK=$(codesign -d --verbose=4 "$VALIDATOR_APP_PATH" 2>&1 | grep -i "runtime" || true)
+            if echo "$VALIDATOR_RUNTIME_CHECK" | grep -qi "runtime"; then
+              echo "✓ Hardened Runtime is enabled for validator app"
+            else
+              echo "⚠ Warning: Hardened Runtime status not clearly visible for validator"
+            fi
           fi
           
           # Create main Snapmaker Orca DMG without the profile validator helper
@@ -260,6 +281,15 @@ jobs:
             exit 1
           }
           
+          # Verify Hardened Runtime for DMG
+          echo "Verifying Hardened Runtime for DMG..."
+          DMG_RUNTIME_CHECK=$(codesign -d --verbose=4 "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg" 2>&1 | grep -i "runtime" || true)
+          if echo "$DMG_RUNTIME_CHECK" | grep -qi "runtime"; then
+            echo "✓ Hardened Runtime is enabled for DMG"
+          else
+            echo "⚠ Note: DMG files typically don't show runtime flags in the same way as apps"
+          fi
+          
           # Create separate Snapmaker_Orca_profile_validator DMG if the app exists
           if [ -f "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app/Contents/MacOS/Snapmaker_Orca_profile_validator" ]; then
             mkdir -p ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg
@@ -276,6 +306,15 @@ jobs:
               echo "Error: Validator DMG signature verification failed"
               exit 1
             }
+            
+            # Verify Hardened Runtime for validator DMG
+            echo "Verifying Hardened Runtime for validator DMG..."
+            VALIDATOR_DMG_RUNTIME_CHECK=$(codesign -d --verbose=4 "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg" 2>&1 | grep -i "runtime" || true)
+            if echo "$VALIDATOR_DMG_RUNTIME_CHECK" | grep -qi "runtime"; then
+              echo "✓ Hardened Runtime is enabled for validator DMG"
+            else
+              echo "⚠ Note: DMG files typically don't show runtime flags in the same way as apps"
+            fi
           fi
           
           # Notarize main DMG
