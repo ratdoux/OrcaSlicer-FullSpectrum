@@ -2319,7 +2319,6 @@ void PrintConfigDef::init_fff_params()
     def->enum_values.push_back("PVB");
     def->enum_values.push_back("SBS");
     def->enum_values.push_back("TPU");
-    def->enum_values.push_back("PETG-HF");
     def->mode = comSimple;
     def->set_default_value(new ConfigOptionStrings { "PLA" });
 

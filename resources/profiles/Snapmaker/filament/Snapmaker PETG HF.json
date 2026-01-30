@@ -29,9 +29,6 @@
     "filament_end_gcode": [
         ""
     ],
-    "filament_type": [
-        "PETG-HF"
-    ],
     "filament_max_volumetric_speed": [
         "20"
     ],
@@ -66,7 +63,7 @@
         "0.02"
     ],
     "filament_vendor": [
-        "Snapmaker"
+        "snapmaker"
     ],
     "filament_retract_length_toolchange": [
         "5"
