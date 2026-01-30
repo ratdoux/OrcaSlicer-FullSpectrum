@@ -123,7 +123,6 @@ jobs:
  # Thanks to RaySajuuk, it's working now
       - name: Sign app and notary
         #if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/2.2.0') && inputs.os == 'macos-14'
-        if: inputs.os == 'macos-14'
         working-directory: ${{ github.workspace }}
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -140,129 +139,10 @@ jobs:
           security import $CERTIFICATE_PATH -P $P12_PASSWORD -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $P12_PASSWORD $KEYCHAIN_PATH
-          
-          # Sign app with proper recursive signing (not using --deep)
-          APP_PATH="${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker Orca.app"
-          ENTITLEMENTS_PATH="${{ github.workspace }}/scripts/disable_validation.entitlements"
-          
-          # Verify entitlements file exists
-          if [ ! -f "$ENTITLEMENTS_PATH" ]; then
-            echo "Error: Entitlements file not found: $ENTITLEMENTS_PATH"
-            exit 1
-          fi
-          echo "Using entitlements: $ENTITLEMENTS_PATH"
-          
-          # Sign Frameworks (must succeed, no silent failures)
-          echo "Signing Frameworks..."
-          if [ -d "$APP_PATH/Contents/Frameworks" ]; then
-            find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" | while read -r item; do
-              if [ -f "$item" ] || [ -d "$item" ]; then
-                echo "  Signing: $item"
-                codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
-                  echo "Error: Failed to sign $item"
-                  exit 1
-                }
-              fi
-            done
-          fi
-          
-          # Sign MacOS executables (must succeed, no silent failures)
-          echo "Signing MacOS executables..."
-          if [ -d "$APP_PATH/Contents/MacOS" ]; then
-            find "$APP_PATH/Contents/MacOS" -type f -perm +111 | while read -r item; do
-              echo "  Signing: $item"
-              codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
-                echo "Error: Failed to sign $item"
-                exit 1
-              }
-            done
-          fi
-          
-          # Sign main app with entitlements
-          echo "Signing main app with entitlements..."
-          codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "$APP_PATH" || {
-            echo "Error: Failed to sign main app"
-            exit 1
-          }
-          
-          # Verify signature
-          echo "Verifying signature..."
-          codesign --verify --verbose "$APP_PATH" || {
-            echo "Error: Signature verification failed"
-            exit 1
-          }
-          
-          # Verify Hardened Runtime is enabled
-          echo "Verifying Hardened Runtime is enabled..."
-          RUNTIME_CHECK=$(codesign -d --verbose=4 "$APP_PATH" 2>&1 | grep -i "runtime" || true)
-          if echo "$RUNTIME_CHECK" | grep -qi "runtime"; then
-            echo "✓ Hardened Runtime is enabled"
-            echo "  Runtime flags: $RUNTIME_CHECK"
-          else
-            echo "✗ Warning: Hardened Runtime status not clearly visible in signature"
-            echo "  Checking signature details..."
-            codesign -d --verbose=4 "$APP_PATH" 2>&1 | head -30
-          fi
-          
-          # Verify entitlements are embedded
-          echo "Verifying entitlements are embedded..."
-          EMBEDDED_ENTITLEMENTS=$(codesign -d --entitlements - "$APP_PATH" 2>&1)
-          if echo "$EMBEDDED_ENTITLEMENTS" | grep -q "com.apple.security.network.client"; then
-            echo "✓ Entitlements successfully embedded"
-            echo "  Found network.client entitlement"
-          else
-            echo "✗ Error: Entitlements not embedded correctly"
-            echo "  Embedded entitlements output:"
-            echo "$EMBEDDED_ENTITLEMENTS" | head -20
-            exit 1
-          fi
-          
+          codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker Orca.app"
           # Sign Snapmaker_Orca_profile_validator.app if it exists
-          VALIDATOR_APP_PATH="${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app"
-          if [ -f "$VALIDATOR_APP_PATH/Contents/MacOS/Snapmaker_Orca_profile_validator" ]; then
-            echo "Signing Snapmaker_Orca_profile_validator.app..."
-            
-            # Sign validator app components
-            if [ -d "$VALIDATOR_APP_PATH/Contents/Frameworks" ]; then
-              find "$VALIDATOR_APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" | while read -r item; do
-                if [ -f "$item" ] || [ -d "$item" ]; then
-                  codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
-                    echo "Error: Failed to sign validator component $item"
-                    exit 1
-                  }
-                fi
-              done
-            fi
-            
-            if [ -d "$VALIDATOR_APP_PATH/Contents/MacOS" ]; then
-              find "$VALIDATOR_APP_PATH/Contents/MacOS" -type f -perm +111 | while read -r item; do
-                codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "$item" || {
-                  echo "Error: Failed to sign validator executable $item"
-                  exit 1
-                }
-              done
-            fi
-            
-            # Sign main validator app with entitlements
-            codesign --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$CERTIFICATE_ID" "$VALIDATOR_APP_PATH" || {
-              echo "Error: Failed to sign validator app"
-              exit 1
-            }
-            
-            # Verify validator signature
-            codesign --verify --verbose "$VALIDATOR_APP_PATH" || {
-              echo "Error: Validator signature verification failed"
-              exit 1
-            }
-            
-            # Verify Hardened Runtime is enabled for validator
-            echo "Verifying Hardened Runtime for validator app..."
-            VALIDATOR_RUNTIME_CHECK=$(codesign -d --verbose=4 "$VALIDATOR_APP_PATH" 2>&1 | grep -i "runtime" || true)
-            if echo "$VALIDATOR_RUNTIME_CHECK" | grep -qi "runtime"; then
-              echo "✓ Hardened Runtime is enabled for validator app"
-            else
-              echo "⚠ Warning: Hardened Runtime status not clearly visible for validator"
-            fi
+          if [ -f "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app/Contents/MacOS/Snapmaker_Orca_profile_validator" ]; then
+            codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" ${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app
           fi
           
           # Create main Snapmaker Orca DMG without the profile validator helper
@@ -271,24 +151,7 @@ jobs:
           cp -R "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker Orca.app" "${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg/"
           ln -sfn /Applications ${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg/Applications
           hdiutil create -volname "Snapmaker_Orca" -srcfolder ${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg -ov -format UDZO "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg"
-          # Sign DMG (DMG files should NOT have entitlements, only signature)
-          codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg" || {
-            echo "Error: Failed to sign DMG"
-            exit 1
-          }
-          codesign --verify --verbose "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg" || {
-            echo "Error: DMG signature verification failed"
-            exit 1
-          }
-          
-          # Verify Hardened Runtime for DMG
-          echo "Verifying Hardened Runtime for DMG..."
-          DMG_RUNTIME_CHECK=$(codesign -d --verbose=4 "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg" 2>&1 | grep -i "runtime" || true)
-          if echo "$DMG_RUNTIME_CHECK" | grep -qi "runtime"; then
-            echo "✓ Hardened Runtime is enabled for DMG"
-          else
-            echo "⚠ Note: DMG files typically don't show runtime flags in the same way as apps"
-          fi
+          codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_Mac_universal_${{ env.ver }}.dmg"
           
           # Create separate Snapmaker_Orca_profile_validator DMG if the app exists
           if [ -f "${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app/Contents/MacOS/Snapmaker_Orca_profile_validator" ]; then
@@ -297,24 +160,7 @@ jobs:
             cp -R ${{ github.workspace }}/build/universal/Snapmaker_Orca/Snapmaker_Orca_profile_validator.app ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg/
             ln -sfn /Applications ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg/Applications
             hdiutil create -volname "Snapmaker_Orca Profile Validator" -srcfolder ${{ github.workspace }}/build/universal/Snapmaker_Orca_profile_validator_dmg -ov -format UDZO "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg"
-            # Sign DMG (DMG files should NOT have entitlements, only signature)
-            codesign --force --verbose --options runtime --timestamp --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg" || {
-              echo "Error: Failed to sign validator DMG"
-              exit 1
-            }
-            codesign --verify --verbose "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg" || {
-              echo "Error: Validator DMG signature verification failed"
-              exit 1
-            }
-            
-            # Verify Hardened Runtime for validator DMG
-            echo "Verifying Hardened Runtime for validator DMG..."
-            VALIDATOR_DMG_RUNTIME_CHECK=$(codesign -d --verbose=4 "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg" 2>&1 | grep -i "runtime" || true)
-            if echo "$VALIDATOR_DMG_RUNTIME_CHECK" | grep -qi "runtime"; then
-              echo "✓ Hardened Runtime is enabled for validator DMG"
-            else
-              echo "⚠ Note: DMG files typically don't show runtime flags in the same way as apps"
-            fi
+            codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" "${{ github.workspace }}/Snapmaker_Orca_profile_validator_Mac_universal_${{ env.ver }}.dmg"
           fi
           
           # Notarize main DMG
@@ -330,7 +176,6 @@ jobs:
 
       - name: Create DMG without notary
         #if: github.ref != 'refs/heads/main' && inputs.os == 'macos-14' && github.ref != 'refs/heads/2.2.0'
-        if: github.ref == 'refs/heads/main' && inputs.os == 'macos-14'
         working-directory: ${{ github.workspace }}
         run: |
           mkdir -p ${{ github.workspace }}/build/universal/Snapmaker_Orca_dmg
@@ -612,14 +457,3 @@ jobs:
           asset_name: orca_custom_preset_tests.zip
           asset_content_type: application/octet-stream
           max_releases: 1
-
-  upload_symbols:
-    name: Upload Windows PDB to Sentry
-    needs: [build_orca]
-    if: ${{ !cancelled() && needs.build_orca.result == 'success' && inputs.os == 'windows-latest' }}
-    uses: ./.github/workflows/sentry_cli.yml
-    with:
-      os: ${{ inputs.os }}
-      pdb-artifact-name: PDB
-      release: ${{ needs.build_orca.outputs.release || github.sha }}
-    secrets: inherit
