@@ -89,6 +89,7 @@ class Plater;
 class ParamsPanel;
 class NotificationManager;
 class Downloader;
+class WCPDownloadManager;
 struct GUI_InitParams;
 class ParamsDialog;
 class HMSQuery;
@@ -297,6 +298,7 @@ private:
 	size_t m_instance_hash_int;
 
     std::unique_ptr<Downloader> m_downloader;
+    WCPDownloadManager* m_wcp_download_manager;
 
     //BBS
     bool m_is_closing {false};
@@ -684,6 +686,7 @@ private:
     Model&      		 model();
     NotificationManager * notification_manager();
     Downloader*          downloader();
+    WCPDownloadManager*  wcp_download_manager();
 
 
     std::string         m_mall_model_download_url;

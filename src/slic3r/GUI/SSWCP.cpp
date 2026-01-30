@@ -2,6 +2,7 @@
 #include "SSWCP.hpp"
 #include "GUI_App.hpp"
 #include "MainFrame.hpp"
+#include "WCPDownloadManager.hpp"
 #include "nlohmann/json.hpp"
 #include "slic3r/GUI/Tab.hpp"
 #include "sentry_wrapper/SentryWrapper.hpp"
@@ -4297,6 +4298,12 @@ void SSWCP_UserLogin_Instance::process()
         sw_SubUserUpdatePrivacy();
     } else if (m_cmd == GET_PRIVACY_STATUS) {
         sw_GetUserUpdatePrivacy();
+    } else if (m_cmd == DOWNLOAD_FILE) {
+        sw_DownloadFile();
+    } else if (m_cmd == CANCEL_DOWNLOAD) {
+        sw_CancelDownload();
+    } else if (m_cmd == FILE_VIEW) {
+        sw_FileView();
     }
     else {
         handle_general_fail();
@@ -4377,6 +4384,110 @@ void SSWCP_UserLogin_Instance::sw_GetUserUpdatePrivacy()
     send_to_js();
     finish_job();
 
+}
+
+void SSWCP_UserLogin_Instance::sw_DownloadFile() {
+    try {
+        std::string fileName = m_param_data.count("file_name") ? m_param_data["file_name"].get<std::string>() : "";
+        std::string fileUrl  = m_param_data.count("file_url") ? m_param_data["file_url"].get<std::string>() : "";
+
+        if (fileUrl.empty() || fileName.empty()) {
+            handle_general_fail(-1, "file_url and file_name are required");
+            return;
+        }
+
+        // Use WCP Download Manager
+        WCPDownloadManager* download_mgr = wxGetApp().wcp_download_manager();
+        if (!download_mgr) {
+            handle_general_fail(-1, "WCP Download Manager not available");
+            return;
+        }
+
+        // Start download task
+        size_t task_id = download_mgr->start_download(fileUrl, fileName, shared_from_this());
+        
+        // Return task ID to Flutter
+        json response;
+        response["task_id"] = task_id;
+        response["file_name"] = fileName;
+        response["file_url"] = fileUrl;
+        m_res_data = response;
+        m_status = 0;
+        m_msg = "Download started";
+        send_to_js();
+        // Note: Do not call finish_job() here, as download is asynchronous
+        // The manager will send progress updates and completion/error messages via WCP
+        
+    } catch (std::exception& e) {
+        handle_general_fail(-1, e.what());
+    }
+}
+
+void SSWCP_UserLogin_Instance::sw_CancelDownload() {
+    try {
+        size_t task_id = m_param_data.count("task_id") ? m_param_data["task_id"].get<size_t>() : 0;
+        
+        if (task_id == 0) {
+            handle_general_fail(-1, "task_id is required");
+            return;
+        }
+        
+        WCPDownloadManager* download_mgr = wxGetApp().wcp_download_manager();
+        if (!download_mgr) {
+            handle_general_fail(-1, "WCP Download Manager not available");
+            return;
+        }
+        
+        bool success = download_mgr->cancel_download(task_id);
+        
+        if (success) {
+            json response;
+            response["task_id"] = task_id;
+            response["canceled"] = true;
+            m_res_data = response;
+            m_status = 0;
+            m_msg = "Download canceled";
+        } else {
+            handle_general_fail(-1, "Failed to cancel download or task not found");
+            return;
+        }
+        
+        send_to_js();
+        finish_job();
+    } catch (std::exception& e) {
+        handle_general_fail(-1, e.what());
+    }
+}
+
+void SSWCP_UserLogin_Instance::sw_FileView() {
+    try {
+        std::string file_path = m_param_data.count("file_path") ? m_param_data["file_path"].get<std::string>() : "";
+        wxFileName  file(file_path);
+
+        if (!file.FileExists()) {
+            handle_general_fail();
+            //wxMessageBox(wxT("file not exsit"), wxT("tips"), wxOK | wxICON_WARNING);
+            return;
+        }
+
+        std::weak_ptr<SSWCP_Instance> weak_self = shared_from_this();
+
+        wxGetApp().CallAfter([file_path, weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) {
+                return;
+            }
+
+            //open file in folder            
+            desktop_open_any_folderEx(file_path);
+
+            self->send_to_js();
+            self->finish_job();
+            
+        });
+    } catch (std::exception& e) {
+        handle_general_fail();
+    }
 }
 
 void SSWCP_UserLogin_Instance::sw_SubUserUpdatePrivacy()

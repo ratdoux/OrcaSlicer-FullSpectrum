@@ -251,6 +251,10 @@ void initSentryEx()
         sentry_options_set_before_send_log(options, before_send_log, NULL);
         sentry_options_set_logs_with_attributes(options, true);
 
+        // Set release version for symbolication
+        // This must match the release used when uploading symbols
+        sentry_options_set_release(options, Snapmaker_VERSION);
+        
         sentry_init(options);
         sentry_start_session();
 

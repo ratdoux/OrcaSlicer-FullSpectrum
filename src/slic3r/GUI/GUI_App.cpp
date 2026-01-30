@@ -13,6 +13,7 @@
 #include "slic3r/GUI/WebPresetDialog.hpp"
 
 #include "slic3r/GUI/SSWCP.hpp"
+#include "slic3r/GUI/WCPDownloadManager.hpp"
 #include "slic3r/Utils/PresetUpdater.hpp"
 #include "slic3r/Config/Version.hpp"
 
@@ -1061,6 +1062,7 @@ GUI_App::GUI_App()
     , m_imgui(new ImGuiWrapper())
 	, m_removable_drive_manager(std::make_unique<RemovableDriveManager>())
     , m_downloader(std::make_unique<Downloader>())
+    , m_wcp_download_manager(&WCPDownloadManager::getInstance())
 	, m_other_instance_message_handler(std::make_unique<OtherInstanceMessageHandler>())
 {
 	//app config initializes early becasuse it is used in instance checking in Snapmaker_Orca.cpp
@@ -6462,6 +6464,11 @@ Model& GUI_App::model()
 Downloader* GUI_App::downloader()
 {
     return m_downloader.get();
+}
+
+WCPDownloadManager* GUI_App::wcp_download_manager()
+{
+    return m_wcp_download_manager;
 }
 
 void GUI_App::load_url(wxString url)
