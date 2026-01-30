@@ -222,7 +222,11 @@
 
   "Refresh completed": "刷新完成",
   "Refresh failed": "刷新失败",
-
+  "No more data": "没有更多数据",
+  "Pull up Load more": "上拉加载更多",
+  "Pull down refresh": "下拉刷新",
+  "Click to load more": "点击加载更多",
+  
   "User not logged in": "用户未登录",
 
   "Not logged in account": "未登录账户",
@@ -303,6 +307,7 @@
   "Extrusion flow calibrate": "挤出流量校准",
   "When enabled, the printer will automatically calibrate flow compensation before printing. Recommended after each filament change.": "启用后，打印机将在打印前自动校准流量补偿。每次更换丝材后建议执行。",
 
+  "Please select filament type": "请选择耗材类型",
   "Cannot get the current slice file information, or the file does not exist, please re-operate the slice": "无法获取当前切片文件信息,或文件不存在，请重新操作切片",
   "Cannot get connected machine": "无法获取到当前已连接的设备信息",
   "Cannot get connected machine info, please check the device and try again.": "无法获取设备信息，请检查设备并重试",
@@ -389,6 +394,7 @@
   "resume success": "恢复打印成功",
   "pause success": "暂停打印成功",
   "cancel success": "取消打印成功",
+  "stop success": "停止打印成功",
   "finished":"完成",
 
   "Heated Bed Temp.": "热床温度",
@@ -526,7 +532,8 @@
   "Refresh More": "刷新更多",
   "downloading_desc_format": "{}，下载中...({}%)",
   "downloaded_desc_format": "{}，下载完成",
-  "Version Compatibility": "版本兼容",
+  "Firmware Version Compatibility": "设备版本兼容",
+  "Detecting updates": "检测更新",
   "device_firmware_version_not_compatible_desc": "检测到当前设备固件版本过低，为避免出现通信问题，建议升级设备固件",
   "dont_remind_again_desc": "不再提示",
   "Remind later": "稍后提示",
@@ -544,13 +551,16 @@
   "dialog_filament_type_not_match_tips": "此喷嘴耗材类型与模型预设耗材类型不匹配，请更换该喷嘴耗材类型或更改预设耗材类型",
   "dialog_filament_type_none_tips": "未识别到耗材，请在设备上挂载耗材或编辑耗材信息",
   "Features are under development, please stay tuned": "功能开发中, 敬请期待",
-
+  "File bytes is empty": "获取文件内容为空，请重新发起切片操作",
   "File uploaded successfully": "文件上传成功",
-  "close this page": "关闭此页面",
-
+  "file_uploaded_success_format": "已上传完成，将自动跳转到设备控制页面 {} 秒",
   "The device failed to upload the model file. Please check the device network and upload it again.": "设备上传模型文件失败，请检查设备网络并重新上传",
   "The device is currently processing the offline state, please check the device and try again.": "当前设备处于离线状态，请检查设备并重试",
   "No time-lapse video": "暂无延时摄影视频",
+  "Firmware restart command sent successfully": "固件重启命令已发送成功",
+  "Firmware restart command failed to send": "固件重启命令发送失败",
+  "Firmware Restart": "固件重启",
+  "Time lapse camera is not supported, please stay tuned": "当前版本暂不支持延时摄影，敬请期待",
 
   "Bind success": "绑定成功",
   "Device connect error, please return to device page and connect again.": "设备连接异常，请返回“我的设备”页，重新发起连接",
@@ -586,6 +596,7 @@
   "time_lapse_video_export_video_failed": "导出视频失败",
   "camera_turn_off_countdown": "摄像机关闭倒计时",
   "continue_camera": "继续播放",
+  "Export": "导出",
   "camera_auto_shutdown_message": "摄像头长时间未使用，为了节省电量，已自动关闭。",
   "got_it": "知道了",
   "monitoring_module_hibernated": "提示：监控模块已休眠，点击播放按钮即可唤醒",
