@@ -30,6 +30,9 @@ using tcp = asio::ip::tcp;
 #define UPLOAD_CAMERA_TIMELAPSE "sw_UploadCameraTimelapse"
 #define DELETE_CAMERA_TIMELAPSE "sw_DeleteCameraTimelapse"
 #define GET_DEVICEDATA_STORAGESPACE "sw_GetDeviceDataStorageSpace"
+#define DOWNLOAD_FILE "sw_DownloadFile"
+#define CANCEL_DOWNLOAD "sw_CancelDownload"
+#define FILE_VIEW "sw_FileView"
 
 namespace Slic3r { namespace GUI {
 
@@ -536,6 +539,11 @@ private:
     void sw_GetUserUpdatePrivacy();
 
     void sw_SubUserUpdatePrivacy();
+
+    void sw_DownloadFile();
+    void sw_CancelDownload();
+
+    void sw_FileView();
 };
 
 // Instance class for homepage business

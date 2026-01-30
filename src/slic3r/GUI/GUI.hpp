@@ -84,6 +84,9 @@ extern void login();
 extern void desktop_open_datadir_folder();
 // Ask the destop to open one folder
 extern void desktop_open_any_folder(const std::string& path);
+
+//open dir and select the file to show
+extern void desktop_open_any_folderEx(const std::string& path);
 } // namespace GUI
 } // namespace Slic3r
 
