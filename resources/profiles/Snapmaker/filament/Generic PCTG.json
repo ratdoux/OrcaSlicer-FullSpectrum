@@ -15,22 +15,22 @@
         ""
     ],
     "filament_minimal_purge_on_wipe_tower": [
-        "50"
+        "15"
     ],
     "filament_multitool_ramming": [
         "1"
     ],
     "filament_multitool_ramming_volume": [
-        "5"
+        "0.5"
     ],
     "filament_start_gcode": [
         ""
     ],
     "hot_plate_temp": [
-        "95"
+        "100"
     ],
     "hot_plate_temp_initial_layer": [
-        "95"
+        "100"
     ],
     "pressure_advance": [
         "0.04"
@@ -42,12 +42,18 @@
         "10"
     ],
     "filament_retract_restart_extra_toolchange": [
-        "0"
+        "nil"
     ],
     "textured_plate_temp": [
-        "95"
+        "100"
     ],
     "textured_plate_temp_initial_layer": [
-        "95"
+        "100"
+    ],
+    "eng_plate_temp": [
+        "100"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "100"
     ]
 }

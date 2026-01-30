@@ -63,16 +63,16 @@
         "0.02"
     ],
     "filament_vendor": [
-        "snapmaker"
+        "Snapmaker"
     ],
     "filament_retract_length_toolchange": [
         "5"
     ],
     "textured_plate_temp": [
-        "70"
+        "80"
     ],
     "textured_plate_temp_initial_layer": [
-        "70"
+        "80"
     ],
     "additional_cooling_fan_speed": [
         "10"

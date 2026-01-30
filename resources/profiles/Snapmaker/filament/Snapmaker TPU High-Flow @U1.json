@@ -10,6 +10,9 @@
     "Snapmaker U1 (0.6 nozzle)",
     "Snapmaker U1 (0.8 nozzle)"
   ],
+  "enable_pressure_advance": [
+    "0"
+  ],
   "filament_flow_ratio": [
     "0.983"
   ],
