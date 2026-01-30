@@ -612,3 +612,14 @@ jobs:
           asset_name: orca_custom_preset_tests.zip
           asset_content_type: application/octet-stream
           max_releases: 1
+
+  upload_symbols:
+    name: Upload Windows PDB to Sentry
+    needs: [build_orca]
+    if: ${{ !cancelled() && needs.build_orca.result == 'success' && inputs.os == 'windows-latest' }}
+    uses: ./.github/workflows/sentry_cli.yml
+    with:
+      os: ${{ inputs.os }}
+      pdb-artifact-name: PDB
+      release: ${{ needs.build_orca.outputs.release || github.sha }}
+    secrets: inherit
