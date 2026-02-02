@@ -194,6 +194,7 @@
         "0"
     ],
     "ramming_pressure_advance_value": "0.02",
+    "default_print_profile": "0.20 Standard @Snapmaker U1 (0.4 nozzle)",
     "tool_change_temprature_wait": "0",
     "printer_notes": "",
     "machine_pause_gcode": "M600",
