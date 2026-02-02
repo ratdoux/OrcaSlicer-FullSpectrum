@@ -166,6 +166,10 @@ typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS2)(
 #endif
 
 #define UPDATE_BY_USER 1
+#define RELEASE_TYPE_STABLE "stable"
+#define RELEASE_TYPE_BETA  "beta"
+#define RELEASE_TYPE_ALPHA "alpha"
+
 
 using namespace std::literals;
 namespace pt = boost::property_tree;
@@ -4790,6 +4794,14 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
 
             version_info.version_str = dataObj.value("version", "");
             auto releaseType         = dataObj.value("release_type", "");
+
+            if (releaseType != RELEASE_TYPE_STABLE)
+            {
+                if (by_user)
+                    this->no_new_version();
+                return;
+            }
+
             auto platformType        = dataObj.value("platform_type", "");
             int  fileSize            = 0;
             std::string fileMd5             = "";
