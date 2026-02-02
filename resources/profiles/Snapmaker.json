@@ -1,6 +1,6 @@
 {
   "name": "Snapmaker",
-  "version": "02.02.42.02",
+  "version": "02.02.43.02",
   "force_update": "0",
   "description": "Snapmaker configurations",
   "machine_model_list": [
@@ -1302,6 +1302,10 @@
     {
       "name": "Snapmaker PLA Silk @U1 base",
       "sub_path": "filament/Snapmaker PLA Silk @U1 base.json"
+    },
+	{
+      "name": "Snapmaker TPU 95A HF @U1",
+      "sub_path": "filament/Snapmaker TPU 95A HF @U1.json"
     },
     {
       "name": "Snapmaker PLA-CF @U1 base",

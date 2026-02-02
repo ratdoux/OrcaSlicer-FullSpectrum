@@ -11,6 +11,9 @@
   "compatible_prints": [
     "0.25 Benchy @Snapmaker U1 (0.4 nozzle)"
   ],
+  "enable_pressure_advance": [
+    "0"
+  ],
   "overhang_fan_speed": [
     "35"
   ],

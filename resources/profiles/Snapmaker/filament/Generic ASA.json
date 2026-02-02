@@ -9,7 +9,7 @@
         "Snapmaker U1 (0.4 nozzle)"
     ],
     "enable_pressure_advance": [
-        "1"
+        "0"
     ],
     "filament_end_gcode": [
         ""

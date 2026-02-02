@@ -42,9 +42,27 @@
         "1"
     ],
     "filament_multitool_ramming_volume": [
-        "5"
+        "0.5"
     ],
     "filament_retract_length_toolchange": [
         "10"
+    ],
+    "eng_plate_temp": [
+        "80"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "80"
+    ],
+    "hot_plate_temp": [
+        "80"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "80"
+    ],
+    "textured_plate_temp": [
+        "80"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "80"
     ]
 }

@@ -16,7 +16,7 @@
         "; filament start gcode\n"
     ],
     "enable_pressure_advance": [
-        "1"
+        "0"
     ],
     "filament_end_gcode": [
         "; filament end gcode \n\n"

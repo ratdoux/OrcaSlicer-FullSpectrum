@@ -21,7 +21,7 @@
         ""
     ],
     "filament_minimal_purge_on_wipe_tower": [
-        "60"
+        "15"
     ],
     "filament_multitool_ramming": [
         "1"
@@ -42,6 +42,12 @@
         "65"
     ],
     "textured_plate_temp_initial_layer": [
+        "65"
+    ],
+    "hot_plate_temp": [
+        "65"
+    ],
+    "hot_plate_temp_initial_layer": [
         "65"
     ]
 }

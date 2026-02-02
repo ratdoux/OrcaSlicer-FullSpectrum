@@ -27,7 +27,7 @@
         "100"
     ],
     "enable_pressure_advance": [
-        "1"
+        "0"
     ],
     "filament_end_gcode": [
         "\n"

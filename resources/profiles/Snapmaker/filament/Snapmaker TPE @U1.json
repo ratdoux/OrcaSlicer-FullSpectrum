@@ -17,6 +17,9 @@
   "overhang_fan_speed": [
     "65"
   ],
+  "enable_pressure_advance": [
+    "0"
+  ],
   "filament_flow_ratio": [
     "1.1"
   ],

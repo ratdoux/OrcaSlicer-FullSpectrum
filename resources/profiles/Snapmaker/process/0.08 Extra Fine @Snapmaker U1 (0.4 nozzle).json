@@ -25,5 +25,6 @@
     "precise_outer_wall": "0",
     "support_type": "tree(auto)",
     "wipe_tower_extra_rib_length": "8",
-    "wipe_tower_wall_type": "rib"
+    "wipe_tower_wall_type": "rib",
+    "gap_fill_target": "topbottom"
 }

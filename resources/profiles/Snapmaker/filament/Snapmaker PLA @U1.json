@@ -8,6 +8,9 @@
   "compatible_printers": [
     "Snapmaker U1 (0.4 nozzle)"
   ],
+  "enable_pressure_advance": [
+    "0"
+  ],
   "hot_plate_temp":[
     "55"
   ],
