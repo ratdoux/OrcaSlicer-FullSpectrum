@@ -63,6 +63,9 @@
 
 //webview bury point
 
+    BURY_API bool get_sentry_flags();
+    BURY_API void set_sentry_flags(bool flags);
+
     BURY_API bool               get_privacy_policy();
     BURY_API void               set_privacy_policy(bool isAgree);
     BURY_API std::string get_timestamp_seconds();

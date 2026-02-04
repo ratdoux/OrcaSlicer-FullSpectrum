@@ -50,6 +50,23 @@ namespace Slic3r {
 #define SENTRY_KEY_LEVEL "level"
 
 
+#ifdef _WIN32
+// C-style wrapper function for sentry_init to allow use of __try/__except
+// This function must be C-style because __try/__except cannot be used in functions
+// that require C++ object unwinding (functions with C++ objects that need destructors)
+extern "C" {
+    static int safe_sentry_init(sentry_options_t* options) {
+        int result = -1;
+        __try {
+            result = sentry_init(options);
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            // Exception occurred during sentry_init
+            result = -1;
+        }
+        return result;
+    }
+}
+#endif
 
 static sentry_value_t on_crash_callback(const sentry_ucontext_t* uctx, sentry_value_t event, void* closure)
 {
@@ -252,31 +269,66 @@ void initSentryEx()
         sentry_options_set_logs_with_attributes(options, true);
 
         // Set release version for symbolication
-        // This must match the release used when uploading symbols
         sentry_options_set_release(options, Snapmaker_VERSION);
+        bool init_success = false;
         
-        sentry_init(options);
-        sentry_start_session();
+#ifdef _WIN32
+        // Use C-style wrapper function to safely call sentry_init with SEH exception handling
+        int result = safe_sentry_init(options);
+        std::cout << "sentry_init returned: " << result << std::endl;
+        if (result == 0) {
+            init_success = true;
+            std::cout << "sentry_init succeeded, init_success set to true" << std::endl;
+        } else {
+            std::cout << "Error: sentry_init failed or exception occurred, Sentry initialization failed (result=" << result << ")" << std::endl;
+            // Exception occurred or sentry_init returned error, sentry_init was not successfully called
+            // so we need to free options
+            sentry_options_free(options);
+            set_sentry_flags(false);
+            return; // Exit early if initialization fails
+        }
+#else
+        int result = sentry_init(options);
+        std::cout << "sentry_init returned: " << result << std::endl;
+        if (result == 0) {
+            init_success = true;
+            std::cout << "sentry_init succeeded, init_success set to true" << std::endl;
+        } else {
+            std::cout << "Warning: sentry_init returned non-zero: " << result << std::endl;
+        }
+#endif
 
-        sentry_set_tag("snapmaker_version", Snapmaker_VERSION);
+        // Start session and set tags only if initialization succeeded
+        if (init_success) {
+            std::cout << "Starting Sentry session and setting flags..." << std::endl;
+            sentry_start_session();
+            set_sentry_flags(true);            
+            
+            sentry_set_tag("snapmaker_version", Snapmaker_VERSION);
 
-        std::string flutterVersion = common::get_flutter_version();
-        if (!flutterVersion.empty())
-            sentry_set_tag("flutter_version", flutterVersion.c_str());
+            std::string flutterVersion = common::get_flutter_version();
+            if (!flutterVersion.empty())
+                sentry_set_tag("flutter_version", flutterVersion.c_str());
 
-        std::string machineID = common::getMachineId();
-        if (!machineID.empty())
-            sentry_set_tag("machine_id", machineID.c_str());
+            std::string machineID = common::getMachineId();
+            if (!machineID.empty())
+                sentry_set_tag("machine_id", machineID.c_str());
 
-        std::string pcName = common::get_pc_name();
-        if (!pcName.empty())
-            sentry_set_tag("pc_name", pcName.c_str());
+            std::string pcName = common::get_pc_name();
+            if (!pcName.empty())
+                sentry_set_tag("pc_name", pcName.c_str());
+        } else {            
+            set_sentry_flags(false);            
+        }
     }
 }
 
 void exitSentryEx()
-{ 
-    sentry_close();
+{
+    if (get_sentry_flags()) {
+        sentry_close();
+        set_sentry_flags(false);
+    }
 }
 void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
                        const std::string& logContent,
@@ -285,6 +337,11 @@ void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
                        const std::string& logTagValue,
                        const std::string& logTraceId)
 {
+    // Check if Sentry is initialized before using it
+    if (!get_sentry_flags()) {
+        return;
+    }
+    
     if (!get_privacy_policy()) {
         return;
     }
