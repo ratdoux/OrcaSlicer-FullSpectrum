@@ -5,6 +5,13 @@
 #include <sstream>
 
 static std::atomic<bool> isAgreeSlice(true);
+
+static std::atomic<bool> g_sentry_initialized(false);
+
+bool get_sentry_flags() { return g_sentry_initialized; }
+
+void set_sentry_flags(bool flags) { g_sentry_initialized = flags; }
+
 bool get_privacy_policy() 
 {
     return isAgreeSlice; 
