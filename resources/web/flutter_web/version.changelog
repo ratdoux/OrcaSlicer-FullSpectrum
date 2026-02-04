@@ -1,4 +1,20 @@
 
-# Changelog
+# 更新日志 / Changelog
 
-- 优化获取延时摄影文件
+## [版本号] 2026年1月30日
+
+### 修复 / Fixed
+- **预打印页面设备耗材信息获取失败**  
+  Fixed device consumable information retrieval failure on pre-print page
+  - 问题描述：在预打印页面无法正确获取到设备的耗材状态信息
+  - Issue: Device consumable status could not be retrieved correctly on the pre-print page
+  
+- **附近设备连接功能异常**  
+  Fixed nearby device connection failure
+  - 问题描述：通过"附近设备"功能搜索到的设备无法正常连接
+  - Issue: Devices discovered via "Nearby Devices" feature could not be connected
+  
+- **局域网设备文件传输失败**  
+  Fixed file transfer failure for LAN-only devices
+  - 问题描述：仅支持局域网连接的设备通过IP地址连接后，无法发起文件传输
+  - Issue: File transfer could not be initiated for LAN-only devices after connecting via IP address
