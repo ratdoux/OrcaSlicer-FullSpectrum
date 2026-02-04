@@ -5747,7 +5747,7 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("Enable gradual layer-by-layer reduction of the brim around the prime tower. "
                      "This creates a chamfered/tapered effect, reducing material usage while "
                      "maintaining first layer adhesion.");
-    def->mode = comAdvanced;
+    def->mode = comDevelop;
     def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("prime_tower_brim_chamfer_max_width", coFloat);
@@ -5756,7 +5756,7 @@ void PrintConfigDef::init_fff_params()
                      "The brim will reduce within this distance. Larger values create a more "
                      "gradual taper but take more layers to complete.");
     def->sidetext = "mm";	// milimeters, don't need translation
-    def->mode = comAdvanced;
+    def->mode = comDevelop;
     def->min = 0.;
     def->set_default_value(new ConfigOptionFloat(4.0));
 

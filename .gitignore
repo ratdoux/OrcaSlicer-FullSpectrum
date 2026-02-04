@@ -40,3 +40,4 @@ resources/profiles/user/default
 *.code-workspace
 deps_src/build/
 .claude/
+.omc
