@@ -2081,25 +2081,37 @@ WipeTower::ToolChangeResult WipeTower2::finish_layer()
     // brim with chamfer (gradual layer-by-layer reduction)
     int loops_num = (m_wipe_tower_brim_width + spacing / 2.f) / spacing;
 
-    // Apply chamfer reduction if feature is enabled and brim width is configured
-    if (m_wipe_tower_brim_width > 0 && m_prime_tower_brim_chamfer) {
-        if (!first_layer) {
+    // Apply brim logic based on chamfer setting
+    if (m_wipe_tower_brim_width > 0) {
+        if (first_layer) {
+            // First layer: always print full brim (loops_num unchanged)
+        } else if (m_prime_tower_brim_chamfer) {
+            // Non-first layer + chamfer enabled: apply gradual reduction
             // Calculate distance from first layer with tool changes
             size_t current_idx = m_layer_info - m_plan.begin();
             int    dist_to_1st = (int) current_idx - (int) m_first_layer_idx;
 
-            // Stop print chamfer if depth changes
-            bool depth_changed = (m_layer_info->depth != m_plan[m_first_layer_idx].depth);
-            if (depth_changed) {
+            // Validate m_first_layer_idx to prevent invalid index access
+            if (m_first_layer_idx == size_t(-1) || m_first_layer_idx >= m_plan.size()) {
+                // Invalid first layer index, don't print brim
                 loops_num = 0;
             } else {
-                // Limit max chamfer width to configured value
-                int chamfer_loops_num = (int) (m_prime_tower_brim_chamfer_max_width / spacing);
-                loops_num             = std::min(loops_num, chamfer_loops_num) - dist_to_1st;
-                // Ensure loops_num doesn't go negative
-                if (loops_num < 0)
+                // Stop print chamfer if depth changes
+                bool depth_changed = (m_layer_info->depth != m_plan[m_first_layer_idx].depth);
+                if (depth_changed) {
                     loops_num = 0;
+                } else {
+                    // Limit max chamfer width to configured value
+                    int chamfer_loops_num = (int) (m_prime_tower_brim_chamfer_max_width / spacing);
+                    loops_num             = std::min(loops_num, chamfer_loops_num) - dist_to_1st;
+                    // Ensure loops_num doesn't go negative
+                    if (loops_num < 0)
+                        loops_num = 0;
+                }
             }
+        } else {
+            // Non-first layer + chamfer disabled: don't print brim (revert to original behavior)
+            loops_num = 0;
         }
     }
 
