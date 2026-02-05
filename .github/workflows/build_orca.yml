@@ -386,7 +386,7 @@ jobs:
           chmod +x ./build/Snapmaker_Orca_Linux_AppImage${{ env.ubuntu-ver-str }}_${{ env.ver }}.AppImage
 
       - name: Build orca_custom_preset_tests
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/2.2.3') && inputs.os == 'ubuntu-24.04'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/2.2.1') && inputs.os == 'ubuntu-24.04'
         working-directory: ${{ github.workspace }}/build/src/Release
         shell: bash
         run: |
