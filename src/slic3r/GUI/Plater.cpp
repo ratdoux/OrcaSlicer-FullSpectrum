@@ -6792,7 +6792,10 @@ void Plater::priv::reload_from_disk()
         wxBusyCursor wait;
         GLCanvas3D* canvas = q->get_current_canvas3D();
         if (!canvas)
-            return false;
+        {
+            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "canvas is nullptr";
+            continue;
+        }
         wxBusyInfo info(_L("Reload from:") + " " + from_u8(path), canvas->get_wxglcanvas());
 
         Model new_model;
