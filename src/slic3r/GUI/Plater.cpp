@@ -8839,16 +8839,26 @@ void Plater::priv::set_current_canvas_as_dirty()
 
 GLCanvas3D* Plater::priv::get_current_canvas3D(bool exclude_preview)
 {
-    if (current_panel == view3D)
+    // During destruction, these pointers may be null or point to destroyed objects
+    // Add null checks to prevent crashes during shutdown
+    if (current_panel == view3D) {
+        if (view3D)
+            return view3D->get_canvas3d();
+    }
+    else if (!exclude_preview && (current_panel == preview)) {
+        if (preview)
+            return preview->get_canvas3d();
+    }
+    else if (current_panel == assemble_view) {
+        if (assemble_view)
+            return assemble_view->get_canvas3d();
+    }
+    
+    //BBS default set to view3D, but check if it's still valid
+    if (view3D)
         return view3D->get_canvas3d();
-    else if (!exclude_preview && (current_panel == preview))
-        return preview->get_canvas3d();
-    else if (current_panel == assemble_view)
-        return assemble_view->get_canvas3d();
-    else //BBS default set to view3D
-        return view3D->get_canvas3d();
-
-    //return (current_panel == view3D) ? view3D->get_canvas3d() : ((current_panel == preview) ? preview->get_canvas3d() : nullptr);
+    
+    return nullptr;
 }
 
 void Plater::priv::unbind_canvas_event_handlers()
