@@ -41,3 +41,4 @@ resources/profiles/user/default
 deps_src/build/
 .claude/
 .omc
+nul

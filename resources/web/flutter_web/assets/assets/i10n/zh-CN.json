@@ -7,7 +7,10 @@
       "forbidden": "权限不足，无法访问该资源",
       "not_found": "资源未找到",
       "too_many_requests": "请求过于频繁，请稍后再试",
-      "internal_server_error": "服务器内部错误",
+      "internal_server_error": "当前服务繁忙，请稍后重试",
+      "not_implemented": "当前服务繁忙，请稍后重试",
+      "bad_gateway": "当前服务繁忙，请稍后重试",
+      "gateway_timeout": "当前服务繁忙，请稍后重试",
       "service_unavailable": "服务暂时不可用，请稍后再试",
       "unknown": "网络请求失败"
     },

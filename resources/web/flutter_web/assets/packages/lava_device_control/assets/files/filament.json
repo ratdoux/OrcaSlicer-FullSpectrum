@@ -39,7 +39,16 @@
         {
           "material": "PETG",
           "description": "",
-          "series": []
+          "series": [
+            {
+              "serie": "",
+              "description": ""
+            },  
+            {
+              "serie": "HF",
+              "description": ""
+            } 
+          ]
         },
         {
           "material": "TPU",
@@ -48,7 +57,11 @@
             {
               "serie": "95A",
               "description": ""
-            }
+            },  
+            {
+              "serie": "95A HF",
+              "description": ""
+            }  
           ]
         }
       ]
@@ -128,6 +141,10 @@
               "description": ""
             },
             {
+              "serie": "95A HF",
+              "description": ""
+            }, 
+            {
               "serie": "90A",
               "description": ""
             }
@@ -184,9 +201,18 @@
           "series": []
         },
         {
-          "material": "PETG-HF",
+          "material": "PETG",
           "description": "",
-          "series": []
+          "series": [
+            {
+              "serie": "",
+              "description": ""
+            },
+            {
+              "serie": "HF",
+              "description": ""
+            } 
+          ]
         },
         {
           "material": "PETG-CF",
@@ -212,7 +238,7 @@
     }
   ],
   "filament_special_series": [
-    "85A","90A","95A", "95A HF" 
+    "85A","90A","95A", "95A HF", "HF"
   ],
   "filament_color": [
     {

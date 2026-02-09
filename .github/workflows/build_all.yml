@@ -151,7 +151,7 @@ jobs:
         if-no-files-found: error
 
     - name: Deploy Flatpak to nightly release
-      if: ${{github.ref == 'refs/heads/main' || github.ref == 'refs/heads/2.2.0'}}
+      if: ${{github.ref == 'refs/heads/main' || github.ref == 'refs/heads/2.2.3'}}
       uses: WebFreak001/deploy-nightly@v3.2.0
       with:
         upload_url: https://uploads.github.com/repos/Snapmaker/OrcaSlicer/releases/169912305/assets{?name,label}

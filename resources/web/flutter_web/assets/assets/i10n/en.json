@@ -7,7 +7,10 @@
       "forbidden": "Insufficient permissions to access this resource",
       "not_found": "Resource not found",
       "too_many_requests": "Too many requests, please try again later",
-      "internal_server_error": "Internal server error",
+      "internal_server_error": "The server is temporarily overloaded. Please retry in a moment.",
+      "not_implemented": "The server is temporarily overloaded. Please retry in a moment.",
+      "gateway_timeout": "The server is temporarily overloaded. Please retry in a moment.",
+      "bad_gateway": "The server is temporarily overloaded. Please retry in a moment.",
       "service_unavailable": "Service temporarily unavailable, please try again later",
       "unknown": "Network request failed"
     },
