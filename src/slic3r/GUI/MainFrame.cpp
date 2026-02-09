@@ -501,8 +501,11 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
 //FIXME maybe this is useful for __WXGTK3__ as well?
 #if __APPLE__
     Bind(wxEVT_MOVE, [](wxMoveEvent& event) {
-        wxGetApp().plater()->get_current_canvas3D()->set_as_dirty();
-        wxGetApp().plater()->get_current_canvas3D()->request_extra_frame();
+        GLCanvas3D* canvas = wxGetApp().plater()->get_current_canvas3D();
+        if (canvas) {
+            canvas->set_as_dirty();
+            canvas->request_extra_frame();
+        }
         event.Skip();
     });
 #endif
@@ -2240,7 +2243,9 @@ static wxMenu* generate_help_menu()
 
     append_menu_item(helpMenu, wxID_ANY, _L("Show Tip of the Day"), _L("Show Tip of the Day"), [](wxCommandEvent&) {
         wxGetApp().plater()->get_dailytips()->open();
-        wxGetApp().plater()->get_current_canvas3D()->set_as_dirty();
+        GLCanvas3D* canvas = wxGetApp().plater()->get_current_canvas3D();
+        if (canvas)
+            canvas->set_as_dirty();
         });
 
     // Report a bug
@@ -2514,8 +2519,11 @@ void MainFrame::init_menubar_as_editor()
 
     auto handle_key_event = [](wxKeyEvent& evt) {
         if (wxGetApp().imgui()->update_key_data(evt)) {
-            wxGetApp().plater()->get_current_canvas3D()->render();
-            return true;
+            GLCanvas3D* canvas = wxGetApp().plater()->get_current_canvas3D();
+            if (canvas) {
+                canvas->render();
+                return true;
+            }
         }
         return false;
     };

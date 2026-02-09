@@ -16,7 +16,7 @@
 
 #define LOCALHOST_PORT      13618
 #define PAGE_HTTP_PORT      13619
-#define LOCALHOST_URL       "http://localhost:"
+#define LOCALHOST_URL       "http://127.0.0.1:"
 
 namespace Slic3r { namespace GUI {
 

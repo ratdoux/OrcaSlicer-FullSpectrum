@@ -1331,10 +1331,16 @@ void GLCanvas3D::reset_volumes()
     m_dirty = true;
 
     auto pLater = wxGetApp().plater();
-
-    if (pLater && wxGetApp().plater()->get_notification_manager())
-    {
-        _set_warning_notification(EWarning::ObjectOutside, false);
+    if (pLater) {
+        auto* notification_mgr = pLater->get_notification_manager();
+        if (notification_mgr) {
+            // Only update notification if we can safely access Plater's current canvas
+            // This ensures Plater::priv structure is still valid
+            auto* canvas = pLater->get_current_canvas3D();
+            if (canvas) {
+                _set_warning_notification(EWarning::ObjectOutside, false);
+            }
+        }
     }
 }
 
