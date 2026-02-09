@@ -8,6 +8,7 @@
 #include "MutablePolygon.hpp"
 #include "format.hpp"
 
+#include <algorithm>
 #include <utility>
 #include <unordered_set>
 
@@ -2195,10 +2196,36 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
 
 // Returns multi-material segmentation based on painting in multi-material segmentation gizmo
 std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(const PrintObject &print_object, const std::function<void()> &throw_on_cancel_callback) {
-    const size_t num_facets_states  = print_object.print()->config().filament_colour.size() + 1;
+    const size_t num_physical_filaments = print_object.print()->config().filament_colour.size();
+    const size_t num_total_filaments    = print_object.print()->mixed_filament_manager().total_filaments(num_physical_filaments);
+    const size_t num_facets_states      = num_total_filaments + 1;
     const float  max_width          = float(print_object.config().mmu_segmented_region_max_width.value);
     const float  interlocking_depth = float(print_object.config().mmu_segmented_region_interlocking_depth.value);
     const bool   interlocking_beam  = print_object.config().interlocking_beam.value;
+
+    size_t max_painted_state = 0;
+    for (const ModelVolume *mv : print_object.model_object()->volumes) {
+        if (!mv->is_model_part())
+            continue;
+        const auto &used_states = mv->mmu_segmentation_facets.get_data().used_states;
+        for (size_t state_idx = static_cast<size_t>(EnforcerBlockerType::Extruder1); state_idx < used_states.size(); ++state_idx) {
+            if (used_states[state_idx])
+                max_painted_state = std::max(max_painted_state, state_idx);
+        }
+    }
+    if (max_painted_state >= num_facets_states) {
+        BOOST_LOG_TRIVIAL(warning) << "multi_material_segmentation_by_painting dropping painted states above segmentation range"
+                                   << " max_painted_state=" << max_painted_state
+                                   << " num_facets_states=" << num_facets_states
+                                   << " physical_filaments=" << num_physical_filaments
+                                   << " total_filaments=" << num_total_filaments;
+    } else {
+        BOOST_LOG_TRIVIAL(debug) << "multi_material_segmentation_by_painting state range check"
+                                 << " max_painted_state=" << max_painted_state
+                                 << " num_facets_states=" << num_facets_states
+                                 << " physical_filaments=" << num_physical_filaments
+                                 << " total_filaments=" << num_total_filaments;
+    }
 
     const auto extract_facets_info = [](const ModelVolume &mv) -> ModelVolumeFacetsInfo {
         return {mv.mmu_segmentation_facets, mv.is_mm_painted(), false};

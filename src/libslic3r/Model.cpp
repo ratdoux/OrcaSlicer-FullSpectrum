@@ -2477,6 +2477,17 @@ void ModelVolume::update_extruder_count(size_t extruder_count)
     std::vector<int> used_extruders = get_extruders();
     for (int extruder_id : used_extruders) {
         if (extruder_id > extruder_count) {
+            std::string used_extruders_str;
+            for (size_t i = 0; i < used_extruders.size(); ++i) {
+                if (i > 0)
+                    used_extruders_str += ",";
+                used_extruders_str += std::to_string(used_extruders[i]);
+            }
+            BOOST_LOG_TRIVIAL(warning) << "ModelVolume::update_extruder_count clipping painted extruders to limit"
+                                       << " volume_name=" << this->name
+                                       << " volume_id=" << this->id().id
+                                       << " requested_limit=" << extruder_count
+                                       << " used_extruders=[" << used_extruders_str << "]";
             mmu_segmentation_facets.set_enforcer_block_type_limit(*this, (EnforcerBlockerType)extruder_count);
             break;
         }

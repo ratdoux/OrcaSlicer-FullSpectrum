@@ -1,5 +1,6 @@
 #include "Plater.hpp"
 #include "libslic3r/Config.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include "common_func/common_func.hpp"
 
 #include <cstddef>
@@ -42,6 +43,7 @@
 #include <wx/popupwin.h>
 #endif
 #include <wx/clrpicker.h>
+#include <wx/spinctrl.h>
 #include <wx/tokenzr.h>
 #include <wx/aui/aui.h>
 
@@ -634,6 +636,10 @@ struct Sidebar::priv
     int                         m_menu_filament_id = -1;
     wxPanel* m_panel_filament_content;
     wxScrolledWindow* m_scrolledWindow_filament_content;
+
+    // Mixed (virtual) filaments panel
+    wxPanel*            m_panel_mixed_filaments = nullptr;
+    wxBoxSizer*         m_sizer_mixed_filaments = nullptr;
     wxStaticLine* m_staticline2;
     wxPanel* m_panel_project_title;
     ScalableButton* m_filament_icon = nullptr;
@@ -1266,7 +1272,7 @@ Sidebar::Sidebar(Plater *parent)
             ConfigOptionFloat* flush_multi_opt = project_config.option<ConfigOptionFloat>("flush_multiplier");
             float flush_multiplier = flush_multi_opt ? flush_multi_opt->getFloat() : 1.f;
 
-            const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config();
+            const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
             const auto& full_config = wxGetApp().preset_bundle->full_config();
             const auto& extra_flush_volumes = get_min_flush_volumes(full_config);
             WipingDialog dlg(parent, cast<float>(init_matrix), cast<float>(init_extruders), extruder_colours, extra_flush_volumes, flush_multiplier);
@@ -1421,6 +1427,23 @@ Sidebar::Sidebar(Plater *parent)
     p->m_panel_filament_content->SetSizer(sizer_filaments2);
     p->m_panel_filament_content->Layout();
     scrolled_sizer->Add(p->m_panel_filament_content, 0, wxEXPAND, 0);
+    }
+
+    // --- Mixed Colours Panel ---
+    {
+    p->m_panel_mixed_filaments = new wxPanel(p->scrolled, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL);
+    p->m_panel_mixed_filaments->SetBackgroundColour(wxColour(255, 255, 255));
+    p->m_sizer_mixed_filaments = new wxBoxSizer(wxVERTICAL);
+    p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
+    // Title
+    auto *mixed_title = new wxStaticText(p->m_panel_mixed_filaments, wxID_ANY, _L("Mixed Colors"));
+    mixed_title->SetFont(Label::Head_14);
+    p->m_sizer_mixed_filaments->Add(mixed_title, 0, wxLEFT | wxRIGHT, FromDIP(16));
+    p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
+    p->m_panel_mixed_filaments->SetSizer(p->m_sizer_mixed_filaments);
+    p->m_panel_mixed_filaments->Layout();
+    p->m_panel_mixed_filaments->Hide(); // Hidden until 2+ filaments
+    scrolled_sizer->Add(p->m_panel_mixed_filaments, 0, wxEXPAND, 0);
     }
 
     {
@@ -2161,6 +2184,116 @@ void Sidebar::on_filaments_change(size_t num_filaments)
     p->m_panel_filament_title->Refresh();
     update_ui_from_settings();
     update_dynamic_filament_list();
+    update_mixed_filament_panel();
+}
+
+void Sidebar::update_mixed_filament_panel()
+{
+    if (!p->m_panel_mixed_filaments || !p->m_sizer_mixed_filaments)
+        return;
+
+    auto *preset_bundle = wxGetApp().preset_bundle;
+    if (!preset_bundle)
+        return;
+
+    const auto &mixed_mgr = preset_bundle->mixed_filaments;
+    const auto &mixed     = mixed_mgr.mixed_filaments();
+
+    // Clear old entries safely. Using Clear(true) avoids manual child-window
+    // destruction loops with deferred wxWindow::Destroy().
+    p->m_sizer_mixed_filaments->Clear(true);
+
+    // Recreate header.
+    p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
+    auto *mixed_title = new wxStaticText(p->m_panel_mixed_filaments, wxID_ANY, _L("Mixed Colors"));
+    mixed_title->SetFont(Label::Head_14);
+    p->m_sizer_mixed_filaments->Add(mixed_title, 0, wxLEFT | wxRIGHT, FromDIP(16));
+    p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
+
+    if (mixed.empty()) {
+        p->m_panel_mixed_filaments->Hide();
+        Layout();
+        return;
+    }
+
+    int mixed_id = 0;
+    for (const auto &mf : mixed) {
+        // Row panel
+        auto *row = new wxPanel(p->m_panel_mixed_filaments, wxID_ANY);
+        row->SetBackgroundColour(wxColour(255, 255, 255));
+        auto *row_sizer = new wxBoxSizer(wxHORIZONTAL);
+
+        // Colour swatch
+        wxColour swatch_color(mf.display_color);
+        auto *swatch = new wxPanel(row, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(16), FromDIP(16)));
+        swatch->SetBackgroundColour(swatch_color);
+        swatch->SetMinSize(wxSize(FromDIP(16), FromDIP(16)));
+        row_sizer->Add(swatch, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+
+        // Label: "Filament 1 + Filament 2"
+        wxString label_str = wxString::Format("Filament %u + Filament %u",
+            (unsigned)mf.component_a, (unsigned)mf.component_b);
+        auto *label = new wxStaticText(row, wxID_ANY, label_str);
+        row_sizer->Add(label, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+
+        // Ratio display
+        wxString ratio_str = wxString::Format("%d:%d", mf.ratio_a, mf.ratio_b);
+        auto *ratio_label = new wxStaticText(row, wxID_ANY, ratio_str);
+        row_sizer->Add(ratio_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+
+        // Ratio spin controls
+        auto *spin_a = new wxSpinCtrl(row, wxID_ANY, wxEmptyString, wxDefaultPosition,
+            wxSize(FromDIP(45), -1), wxSP_ARROW_KEYS, 1, 10, mf.ratio_a);
+        auto *spin_b = new wxSpinCtrl(row, wxID_ANY, wxEmptyString, wxDefaultPosition,
+            wxSize(FromDIP(45), -1), wxSP_ARROW_KEYS, 1, 10, mf.ratio_b);
+        row_sizer->Add(spin_a, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(2));
+        auto *colon = new wxStaticText(row, wxID_ANY, ":");
+        row_sizer->Add(colon, 0, wxALIGN_CENTER_VERTICAL);
+        row_sizer->Add(spin_b, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(2));
+
+        // Enable checkbox
+        auto *chk = new wxCheckBox(row, wxID_ANY, wxEmptyString);
+        chk->SetValue(mf.enabled);
+        row_sizer->Add(chk, 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
+
+        // Bind events to update the MixedFilamentManager when ratio/enabled changes.
+        int capturedIdx = mixed_id;
+        auto *capturedSpinA = spin_a;
+        auto *capturedSpinB = spin_b;
+        auto *capturedChk   = chk;
+
+        auto update_lambda = [capturedIdx, capturedSpinA, capturedSpinB, capturedChk](wxCommandEvent &) {
+            auto &mgr = wxGetApp().preset_bundle->mixed_filaments;
+            auto &mfs = mgr.mixed_filaments();
+            if (capturedIdx < (int)mfs.size()) {
+                mfs[capturedIdx].ratio_a = capturedSpinA->GetValue();
+                mfs[capturedIdx].ratio_b = capturedSpinB->GetValue();
+                mfs[capturedIdx].enabled = capturedChk->GetValue();
+                // Recompute display color.
+                ConfigOptionStrings *co = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
+                if (co && mfs[capturedIdx].component_a <= co->values.size() && mfs[capturedIdx].component_b <= co->values.size()) {
+                    mfs[capturedIdx].display_color = Slic3r::MixedFilamentManager::blend_color(
+                        co->values[mfs[capturedIdx].component_a - 1],
+                        co->values[mfs[capturedIdx].component_b - 1],
+                        mfs[capturedIdx].ratio_a, mfs[capturedIdx].ratio_b);
+                }
+            }
+        };
+        spin_a->Bind(wxEVT_SPINCTRL, update_lambda);
+        spin_b->Bind(wxEVT_SPINCTRL, update_lambda);
+        chk->Bind(wxEVT_CHECKBOX, update_lambda);
+
+        row->SetSizer(row_sizer);
+        p->m_sizer_mixed_filaments->Add(row, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+        p->m_sizer_mixed_filaments->AddSpacer(FromDIP(2));
+
+        ++mixed_id;
+    }
+
+    p->m_sizer_mixed_filaments->AddSpacer(FromDIP(8));
+    p->m_panel_mixed_filaments->Show();
+    p->m_panel_mixed_filaments->Layout();
+    Layout();
 }
 
 void Sidebar::add_filament() {
@@ -2845,7 +2978,7 @@ void Sidebar::auto_calc_flushing_volumes(const int modify_id)
     int m_max_flush_volume = Slic3r::g_max_flush_volume;
     unsigned int m_number_of_extruders = (int)(sqrt(init_matrix.size()) + 0.001);
 
-    const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config();
+    const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
     std::vector<std::vector<wxColour>> multi_colours;
 
     // Support for multi-color filament
@@ -8377,6 +8510,10 @@ void Plater::priv::on_filament_color_changed(wxCommandEvent &event)
     if (wxGetApp().app_config->get("auto_calculate") == "true") {
         sidebar->auto_calc_flushing_volumes(modify_id);
     }
+
+    // Regenerate mixed filaments and update the sidebar panel.
+    wxGetApp().preset_bundle->update_multi_material_filament_presets();
+    sidebar->update_mixed_filament_panel();
 }
 
 void Plater::priv::install_network_plugin(wxCommandEvent &event)
@@ -14238,9 +14375,13 @@ void Plater::on_filaments_change(size_t num_filaments)
         part_plate->update_first_layer_print_sequence(num_filaments);
     }
 
+    size_t total_filaments = num_filaments;
+    if (wxGetApp().preset_bundle != nullptr)
+        total_filaments = wxGetApp().preset_bundle->mixed_filaments.total_filaments(num_filaments);
+
     for (ModelObject* mo : wxGetApp().model().objects) {
         for (ModelVolume* mv : mo->volumes) {
-            mv->update_extruder_count(num_filaments);
+            mv->update_extruder_count(total_filaments);
         }
     }
 }
@@ -14442,17 +14583,30 @@ void Plater::on_activate()
 }
 
 // Get vector of extruder colors considering filament color, if extruder color is undefined.
-std::vector<std::string> Plater::get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result) const
+std::vector<std::string> Plater::get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result, bool include_mixed) const
 {
     if (wxGetApp().is_gcode_viewer() && result != nullptr)
         return result->extruder_colors;
     else {
+        if (wxGetApp().preset_bundle == nullptr)
+            return {};
+
         const Slic3r::DynamicPrintConfig* config = &wxGetApp().preset_bundle->project_config;
         std::vector<std::string> filament_colors;
         if (!config->has("filament_colour")) // in case of a SLA print
             return filament_colors;
 
         filament_colors = (config->option<ConfigOptionStrings>("filament_colour"))->values;
+        const size_t num_physical = static_cast<size_t>(std::max(wxGetApp().filaments_cnt(), 0));
+        filament_colors.resize(num_physical, "#26A69A");
+
+        if (include_mixed) {
+            // Append display colours for enabled mixed (virtual) filaments.
+            const auto &mixed_mgr = wxGetApp().preset_bundle->mixed_filaments;
+            for (const auto &dc : mixed_mgr.display_colors())
+                filament_colors.push_back(dc);
+        }
+
         return filament_colors;
     }
 }

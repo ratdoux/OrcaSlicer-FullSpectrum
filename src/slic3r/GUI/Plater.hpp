@@ -156,6 +156,7 @@ public:
     void edit_filament();
 
     void on_filaments_delete(size_t filament_id);
+    void update_mixed_filament_panel();
     // BBS
     void on_bed_type_change(BedType bed_type);
     void load_ams_list(std::string const & device, MachineObject* obj);
@@ -499,7 +500,7 @@ public:
     void force_print_bed_update();
     // On activating the parent window.
     void on_activate();
-    std::vector<std::string> get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result = nullptr) const;
+    std::vector<std::string> get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result = nullptr, bool include_mixed = true) const;
     std::vector<std::string> get_colors_for_color_print(const GCodeProcessorResult* const result = nullptr) const;
 
     void update_menus();

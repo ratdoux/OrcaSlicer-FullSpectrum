@@ -1120,9 +1120,23 @@ int CLI::run(int argc, char **argv)
     sliced_info_t sliced_info;
     std::map<std::string, std::string> record_key_values;
 
+    // Only honor downward_check when explicitly requested on CLI.
+    // This prevents accidental activation during normal GUI startup.
+    bool downward_check_requested = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i] ? argv[i] : "";
+        if (arg == "--downward_check" || boost::algorithm::starts_with(arg, "--downward_check=") ||
+            arg == "--downward-check" || boost::algorithm::starts_with(arg, "--downward-check=")) {
+            downward_check_requested = true;
+            break;
+        }
+    }
+
     ConfigOptionBool* downward_check_option = m_config.option<ConfigOptionBool>("downward_check");
-    if (downward_check_option)
+    if (downward_check_option && downward_check_requested)
         downward_check = downward_check_option->value;
+    else
+        downward_check = false;
 
     bool start_gui = m_actions.empty() && !downward_check;
     if (start_gui) {

@@ -16,6 +16,8 @@
 
 
 #include <GL/glew.h>
+#include <algorithm>
+#include <boost/log/trivial.hpp>
 
 namespace Slic3r::GUI {
 
@@ -770,6 +772,29 @@ void GLGizmoMmuSegmentation::update_model_object()
     }
 
     if (updated) {
+        const size_t num_physical = static_cast<size_t>(std::max(wxGetApp().filaments_cnt(), 0));
+        size_t       num_total    = num_physical;
+        if (wxGetApp().preset_bundle != nullptr)
+            num_total = wxGetApp().preset_bundle->mixed_filaments.total_filaments(num_physical);
+
+        size_t max_used_state = 0;
+        for (const ModelVolume *mv : mo->volumes) {
+            if (!mv->is_model_part())
+                continue;
+            const auto &used_states = mv->mmu_segmentation_facets.get_data().used_states;
+            for (size_t state_idx = static_cast<size_t>(EnforcerBlockerType::Extruder1); state_idx < used_states.size(); ++state_idx) {
+                if (used_states[state_idx])
+                    max_used_state = std::max(max_used_state, state_idx);
+            }
+        }
+
+        if (max_used_state > num_physical) {
+            BOOST_LOG_TRIVIAL(warning) << "GLGizmoMmuSegmentation::update_model_object painted virtual extruder state detected"
+                                       << " max_used_state=" << max_used_state
+                                       << " physical_filaments=" << num_physical
+                                       << " total_filaments=" << num_total;
+        }
+
         const ModelObjectPtrs &mos = wxGetApp().model().objects;
         size_t obj_idx = std::find(mos.begin(), mos.end(), mo) - mos.begin();
         wxGetApp().obj_list()->update_info_items(obj_idx);

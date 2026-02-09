@@ -1702,7 +1702,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     // -1 means caculate all
     auto update_flush_volume = [](int idx = -1) {
         if (idx < 0) {
-            size_t filament_size = wxGetApp().plater()->get_extruder_colors_from_plater_config().size();
+            size_t filament_size = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false).size();
             for (size_t i = 0; i < filament_size; ++i)
                 wxGetApp().plater()->sidebar().auto_calc_flushing_volumes(i);
         }
@@ -5347,8 +5347,7 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
         if (m_type == Preset::TYPE_PRINTER && wxGetApp().app_config->get_bool("remember_printer_config")) {
             if (preset_name.find("Snapmaker U1") != std::string::npos) {
                 // 在 update_selections() 改变耗材数量之前先保存旧数量和颜色
-                size_t old_filament_count = m_preset_bundle->filament_presets.size();
-                std::vector<std::string> old_filament_colors = wxGetApp().plater()->get_extruder_colors_from_plater_config();
+                std::vector<std::string> old_filament_colors = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
                 std::vector<std::string> old_filament_presets = m_preset_bundle->filament_presets;
 
                 m_preset_bundle->update_selections(*wxGetApp().app_config);

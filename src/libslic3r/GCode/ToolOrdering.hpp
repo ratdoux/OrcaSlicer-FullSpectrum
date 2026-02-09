@@ -4,6 +4,7 @@
 #define slic3r_ToolOrdering_hpp_
 
 #include "../libslic3r.h"
+#include "../MixedFilament.hpp"
 
 #include <utility>
 
@@ -119,6 +120,8 @@ public:
     // If per layer extruder switches are inserted by the G-code preview slider, this value contains the new (1 based) extruder, with which the whole object layer is being printed with.
     // If not overriden, it is set to 0.
     unsigned int 				extruder_override = 0;
+    // Sequential layer index (0-based), used by mixed-filament resolution.
+    int                         layer_index = 0;
     // Should a skirt be printed at this layer?
     // Layers are marked for infinite skirt aka draft shield. Not all the layers have to be printed.
     bool                        has_skirt = false;
@@ -138,7 +141,13 @@ public:
         return m_wiping_extrusions;
     }
 
+    // Mixed-filament resolution context (set by ToolOrdering during collect_extruders).
+    const MixedFilamentManager *mixed_mgr    = nullptr;
+    size_t                      num_physical = 0;
+
 private:
+    // Resolve a 1-based filament ID through the mixed-filament manager for this layer.
+    unsigned int resolve_mixed_1based(unsigned int filament_id) const;
     // This object holds list of extrusion that will be used for extruder wiping
     WipingExtrusions m_wiping_extrusions;
 };
@@ -203,6 +212,11 @@ private:
     std::vector<unsigned int> generate_first_layer_tool_order(const Print& print);
     std::vector<unsigned int> generate_first_layer_tool_order(const PrintObject& object);
 
+    // Resolve a 1-based filament ID through the mixed-filament manager.
+    // Returns the resolved physical extruder (1-based).  If the ID is not a
+    // mixed filament or no manager is set, returns the input unchanged.
+    unsigned int resolve_mixed(unsigned int filament_id_1based, int layer_index) const;
+
     std::vector<LayerTools>    m_layer_tools;
     // First printing extruder, including the multi-material priming sequence.
     unsigned int               m_first_printing_extruder = (unsigned int)-1;
@@ -215,6 +229,10 @@ private:
     const PrintConfig*         m_print_config_ptr = nullptr;
     const PrintObject*         m_print_object_ptr = nullptr;
     bool                       m_is_BBL_printer = false;
+    // Mixed filament support: pointer to manager (owned by Print) and
+    // number of physical extruders.
+    const MixedFilamentManager* m_mixed_mgr    = nullptr;
+    size_t                      m_num_physical  = 0;
 };
 
 } // namespace SLic3r

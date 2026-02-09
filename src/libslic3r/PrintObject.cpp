@@ -3157,9 +3157,11 @@ void PrintObject::bridge_over_infill()
 
 } // void PrintObject::bridge_over_infill()
 
-static void clamp_exturder_to_default(ConfigOptionInt &opt, size_t num_extruders)
+// Clamp extruder IDs that exceed the total number of available filaments
+// (physical + virtual/mixed) back to the default extruder.
+static void clamp_exturder_to_default(ConfigOptionInt &opt, size_t num_total_filaments)
 {
-    if (opt.value > (int)num_extruders)
+    if (opt.value > (int)num_total_filaments)
         // assign the default extruder
         opt.value = 1;
 }

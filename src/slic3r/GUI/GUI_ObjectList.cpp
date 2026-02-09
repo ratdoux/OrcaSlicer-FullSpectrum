@@ -70,7 +70,13 @@ static DynamicPrintConfig& printer_config()
 
 static int filaments_count()
 {
-    return wxGetApp().filaments_cnt();
+    if (wxGetApp().preset_bundle == nullptr)
+        return 0;
+
+    int physical = wxGetApp().filaments_cnt();
+    // Include enabled mixed (virtual) filaments in the count.
+    const auto &mixed_mgr = wxGetApp().preset_bundle->mixed_filaments;
+    return static_cast<int>(mixed_mgr.total_filaments(physical));
 }
 
 static void take_snapshot(const std::string& snapshot_name)

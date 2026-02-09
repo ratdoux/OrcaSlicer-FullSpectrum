@@ -1811,7 +1811,9 @@ void PresetBundle::export_selections(AppConfig &config)
         config.set_printer_setting(printer_name, name, filament_presets[i]);
     }
     CNumericLocalesSetter locales_setter;
-    std::string           filament_colors = boost::algorithm::join(project_config.option<ConfigOptionStrings>("filament_colour")->values, ",");
+    std::vector<std::string> physical_filament_colors = project_config.option<ConfigOptionStrings>("filament_colour")->values;
+    physical_filament_colors.resize(filament_presets.size(), "#26A69A");
+    std::string filament_colors = boost::algorithm::join(physical_filament_colors, ",");
     config.set_printer_setting(printer_name, "filament_colors", filament_colors);
     std::string flush_volumes_matrix = boost::algorithm::join(project_config.option<ConfigOptionFloats>("flush_volumes_matrix")->values |
                                                              boost::adaptors::transformed(static_cast<std::string (*)(double)>(std::to_string)),
@@ -3255,6 +3257,16 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
                     new_matrix.push_back( i == j ? 0. : filaments[2 * i] + filaments[2 * j + 1]); // so it matches new extruder volumes
             }
 		this->project_config.option<ConfigOptionFloats>("flush_volumes_matrix")->values = new_matrix;
+    }
+
+    // Keep project colours aligned to physical filaments, then regenerate mixed
+    // (virtual) entries from the physical set only.
+    {
+        ConfigOptionStrings *color_opt = this->project_config.option<ConfigOptionStrings>("filament_colour");
+        if (color_opt) {
+            color_opt->values.resize(num_filaments, "#26A69A");
+            this->mixed_filaments.auto_generate(color_opt->values);
+        }
     }
 }
 

@@ -283,6 +283,8 @@ set(lisbslic3r_sources
     MinAreaBoundingBox.hpp
     MinimumSpanningTree.cpp
     MinimumSpanningTree.hpp
+    MixedFilament.cpp
+    MixedFilament.hpp
     miniz_extension.cpp
     miniz_extension.hpp
     ModelArrange.cpp

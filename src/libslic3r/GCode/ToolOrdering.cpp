@@ -146,23 +146,34 @@ bool LayerTools::is_extruder_order(unsigned int a, unsigned int b) const
     return false;
 }
 
+// Resolve a 1-based filament ID through the mixed-filament manager for this layer.
+unsigned int LayerTools::resolve_mixed_1based(unsigned int filament_id) const
+{
+    if (mixed_mgr && mixed_mgr->is_mixed(filament_id, num_physical))
+        return mixed_mgr->resolve(filament_id, num_physical, this->layer_index);
+    return filament_id;
+}
+
 // Return a zero based extruder from the region, or extruder_override if overriden.
 unsigned int LayerTools::wall_filament(const PrintRegion &region) const
 {
 	assert(region.config().wall_filament.value > 0);
-	return ((this->extruder_override == 0) ? region.config().wall_filament.value : this->extruder_override) - 1;
+	unsigned int id = (this->extruder_override == 0) ? region.config().wall_filament.value : this->extruder_override;
+	return resolve_mixed_1based(id) - 1;
 }
 
 unsigned int LayerTools::sparse_infill_filament(const PrintRegion &region) const
 {
 	assert(region.config().sparse_infill_filament.value > 0);
-	return ((this->extruder_override == 0) ? region.config().sparse_infill_filament.value : this->extruder_override) - 1;
+	unsigned int id = (this->extruder_override == 0) ? region.config().sparse_infill_filament.value : this->extruder_override;
+	return resolve_mixed_1based(id) - 1;
 }
 
 unsigned int LayerTools::solid_infill_filament(const PrintRegion &region) const
 {
 	assert(region.config().solid_infill_filament.value > 0);
-	return ((this->extruder_override == 0) ? region.config().solid_infill_filament.value : this->extruder_override) - 1;
+	unsigned int id = (this->extruder_override == 0) ? region.config().solid_infill_filament.value : this->extruder_override;
+	return resolve_mixed_1based(id) - 1;
 }
 
 // Returns a zero based extruder this eec should be printed with, according to PrintRegion config or extruder_override if overriden.
@@ -184,6 +195,7 @@ unsigned int LayerTools::extruder(const ExtrusionEntityCollection &extrusions, c
     } else
         extruder = this->extruder_override;
 
+    extruder = resolve_mixed_1based(extruder);
     return (extruder == 0) ? 0 : extruder - 1;
 }
 
@@ -208,6 +220,9 @@ ToolOrdering::ToolOrdering(const PrintObject &object, unsigned int first_extrude
     m_is_BBL_printer = object.print()->is_BBL_printer();
     m_print_full_config = &object.print()->full_print_config();
     m_print_object_ptr = &object;
+    // Mixed filament support.
+    m_mixed_mgr   = &object.print()->mixed_filament_manager();
+    m_num_physical = object.print()->config().filament_diameter.size();
     if (object.layers().empty())
         return;
 
@@ -271,6 +286,9 @@ ToolOrdering::ToolOrdering(const Print &print, unsigned int first_extruder, bool
     m_is_BBL_printer = print.is_BBL_printer();
     m_print_full_config = &print.full_print_config();
     m_print_config_ptr = &print.config();
+    // Mixed filament support.
+    m_mixed_mgr   = &print.mixed_filament_manager();
+    m_num_physical = print.config().filament_diameter.size();
 
     // Initialize the print layers for all objects and all layers.
     coordf_t object_bottom_z = 0.;
@@ -480,8 +498,8 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
         ExtrusionRole role = support_layer->support_fills.role();
         bool         has_support        = role == erMixed || role == erSupportMaterial || role == erSupportTransition;
         bool         has_interface      = role == erMixed || role == erSupportMaterialInterface;
-        unsigned int extruder_support   = object.config().support_filament.value;
-        unsigned int extruder_interface = object.config().support_interface_filament.value;
+        unsigned int extruder_support   = resolve_mixed(object.config().support_filament.value, layer_tools.layer_index);
+        unsigned int extruder_interface = resolve_mixed(object.config().support_interface_filament.value, layer_tools.layer_index);
         if (has_support)
             layer_tools.extruders.push_back(extruder_support);
         if (has_interface)
@@ -505,6 +523,10 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
     // Collect the object extruders.
     for (auto layer : object.layers()) {
         LayerTools &layer_tools = this->tools_for_layer(layer->print_z);
+        // Store the sequential layer index and mixed-filament context for resolution.
+        layer_tools.layer_index  = layerCount;
+        layer_tools.mixed_mgr   = m_mixed_mgr;
+        layer_tools.num_physical = m_num_physical;
 
         // Override extruder with the next 
     	for (; it_per_layer_extruder_override != per_layer_extruder_switches.end() && it_per_layer_extruder_override->first < layer->print_z + EPSILON; ++ it_per_layer_extruder_override)
@@ -528,9 +550,11 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
                 }
 
                 if (something_nonoverriddable){
-               		layer_tools.extruders.emplace_back((extruder_override == 0) ? region.config().wall_filament.value : extruder_override);
+                    unsigned int wall_ext = (extruder_override == 0) ? region.config().wall_filament.value : extruder_override;
+                    wall_ext = resolve_mixed(wall_ext, layerCount);
+               		layer_tools.extruders.emplace_back(wall_ext);
                     if (layerCount == 0) {
-                        firstLayerExtruders.emplace_back((extruder_override == 0) ? region.config().wall_filament.value : extruder_override);
+                        firstLayerExtruders.emplace_back(wall_ext);
                     }
                 }
 
@@ -558,11 +582,11 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
             if (something_nonoverriddable || !m_print_config_ptr) {
             	if (extruder_override == 0) {
 	                if (has_solid_infill)
-	                    layer_tools.extruders.emplace_back(region.config().solid_infill_filament);
+	                    layer_tools.extruders.emplace_back(resolve_mixed(region.config().solid_infill_filament, layerCount));
 	                if (has_infill)
-	                    layer_tools.extruders.emplace_back(region.config().sparse_infill_filament);
+	                    layer_tools.extruders.emplace_back(resolve_mixed(region.config().sparse_infill_filament, layerCount));
             	} else if (has_solid_infill || has_infill)
-            		layer_tools.extruders.emplace_back(extruder_override);
+            		layer_tools.extruders.emplace_back(resolve_mixed(extruder_override, layerCount));
             }
             if (has_solid_infill || has_infill)
                 layer_tools.has_object = true;
@@ -1414,5 +1438,12 @@ int WipingExtrusions::get_support_interface_extruder_overrides(const PrintObject
     return -1;
 }
 
+// Resolve a 1-based filament ID through the mixed-filament manager.
+unsigned int ToolOrdering::resolve_mixed(unsigned int filament_id_1based, int layer_index) const
+{
+    if (m_mixed_mgr && m_mixed_mgr->is_mixed(filament_id_1based, m_num_physical))
+        return m_mixed_mgr->resolve(filament_id_1based, m_num_physical, layer_index);
+    return filament_id_1based;
+}
 
 } // namespace Slic3r
