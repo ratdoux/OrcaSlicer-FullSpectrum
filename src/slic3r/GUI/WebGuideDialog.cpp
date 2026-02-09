@@ -496,7 +496,7 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
                     }
                 }
 
-                wxGetApp().fltviews().relead_all();
+                wxGetApp().fltviews().reload_all();
             }
 
             this->EndModal(wxID_OK);

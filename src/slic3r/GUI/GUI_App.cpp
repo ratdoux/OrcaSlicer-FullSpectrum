@@ -3658,6 +3658,8 @@ if (res) {
             load_current_presets();
             update_publish_status();
             mainframe->refresh_plugin_tips();
+
+            m_fltviews.reload_all();
             // BBS: remove SLA related message
         }
     } catch (std::exception &) {
@@ -6727,6 +6729,7 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
         wxGetApp().sidebar().update_nozzle_settings();
         update_publish_status();
         mainframe->refresh_plugin_tips();
+        m_fltviews.reload_all();
         // BBS: remove SLA related message
     }
     auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);

@@ -1523,7 +1523,11 @@ void SSWCP_Instance::update_filament_info(const json& objects, bool send_message
 
                     // 名称特殊处理
                     if (type == "TPU") {
-                        name = vendor + " " + type;
+                        if (sub_type == "95A HF") {
+                            name = vendor + " " + type + ((sub_type != "NONE" && sub_type != "") ? " " + sub_type : "");
+                        } else {
+                            name = vendor + " " + type;
+                        }
                     } else if (sub_type == "Support") {
                         name = vendor + " Support" + " For " + type;
                     } else {

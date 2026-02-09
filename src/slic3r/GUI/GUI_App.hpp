@@ -903,7 +903,7 @@ public:
             }
         }
 
-        void relead_all() {
+        void reload_all() {
             for (const auto& view : webviews) {
                 auto ptr = view.first;
                 wxString new_url = app->get_international_url(view.second);
