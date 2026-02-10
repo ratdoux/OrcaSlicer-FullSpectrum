@@ -122,6 +122,8 @@ public:
     unsigned int 				extruder_override = 0;
     // Sequential layer index (0-based), used by mixed-filament resolution.
     int                         layer_index = 0;
+    // Actual layer height for this print_z where available.
+    coordf_t                    layer_height = 0.;
     // Should a skirt be printed at this layer?
     // Layers are marked for infinite skirt aka draft shield. Not all the layers have to be printed.
     bool                        has_skirt = false;
@@ -220,7 +222,10 @@ private:
     // Resolve a 1-based filament ID through the mixed-filament manager.
     // Returns the resolved physical extruder (1-based).  If the ID is not a
     // mixed filament or no manager is set, returns the input unchanged.
-    unsigned int resolve_mixed(unsigned int filament_id_1based, int layer_index) const;
+    unsigned int resolve_mixed(unsigned int filament_id_1based,
+                               int          layer_index,
+                               float        layer_print_z = 0.f,
+                               float        layer_height  = 0.f) const;
 
     std::vector<LayerTools>    m_layer_tools;
     // First printing extruder, including the multi-material priming sequence.

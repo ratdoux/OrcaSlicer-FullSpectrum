@@ -23,8 +23,14 @@ struct MixedFilament
     int ratio_a = 1;
     int ratio_b = 1;
 
+    // Blend percentage of component B in [0..100].
+    int mix_b_percent = 50;
+
     // Whether this mixed filament is enabled (available for assignment).
     bool enabled = true;
+
+    // True when this row was user-created (custom) instead of auto-generated.
+    bool custom = false;
 
     // Computed display colour as "#RRGGBB".
     std::string display_color;
@@ -35,7 +41,9 @@ struct MixedFilament
                component_b == rhs.component_b &&
                ratio_a     == rhs.ratio_a     &&
                ratio_b     == rhs.ratio_b     &&
-               enabled     == rhs.enabled;
+               mix_b_percent == rhs.mix_b_percent &&
+               enabled      == rhs.enabled &&
+               custom       == rhs.custom;
     }
     bool operator!=(const MixedFilament &rhs) const { return !(*this == rhs); }
 };
@@ -67,6 +75,24 @@ public:
     // Remaining component IDs are shifted down to stay aligned with physical IDs.
     void remove_physical_filament(unsigned int deleted_filament_id);
 
+    // Add a custom mixed filament.
+    void add_custom_filament(unsigned int component_a, unsigned int component_b, int mix_b_percent, const std::vector<std::string> &filament_colours);
+
+    // Remove all custom rows, keep auto-generated ones.
+    void clear_custom_entries();
+
+    // Recompute cadence ratios from gradient settings.
+    // gradient_mode: 0 = Layer cycle weighted, 1 = Height weighted.
+    void apply_gradient_settings(int   gradient_mode,
+                                 float lower_bound,
+                                 float upper_bound,
+                                 int   cycle_layers,
+                                 bool  advanced_dithering = false);
+
+    // Persist only custom rows.
+    std::string serialize_custom_entries() const;
+    void load_custom_entries(const std::string &serialized, const std::vector<std::string> &filament_colours);
+
     // ---- Queries --------------------------------------------------------
 
     // True when `filament_id` (1-based) refers to a mixed filament.
@@ -76,9 +102,13 @@ public:
     }
 
     // Resolve a mixed filament ID to a physical extruder (1-based) for the
-    // given `layer_index`.  Returns `filament_id` unchanged when it is not a
+    // given layer context. Returns `filament_id` unchanged when it is not a
     // mixed filament.
-    unsigned int resolve(unsigned int filament_id, size_t num_physical, int layer_index) const;
+    unsigned int resolve(unsigned int filament_id,
+                         size_t       num_physical,
+                         int          layer_index,
+                         float        layer_print_z = 0.f,
+                         float        layer_height  = 0.f) const;
 
     // Compute a display colour by blending in RYB pigment space.
     static std::string blend_color(const std::string &color_a,
@@ -105,7 +135,14 @@ private:
         return static_cast<size_t>(filament_id - num_physical - 1);
     }
 
+    void refresh_display_colors(const std::vector<std::string> &filament_colours);
+
     std::vector<MixedFilament> m_mixed;
+    int                        m_gradient_mode       = 0;
+    float                      m_height_lower_bound  = 0.04f;
+    float                      m_height_upper_bound  = 0.16f;
+    int                        m_cycle_layers        = 4;
+    bool                       m_advanced_dithering  = false;
 };
 
 } // namespace Slic3r

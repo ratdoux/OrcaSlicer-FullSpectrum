@@ -1095,10 +1095,28 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     // Ensure newly introduced dithering keys are present so in-session updates are detected.
     new_full_config.option("dithering_z_step_size", true);
     new_full_config.option("dithering_step_painted_zones_only", true);
+    new_full_config.option("mixed_filament_gradient_mode", true);
+    new_full_config.option("mixed_filament_height_lower_bound", true);
+    new_full_config.option("mixed_filament_height_upper_bound", true);
+    new_full_config.option("mixed_filament_cycle_layers", true);
+    new_full_config.option("mixed_filament_advanced_dithering", true);
+    new_full_config.option("mixed_filament_definitions", true);
     m_config.option("dithering_z_step_size", true);
     m_config.option("dithering_step_painted_zones_only", true);
+    m_config.option("mixed_filament_gradient_mode", true);
+    m_config.option("mixed_filament_height_lower_bound", true);
+    m_config.option("mixed_filament_height_upper_bound", true);
+    m_config.option("mixed_filament_cycle_layers", true);
+    m_config.option("mixed_filament_advanced_dithering", true);
+    m_config.option("mixed_filament_definitions", true);
     m_default_object_config.option("dithering_z_step_size", true);
     m_default_object_config.option("dithering_step_painted_zones_only", true);
+    m_default_object_config.option("mixed_filament_gradient_mode", true);
+    m_default_object_config.option("mixed_filament_height_lower_bound", true);
+    m_default_object_config.option("mixed_filament_height_upper_bound", true);
+    m_default_object_config.option("mixed_filament_cycle_layers", true);
+    m_default_object_config.option("mixed_filament_advanced_dithering", true);
+    m_default_object_config.option("mixed_filament_definitions", true);
     // BBS
     int used_filaments = this->extruders(true).size();
 
@@ -1196,10 +1214,50 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
         }
     }
 
-    // Regenerate mixed (virtual) filaments from physical filament colours only.
+    int   mixed_gradient_mode   = 0;
+    float mixed_height_lower    = 0.04f;
+    float mixed_height_upper    = 0.16f;
+    int   mixed_cycle_layers    = 4;
+    bool  mixed_advanced_dither = false;
+    std::string mixed_custom_definitions;
+    if (new_full_config.has("mixed_filament_gradient_mode")) {
+        if (const ConfigOptionBool *opt = new_full_config.option<ConfigOptionBool>("mixed_filament_gradient_mode"))
+            mixed_gradient_mode = opt->value ? 1 : 0;
+        else
+            mixed_gradient_mode = new_full_config.opt_int("mixed_filament_gradient_mode");
+    }
+    if (new_full_config.has("mixed_filament_height_lower_bound"))
+        mixed_height_lower = float(new_full_config.opt_float("mixed_filament_height_lower_bound"));
+    if (new_full_config.has("mixed_filament_height_upper_bound"))
+        mixed_height_upper = float(new_full_config.opt_float("mixed_filament_height_upper_bound"));
+    if (new_full_config.has("mixed_filament_cycle_layers"))
+        mixed_cycle_layers = new_full_config.opt_int("mixed_filament_cycle_layers");
+    if (new_full_config.has("mixed_filament_advanced_dithering")) {
+        if (const ConfigOptionBool *opt = new_full_config.option<ConfigOptionBool>("mixed_filament_advanced_dithering"))
+            mixed_advanced_dither = opt->value;
+        else
+            mixed_advanced_dither = (new_full_config.opt_int("mixed_filament_advanced_dithering") != 0);
+    }
+    if (new_full_config.has("mixed_filament_definitions"))
+        mixed_custom_definitions = new_full_config.opt_string("mixed_filament_definitions");
+
+    mixed_gradient_mode = std::clamp(mixed_gradient_mode, 0, 1);
+    mixed_height_lower  = std::max(0.01f, mixed_height_lower);
+    mixed_height_upper  = std::max(mixed_height_lower, mixed_height_upper);
+    mixed_cycle_layers  = std::max(2, mixed_cycle_layers);
+
+    // Regenerate mixed (virtual) filaments from physical filament colours and
+    // re-apply user custom mixed definitions.
     std::vector<std::string> physical_filament_colors = m_config.filament_colour.values;
     physical_filament_colors.resize(num_extruders, "#26A69A");
+    m_mixed_filament_mgr.clear_custom_entries();
     m_mixed_filament_mgr.auto_generate(physical_filament_colors);
+    m_mixed_filament_mgr.load_custom_entries(mixed_custom_definitions, physical_filament_colors);
+    m_mixed_filament_mgr.apply_gradient_settings(mixed_gradient_mode,
+                                                 mixed_height_lower,
+                                                 mixed_height_upper,
+                                                 mixed_cycle_layers,
+                                                 mixed_advanced_dither);
     // Total filaments = physical extruders + enabled mixed (virtual) filaments.
     // Used for extruder ID clamping so that virtual IDs are accepted.
     size_t num_total_filaments = m_mixed_filament_mgr.total_filaments(num_extruders);

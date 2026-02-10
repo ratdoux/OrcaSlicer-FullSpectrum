@@ -4125,7 +4125,8 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Dithering cadence height A");
     def->category = L("Others");
     def->tooltip = L("Layer height contribution of component A for dithering virtual filaments. "
-                     "Set to 0 to use normal 1-layer A / 1-layer B alternation.");
+                     "Set to 0 to use normal 1-layer A / 1-layer B alternation.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
     def->sidetext = "mm";
     def->min = 0.;
     def->mode = comAdvanced;
@@ -4135,17 +4136,78 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Dithering cadence height B");
     def->category = L("Others");
     def->tooltip = L("Layer height contribution of component B for dithering virtual filaments. "
-                     "Set to 0 to use normal 1-layer A / 1-layer B alternation.");
+                     "Set to 0 to use normal 1-layer A / 1-layer B alternation.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
     def->sidetext = "mm";
     def->min = 0.;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.0));
 
+    def = this->add("mixed_filament_gradient_mode", coBool);
+    def->label = L("Height-weighted cadence");
+    def->category = L("Others");
+    def->tooltip = L("Enable height-weighted cadence for mixed filaments. "
+                     "Limitation: only one height-weighted mixed color should be present at a given Z plane, "
+                     "because independent per-color layer heights are not supported and the resulting layer height applies to the whole plane. "
+                     "When disabled, layer-cycle cadence is used.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("mixed_filament_height_lower_bound", coFloat);
+    def->label = L("Mixed filament lower height bound");
+    def->category = L("Others");
+    def->tooltip = L("Lower bound used by the height-weighted mixed filament gradient mode.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
+    def->sidetext = "mm";
+    def->min = 0.01;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.04));
+
+    def = this->add("mixed_filament_height_upper_bound", coFloat);
+    def->label = L("Mixed filament upper height bound");
+    def->category = L("Others");
+    def->tooltip = L("Upper bound used by the height-weighted mixed filament gradient mode.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
+    def->sidetext = "mm";
+    def->min = 0.01;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.16));
+
+    def = this->add("mixed_filament_cycle_layers", coInt);
+    def->label = L("Mixed filament layer cycle");
+    def->category = L("Others");
+    def->tooltip = L("Number of layers in one alternation cycle for layer-cycle mixed filament mode.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
+    def->min = 2;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(4));
+
+    def = this->add("mixed_filament_advanced_dithering", coBool);
+    def->label = L("Advanced dithering");
+    def->category = L("Others");
+    def->tooltip = L("Distribute mixed filament layer-cycle cadence using an advanced ordered dithering pattern "
+                     "instead of a simple contiguous A-then-B run. This can reduce visible striping for some hues.\n\n"
+                     "This is an even more experimental mode and the perceived color may differ from normal dithering "
+                     "for the same filament pair and ratio.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("mixed_filament_definitions", coString);
+    def->label = L("Mixed filament custom definitions");
+    def->tooltip = L("Serialized custom mixed filament rows.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
+    def->gui_flags = "serialized";
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionString(""));
+
     def = this->add("dithering_z_step_size", coFloat);
     def->label = L("Dithering Z step size");
     def->category = L("Others");
     def->tooltip = L("Layer height used in Z zones painted with dithering (mixed virtual filaments). "
-                     "Set to 0 to keep normal layer height in those zones.");
+                     "Set to 0 to keep normal layer height in those zones.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
     def->sidetext = "mm";
     def->min = 0.;
     def->mode = comAdvanced;
@@ -4155,7 +4217,8 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Use step size in painted zones only");
     def->category = L("Others");
     def->tooltip = L("When enabled, dithering Z step size is applied only where mixed filament is painted. "
-                     "Unpainted zones keep their original layer height.");
+                     "Unpainted zones keep their original layer height.\n\n"
+                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(true));
     
