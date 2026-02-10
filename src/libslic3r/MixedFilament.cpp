@@ -16,14 +16,125 @@ struct RGB {
     int r = 0, g = 0, b = 0;
 };
 
+struct RGBf {
+    float r = 0.f, g = 0.f, b = 0.f;
+};
+
+static float clamp01(float v)
+{
+    return std::max(0.f, std::min(1.f, v));
+}
+
+static RGBf to_rgbf(const RGB &c)
+{
+    return {
+        clamp01(static_cast<float>(c.r) / 255.f),
+        clamp01(static_cast<float>(c.g) / 255.f),
+        clamp01(static_cast<float>(c.b) / 255.f)
+    };
+}
+
+static RGB to_rgb8(const RGBf &c)
+{
+    auto to_u8 = [](float v) -> int {
+        return std::clamp(static_cast<int>(std::round(clamp01(v) * 255.f)), 0, 255);
+    };
+    return { to_u8(c.r), to_u8(c.g), to_u8(c.b) };
+}
+
+// Convert RGB to an artist-pigment style RYB space.
+// This is an approximation, but it gives expected pair mixes:
+// Red + Blue -> Purple, Blue + Yellow -> Green, Red + Yellow -> Orange.
+static RGBf rgb_to_ryb(RGBf in)
+{
+    float r = clamp01(in.r);
+    float g = clamp01(in.g);
+    float b = clamp01(in.b);
+
+    const float white = std::min({ r, g, b });
+    r -= white;
+    g -= white;
+    b -= white;
+
+    const float max_g = std::max({ r, g, b });
+
+    float y = std::min(r, g);
+    r -= y;
+    g -= y;
+
+    if (b > 0.f && g > 0.f) {
+        b *= 0.5f;
+        g *= 0.5f;
+    }
+
+    y += g;
+    b += g;
+
+    const float max_y = std::max({ r, y, b });
+    if (max_y > 1e-6f) {
+        const float n = max_g / max_y;
+        r *= n;
+        y *= n;
+        b *= n;
+    }
+
+    r += white;
+    y += white;
+    b += white;
+    return { clamp01(r), clamp01(y), clamp01(b) };
+}
+
+static RGBf ryb_to_rgb(RGBf in)
+{
+    float r = clamp01(in.r);
+    float y = clamp01(in.g);
+    float b = clamp01(in.b);
+
+    const float white = std::min({ r, y, b });
+    r -= white;
+    y -= white;
+    b -= white;
+
+    const float max_y = std::max({ r, y, b });
+
+    float g = std::min(y, b);
+    y -= g;
+    b -= g;
+
+    if (b > 0.f && g > 0.f) {
+        b *= 2.f;
+        g *= 2.f;
+    }
+
+    r += y;
+    g += y;
+
+    const float max_g = std::max({ r, g, b });
+    if (max_g > 1e-6f) {
+        const float n = max_y / max_g;
+        r *= n;
+        g *= n;
+        b *= n;
+    }
+
+    r += white;
+    g += white;
+    b += white;
+    return { clamp01(r), clamp01(g), clamp01(b) };
+}
+
 // Parse "#RRGGBB" to RGB.  Returns black on failure.
 static RGB parse_hex_color(const std::string &hex)
 {
     RGB c;
     if (hex.size() >= 7 && hex[0] == '#') {
-        c.r = std::stoi(hex.substr(1, 2), nullptr, 16);
-        c.g = std::stoi(hex.substr(3, 2), nullptr, 16);
-        c.b = std::stoi(hex.substr(5, 2), nullptr, 16);
+        try {
+            c.r = std::stoi(hex.substr(1, 2), nullptr, 16);
+            c.g = std::stoi(hex.substr(3, 2), nullptr, 16);
+            c.b = std::stoi(hex.substr(5, 2), nullptr, 16);
+        } catch (...) {
+            c = {};
+        }
     }
     return c;
 }
@@ -124,38 +235,34 @@ std::string MixedFilamentManager::blend_color(const std::string &color_a,
                                               const std::string &color_b,
                                               int ratio_a, int ratio_b)
 {
-    RGB a = parse_hex_color(color_a);
-    RGB b = parse_hex_color(color_b);
-
-    // Additive blend: min(a + b, 255) per channel.
-    // For unequal ratios, weight accordingly.
-    const float total = static_cast<float>(ratio_a + ratio_b);
-    const float wa    = (total > 0.f) ? static_cast<float>(ratio_a) / total : 0.5f;
+    const int safe_a = std::max(0, ratio_a);
+    const int safe_b = std::max(0, ratio_b);
+    const float total = static_cast<float>(safe_a + safe_b);
+    const float wa    = (total > 0.f) ? static_cast<float>(safe_a) / total : 0.5f;
     const float wb    = 1.f - wa;
 
-    // Use screen blending which is additive-like without oversaturation:
-    // screen(A, B) = A + B - A*B/255
-    // Weighted variant: blend each channel independently.
-    auto screen_ch = [](int ca, int cb, float wa, float wb) -> int {
-        // Weighted additive with clamping – matches user expectation:
-        //   Red(255,0,0) + Green(0,255,0) = Yellow(255,255,0)
-        float v = static_cast<float>(ca) * wa + static_cast<float>(cb) * wb;
-        // Boost towards additive: add the minimum so pure colours combine fully.
-        float additive = std::min(static_cast<float>(ca + cb), 255.f);
-        // Blend between weighted-average and full-additive based on colour distance.
-        float result = wa * static_cast<float>(ca) + wb * static_cast<float>(cb);
-        // For the 1:1 case, use pure additive (clamped) to get R+G=Y.
-        if (std::abs(wa - wb) < 0.01f)
-            result = additive;
-        return std::min(static_cast<int>(std::round(result)), 255);
-    };
+    const RGBf rgb_a = to_rgbf(parse_hex_color(color_a));
+    const RGBf rgb_b = to_rgbf(parse_hex_color(color_b));
+    const RGBf ryb_a = rgb_to_ryb(rgb_a);
+    const RGBf ryb_b = rgb_to_ryb(rgb_b);
 
-    RGB out;
-    out.r = screen_ch(a.r, b.r, wa, wb);
-    out.g = screen_ch(a.g, b.g, wa, wb);
-    out.b = screen_ch(a.b, b.b, wa, wb);
+    RGBf ryb_out;
+    ryb_out.r = wa * ryb_a.r + wb * ryb_b.r;
+    ryb_out.g = wa * ryb_a.g + wb * ryb_b.g;
+    ryb_out.b = wa * ryb_a.b + wb * ryb_b.b;
 
-    return rgb_to_hex(out);
+    RGBf rgb_out = ryb_to_rgb(ryb_out);
+    const float v_out = std::max({ rgb_out.r, rgb_out.g, rgb_out.b });
+    const float v_tgt = wa * std::max({ rgb_a.r, rgb_a.g, rgb_a.b }) +
+                        wb * std::max({ rgb_b.r, rgb_b.g, rgb_b.b });
+    if (v_out > 1e-6f && v_tgt > 0.f) {
+        const float scale = v_tgt / v_out;
+        rgb_out.r = clamp01(rgb_out.r * scale);
+        rgb_out.g = clamp01(rgb_out.g * scale);
+        rgb_out.b = clamp01(rgb_out.b * scale);
+    }
+
+    return rgb_to_hex(to_rgb8(rgb_out));
 }
 
 size_t MixedFilamentManager::enabled_count() const
@@ -177,3 +284,4 @@ std::vector<std::string> MixedFilamentManager::display_colors() const
 }
 
 } // namespace Slic3r
+

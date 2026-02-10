@@ -9,8 +9,9 @@
 namespace Slic3r {
 
 // Represents a virtual "mixed" filament created by alternating layers of two
-// physical filaments.  The display colour is an additive RGB blend so that,
-// for example, Red + Green previews as Yellow.
+// physical filaments. The display colour uses an RYB pigment-style blend so
+// pair previews better match expected print mixing (for example Blue+Yellow
+// -> Green, Red+Yellow -> Orange, Red+Blue -> Purple).
 struct MixedFilament
 {
     // 1-based physical filament IDs that are combined.
@@ -79,8 +80,7 @@ public:
     // mixed filament.
     unsigned int resolve(unsigned int filament_id, size_t num_physical, int layer_index) const;
 
-    // Compute a display colour by additively blending the two component
-    // colours.  `filament_colours` contains the physical colours only.
+    // Compute a display colour by blending in RYB pigment space.
     static std::string blend_color(const std::string &color_a,
                                    const std::string &color_b,
                                    int ratio_a, int ratio_b);
