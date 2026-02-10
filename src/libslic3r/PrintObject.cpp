@@ -946,6 +946,8 @@ bool PrintObject::invalidate_state_by_config_options(
             steps.emplace_back(posPerimeters);
         } else if (
                opt_key == "layer_height"
+            || opt_key == "dithering_z_step_size"
+            || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mmu_segmented_region_max_width"
             || opt_key == "mmu_segmented_region_interlocking_depth"
             || opt_key == "raft_layers"
@@ -3331,9 +3333,262 @@ std::vector<unsigned int> PrintObject::object_extruders() const
     return extruders;
 }
 
-bool PrintObject::update_layer_height_profile(const ModelObject &model_object, const SlicingParameters &slicing_parameters, std::vector<coordf_t> &layer_height_profile)
+namespace {
+
+struct LayerHeightRangeOverride {
+    coordf_t lo { 0.f };
+    coordf_t hi { 0.f };
+    coordf_t height { 0.f };
+};
+
+static void sort_and_merge_layer_ranges(std::vector<t_layer_height_range> &ranges)
+{
+    if (ranges.empty())
+        return;
+
+    std::sort(ranges.begin(), ranges.end(), [](const t_layer_height_range &a, const t_layer_height_range &b) {
+        return a.first < b.first || (a.first == b.first && a.second < b.second);
+    });
+
+    std::vector<t_layer_height_range> merged;
+    merged.reserve(ranges.size());
+    for (const t_layer_height_range &range : ranges) {
+        if (range.second <= range.first + EPSILON)
+            continue;
+
+        if (merged.empty() || range.first > merged.back().second + EPSILON) {
+            merged.emplace_back(range);
+        } else {
+            merged.back().second = std::max(merged.back().second, range.second);
+        }
+    }
+    ranges = std::move(merged);
+}
+
+static std::vector<t_layer_height_range> collect_mixed_painted_z_ranges(const PrintObject &print_object, coordf_t object_height)
+{
+    std::vector<t_layer_height_range> mixed_ranges;
+    if (object_height <= EPSILON)
+        return mixed_ranges;
+
+    const Print *print = print_object.print();
+    if (print == nullptr)
+        return mixed_ranges;
+
+    const size_t num_physical = print->config().filament_colour.size();
+    const size_t num_total    = print->mixed_filament_manager().total_filaments(num_physical);
+    if (num_total <= num_physical)
+        return mixed_ranges;
+
+    const size_t max_state = std::min(num_total, size_t(EnforcerBlockerType::ExtruderMax));
+    const Transform3d object_to_print = print_object.trafo_centered();
+
+    for (const ModelVolume *mv : print_object.model_object()->volumes) {
+        if (mv == nullptr || !mv->is_model_part() || mv->mmu_segmentation_facets.empty())
+            continue;
+
+        const auto &used_states = mv->mmu_segmentation_facets.get_data().used_states;
+        if (used_states.empty())
+            continue;
+
+        const Transform3d volume_to_print = object_to_print * mv->get_matrix();
+        constexpr coordf_t thin_band = 0.01f;
+        for (size_t state_idx = num_physical + 1; state_idx <= max_state; ++state_idx) {
+            if (state_idx >= used_states.size() || !used_states[state_idx])
+                continue;
+
+            const auto facets = mv->mmu_segmentation_facets.get_facets_strict(*mv, static_cast<EnforcerBlockerType>(state_idx));
+            if (facets.indices.empty() || facets.vertices.empty())
+                continue;
+
+            for (const auto &face : facets.indices) {
+                double tri_z_min = DBL_MAX;
+                double tri_z_max = -DBL_MAX;
+                for (int i = 0; i < 3; ++i) {
+                    const size_t vertex_idx = size_t(face[i]);
+                    if (vertex_idx >= facets.vertices.size())
+                        continue;
+                    const Vec3d p = volume_to_print * facets.vertices[vertex_idx].cast<double>();
+                    tri_z_min = std::min(tri_z_min, p.z());
+                    tri_z_max = std::max(tri_z_max, p.z());
+                }
+
+                if (tri_z_min == DBL_MAX || tri_z_max == -DBL_MAX)
+                    continue;
+
+                coordf_t lo = std::max<coordf_t>(0.f, coordf_t(tri_z_min));
+                coordf_t hi = std::min<coordf_t>(object_height, coordf_t(tri_z_max));
+                if (hi <= lo + EPSILON) {
+                    const coordf_t center = std::max<coordf_t>(0.f, std::min<coordf_t>(object_height, lo));
+                    lo = std::max<coordf_t>(0.f, center - thin_band * 0.5f);
+                    hi = std::min<coordf_t>(object_height, center + thin_band * 0.5f);
+                }
+                if (lo + EPSILON < hi)
+                    mixed_ranges.emplace_back(lo, hi);
+            }
+        }
+    }
+
+    sort_and_merge_layer_ranges(mixed_ranges);
+    return mixed_ranges;
+}
+
+static std::vector<LayerHeightRangeOverride> base_layer_height_overrides(const t_layer_config_ranges &ranges, coordf_t object_height)
+{
+    std::vector<LayerHeightRangeOverride> out;
+    out.reserve(ranges.size());
+
+    coordf_t last_hi = 0.f;
+    for (const auto &[range, config] : ranges) {
+        coordf_t lo = std::max(range.first, last_hi);
+        coordf_t hi = std::min(range.second, object_height);
+        if (lo + EPSILON >= hi)
+            continue;
+
+        const ConfigOption *layer_height_opt = config.option("layer_height");
+        if (layer_height_opt == nullptr)
+            continue;
+
+        out.push_back({ lo, hi, coordf_t(layer_height_opt->getFloat()) });
+        last_hi = hi;
+    }
+    return out;
+}
+
+static bool contains_z(const std::vector<t_layer_height_range> &ranges, coordf_t z)
+{
+    for (const t_layer_height_range &range : ranges) {
+        if (z + EPSILON < range.first)
+            break;
+        if (z + EPSILON >= range.first && z < range.second - EPSILON)
+            return true;
+    }
+    return false;
+}
+
+static bool get_override_height(const std::vector<LayerHeightRangeOverride> &ranges, coordf_t z, coordf_t &height_out)
+{
+    for (const LayerHeightRangeOverride &range : ranges) {
+        if (z + EPSILON < range.lo)
+            break;
+        if (z + EPSILON >= range.lo && z < range.hi - EPSILON) {
+            height_out = range.height;
+            return true;
+        }
+    }
+    return false;
+}
+
+static t_layer_config_ranges layer_ranges_with_dithering(const t_layer_config_ranges &base_ranges_map,
+                                                         coordf_t                     object_height,
+                                                         coordf_t                     default_layer_height,
+                                                         const std::vector<t_layer_height_range> &mixed_ranges,
+                                                         coordf_t                     dithering_step)
+{
+    if (object_height <= EPSILON || mixed_ranges.empty() || dithering_step <= EPSILON)
+        return base_ranges_map;
+
+    const std::vector<LayerHeightRangeOverride> base_ranges = base_layer_height_overrides(base_ranges_map, object_height);
+
+    std::vector<coordf_t> boundaries;
+    boundaries.reserve(2 + base_ranges.size() * 2 + mixed_ranges.size() * 2);
+    boundaries.emplace_back(0.f);
+    boundaries.emplace_back(object_height);
+    for (const LayerHeightRangeOverride &range : base_ranges) {
+        boundaries.emplace_back(range.lo);
+        boundaries.emplace_back(range.hi);
+    }
+    for (const t_layer_height_range &range : mixed_ranges) {
+        boundaries.emplace_back(range.first);
+        boundaries.emplace_back(range.second);
+    }
+
+    std::sort(boundaries.begin(), boundaries.end());
+    boundaries.erase(std::unique(boundaries.begin(), boundaries.end(), [](coordf_t a, coordf_t b) {
+                        return std::abs(a - b) <= EPSILON;
+                    }),
+                     boundaries.end());
+
+    std::vector<LayerHeightRangeOverride> merged_ranges;
+    merged_ranges.reserve(boundaries.size());
+    for (size_t i = 1; i < boundaries.size(); ++i) {
+        const coordf_t lo = boundaries[i - 1];
+        const coordf_t hi = boundaries[i];
+        if (hi <= lo + EPSILON)
+            continue;
+
+        const coordf_t z_mid = 0.5f * (lo + hi);
+
+        coordf_t target_height = default_layer_height;
+        coordf_t base_height   = 0.f;
+        if (contains_z(mixed_ranges, z_mid)) {
+            target_height = dithering_step;
+        } else if (get_override_height(base_ranges, z_mid, base_height)) {
+            target_height = base_height;
+        }
+
+        if (std::abs(target_height - default_layer_height) <= EPSILON)
+            continue;
+
+        if (!merged_ranges.empty() &&
+            std::abs(merged_ranges.back().height - target_height) <= EPSILON &&
+            std::abs(merged_ranges.back().hi - lo) <= EPSILON) {
+            merged_ranges.back().hi = hi;
+        } else {
+            merged_ranges.push_back({ lo, hi, target_height });
+        }
+    }
+
+    t_layer_config_ranges out;
+    for (const LayerHeightRangeOverride &range : merged_ranges) {
+        if (range.hi <= range.lo + EPSILON)
+            continue;
+        ModelConfig cfg;
+        cfg.set_key_value("layer_height", new ConfigOptionFloat(range.height));
+        out.emplace(t_layer_height_range(range.lo, range.hi), std::move(cfg));
+    }
+    return out;
+}
+
+} // namespace
+
+bool PrintObject::update_layer_height_profile(const ModelObject          &model_object,
+                                              const SlicingParameters    &slicing_parameters,
+                                              std::vector<coordf_t>      &layer_height_profile,
+                                              const PrintObject          *print_object)
 {
     bool updated = false;
+
+    const t_layer_config_ranges *ranges_to_use = &model_object.layer_config_ranges;
+    t_layer_config_ranges        dithering_ranges;
+    if (print_object != nullptr && print_object->print() != nullptr) {
+        const DynamicPrintConfig &full_cfg = print_object->print()->full_print_config();
+        coordf_t                  dithering_step = coordf_t(print_object->print()->config().dithering_z_step_size.value);
+        bool                      painted_zones_only = print_object->print()->config().dithering_step_painted_zones_only.value;
+        if (full_cfg.has("dithering_z_step_size"))
+            dithering_step = coordf_t(full_cfg.opt_float("dithering_z_step_size"));
+        if (full_cfg.has("dithering_step_painted_zones_only"))
+            painted_zones_only = full_cfg.opt_bool("dithering_step_painted_zones_only");
+
+        if (dithering_step > EPSILON) {
+            const coordf_t object_height = slicing_parameters.object_print_z_uncompensated_height();
+            std::vector<t_layer_height_range> mixed_ranges;
+            if (painted_zones_only)
+                mixed_ranges = collect_mixed_painted_z_ranges(*print_object, object_height);
+            else if (object_height > EPSILON)
+                mixed_ranges.emplace_back(0.f, object_height);
+
+            if (!mixed_ranges.empty()) {
+                dithering_ranges = layer_ranges_with_dithering(model_object.layer_config_ranges,
+                                                               object_height,
+                                                               slicing_parameters.layer_height,
+                                                               mixed_ranges,
+                                                               dithering_step);
+                ranges_to_use = &dithering_ranges;
+            }
+        }
+    }
+    const bool has_dithering_ranges = (ranges_to_use != &model_object.layer_config_ranges);
 
     if (layer_height_profile.empty()) {
         // use the constructor because the assignement is crashing on ASAN OsX
@@ -3352,9 +3607,9 @@ bool PrintObject::update_layer_height_profile(const ModelObject &model_object, c
             std::abs(layer_height_profile[layer_height_profile.size() - 2] - slicing_parameters.object_print_z_uncompensated_max + slicing_parameters.object_print_z_min) > 1e-3))
         layer_height_profile.clear();
 
-    if (layer_height_profile.empty() || layer_height_profile[1] != slicing_parameters.first_object_layer_height) {
+    if (layer_height_profile.empty() || layer_height_profile[1] != slicing_parameters.first_object_layer_height || has_dithering_ranges) {
         //layer_height_profile = layer_height_profile_adaptive(slicing_parameters, model_object.layer_config_ranges, model_object.volumes);
-        layer_height_profile = layer_height_profile_from_ranges(slicing_parameters, model_object.layer_config_ranges);
+        layer_height_profile = layer_height_profile_from_ranges(slicing_parameters, *ranges_to_use);
         // The layer height profile is already compressed.
         updated = true;
     }

@@ -1724,7 +1724,8 @@ void TriangleSelector::deserialize(const TriangleSplittingData& data,
                                    bool                         needs_reset,
                                    EnforcerBlockerType          max_ebt,
                                    EnforcerBlockerType          to_delete_filament,
-                                   EnforcerBlockerType          replace_filament)
+                                   EnforcerBlockerType          replace_filament,
+                                   const EnforcerBlockerStateMap* state_map)
 {
     if (needs_reset)
         reset(); // dump any current state
@@ -1790,11 +1791,15 @@ void TriangleSelector::deserialize(const TriangleSplittingData& data,
                 }
             }
 
-            
-            if (state == to_delete_filament)
-                state = replace_filament;
-            else if (to_delete_filament != EnforcerBlockerType::NONE && state != EnforcerBlockerType::NONE) {
-                state = state > to_delete_filament ? EnforcerBlockerType((int) state - 1) : state;
+            if (state_map != nullptr && state != EnforcerBlockerType::NONE) {
+                const size_t state_idx = static_cast<size_t>(state);
+                state = state_idx < state_map->size() ? (*state_map)[state_idx] : EnforcerBlockerType::NONE;
+            } else {
+                if (state == to_delete_filament)
+                    state = replace_filament;
+                else if (to_delete_filament != EnforcerBlockerType::NONE && state != EnforcerBlockerType::NONE) {
+                    state = state > to_delete_filament ? EnforcerBlockerType((int) state - 1) : state;
+                }
             }
 
             if (state > max_ebt) {

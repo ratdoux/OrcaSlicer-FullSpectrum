@@ -144,6 +144,10 @@ public:
     // Mixed-filament resolution context (set by ToolOrdering during collect_extruders).
     const MixedFilamentManager *mixed_mgr    = nullptr;
     size_t                      num_physical = 0;
+    // Optional mixed-layer cadence override from print settings.
+    float                       mixed_layer_height_a    = 0.f;
+    float                       mixed_layer_height_b    = 0.f;
+    float                       mixed_base_layer_height = 0.2f;
 
 private:
     // Resolve a 1-based filament ID through the mixed-filament manager for this layer.
@@ -211,6 +215,7 @@ private:
     // BBS
     std::vector<unsigned int> generate_first_layer_tool_order(const Print& print);
     std::vector<unsigned int> generate_first_layer_tool_order(const PrintObject& object);
+    void                      update_mixed_layer_height_settings();
 
     // Resolve a 1-based filament ID through the mixed-filament manager.
     // Returns the resolved physical extruder (1-based).  If the ID is not a
@@ -233,6 +238,9 @@ private:
     // number of physical extruders.
     const MixedFilamentManager* m_mixed_mgr    = nullptr;
     size_t                      m_num_physical  = 0;
+    float                       m_mixed_layer_height_a    = 0.f;
+    float                       m_mixed_layer_height_b    = 0.f;
+    float                       m_mixed_base_layer_height = 0.2f;
 };
 
 } // namespace SLic3r

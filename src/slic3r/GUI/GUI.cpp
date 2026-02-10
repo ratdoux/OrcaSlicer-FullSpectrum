@@ -108,13 +108,21 @@ void change_opt_value(DynamicPrintConfig& config, const t_config_option_key& opt
 {
 	try{
 
-        if (config.def()->get(opt_key)->type == coBools && config.def()->get(opt_key)->nullable) {
+        const ConfigOptionDef *opt_def = config.def()->get(opt_key);
+        if (opt_def == nullptr)
+            throw Slic3r::RuntimeError("Unknown config option key: " + opt_key);
+
+        // Some older presets may not carry newly introduced keys. Ensure the
+        // option exists before mutating it through typed accessors below.
+        if (!config.has(opt_key))
+            config.set_key_value(opt_key, opt_def->create_default_option());
+
+        if (opt_def->type == coBools && opt_def->nullable) {
             ConfigOptionBoolsNullable* vec_new = new ConfigOptionBoolsNullable{ boost::any_cast<unsigned char>(value) };
             config.option<ConfigOptionBoolsNullable>(opt_key)->set_at(vec_new, opt_index, 0);
             return;
         }
 
-        const ConfigOptionDef *opt_def = config.def()->get(opt_key);
 		switch (opt_def->type) {
 		case coFloatOrPercent:{
 			std::string str = boost::any_cast<std::string>(value);

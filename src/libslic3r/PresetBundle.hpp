@@ -253,6 +253,9 @@ public:
     // Read out the number of extruders from an active printer preset,
     // update size and content of filament_presets.
     void                        update_multi_material_filament_presets(size_t to_delete_filament_id = size_t(-1));
+    // Mapping generated during the latest filament deletion.
+    // Index is old 1-based filament ID, value is new 1-based filament ID (0 = removed).
+    const std::vector<unsigned int>& last_filament_id_remap() const { return m_last_filament_id_remap; }
 
     // Update the is_compatible flag of all print and filament presets depending on whether they are marked
     // as compatible with the currently selected printer (and print in case of filament presets).
@@ -324,6 +327,7 @@ private:
     bool validation_mode = false;
     std::string vendor_to_validate = ""; 
     int m_errors = 0;
+    std::vector<unsigned int> m_last_filament_id_remap;
 
 };
 

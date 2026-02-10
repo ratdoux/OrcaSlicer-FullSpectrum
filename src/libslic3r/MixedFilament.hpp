@@ -61,6 +61,11 @@ public:
     // exists.
     void auto_generate(const std::vector<std::string> &filament_colours);
 
+    // Remove a physical filament (1-based ID) from the mixed list.
+    // Any mixed filament that contains the removed component is deleted.
+    // Remaining component IDs are shifted down to stay aligned with physical IDs.
+    void remove_physical_filament(unsigned int deleted_filament_id);
+
     // ---- Queries --------------------------------------------------------
 
     // True when `filament_id` (1-based) refers to a mixed filament.

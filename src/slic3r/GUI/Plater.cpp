@@ -1436,7 +1436,7 @@ Sidebar::Sidebar(Plater *parent)
     p->m_sizer_mixed_filaments = new wxBoxSizer(wxVERTICAL);
     p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
     // Title
-    auto *mixed_title = new wxStaticText(p->m_panel_mixed_filaments, wxID_ANY, _L("Mixed Colors"));
+    auto *mixed_title = new wxStaticText(p->m_panel_mixed_filaments, wxID_ANY, _L("Dithering"));
     mixed_title->SetFont(Label::Head_14);
     p->m_sizer_mixed_filaments->Add(mixed_title, 0, wxLEFT | wxRIGHT, FromDIP(16));
     p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
@@ -2205,7 +2205,7 @@ void Sidebar::update_mixed_filament_panel()
 
     // Recreate header.
     p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
-    auto *mixed_title = new wxStaticText(p->m_panel_mixed_filaments, wxID_ANY, _L("Mixed Colors"));
+    auto *mixed_title = new wxStaticText(p->m_panel_mixed_filaments, wxID_ANY, _L("Dithering"));
     mixed_title->SetFont(Label::Head_14);
     p->m_sizer_mixed_filaments->Add(mixed_title, 0, wxLEFT | wxRIGHT, FromDIP(16));
     p->m_sizer_mixed_filaments->AddSpacer(FromDIP(4));
@@ -2355,6 +2355,7 @@ void Sidebar::on_filaments_delete(size_t filament_id)
     p->m_panel_filament_title->Refresh();
     update_ui_from_settings();
     dynamic_filament_list.update();
+    update_mixed_filament_panel();
 }
 
 void Sidebar::edit_filament() {
@@ -14317,10 +14318,40 @@ void Plater::on_filaments_delete(size_t num_filaments, size_t filament_id, int r
     }*/
 
     // update mmu info
+    PresetBundle *preset_bundle = wxGetApp().preset_bundle;
+
+    size_t total_filaments = num_filaments;
+    if (preset_bundle != nullptr) {
+        const size_t current_num_physical = preset_bundle->filament_presets.size();
+        total_filaments = preset_bundle->mixed_filaments.total_filaments(current_num_physical);
+    }
+
+    EnforcerBlockerStateMap state_map;
+    for (size_t i = 0; i < state_map.size(); ++i)
+        state_map[i] = EnforcerBlockerType(i);
+
+    const bool can_use_remap = replace_filament_id < 0;
+    static const std::vector<unsigned int> empty_remap;
+    const std::vector<unsigned int> &id_remap =
+        preset_bundle != nullptr ? preset_bundle->last_filament_id_remap() : empty_remap;
+    if (can_use_remap && !id_remap.empty()) {
+        for (size_t i = 1; i < state_map.size(); ++i) {
+            const unsigned int mapped = i < id_remap.size() ? id_remap[i] : 0;
+            if (mapped == 0 || mapped >= state_map.size() || mapped > total_filaments)
+                state_map[i] = EnforcerBlockerType::NONE;
+            else
+                state_map[i] = EnforcerBlockerType(mapped);
+        }
+    }
+
     for (ModelObject* mo : wxGetApp().model().objects) {
         for (ModelVolume* mv : mo->volumes) {
-            mv->update_extruder_count_when_delete_filament(num_filaments, filament_id + 1,
-                                                           replace_filament_id + 1); // this function is 1 base
+            if (can_use_remap && !id_remap.empty()) {
+                mv->remap_extruder_ids(total_filaments, state_map);
+            } else {
+                mv->update_extruder_count_when_delete_filament(total_filaments, filament_id + 1,
+                                                               replace_filament_id + 1); // this function is 1 base
+            }
         }
     }
 

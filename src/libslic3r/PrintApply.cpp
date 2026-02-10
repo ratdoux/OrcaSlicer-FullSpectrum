@@ -1092,6 +1092,13 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 	new_full_config.option("print_settings_id",            true);
 	new_full_config.option("filament_settings_id",         true);
 	new_full_config.option("printer_settings_id",          true);
+    // Ensure newly introduced dithering keys are present so in-session updates are detected.
+    new_full_config.option("dithering_z_step_size", true);
+    new_full_config.option("dithering_step_painted_zones_only", true);
+    m_config.option("dithering_z_step_size", true);
+    m_config.option("dithering_step_painted_zones_only", true);
+    m_default_object_config.option("dithering_z_step_size", true);
+    m_default_object_config.option("dithering_step_painted_zones_only", true);
     // BBS
     int used_filaments = this->extruders(true).size();
 

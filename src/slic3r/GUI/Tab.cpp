@@ -2488,6 +2488,13 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
 
         optgroup->append_single_option_line("timelapse_type", "others_settings_special_mode#timelapse");
 
+        // Use default (no icon) here to avoid runtime bitmap load failures.
+        optgroup = page->new_optgroup(L("Dithering"));
+        optgroup->append_single_option_line("mixed_color_layer_height_a", "others_settings_mixed_colors#layer-height-a");
+        optgroup->append_single_option_line("mixed_color_layer_height_b", "others_settings_mixed_colors#layer-height-b");
+        optgroup->append_single_option_line("dithering_z_step_size", "others_settings_mixed_colors#z-step-size");
+        optgroup->append_single_option_line("dithering_step_painted_zones_only", "others_settings_mixed_colors#painted-zones-only");
+
         optgroup = page->new_optgroup(L("Fuzzy Skin"), L"fuzzy_skin");
         optgroup->append_single_option_line("fuzzy_skin", "others_settings_fuzzy_skin");
         optgroup->append_single_option_line("fuzzy_skin_mode", "others_settings_fuzzy_skin#fuzzy-skin-mode");

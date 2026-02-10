@@ -27,7 +27,7 @@
 # Download
 
 ### Stable Release
-📥 **[Download the Latest Stable Release](https://github.com/Snapmaker/OrcaSlicer/releases/latest)**  
+📥 **[Download the Latest Stable Release](https://github.com/ratdoux/OrcaSlicer-FullSpectrum/releases)**  
 Visit our GitHub Releases page for the latest stable version of Full Spectrum, recommended for most users.
 
 # Features
@@ -145,7 +145,10 @@ resolution: 0.1
 Orca Slicer was originally forked from Bambu Studio, it was previously known as BambuStudio-SoftFever.
 Bambu Studio is forked from [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer) by Prusa Research, which is from [Slic3r](https://github.com/Slic3r/Slic3r) by Alessandro Ranellucci and the RepRap community. 
 Orca Slicer incorporates a lot of features from SuperSlicer by @supermerill
-Orca Slicer's logo is designed by community member Justin Levine(@freejstnalxndr)  
+Orca Slicer's logo is designed by community member Justin Levine(@freejstnalxndr)
+
+## Acknowledgements
+Special thanks to [u/Aceman11100](https://www.reddit.com/user/Aceman11100/) for the inspiration and idea behind the mixed-color filament feature!  
 
 
 # License

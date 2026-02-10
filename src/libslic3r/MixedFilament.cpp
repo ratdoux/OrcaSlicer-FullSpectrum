@@ -79,6 +79,27 @@ void MixedFilamentManager::auto_generate(const std::vector<std::string> &filamen
     }
 }
 
+void MixedFilamentManager::remove_physical_filament(unsigned int deleted_filament_id)
+{
+    if (deleted_filament_id == 0 || m_mixed.empty())
+        return;
+
+    std::vector<MixedFilament> filtered;
+    filtered.reserve(m_mixed.size());
+    for (MixedFilament mf : m_mixed) {
+        if (mf.component_a == deleted_filament_id || mf.component_b == deleted_filament_id)
+            continue;
+
+        if (mf.component_a > deleted_filament_id)
+            --mf.component_a;
+        if (mf.component_b > deleted_filament_id)
+            --mf.component_b;
+
+        filtered.emplace_back(std::move(mf));
+    }
+    m_mixed = std::move(filtered);
+}
+
 unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
                                            size_t       num_physical,
                                            int          layer_index) const

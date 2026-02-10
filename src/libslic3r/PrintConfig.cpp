@@ -4120,6 +4120,44 @@ void PrintConfigDef::init_fff_params()
     def->height = 6;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionStrings());
+
+    def = this->add("mixed_color_layer_height_a", coFloat);
+    def->label = L("Dithering cadence height A");
+    def->category = L("Others");
+    def->tooltip = L("Layer height contribution of component A for dithering virtual filaments. "
+                     "Set to 0 to use normal 1-layer A / 1-layer B alternation.");
+    def->sidetext = "mm";
+    def->min = 0.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.0));
+
+    def = this->add("mixed_color_layer_height_b", coFloat);
+    def->label = L("Dithering cadence height B");
+    def->category = L("Others");
+    def->tooltip = L("Layer height contribution of component B for dithering virtual filaments. "
+                     "Set to 0 to use normal 1-layer A / 1-layer B alternation.");
+    def->sidetext = "mm";
+    def->min = 0.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.0));
+
+    def = this->add("dithering_z_step_size", coFloat);
+    def->label = L("Dithering Z step size");
+    def->category = L("Others");
+    def->tooltip = L("Layer height used in Z zones painted with dithering (mixed virtual filaments). "
+                     "Set to 0 to keep normal layer height in those zones.");
+    def->sidetext = "mm";
+    def->min = 0.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.0));
+
+    def = this->add("dithering_step_painted_zones_only", coBool);
+    def->label = L("Use step size in painted zones only");
+    def->category = L("Others");
+    def->tooltip = L("When enabled, dithering Z step size is applied only where mixed filament is painted. "
+                     "Unpainted zones keep their original layer height.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
     
     def = this->add("printer_model", coString);
     def->label = L("Printer type");

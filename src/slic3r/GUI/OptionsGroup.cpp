@@ -981,10 +981,29 @@ boost::any ConfigOptionsGroup::get_config_value(const DynamicPrintConfig& config
 	case coPercents:
 	case coFloats:
 	case coFloat:{
-		double val = opt->type == coFloats ?
+		double val = 0.0;
+		if (config.has(opt_key)) {
+			val = opt->type == coFloats ?
 					config.opt_float(opt_key, idx) :
 						opt->type == coFloat ? config.opt_float(opt_key) :
 						config.option<ConfigOptionPercents>(opt_key)->get_at(idx);
+		} else if (opt->default_value) {
+			if (opt->type == coFloats) {
+				const auto *defaults = dynamic_cast<const ConfigOptionFloats*>(opt->default_value.get());
+				if (defaults != nullptr && !defaults->values.empty()) {
+					const size_t safe_idx = std::min(idx, defaults->values.size() - 1);
+					val = defaults->values[safe_idx];
+				}
+			} else if (opt->type == coFloat) {
+				val = opt->default_value->getFloat();
+			} else {
+				const auto *defaults = dynamic_cast<const ConfigOptionPercents*>(opt->default_value.get());
+				if (defaults != nullptr && !defaults->values.empty()) {
+					const size_t safe_idx = std::min(idx, defaults->values.size() - 1);
+					val = defaults->values[safe_idx];
+				}
+			}
+		}
 		ret = double_to_string(val);
 		}
 		break;
@@ -1009,10 +1028,29 @@ boost::any ConfigOptionsGroup::get_config_value(const DynamicPrintConfig& config
 			ret = from_u8(config.opt_string(opt_key, static_cast<unsigned int>(idx)));
 		break;
 	case coBool:
-		ret = config.opt_bool(opt_key);
+		if (config.has(opt_key)) {
+			ret = config.opt_bool(opt_key);
+		} else if (opt->default_value) {
+			const auto *defaults = dynamic_cast<const ConfigOptionBool*>(opt->default_value.get());
+			ret = defaults != nullptr ? defaults->value : false;
+		} else {
+			ret = false;
+		}
 		break;
 	case coBools:
-		ret = config.opt_bool(opt_key, idx);
+		if (config.has(opt_key)) {
+			ret = config.opt_bool(opt_key, idx);
+		} else if (opt->default_value) {
+			const auto *defaults = dynamic_cast<const ConfigOptionBools*>(opt->default_value.get());
+			if (defaults != nullptr && !defaults->values.empty()) {
+				const size_t safe_idx = std::min(idx, defaults->values.size() - 1);
+				ret = defaults->values[safe_idx];
+			} else {
+				ret = false;
+			}
+		} else {
+			ret = false;
+		}
 		break;
 	case coInt:
 		ret = config.opt_int(opt_key);
@@ -1139,10 +1177,27 @@ boost::any ConfigOptionsGroup::get_config_value2(const DynamicPrintConfig& confi
             ret = config.opt_string(opt_key, static_cast<unsigned int>(idx));
         break;
     case coBool:
-        ret = config.opt_bool(opt_key);
+        if (config.has(opt_key))
+            ret = config.opt_bool(opt_key);
+        else if (opt->default_value) {
+            const auto *defaults = dynamic_cast<const ConfigOptionBool*>(opt->default_value.get());
+            ret = defaults != nullptr ? defaults->value : false;
+        } else
+            ret = false;
         break;
     case coBools:
-        ret = static_cast<unsigned char>(config.opt_bool(opt_key, idx));
+        if (config.has(opt_key))
+            ret = static_cast<unsigned char>(config.opt_bool(opt_key, idx));
+        else if (opt->default_value) {
+            const auto *defaults = dynamic_cast<const ConfigOptionBools*>(opt->default_value.get());
+            if (defaults != nullptr && !defaults->values.empty()) {
+                const size_t safe_idx = std::min(idx, defaults->values.size() - 1);
+                ret = static_cast<unsigned char>(defaults->values[safe_idx]);
+            } else {
+                ret = static_cast<unsigned char>(false);
+            }
+        } else
+            ret = static_cast<unsigned char>(false);
         break;
     case coInt:
         ret = config.opt_int(opt_key);

@@ -3231,6 +3231,10 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
 #else
     size_t num_filaments = this->filament_presets.size();
 #endif
+    const bool deleting_filament = (to_delete_filament_id != size_t(-1));
+    const size_t old_num_filaments = deleting_filament ? (num_filaments + 1) : num_filaments;
+    const std::vector<MixedFilament> old_mixed = this->mixed_filaments.mixed_filaments();
+    m_last_filament_id_remap.clear();
 
     // Now verify if flush_volumes_matrix has proper size (it is used to deduce number of extruders in wipe tower generator):
     std::vector<double> old_matrix = this->project_config.option<ConfigOptionFloats>("flush_volumes_matrix")->values;
@@ -3259,6 +3263,12 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
 		this->project_config.option<ConfigOptionFloats>("flush_volumes_matrix")->values = new_matrix;
     }
 
+    // Keep mixed (virtual) combinations in sync with physical filament deletion.
+    // Mixed entries containing the deleted physical filament are removed, while
+    // remaining component IDs are shifted.
+    if (deleting_filament)
+        this->mixed_filaments.remove_physical_filament(unsigned(to_delete_filament_id + 1));
+
     // Keep project colours aligned to physical filaments, then regenerate mixed
     // (virtual) entries from the physical set only.
     {
@@ -3266,6 +3276,54 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
         if (color_opt) {
             color_opt->values.resize(num_filaments, "#26A69A");
             this->mixed_filaments.auto_generate(color_opt->values);
+        }
+    }
+
+    // Build old->new filament ID remap for painted facet data normalization.
+    if (deleting_filament) {
+        const unsigned int deleted_1based = unsigned(to_delete_filament_id + 1);
+
+        size_t old_enabled_mixed = 0;
+        for (const auto &mf : old_mixed)
+            if (mf.enabled)
+                ++old_enabled_mixed;
+
+        const size_t old_total_filaments = old_num_filaments + old_enabled_mixed;
+        m_last_filament_id_remap.assign(old_total_filaments + 1, 0);
+
+        for (unsigned int old_id = 1; old_id <= unsigned(old_num_filaments); ++old_id) {
+            if (old_id == deleted_1based)
+                m_last_filament_id_remap[old_id] = 0;
+            else
+                m_last_filament_id_remap[old_id] = old_id > deleted_1based ? old_id - 1 : old_id;
+        }
+
+        std::map<std::pair<unsigned int, unsigned int>, unsigned int> new_pair_to_id;
+        unsigned int next_virtual_id = unsigned(num_filaments + 1);
+        for (const auto &mf : this->mixed_filaments.mixed_filaments()) {
+            if (!mf.enabled)
+                continue;
+            new_pair_to_id[{mf.component_a, mf.component_b}] = next_virtual_id++;
+        }
+
+        unsigned int old_virtual_id = unsigned(old_num_filaments + 1);
+        for (const auto &mf : old_mixed) {
+            if (!mf.enabled)
+                continue;
+
+            unsigned int a = mf.component_a;
+            unsigned int b = mf.component_b;
+            if (a == deleted_1based || b == deleted_1based) {
+                m_last_filament_id_remap[old_virtual_id] = 0;
+            } else {
+                if (a > deleted_1based)
+                    --a;
+                if (b > deleted_1based)
+                    --b;
+                auto it = new_pair_to_id.find({a, b});
+                m_last_filament_id_remap[old_virtual_id] = (it == new_pair_to_id.end()) ? 0 : it->second;
+            }
+            ++old_virtual_id;
         }
     }
 }
