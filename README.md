@@ -58,6 +58,25 @@ Full Spectrum includes support for **virtual mixed-color filaments** designed fo
 4. Mixed filaments can be assigned to objects just like physical filaments
 5. During slicing, the mixed filament resolves to alternating layers of its components
 
+### Dithering Settings
+Full Spectrum includes advanced dithering controls to fine-tune the layer alternation behavior for mixed filaments. These settings are found in **Others → Dithering** in the print settings:
+
+#### Dithering Cadence Height A & B
+- **What it does**: Controls the height (in mm) of each alternating segment for the two component filaments
+- **Cadence Height A**: The height of layers using the first filament in the mix
+- **Cadence Height B**: The height of layers using the second filament in the mix
+- **Example**: Setting A=0.3mm and B=0.15mm creates a 2:1 ratio pattern where you get twice as much of filament A as filament B
+- **Use case**: Fine-tune color intensity by adjusting the relative amounts of each component color
+
+#### Dithering Step Size
+- **What it does**: Defines the Z-height increment (in mm) for each dithering step
+- **Purpose**: Controls the resolution of the layer alternation pattern
+- **Default**: Typically matches your layer height setting
+- **Advanced usage**: Set smaller values for smoother color transitions, or larger values for more distinct color banding
+- **Compatibility**: Must be compatible with your printer's Z-axis resolution
+
+These settings give you precise control over how your mixed colors appear in the final print, allowing you to achieve different visual effects from the same filament combinations.
+
 ### Technical Details
 - Virtual filament IDs start after physical filaments (e.g., with 4 physical filaments, first mixed ID is 5)
 - Layer-based alternation is computed during tool ordering
