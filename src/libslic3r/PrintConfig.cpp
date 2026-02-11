@@ -4213,6 +4213,14 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.0));
 
+    def = this->add("dithering_local_z_mode", coBool);
+    def->label = L("Local Z dithering mode");
+    def->category = L("Others");
+    def->tooltip = L("Experimental local mixed-zone Z mode: split only mixed-painted zones into local Z passes while keeping base regions on the nominal layer cadence when possible.\n\n"
+                     "Current implementation focuses on perimeter validation first and may not yet cover all toolpath types.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("dithering_step_painted_zones_only", coBool);
     def->label = L("Use step size in painted zones only");
     def->category = L("Others");

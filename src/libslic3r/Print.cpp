@@ -246,6 +246,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "resolution"
             || opt_key == "precise_z_height"
             || opt_key == "dithering_z_step_size"
+            || opt_key == "dithering_local_z_mode"
             || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mixed_filament_gradient_mode"
             || opt_key == "mixed_filament_height_lower_bound"

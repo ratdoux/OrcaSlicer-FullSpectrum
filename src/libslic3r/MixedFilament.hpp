@@ -108,7 +108,8 @@ public:
                          size_t       num_physical,
                          int          layer_index,
                          float        layer_print_z = 0.f,
-                         float        layer_height  = 0.f) const;
+                         float        layer_height  = 0.f,
+                         bool         force_height_weighted = false) const;
 
     // Compute a display colour by blending in RYB pigment space.
     static std::string blend_color(const std::string &color_a,

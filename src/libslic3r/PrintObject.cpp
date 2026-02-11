@@ -802,6 +802,7 @@ FillLightning::GeneratorPtr PrintObject::prepare_lightning_infill_data()
 
 void PrintObject::clear_layers()
 {
+    this->clear_local_z_plan();
     if (!m_shared_object) {
         for (Layer *l : m_layers)
             delete l;
@@ -947,6 +948,7 @@ bool PrintObject::invalidate_state_by_config_options(
         } else if (
                opt_key == "layer_height"
             || opt_key == "dithering_z_step_size"
+            || opt_key == "dithering_local_z_mode"
             || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mmu_segmented_region_max_width"
             || opt_key == "mmu_segmented_region_interlocking_depth"
@@ -1250,6 +1252,7 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
 		invalidated |= this->invalidate_steps({ posPerimeters, posPrepareInfill, posInfill, posIroning, posSupportMaterial, posSimplifyPath, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
         m_slicing_params.valid = false;
+        this->clear_local_z_plan();
     } else if (step == posSupportMaterial) {
         invalidated |= this->invalidate_steps({ posSimplifySupportPath });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
@@ -1271,6 +1274,7 @@ bool PrintObject::invalidate_all_steps()
     bool result = Inherited::invalidate_all_steps() | m_print->invalidate_all_steps();
 	// Then reset some of the depending values.
 	m_slicing_params.valid = false;
+    this->clear_local_z_plan();
 	return result;
 }
 
@@ -3866,13 +3870,20 @@ bool PrintObject::update_layer_height_profile(const ModelObject          &model_
         }
 
         coordf_t                  dithering_step = coordf_t(print_object->print()->config().dithering_z_step_size.value);
+        bool                      local_z_mode = print_object->print()->config().dithering_local_z_mode.value;
         bool                      painted_zones_only = print_object->print()->config().dithering_step_painted_zones_only.value;
         if (full_cfg.has("dithering_z_step_size"))
             dithering_step = coordf_t(full_cfg.opt_float("dithering_z_step_size"));
+        if (full_cfg.has("dithering_local_z_mode")) {
+            if (const ConfigOptionBool *opt = full_cfg.option<ConfigOptionBool>("dithering_local_z_mode"))
+                local_z_mode = opt->value;
+            else if (const ConfigOptionInt *opt = full_cfg.option<ConfigOptionInt>("dithering_local_z_mode"))
+                local_z_mode = (opt->value != 0);
+        }
         if (full_cfg.has("dithering_step_painted_zones_only"))
             painted_zones_only = full_cfg.opt_bool("dithering_step_painted_zones_only");
 
-        if (!height_weighted_mode && dithering_step > EPSILON) {
+        if (!height_weighted_mode && !local_z_mode && dithering_step > EPSILON) {
             const coordf_t object_height = slicing_parameters.object_print_z_uncompensated_height();
             std::vector<t_layer_height_range> mixed_ranges;
             if (painted_zones_only)

@@ -1785,8 +1785,13 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
         (opt_key == "mixed_filament_gradient_mode" ||
          opt_key == "mixed_filament_height_lower_bound" ||
          opt_key == "mixed_filament_height_upper_bound" ||
+         opt_key == "mixed_color_layer_height_a" ||
+         opt_key == "mixed_color_layer_height_b" ||
          opt_key == "mixed_filament_cycle_layers" ||
          opt_key == "mixed_filament_advanced_dithering" ||
+         opt_key == "dithering_z_step_size" ||
+         opt_key == "dithering_local_z_mode" ||
+         opt_key == "dithering_step_painted_zones_only" ||
          opt_key == "mixed_filament_definitions")) {
         DynamicPrintConfig &project_cfg = wxGetApp().preset_bundle->project_config;
         if (const ConfigOption *opt = m_config->option(opt_key))
@@ -2514,6 +2519,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("mixed_filament_cycle_layers");
         optgroup->append_single_option_line("mixed_filament_advanced_dithering");
         optgroup->append_single_option_line("dithering_z_step_size");
+        optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");
 
         optgroup = page->new_optgroup(L("Fuzzy Skin"), L"fuzzy_skin");

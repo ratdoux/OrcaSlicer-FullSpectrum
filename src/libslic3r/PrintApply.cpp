@@ -1094,6 +1094,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 	new_full_config.option("printer_settings_id",          true);
     // Ensure newly introduced dithering keys are present so in-session updates are detected.
     new_full_config.option("dithering_z_step_size", true);
+    new_full_config.option("dithering_local_z_mode", true);
     new_full_config.option("dithering_step_painted_zones_only", true);
     new_full_config.option("mixed_filament_gradient_mode", true);
     new_full_config.option("mixed_filament_height_lower_bound", true);
@@ -1102,6 +1103,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     new_full_config.option("mixed_filament_advanced_dithering", true);
     new_full_config.option("mixed_filament_definitions", true);
     m_config.option("dithering_z_step_size", true);
+    m_config.option("dithering_local_z_mode", true);
     m_config.option("dithering_step_painted_zones_only", true);
     m_config.option("mixed_filament_gradient_mode", true);
     m_config.option("mixed_filament_height_lower_bound", true);
@@ -1110,6 +1112,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_config.option("mixed_filament_advanced_dithering", true);
     m_config.option("mixed_filament_definitions", true);
     m_default_object_config.option("dithering_z_step_size", true);
+    m_default_object_config.option("dithering_local_z_mode", true);
     m_default_object_config.option("dithering_step_painted_zones_only", true);
     m_default_object_config.option("mixed_filament_gradient_mode", true);
     m_default_object_config.option("mixed_filament_height_lower_bound", true);

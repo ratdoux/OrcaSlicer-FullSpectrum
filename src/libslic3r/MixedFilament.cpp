@@ -486,7 +486,8 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
                                            size_t       num_physical,
                                            int          layer_index,
                                            float        layer_print_z,
-                                           float        layer_height) const
+                                           float        layer_height,
+                                           bool         force_height_weighted) const
 {
     if (!is_mixed(filament_id, num_physical))
         return filament_id;
@@ -497,9 +498,10 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
 
     const MixedFilament &mf = m_mixed[idx];
 
-    // Height-weighted cadence for custom rows uses Z-height windows rather
-    // than integer layer counts.
-    if (m_gradient_mode == 1 && mf.custom) {
+    // Height-weighted cadence can be forced by the local-Z planner. The
+    // regular gradient height mode keeps historical behavior (custom rows).
+    const bool use_height_weighted = force_height_weighted || (m_gradient_mode == 1 && mf.custom);
+    if (use_height_weighted) {
         float h_a = 0.f;
         float h_b = 0.f;
         compute_gradient_heights(mf, m_height_lower_bound, m_height_upper_bound, h_a, h_b);
