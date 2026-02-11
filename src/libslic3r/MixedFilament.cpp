@@ -1,4 +1,5 @@
 #include "MixedFilament.hpp"
+#include "filament_mixer.h"
 
 #include <algorithm>
 #include <boost/log/trivial.hpp>
@@ -980,6 +981,55 @@ const MixedFilament *MixedFilamentManager::mixed_filament_from_id(unsigned int f
     return idx >= 0 ? &m_mixed[size_t(idx)] : nullptr;
 }
 
+// Blend N colours using weighted pairwise FilamentMixer blending.
+std::string MixedFilamentManager::blend_color_multi(
+    const std::vector<std::pair<std::string, int>> &color_percents)
+{
+    if (color_percents.empty())
+        return "#000000";
+    if (color_percents.size() == 1)
+        return color_percents.front().first;
+
+    struct WeightedColor {
+        RGB color;
+        int pct;
+    };
+    std::vector<WeightedColor> colors;
+    colors.reserve(color_percents.size());
+
+    int total_pct = 0;
+    for (const auto &[hex, pct] : color_percents) {
+        if (pct <= 0)
+            continue;
+        colors.push_back({parse_hex_color(hex), pct});
+        total_pct += pct;
+    }
+    if (colors.empty() || total_pct <= 0)
+        return "#000000";
+
+    unsigned char r = static_cast<unsigned char>(colors.front().color.r);
+    unsigned char g = static_cast<unsigned char>(colors.front().color.g);
+    unsigned char b = static_cast<unsigned char>(colors.front().color.b);
+    int accumulated_pct = colors.front().pct;
+
+    for (size_t i = 1; i < colors.size(); ++i) {
+        const auto &next = colors[i];
+        const int new_total = accumulated_pct + next.pct;
+        if (new_total <= 0)
+            continue;
+        const float t = static_cast<float>(next.pct) / static_cast<float>(new_total);
+        filament_mixer_lerp(
+            r, g, b,
+            static_cast<unsigned char>(next.color.r),
+            static_cast<unsigned char>(next.color.g),
+            static_cast<unsigned char>(next.color.b),
+            t, &r, &g, &b);
+        accumulated_pct = new_total;
+    }
+
+    return rgb_to_hex({int(r), int(g), int(b)});
+}
+
 std::string MixedFilamentManager::blend_color(const std::string &color_a,
                                               const std::string &color_b,
                                               int ratio_a, int ratio_b)
@@ -1035,17 +1085,15 @@ void MixedFilamentManager::refresh_display_colors(const std::vector<std::string>
                 if (it != gradient_ids.end())
                     ++counts[size_t(it - gradient_ids.begin())];
             }
-
-            std::string blended = filament_colours[gradient_ids.front() - 1];
-            int accum = std::max(1, counts.front());
-            for (size_t i = 1; i < gradient_ids.size(); ++i) {
+            std::vector<std::pair<std::string, int>> color_percents;
+            color_percents.reserve(gradient_ids.size());
+            for (size_t i = 0; i < gradient_ids.size(); ++i) {
                 const int wi = std::max(0, counts[i]);
                 if (wi == 0)
                     continue;
-                blended = blend_color(blended, filament_colours[gradient_ids[i] - 1], accum, wi);
-                accum += wi;
+                color_percents.emplace_back(filament_colours[gradient_ids[i] - 1], wi);
             }
-            mf.display_color = blended;
+            mf.display_color = blend_color_multi(color_percents);
             continue;
         }
         if (mf.component_a == 0 || mf.component_b == 0 ||
@@ -1081,4 +1129,3 @@ std::vector<std::string> MixedFilamentManager::display_colors() const
 }
 
 } // namespace Slic3r
-

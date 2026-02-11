@@ -5,12 +5,13 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 
 namespace Slic3r {
 
 // Represents a virtual "mixed" filament created from physical filaments
 // (layer cadence and/or same-layer interleaved stripe distribution). The display
-// colour uses an RYB pigment-style blend so
+// colour uses a FilamentMixer-based multi-color blend (and RYB pair blend) so
 // pair previews better match expected print mixing (for example Blue+Yellow
 // -> Green, Red+Yellow -> Orange, Red+Blue -> Purple).
 struct MixedFilament
@@ -151,6 +152,11 @@ public:
     // Map virtual filament ID (1-based, after physical IDs) to index into
     // m_mixed. Virtual IDs enumerate enabled mixed rows only.
     int mixed_index_from_filament_id(unsigned int filament_id, size_t num_physical) const;
+
+    // Blend N colours using weighted FilamentMixer blending.
+    // color_percents: vector of (hex_color, percent) where percents sum to 100.
+    static std::string blend_color_multi(
+        const std::vector<std::pair<std::string, int>> &color_percents);
 
     const MixedFilament *mixed_filament_from_id(unsigned int filament_id, size_t num_physical) const;
 
