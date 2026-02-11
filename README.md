@@ -27,7 +27,7 @@
 # Download
 
 ### Stable Release
-📥 **[Download the Latest Stable Release](https://github.com/Snapmaker/OrcaSlicer/releases/latest)**  
+📥 **[Download the Latest Stable Release](https://github.com/ratdoux/OrcaSlicer-FullSpectrum/releases)**  
 Visit our GitHub Releases page for the latest stable version of Full Spectrum, recommended for most users.
 
 # Features
