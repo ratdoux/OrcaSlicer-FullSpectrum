@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <boost/log/trivial.hpp>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
@@ -261,23 +262,58 @@ static bool parse_row_definition(const std::string &row,
                                  unsigned int      &b,
                                  bool              &enabled,
                                  bool              &custom,
-                                 int               &mix_b_percent)
+                                 int               &mix_b_percent,
+                                 std::string       &manual_pattern)
 {
-    std::vector<int> values;
-    std::stringstream ss(row);
-    std::string token;
-    while (std::getline(ss, token, ',')) {
-        if (token.empty())
+    auto trim_copy = [](const std::string &s) {
+        size_t lo = 0;
+        size_t hi = s.size();
+        while (lo < hi && std::isspace(static_cast<unsigned char>(s[lo])))
+            ++lo;
+        while (hi > lo && std::isspace(static_cast<unsigned char>(s[hi - 1])))
+            --hi;
+        return s.substr(lo, hi - lo);
+    };
+
+    auto parse_int_token = [&trim_copy](const std::string &tok, int &out) {
+        const std::string t = trim_copy(tok);
+        if (t.empty())
             return false;
         try {
-            values.push_back(std::stoi(token));
+            size_t consumed = 0;
+            int v = std::stoi(t, &consumed);
+            if (consumed != t.size())
+                return false;
+            out = v;
+            return true;
         } catch (...) {
             return false;
         }
-    }
+    };
 
-    if (values.size() != 4 && values.size() != 5)
+    std::vector<std::string> tokens;
+    std::stringstream ss(row);
+    std::string token;
+    while (std::getline(ss, token, ','))
+        tokens.emplace_back(trim_copy(token));
+
+    if (tokens.size() < 4 || tokens.size() > 6)
         return false;
+
+    int values[5] = { 0, 0, 1, 1, 50 };
+    if (tokens.size() == 4) {
+        // Legacy: a,b,enabled,mix
+        if (!parse_int_token(tokens[0], values[0]) ||
+            !parse_int_token(tokens[1], values[1]) ||
+            !parse_int_token(tokens[2], values[2]) ||
+            !parse_int_token(tokens[3], values[4]))
+            return false;
+    } else {
+        // Current: a,b,enabled,custom,mix[,pattern]
+        for (size_t i = 0; i < 5; ++i)
+            if (!parse_int_token(tokens[i], values[i]))
+                return false;
+    }
 
     if (values[0] <= 0 || values[1] <= 0)
         return false;
@@ -285,9 +321,39 @@ static bool parse_row_definition(const std::string &row,
     a = unsigned(values[0]);
     b = unsigned(values[1]);
     enabled = (values[2] != 0);
-    custom = (values.size() == 5) ? (values[3] != 0) : true;
-    mix_b_percent = clamp_int(values.size() == 5 ? values[4] : values[3], 0, 100);
+    custom = (tokens.size() == 4) ? true : (values[3] != 0);
+    mix_b_percent = clamp_int(values[4], 0, 100);
+    manual_pattern = (tokens.size() == 6) ? tokens[5] : std::string();
     return true;
+}
+
+static bool is_pattern_separator(char c)
+{
+    return std::isspace(static_cast<unsigned char>(c)) || c == '/' || c == '-' || c == '_' || c == '|' || c == ':' || c == ';';
+}
+
+static bool decode_pattern_step(char c, char &out)
+{
+    switch (std::tolower(static_cast<unsigned char>(c))) {
+    case '1':
+    case 'a':
+        out = '1';
+        return true;
+    case '2':
+    case 'b':
+        out = '2';
+        return true;
+    default:
+        return false;
+    }
+}
+
+static int mix_percent_from_normalized_pattern(const std::string &pattern)
+{
+    if (pattern.empty())
+        return 50;
+    const int count_b = int(std::count(pattern.begin(), pattern.end(), '2'));
+    return clamp_int(int(std::lround(100.0 * double(count_b) / double(pattern.size()))), 0, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +454,7 @@ void MixedFilamentManager::add_custom_filament(unsigned int component_a,
     mf.mix_b_percent = clamp_int(mix_b_percent, 0, 100);
     mf.ratio_a = 1;
     mf.ratio_b = 1;
+    mf.manual_pattern.clear();
     mf.enabled = true;
     mf.custom = true;
     m_mixed.push_back(std::move(mf));
@@ -397,6 +464,24 @@ void MixedFilamentManager::add_custom_filament(unsigned int component_a,
 void MixedFilamentManager::clear_custom_entries()
 {
     m_mixed.erase(std::remove_if(m_mixed.begin(), m_mixed.end(), [](const MixedFilament &mf) { return mf.custom; }), m_mixed.end());
+}
+
+std::string MixedFilamentManager::normalize_manual_pattern(const std::string &pattern)
+{
+    std::string normalized;
+    normalized.reserve(pattern.size());
+    for (char c : pattern) {
+        char step = '\0';
+        if (decode_pattern_step(c, step)) {
+            normalized.push_back(step);
+            continue;
+        }
+        if (is_pattern_separator(c))
+            continue;
+        // Unknown token => invalid pattern.
+        return std::string();
+    }
+    return normalized;
 }
 
 void MixedFilamentManager::apply_gradient_settings(int   gradient_mode,
@@ -434,6 +519,9 @@ std::string MixedFilamentManager::serialize_custom_entries() const
            << (mf.enabled ? 1 : 0) << ','
            << (mf.custom ? 1 : 0) << ','
            << clamp_int(mf.mix_b_percent, 0, 100);
+        const std::string normalized_pattern = normalize_manual_pattern(mf.manual_pattern);
+        if (!normalized_pattern.empty())
+            ss << ',' << normalized_pattern;
     }
     return ss.str();
 }
@@ -464,7 +552,8 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
         bool enabled = true;
         bool custom = true;
         int mix = 50;
-        if (!parse_row_definition(row, a, b, enabled, custom, mix)) {
+        std::string manual_pattern;
+        if (!parse_row_definition(row, a, b, enabled, custom, mix, manual_pattern)) {
             ++skipped_rows;
             BOOST_LOG_TRIVIAL(warning) << "MixedFilamentManager::load_custom_entries invalid row format: " << row;
             continue;
@@ -485,7 +574,8 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
             });
             if (it_auto != m_mixed.end()) {
                 it_auto->enabled = enabled;
-                it_auto->mix_b_percent = mix;
+                it_auto->manual_pattern = normalize_manual_pattern(manual_pattern);
+                it_auto->mix_b_percent = it_auto->manual_pattern.empty() ? mix : mix_percent_from_normalized_pattern(it_auto->manual_pattern);
                 ++updated_auto;
                 continue;
             }
@@ -497,6 +587,9 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
         mf.mix_b_percent = mix;
         mf.ratio_a = 1;
         mf.ratio_b = 1;
+        mf.manual_pattern = normalize_manual_pattern(manual_pattern);
+        if (!mf.manual_pattern.empty())
+            mf.mix_b_percent = mix_percent_from_normalized_pattern(mf.manual_pattern);
         mf.enabled = enabled;
         mf.custom = custom;
         m_mixed.push_back(std::move(mf));
@@ -527,6 +620,13 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
         return 1; // fallback to first extruder
 
     const MixedFilament &mf = m_mixed[idx];
+
+    // Manual pattern takes precedence when provided. Pattern uses repeating
+    // steps: '1' => component_a, '2' => component_b.
+    if (!mf.manual_pattern.empty()) {
+        const int pos = safe_mod(layer_index, int(mf.manual_pattern.size()));
+        return mf.manual_pattern[size_t(pos)] == '2' ? mf.component_b : mf.component_a;
+    }
 
     // Height-weighted cadence can be forced by the local-Z planner. The
     // regular gradient height mode keeps historical behavior (custom rows).

@@ -26,6 +26,11 @@ struct MixedFilament
     // Blend percentage of component B in [0..100].
     int mix_b_percent = 50;
 
+    // Optional manual layer pattern for this mixed filament, encoded as a
+    // string of '1' and '2'. '1' means component_a, '2' means component_b.
+    // Example: "11112222" => AAAABBBB repeating.
+    std::string manual_pattern;
+
     // Whether this mixed filament is enabled (available for assignment).
     bool enabled = true;
 
@@ -42,6 +47,7 @@ struct MixedFilament
                ratio_a     == rhs.ratio_a     &&
                ratio_b     == rhs.ratio_b     &&
                mix_b_percent == rhs.mix_b_percent &&
+               manual_pattern == rhs.manual_pattern &&
                enabled      == rhs.enabled &&
                custom       == rhs.custom;
     }
@@ -92,6 +98,10 @@ public:
     // Persist only custom rows.
     std::string serialize_custom_entries() const;
     void load_custom_entries(const std::string &serialized, const std::vector<std::string> &filament_colours);
+
+    // Normalize a manual mixed-pattern string into compact '1'/'2' form.
+    // Accepts separators and A/B aliases. Returns empty string if invalid.
+    static std::string normalize_manual_pattern(const std::string &pattern);
 
     // ---- Queries --------------------------------------------------------
 
