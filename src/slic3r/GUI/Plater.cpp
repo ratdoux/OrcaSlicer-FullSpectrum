@@ -2143,8 +2143,14 @@ void Sidebar::on_filaments_change(size_t num_filaments)
 {
     auto& choices = combos_filament();
 
-    if (num_filaments == choices.size())
+    if (num_filaments == choices.size()) {
+        // Project load may keep the same physical filament count while mixed
+        // definitions changed. Refresh mixed panel even without count changes.
+        update_ui_from_settings();
+        update_dynamic_filament_list();
+        update_mixed_filament_panel();
         return;
+    }
 
     if (choices.size() == 1 || num_filaments == 1)
         choices[0]->GetDropDown().Invalidate();
@@ -2341,45 +2347,57 @@ void Sidebar::update_mixed_filament_panel()
     physical_colors.resize(num_physical, "#26A69A");
 
     auto get_mixed_int = [preset_bundle, print_cfg](const std::string &key, int fallback) {
+        if (preset_bundle->project_config.has(key))
+            return preset_bundle->project_config.opt_int(key);
         if (print_cfg && print_cfg->has(key))
             return print_cfg->opt_int(key);
-        return preset_bundle->project_config.has(key) ? preset_bundle->project_config.opt_int(key) : fallback;
+        return fallback;
     };
     auto get_mixed_bool = [preset_bundle, print_cfg](const std::string &key, bool fallback) {
+        if (const ConfigOptionBool *opt = preset_bundle->project_config.option<ConfigOptionBool>(key))
+            return opt->value;
+        if (const ConfigOptionInt *opt = preset_bundle->project_config.option<ConfigOptionInt>(key))
+            return opt->value != 0;
         if (print_cfg) {
             if (const ConfigOptionBool *opt = print_cfg->option<ConfigOptionBool>(key))
                 return opt->value;
             if (const ConfigOptionInt *opt = print_cfg->option<ConfigOptionInt>(key))
                 return opt->value != 0;
         }
-        if (const ConfigOptionBool *opt = preset_bundle->project_config.option<ConfigOptionBool>(key))
-            return opt->value;
-        if (const ConfigOptionInt *opt = preset_bundle->project_config.option<ConfigOptionInt>(key))
-            return opt->value != 0;
         return fallback;
     };
     auto get_mixed_mode = [preset_bundle, print_cfg](bool fallback) {
+        if (const ConfigOptionBool *opt = preset_bundle->project_config.option<ConfigOptionBool>("mixed_filament_gradient_mode"))
+            return opt->value;
+        if (const ConfigOptionInt *opt = preset_bundle->project_config.option<ConfigOptionInt>("mixed_filament_gradient_mode"))
+            return opt->value != 0;
         if (print_cfg) {
             if (const ConfigOptionBool *opt = print_cfg->option<ConfigOptionBool>("mixed_filament_gradient_mode"))
                 return opt->value;
             if (const ConfigOptionInt *opt = print_cfg->option<ConfigOptionInt>("mixed_filament_gradient_mode"))
                 return opt->value != 0;
         }
-        if (const ConfigOptionBool *opt = preset_bundle->project_config.option<ConfigOptionBool>("mixed_filament_gradient_mode"))
-            return opt->value;
-        if (const ConfigOptionInt *opt = preset_bundle->project_config.option<ConfigOptionInt>("mixed_filament_gradient_mode"))
-            return opt->value != 0;
         return fallback;
     };
     auto get_mixed_float = [preset_bundle, print_cfg](const std::string &key, float fallback) {
+        if (preset_bundle->project_config.has(key))
+            return float(preset_bundle->project_config.opt_float(key));
         if (print_cfg && print_cfg->has(key))
             return float(print_cfg->opt_float(key));
-        return preset_bundle->project_config.has(key) ? float(preset_bundle->project_config.opt_float(key)) : fallback;
+        return fallback;
     };
     auto get_mixed_string = [preset_bundle, print_cfg](const std::string &key, const std::string &fallback = std::string()) {
-        if (print_cfg && print_cfg->has(key))
-            return print_cfg->opt_string(key);
-        return preset_bundle->project_config.has(key) ? preset_bundle->project_config.opt_string(key) : fallback;
+        std::string project_value;
+        if (preset_bundle->project_config.has(key))
+            project_value = preset_bundle->project_config.opt_string(key);
+        if (!project_value.empty())
+            return project_value;
+        if (print_cfg && print_cfg->has(key)) {
+            const std::string print_value = print_cfg->opt_string(key);
+            if (!print_value.empty())
+                return print_value;
+        }
+        return project_value.empty() ? fallback : project_value;
     };
     auto set_mixed_int = [preset_bundle, print_cfg](const std::string &key, int value) {
         if (print_cfg) {
@@ -2456,11 +2474,16 @@ void Sidebar::update_mixed_filament_panel()
     mixed_mgr.load_custom_entries(mixed_definitions, physical_colors);
     mixed_mgr.apply_gradient_settings(gradient_mode, lower_bound, upper_bound, cycle_layers, advanced_dithering);
 
-    set_mixed_mode(height_weighted_mode);
-    set_mixed_float("mixed_filament_height_lower_bound", lower_bound);
-    set_mixed_float("mixed_filament_height_upper_bound", upper_bound);
-    set_mixed_int("mixed_filament_cycle_layers", cycle_layers);
-    set_mixed_string("mixed_filament_definitions", mixed_mgr.serialize_custom_entries());
+    // During project load, sidebar may refresh before physical filament combos
+    // finish syncing. Avoid overwriting persisted mixed definitions while the
+    // physical filament set is incomplete.
+    if (num_physical >= 2) {
+        set_mixed_mode(height_weighted_mode);
+        set_mixed_float("mixed_filament_height_lower_bound", lower_bound);
+        set_mixed_float("mixed_filament_height_upper_bound", upper_bound);
+        set_mixed_int("mixed_filament_cycle_layers", cycle_layers);
+        set_mixed_string("mixed_filament_definitions", mixed_mgr.serialize_custom_entries());
+    }
 
     auto &mixed = mixed_mgr.mixed_filaments();
 

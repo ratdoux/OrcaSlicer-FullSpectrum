@@ -111,7 +111,7 @@ static inline bool opts_equal(const DynamicConfig &config_old, const DynamicConf
 	const ConfigOption *opt_old = config_old.option(opt_key);
 	const ConfigOption *opt_new = config_new.option(opt_key);
 	assert(opt_new != nullptr);
-    return opt_old != nullptr && *opt_new == *opt_old;
+    return opt_old != nullptr && opt_new->type() == opt_old->type() && *opt_new == *opt_old;
 }
 
 std::vector<std::string> PlaceholderParser::config_diff(const DynamicPrintConfig &rhs)

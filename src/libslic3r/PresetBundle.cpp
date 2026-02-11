@@ -41,6 +41,18 @@ static std::vector<std::string> s_project_options {
     "wipe_tower_rotation_angle",
     "curr_bed_type",
     "flush_multiplier",
+    // Mixed filament / local-Z settings
+    "mixed_filament_gradient_mode",
+    "mixed_filament_height_lower_bound",
+    "mixed_filament_height_upper_bound",
+    "mixed_filament_cycle_layers",
+    "mixed_filament_advanced_dithering",
+    "mixed_filament_definitions",
+    "mixed_color_layer_height_a",
+    "mixed_color_layer_height_b",
+    "dithering_z_step_size",
+    "dithering_local_z_mode",
+    "dithering_step_painted_zones_only",
 };
 
 // SM_FEATURE: add Snapmaker machine as default
@@ -3276,41 +3288,53 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
         if (color_opt) {
             DynamicPrintConfig &print_cfg = this->prints.get_edited_preset().config;
             auto get_mixed_int = [this, &print_cfg](const std::string &key, int fallback) {
+                if (this->project_config.has(key))
+                    return this->project_config.opt_int(key);
                 if (print_cfg.has(key))
                     return print_cfg.opt_int(key);
-                return this->project_config.has(key) ? this->project_config.opt_int(key) : fallback;
+                return fallback;
             };
             auto get_mixed_bool = [this, &print_cfg](const std::string &key, bool fallback) {
-                if (const ConfigOptionBool *opt = print_cfg.option<ConfigOptionBool>(key))
-                    return opt->value;
-                if (const ConfigOptionInt *opt = print_cfg.option<ConfigOptionInt>(key))
-                    return opt->value != 0;
                 if (const ConfigOptionBool *opt = this->project_config.option<ConfigOptionBool>(key))
                     return opt->value;
                 if (const ConfigOptionInt *opt = this->project_config.option<ConfigOptionInt>(key))
                     return opt->value != 0;
+                if (const ConfigOptionBool *opt = print_cfg.option<ConfigOptionBool>(key))
+                    return opt->value;
+                if (const ConfigOptionInt *opt = print_cfg.option<ConfigOptionInt>(key))
+                    return opt->value != 0;
                 return fallback;
             };
             auto get_mixed_mode = [this, &print_cfg](bool fallback) {
-                if (const ConfigOptionBool *opt = print_cfg.option<ConfigOptionBool>("mixed_filament_gradient_mode"))
-                    return opt->value;
-                if (const ConfigOptionInt *opt = print_cfg.option<ConfigOptionInt>("mixed_filament_gradient_mode"))
-                    return opt->value != 0;
                 if (const ConfigOptionBool *opt = this->project_config.option<ConfigOptionBool>("mixed_filament_gradient_mode"))
                     return opt->value;
                 if (const ConfigOptionInt *opt = this->project_config.option<ConfigOptionInt>("mixed_filament_gradient_mode"))
                     return opt->value != 0;
+                if (const ConfigOptionBool *opt = print_cfg.option<ConfigOptionBool>("mixed_filament_gradient_mode"))
+                    return opt->value;
+                if (const ConfigOptionInt *opt = print_cfg.option<ConfigOptionInt>("mixed_filament_gradient_mode"))
+                    return opt->value != 0;
                 return fallback;
             };
             auto get_mixed_float = [this, &print_cfg](const std::string &key, float fallback) {
+                if (this->project_config.has(key))
+                    return float(this->project_config.opt_float(key));
                 if (print_cfg.has(key))
                     return float(print_cfg.opt_float(key));
-                return this->project_config.has(key) ? float(this->project_config.opt_float(key)) : fallback;
+                return fallback;
             };
             auto get_mixed_string = [this, &print_cfg](const std::string &key) {
-                if (print_cfg.has(key))
-                    return print_cfg.opt_string(key);
-                return this->project_config.has(key) ? this->project_config.opt_string(key) : std::string();
+                std::string project_value;
+                if (this->project_config.has(key))
+                    project_value = this->project_config.opt_string(key);
+                if (!project_value.empty())
+                    return project_value;
+                if (print_cfg.has(key)) {
+                    const std::string print_value = print_cfg.opt_string(key);
+                    if (!print_value.empty())
+                        return print_value;
+                }
+                return project_value;
             };
             auto set_mixed_string = [this, &print_cfg](const std::string &key, const std::string &value) {
                 if (ConfigOptionString *opt = print_cfg.option<ConfigOptionString>(key))

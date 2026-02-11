@@ -473,8 +473,12 @@ bool ConfigBase::equals(const ConfigBase &other, const std::set<std::string>* sk
             continue;
         const ConfigOption *this_opt  = this->option(opt_key);
         const ConfigOption *other_opt = other.option(opt_key);
-        if (this_opt != nullptr && other_opt != nullptr && *this_opt != *other_opt)
-            return false;
+        if (this_opt != nullptr && other_opt != nullptr) {
+            if (this_opt->type() != other_opt->type())
+                return false;
+            if (*this_opt != *other_opt)
+                return false;
+        }
     }
     return true;
 }
@@ -486,8 +490,10 @@ t_config_option_keys ConfigBase::diff(const ConfigBase &other) const
     for (const t_config_option_key &opt_key : this->keys()) {
         const ConfigOption *this_opt  = this->option(opt_key);
         const ConfigOption *other_opt = other.option(opt_key);
-        if (this_opt != nullptr && other_opt != nullptr && *this_opt != *other_opt)
-            diff.emplace_back(opt_key);
+        if (this_opt != nullptr && other_opt != nullptr) {
+            if (this_opt->type() != other_opt->type() || *this_opt != *other_opt)
+                diff.emplace_back(opt_key);
+        }
     }
     return diff;
 }
@@ -499,7 +505,8 @@ t_config_option_keys ConfigBase::equal(const ConfigBase &other) const
     for (const t_config_option_key &opt_key : this->keys()) {
         const ConfigOption *this_opt  = this->option(opt_key);
         const ConfigOption *other_opt = other.option(opt_key);
-        if (this_opt != nullptr && other_opt != nullptr && *this_opt == *other_opt)
+        if (this_opt != nullptr && other_opt != nullptr &&
+            this_opt->type() == other_opt->type() && *this_opt == *other_opt)
             equal.emplace_back(opt_key);
     }
     return equal;
@@ -1763,7 +1770,11 @@ static inline bool dynamic_config_iterate(const DynamicConfig &lhs, const Dynami
 bool DynamicConfig::equals(const DynamicConfig &other, const std::set<std::string>* skipped_keys) const
 {
     return ! dynamic_config_iterate(*this, other,
-        [](const t_config_option_key & /* key */, const ConfigOption *l, const ConfigOption *r) { return *l != *r; },
+        [](const t_config_option_key & /* key */, const ConfigOption *l, const ConfigOption *r) {
+            if (l->type() != r->type())
+                return true;
+            return *l != *r;
+        },
         skipped_keys);
 }
 
@@ -1773,7 +1784,7 @@ t_config_option_keys DynamicConfig::diff(const DynamicConfig &other) const
     t_config_option_keys diff;
     dynamic_config_iterate(*this, other,
         [&diff](const t_config_option_key &key, const ConfigOption *l, const ConfigOption *r) {
-            if (*l != *r)
+            if (l->type() != r->type() || *l != *r)
                 diff.emplace_back(key);
             // Continue iterating.
             return false;
@@ -1787,7 +1798,7 @@ t_config_option_keys DynamicConfig::equal(const DynamicConfig &other) const
     t_config_option_keys equal;
     dynamic_config_iterate(*this, other,
         [&equal](const t_config_option_key &key, const ConfigOption *l, const ConfigOption *r) {
-            if (*l == *r)
+            if (l->type() == r->type() && *l == *r)
                 equal.emplace_back(key);
             // Continue iterating.
             return false;

@@ -1,6 +1,7 @@
 #include "MixedFilament.hpp"
 
 #include <algorithm>
+#include <boost/log/trivial.hpp>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
@@ -440,23 +441,43 @@ std::string MixedFilamentManager::serialize_custom_entries() const
 void MixedFilamentManager::load_custom_entries(const std::string &serialized, const std::vector<std::string> &filament_colours)
 {
     const size_t n = filament_colours.size();
-    if (serialized.empty() || n < 2)
+    if (serialized.empty() || n < 2) {
+        BOOST_LOG_TRIVIAL(debug) << "MixedFilamentManager::load_custom_entries skipped"
+                                 << ", serialized_empty=" << (serialized.empty() ? 1 : 0)
+                                 << ", physical_count=" << n;
         return;
+    }
+
+    size_t parsed_rows   = 0;
+    size_t loaded_rows   = 0;
+    size_t updated_auto  = 0;
+    size_t skipped_rows  = 0;
 
     std::stringstream all(serialized);
     std::string row;
     while (std::getline(all, row, ';')) {
         if (row.empty())
             continue;
+        ++parsed_rows;
         unsigned int a = 0;
         unsigned int b = 0;
         bool enabled = true;
         bool custom = true;
         int mix = 50;
-        if (!parse_row_definition(row, a, b, enabled, custom, mix))
+        if (!parse_row_definition(row, a, b, enabled, custom, mix)) {
+            ++skipped_rows;
+            BOOST_LOG_TRIVIAL(warning) << "MixedFilamentManager::load_custom_entries invalid row format: " << row;
             continue;
-        if (a == 0 || b == 0 || a > n || b > n || a == b)
+        }
+        if (a == 0 || b == 0 || a > n || b > n || a == b) {
+            ++skipped_rows;
+            BOOST_LOG_TRIVIAL(warning) << "MixedFilamentManager::load_custom_entries row rejected"
+                                       << ", row=" << row
+                                       << ", a=" << a
+                                       << ", b=" << b
+                                       << ", physical_count=" << n;
             continue;
+        }
 
         if (!custom) {
             auto it_auto = std::find_if(m_mixed.begin(), m_mixed.end(), [a, b](const MixedFilament &mf) {
@@ -465,6 +486,7 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
             if (it_auto != m_mixed.end()) {
                 it_auto->enabled = enabled;
                 it_auto->mix_b_percent = mix;
+                ++updated_auto;
                 continue;
             }
         }
@@ -478,8 +500,16 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
         mf.enabled = enabled;
         mf.custom = custom;
         m_mixed.push_back(std::move(mf));
+        ++loaded_rows;
     }
     refresh_display_colors(filament_colours);
+    BOOST_LOG_TRIVIAL(info) << "MixedFilamentManager::load_custom_entries"
+                            << ", physical_count=" << n
+                            << ", parsed_rows=" << parsed_rows
+                            << ", loaded_rows=" << loaded_rows
+                            << ", updated_auto_rows=" << updated_auto
+                            << ", skipped_rows=" << skipped_rows
+                            << ", mixed_total=" << m_mixed.size();
 }
 
 unsigned int MixedFilamentManager::resolve(unsigned int filament_id,

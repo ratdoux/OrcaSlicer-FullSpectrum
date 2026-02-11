@@ -1195,10 +1195,13 @@ static wxString get_full_label(std::string opt_key, const DynamicPrintConfig& co
 {
     opt_key = get_pure_opt_key(opt_key);
 
-    if (config.option(opt_key)->is_nil())
+    const ConfigOption *raw_opt = config.option(opt_key);
+    if (raw_opt == nullptr || raw_opt->is_nil())
         return _L("N/A");
 
     const ConfigOptionDef* opt = config.def()->get(opt_key);
+    if (opt == nullptr)
+        return from_u8(opt_key);
     return opt->full_label.empty() ? opt->label : opt->full_label;
 }
 
@@ -1215,12 +1218,17 @@ static wxString get_string_value(std::string opt_key, const DynamicPrintConfig& 
     opt_idx = orig_opt_idx >= 0 ? orig_opt_idx : 0;
     opt_key = get_pure_opt_key(opt_key);
 
-    if (config.option(opt_key)->is_nil())
+    const ConfigOption *raw_opt = config.option(opt_key);
+    if (raw_opt == nullptr || raw_opt->is_nil())
         return _L("N/A");
 
     wxString out;
 
     const ConfigOptionDef* opt = config.def()->get(opt_key);
+    if (opt == nullptr)
+        return from_u8(raw_opt->serialize());
+    if (raw_opt->type() != opt->type)
+        return from_u8(raw_opt->serialize());
     bool is_nullable = opt->nullable;
 
     switch (opt->type) {

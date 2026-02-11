@@ -219,6 +219,15 @@ static bool custom_per_printz_gcodes_tool_changes_differ(const std::vector<Custo
 
 // Collect changes to print config, account for overrides of extruder retract values by filament presets.
 //BBS: add plate index
+static inline bool config_options_equal(const ConfigOption *lhs, const ConfigOption *rhs)
+{
+    if (lhs == nullptr || rhs == nullptr)
+        return false;
+    if (lhs->type() != rhs->type())
+        return false;
+    return *lhs == *rhs;
+}
+
 static t_config_option_keys print_config_diffs(
     const PrintConfig        &current_config,
     const DynamicPrintConfig &new_full_config,
@@ -245,12 +254,12 @@ static t_config_option_keys print_config_diffs(
         if (opt_new_filament != nullptr && ! opt_new_filament->is_nil()) {
             // An extruder retract override is available at some of the filament presets.
             bool overriden = opt_new->overriden_by(opt_new_filament);
-            if (overriden || *opt_old != *opt_new) {
+            if (overriden || !config_options_equal(opt_old, opt_new)) {
                 auto opt_copy = opt_new->clone();
                 if (!((opt_key == "long_retractions_when_cut" || opt_key == "retraction_distances_when_cut")
                     && new_full_config.option<ConfigOptionInt>("enable_long_retraction_when_cut")->value != LongRectrationLevel::EnableFilament)) // ugly code, remove it later if firmware supports
                     opt_copy->apply_override(opt_new_filament);
-                bool changed = *opt_old != *opt_copy;
+                bool changed = !config_options_equal(opt_old, opt_copy);
                 if (changed)
                     print_diff.emplace_back(opt_key);
                 if (changed || overriden) {
@@ -262,7 +271,7 @@ static t_config_option_keys print_config_diffs(
                 } else
                     delete opt_copy;
             }
-        } else if (*opt_new != *opt_old) {
+        } else if (!config_options_equal(opt_new, opt_old)) {
             //BBS: add plate_index logic for wipe_tower_x/wipe_tower_y
             if (!opt_key.compare("wipe_tower_x") || !opt_key.compare("wipe_tower_y")) {
                 const ConfigOptionFloats* option_new = dynamic_cast<const ConfigOptionFloats*>(opt_new);
@@ -293,7 +302,7 @@ static t_config_option_keys full_print_config_diffs(const DynamicPrintConfig &cu
     for (const t_config_option_key &opt_key : new_full_config.keys()) {
         const ConfigOption *opt_old = current_full_config.option(opt_key);
         const ConfigOption *opt_new = new_full_config.option(opt_key);
-        if (opt_old == nullptr || *opt_new != *opt_old) {
+        if (opt_old == nullptr || !config_options_equal(opt_new, opt_old)) {
             //BBS: add plate_index logic for wipe_tower_x/wipe_tower_y
             if (opt_old && (!opt_key.compare("wipe_tower_x") || !opt_key.compare("wipe_tower_y"))) {
                 const ConfigOptionFloats* option_new = dynamic_cast<const ConfigOptionFloats*>(opt_new);
@@ -1249,6 +1258,15 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     mixed_height_upper  = std::max(mixed_height_lower, mixed_height_upper);
     mixed_cycle_layers  = std::max(2, mixed_cycle_layers);
 
+    BOOST_LOG_TRIVIAL(info) << "Print::apply mixed settings"
+                            << ", gradient_mode=" << mixed_gradient_mode
+                            << ", lower=" << mixed_height_lower
+                            << ", upper=" << mixed_height_upper
+                            << ", cycle_layers=" << mixed_cycle_layers
+                            << ", advanced_dither=" << (mixed_advanced_dither ? 1 : 0)
+                            << ", custom_definitions_len=" << mixed_custom_definitions.size()
+                            << ", physical_extruders=" << num_extruders;
+
     // Regenerate mixed (virtual) filaments from physical filament colours and
     // re-apply user custom mixed definitions.
     std::vector<std::string> physical_filament_colors = m_config.filament_colour.values;
@@ -1261,6 +1279,15 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
                                                  mixed_height_upper,
                                                  mixed_cycle_layers,
                                                  mixed_advanced_dither);
+    size_t mixed_custom_count = 0;
+    for (const auto &mf : m_mixed_filament_mgr.mixed_filaments())
+        if (mf.custom)
+            ++mixed_custom_count;
+
+    BOOST_LOG_TRIVIAL(info) << "Print::apply mixed manager state"
+                            << ", mixed_total=" << m_mixed_filament_mgr.mixed_filaments().size()
+                            << ", mixed_enabled=" << m_mixed_filament_mgr.enabled_count()
+                            << ", mixed_custom=" << mixed_custom_count;
     // Total filaments = physical extruders + enabled mixed (virtual) filaments.
     // Used for extruder ID clamping so that virtual IDs are accepted.
     size_t num_total_filaments = m_mixed_filament_mgr.total_filaments(num_extruders);
