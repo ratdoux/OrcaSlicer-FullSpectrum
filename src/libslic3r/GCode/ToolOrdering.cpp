@@ -40,9 +40,8 @@ unsigned int resolve_mixed_with_layer_heights(const MixedFilamentManager *mixed_
     if (!(mixed_mgr && mixed_mgr->is_mixed(filament_id_1based, num_physical)))
         return filament_id_1based;
 
-    const size_t idx = static_cast<size_t>(filament_id_1based - num_physical - 1);
-    const auto &mixed = mixed_mgr->mixed_filaments();
-    const bool is_custom_mixed = idx < mixed.size() && mixed[idx].custom;
+    const MixedFilament *mixed_row = mixed_mgr->mixed_filament_from_id(filament_id_1based, num_physical);
+    const bool is_custom_mixed = mixed_row != nullptr && mixed_row->custom;
 
     if (!is_custom_mixed && (layer_height_a > 0.f || layer_height_b > 0.f)) {
         const float safe_base = std::max<float>(0.01f, base_layer_height);
@@ -51,9 +50,9 @@ unsigned int resolve_mixed_with_layer_heights(const MixedFilamentManager *mixed_
         const int cycle   = ratio_a + ratio_b;
 
         if (cycle > 0) {
-            if (idx < mixed.size()) {
+            if (mixed_row != nullptr) {
                 const int pos = ((layer_index % cycle) + cycle) % cycle;
-                return pos < ratio_a ? mixed[idx].component_a : mixed[idx].component_b;
+                return pos < ratio_a ? mixed_row->component_a : mixed_row->component_b;
             }
         }
     }

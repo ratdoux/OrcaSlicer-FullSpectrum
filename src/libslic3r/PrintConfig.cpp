@@ -4194,6 +4194,26 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
+    def = this->add("mixed_filament_pointillism_pixel_size", coFloat);
+    def->label = L("Pointillisme pixel size");
+    def->category = L("Others");
+    def->tooltip = L("Length of one pointillisme segment along an extrusion path for same-layer pointillisme mode. "
+                     "Set to 0 to use automatic nozzle-based sizing.");
+    def->sidetext = "mm";
+    def->min = 0.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.0));
+
+    def = this->add("mixed_filament_pointillism_line_gap", coFloat);
+    def->label = L("Pointillisme line gap");
+    def->category = L("Others");
+    def->tooltip = L("Optional non-extruded spacing between adjacent pointillisme segments. "
+                     "Increase carefully to improve separation and print quality.");
+    def->sidetext = "mm";
+    def->min = 0.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.0));
+
     def = this->add("mixed_filament_definitions", coString);
     def->label = L("Mixed filament custom definitions");
     def->tooltip = L("Serialized custom mixed filament rows.\n\n"
