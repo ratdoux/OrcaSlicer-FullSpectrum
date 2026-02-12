@@ -53,6 +53,8 @@ Full Spectrum includes support for **virtual mixed-color filaments** designed fo
 - Visual preview showing the additive color blend
 - Enable/disable individual mixed filaments
 - Per-layer resolution control with customizable ratios
+- **Manual pattern support (v0.6)**: Define custom repeating layer patterns (e.g., `11112222` for precise 4:4 ratios)
+- **Local Z dithering mode (v0.4)**: Per-zone flow height control for more precise mixed-color printing
 - Seamless integration with the existing filament management system
 
 ### Using Mixed Filaments
@@ -65,6 +67,22 @@ Full Spectrum includes support for **virtual mixed-color filaments** designed fo
    - Enable/disable checkbox
 4. Mixed filaments can be assigned to objects just like physical filaments
 5. During slicing, the mixed filament resolves to alternating layers of its components
+
+### Manual Pattern Mixed Filaments (v0.6)
+In addition to gradient-based mixing, you can now define custom repeating layer patterns:
+- Click the **Pattern** button in the Mixed Filaments UI (alongside Gradient)
+- Define patterns like `11112222` for a precise 4:4 ratio or `1122` for 2:2
+- Pattern parser accepts `1/2` or `A/B` formats with separators (`/`, `-`, `_`, `|`, etc.)
+- Manual patterns take precedence over blend percentages
+- The blend percentage is automatically calculated from your pattern
+- Fully backward-compatible with older gradient-based mixed filaments
+
+### Local Z Dithering Mode (v0.4)
+Advanced feature for more precise mixed-color control:
+- Enable **Local Z dithering mode** in Process → Others (`dithering_local_z_mode`)
+- Mixed-painted zones are split into local sub-passes with pass-specific flow heights
+- Provides cleaner separation between mixed and non-mixed regions
+- **Note**: Automatically disabled when wipe tower or wiping overrides are active
 
 ### Dithering Settings
 Full Spectrum includes advanced dithering controls to fine-tune the layer alternation behavior for mixed filaments. These settings are found in **Others → Dithering** in the print settings:
