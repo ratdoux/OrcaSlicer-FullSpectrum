@@ -7,6 +7,14 @@
 
 ---
 
+## ☕ Support Development
+
+If you find this fun or interesting!
+
+<a href="https://www.buymeacoffee.com/ratdoux" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+---
+
 ## ⚠️ **IMPORTANT DISCLAIMER** ⚠️
 
 **This fork is currently in active development and has NOT been tested on actual hardware! **
