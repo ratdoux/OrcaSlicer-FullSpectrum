@@ -4198,7 +4198,8 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Pointillisme pixel size");
     def->category = L("Others");
     def->tooltip = L("Length of one pointillisme segment along an extrusion path for same-layer pointillisme mode. "
-                     "Set to 0 to use automatic nozzle-based sizing.");
+                     "Set to 0 to use automatic nozzle-based sizing.\n\n"
+                     "Warning: Same-layer pointillisme is extremely experimental and may produce unusable results.");
     def->sidetext = "mm";
     def->min = 0.;
     def->mode = comAdvanced;
@@ -4208,9 +4209,22 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Pointillisme line gap");
     def->category = L("Others");
     def->tooltip = L("Optional non-extruded spacing between adjacent pointillisme segments. "
-                     "Increase carefully to improve separation and print quality.");
+                     "Increase carefully to improve separation and print quality.\n\n"
+                     "Warning: Same-layer pointillisme is extremely experimental and may produce unusable results.");
     def->sidetext = "mm";
     def->min = 0.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.0));
+
+    def = this->add("mixed_filament_surface_indentation", coFloat);
+    def->label = L("Selective Expansion contraction");
+    def->category = L("Others");
+    def->tooltip = L("XY offset applied to mixed-filament painted regions before region assignment.\n\n"
+                     "Positive values contract the mixed zone inward. Negative values expand it outward.\n\n"
+                     "This applies to mixed filament usage in layer cadence, height cadence, same-layer pointillisme, and local Z dithering.");
+    def->sidetext = "mm";
+    def->min = -2.0;
+    def->max = 2.0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.0));
 
