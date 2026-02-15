@@ -5,15 +5,24 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 
 namespace Slic3r {
 
-// Represents a virtual "mixed" filament created by alternating layers of two
-// physical filaments. The display colour uses an RYB pigment-style blend so
-// pair previews better match expected print mixing (for example Blue+Yellow
-// -> Green, Red+Yellow -> Orange, Red+Blue -> Purple).
+// Represents a virtual "mixed" filament created from physical filaments
+// (layer cadence and/or same-layer interleaved stripe distribution). Display
+// colour blending uses FilamentMixer  so pair previews better
+//  match expected print mixing 
+// (for example Blue+Yellow -> Green, Red+Yellow -> Orange, Red+Blue -> Purple). 
+// Legacy RYB code is retained in source for reference only.
 struct MixedFilament
 {
+    enum DistributionMode : uint8_t {
+        LayerCycle = 0,
+        SameLayerPointillisme = 1,
+        Simple = 2
+    };
+
     // 1-based physical filament IDs that are combined.
     unsigned int component_a = 1;
     unsigned int component_b = 2;
@@ -26,10 +35,26 @@ struct MixedFilament
     // Blend percentage of component B in [0..100].
     int mix_b_percent = 50;
 
-    // Optional manual layer pattern for this mixed filament, encoded as a
-    // string of '1' and '2'. '1' means component_a, '2' means component_b.
-    // Example: "11112222" => AAAABBBB repeating.
+    // Optional manual pattern for this mixed filament. Tokens:
+    // '1' => component_a, '2' => component_b, '3'..'9' => direct physical
+    // filament IDs (1-based). Example: "11112222" => AAAABBBB repeating.
     std::string manual_pattern;
+
+    // Optional explicit gradient multi-color component list, encoded as
+    // compact physical filament IDs (for example "123" -> filaments 1,2,3).
+    // Interleaved stripe mode is active for gradient rows only when this list has 3+ IDs.
+    std::string gradient_component_ids;
+    // Optional explicit multi-color weights aligned with gradient_component_ids.
+    // Compact integer list joined by '/': for example "50/25/25".
+    std::string gradient_component_weights;
+
+    // Legacy compatibility flag from earlier prototype serialization.
+    bool pointillism_all_filaments = false;
+
+    // How this mixed row is distributed:
+    // - LayerCycle: one filament per layer based on cadence.
+    // - SameLayerPointillisme: split painted masks in XY on each layer.
+    int distribution_mode = int(Simple);
 
     // Whether this mixed filament is enabled (available for assignment).
     bool enabled = true;
@@ -48,6 +73,10 @@ struct MixedFilament
                ratio_b     == rhs.ratio_b     &&
                mix_b_percent == rhs.mix_b_percent &&
                manual_pattern == rhs.manual_pattern &&
+               gradient_component_ids == rhs.gradient_component_ids &&
+               gradient_component_weights == rhs.gradient_component_weights &&
+               pointillism_all_filaments == rhs.pointillism_all_filaments &&
+               distribution_mode == rhs.distribution_mode &&
                enabled      == rhs.enabled &&
                custom       == rhs.custom;
     }
@@ -99,7 +128,7 @@ public:
     std::string serialize_custom_entries() const;
     void load_custom_entries(const std::string &serialized, const std::vector<std::string> &filament_colours);
 
-    // Normalize a manual mixed-pattern string into compact '1'/'2' form.
+    // Normalize a manual mixed-pattern string into compact token form.
     // Accepts separators and A/B aliases. Returns empty string if invalid.
     static std::string normalize_manual_pattern(const std::string &pattern);
 
@@ -108,7 +137,7 @@ public:
     // True when `filament_id` (1-based) refers to a mixed filament.
     bool is_mixed(unsigned int filament_id, size_t num_physical) const
     {
-        return filament_id > num_physical && index_of(filament_id, num_physical) < m_mixed.size();
+        return mixed_index_from_filament_id(filament_id, num_physical) >= 0;
     }
 
     // Resolve a mixed filament ID to a physical extruder (1-based) for the
@@ -121,7 +150,18 @@ public:
                          float        layer_height  = 0.f,
                          bool         force_height_weighted = false) const;
 
-    // Compute a display colour by blending in RYB pigment space.
+    // Map virtual filament ID (1-based, after physical IDs) to index into
+    // m_mixed. Virtual IDs enumerate enabled mixed rows only.
+    int mixed_index_from_filament_id(unsigned int filament_id, size_t num_physical) const;
+
+    // Blend N colours using weighted FilamentMixer blending.
+    // color_percents: vector of (hex_color, percent) where percents sum to 100.
+    static std::string blend_color_multi(
+        const std::vector<std::pair<std::string, int>> &color_percents);
+
+    const MixedFilament *mixed_filament_from_id(unsigned int filament_id, size_t num_physical) const;
+
+    // Compute a display colour by blending two colours with FilamentMixer.
     static std::string blend_color(const std::string &color_a,
                                    const std::string &color_b,
                                    int ratio_a, int ratio_b);

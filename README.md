@@ -215,6 +215,8 @@ Orca Slicer includes a pressure advance calibration pattern test adapted from An
 
 The Bambu networking plugin is based on non-free libraries from BambuLab. It is optional to the Orca Slicer and provides extended functionalities for Bambulab printer users.
 
+Filament color blending is powered by [FilamentMixer](https://github.com/justinh-rahb/filament-mixer), an openly licensed library.
+
 # Feedback & Contribution
 We greatly value feedback and contributions from our users. Your feedback will help us to further develop Full Spectrum for our community.
 - To submit a bug or feature request, file an issue in GitHub Issues.

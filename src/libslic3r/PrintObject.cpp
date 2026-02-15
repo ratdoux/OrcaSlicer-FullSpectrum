@@ -973,6 +973,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "mixed_filament_height_upper_bound"
             || opt_key == "mixed_filament_cycle_layers"
             || opt_key == "mixed_filament_advanced_dithering"
+            || opt_key == "mixed_filament_surface_indentation"
             || opt_key == "mixed_filament_definitions") {
             // Mixed filament gradient controls affect layer cadence and virtual
             // tool distribution, so force a re-slice prompt like other

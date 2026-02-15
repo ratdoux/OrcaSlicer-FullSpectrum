@@ -253,6 +253,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "mixed_filament_height_upper_bound"
             || opt_key == "mixed_filament_cycle_layers"
             || opt_key == "mixed_filament_advanced_dithering"
+            || opt_key == "mixed_filament_surface_indentation"
             || opt_key == "mixed_filament_definitions"
             // Spiral Vase forces different kind of slicing than the normal model:
             // In Spiral Vase mode, holes are closed and only the largest area contour is kept at each layer.

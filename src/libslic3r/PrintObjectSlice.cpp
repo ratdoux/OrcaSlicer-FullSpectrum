@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <numeric>
@@ -870,6 +871,109 @@ static coordf_t float_from_full_config(const DynamicPrintConfig &full_cfg, const
     return coordf_t(full_cfg.opt_float(key));
 }
 
+static bool apply_mixed_surface_indentation(PrintObject &print_object, std::vector<std::vector<ExPolygons>> &segmentation)
+{
+    const Print *print = print_object.print();
+    if (print == nullptr || segmentation.empty())
+        return false;
+
+    const PrintConfig        &print_cfg = print->config();
+    const DynamicPrintConfig &full_cfg  = print->full_print_config();
+    coordf_t indentation_mm = float_from_full_config(full_cfg, "mixed_filament_surface_indentation",
+                                                     coordf_t(print_cfg.mixed_filament_surface_indentation.value));
+    indentation_mm = std::clamp(indentation_mm, coordf_t(-2.f), coordf_t(2.f));
+    if (std::abs(indentation_mm) <= EPSILON)
+        return false;
+
+    const size_t num_physical = print_cfg.filament_colour.size();
+    const size_t num_channels = segmentation.front().size();
+    if (num_channels <= num_physical)
+        return false;
+
+    const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
+    const bool  expand_outward = indentation_mm < 0.f;
+    const float delta_scaled = float(scale_(std::abs(double(indentation_mm))));
+    if (delta_scaled <= float(EPSILON))
+        return false;
+
+    size_t changed_layers = 0;
+    size_t changed_states = 0;
+    size_t emptied_states = 0;
+    size_t overlap_clipped_states = 0;
+
+    for (size_t layer_id = 0; layer_id < segmentation.size(); ++layer_id) {
+        if (segmentation[layer_id].size() != num_channels)
+            continue;
+
+        bool       layer_changed = false;
+        ExPolygons occupied;
+        if (expand_outward) {
+            for (size_t channel_idx = 0; channel_idx < num_channels; ++channel_idx) {
+                const ExPolygons &state_masks = segmentation[layer_id][channel_idx];
+                if (state_masks.empty())
+                    continue;
+
+                const unsigned int state_id = unsigned(channel_idx + 1);
+                if (!mixed_mgr.is_mixed(state_id, num_physical))
+                    append(occupied, state_masks);
+            }
+            if (occupied.size() > 1)
+                occupied = union_ex(occupied);
+        }
+
+        for (size_t channel_idx = num_physical; channel_idx < num_channels; ++channel_idx) {
+            ExPolygons &state_masks = segmentation[layer_id][channel_idx];
+            if (state_masks.empty())
+                continue;
+
+            const unsigned int state_id = unsigned(channel_idx + 1);
+            if (!mixed_mgr.is_mixed(state_id, num_physical))
+                continue;
+
+            ExPolygons adjusted = offset_ex(state_masks, expand_outward ? delta_scaled : -delta_scaled);
+            if (!adjusted.empty() && adjusted.size() > 1)
+                adjusted = union_ex(adjusted);
+
+            if (expand_outward && !adjusted.empty() && !occupied.empty()) {
+                ExPolygons clipped = diff_ex(adjusted, occupied, ApplySafetyOffset::Yes);
+                if (std::abs(area(clipped)) + EPSILON < std::abs(area(adjusted)))
+                    ++overlap_clipped_states;
+                adjusted = std::move(clipped);
+                if (!adjusted.empty() && adjusted.size() > 1)
+                    adjusted = union_ex(adjusted);
+            }
+
+            state_masks = std::move(adjusted);
+            if (state_masks.empty())
+                ++emptied_states;
+            ++changed_states;
+            layer_changed = true;
+
+            if (expand_outward && !state_masks.empty()) {
+                append(occupied, state_masks);
+                if (occupied.size() > 1)
+                    occupied = union_ex(occupied);
+            }
+        }
+
+        if (layer_changed)
+            ++changed_layers;
+    }
+
+    if (changed_states == 0)
+        return false;
+
+    BOOST_LOG_TRIVIAL(warning) << "Mixed surface indentation applied"
+                               << " object=" << (print_object.model_object() ? print_object.model_object()->name : std::string("<unknown>"))
+                               << " indentation_mm=" << indentation_mm
+                               << " direction=" << (expand_outward ? "outward" : "inward")
+                               << " changed_layers=" << changed_layers
+                               << " changed_states=" << changed_states
+                               << " emptied_states=" << emptied_states
+                               << " overlap_clipped_states=" << overlap_clipped_states;
+    return true;
+}
+
 static bool fit_pass_heights_to_interval(std::vector<double> &passes, double base_height, double lo, double hi)
 {
     if (passes.empty() || base_height <= EPSILON)
@@ -1048,6 +1152,564 @@ static std::vector<double> build_local_z_pass_heights(double base_height,
     return build_uniform_local_z_pass_heights(base_height, lo, hi);
 }
 
+static std::vector<unsigned int> decode_manual_pattern_sequence(const MixedFilament &mf, size_t num_physical)
+{
+    std::vector<unsigned int> sequence;
+    if (mf.manual_pattern.empty())
+        return sequence;
+    sequence.reserve(mf.manual_pattern.size());
+
+    for (const char token : mf.manual_pattern) {
+        unsigned int extruder_id = 0;
+        if (token == '1')
+            extruder_id = mf.component_a;
+        else if (token == '2')
+            extruder_id = mf.component_b;
+        else if (token >= '3' && token <= '9')
+            extruder_id = unsigned(token - '0');
+
+        if (extruder_id >= 1 && extruder_id <= num_physical)
+            sequence.emplace_back(extruder_id);
+    }
+    return sequence;
+}
+
+static std::vector<unsigned int> decode_gradient_component_ids(const MixedFilament &mf, size_t num_physical)
+{
+    std::vector<unsigned int> ids;
+    if (mf.gradient_component_ids.empty() || num_physical == 0)
+        return ids;
+
+    bool seen[10] = { false };
+    ids.reserve(mf.gradient_component_ids.size());
+    for (const char c : mf.gradient_component_ids) {
+        if (c < '1' || c > '9')
+            continue;
+        const unsigned int id = unsigned(c - '0');
+        if (id == 0 || id > num_physical || seen[id])
+            continue;
+        seen[id] = true;
+        ids.emplace_back(id);
+    }
+    return ids;
+}
+
+static std::vector<int> decode_gradient_component_weights(const MixedFilament &mf, size_t expected_components)
+{
+    std::vector<int> out;
+    if (mf.gradient_component_weights.empty() || expected_components == 0)
+        return out;
+
+    std::string token;
+    for (const char c : mf.gradient_component_weights) {
+        if (c >= '0' && c <= '9') {
+            token.push_back(c);
+            continue;
+        }
+        if (!token.empty()) {
+            out.emplace_back(std::max(0, std::atoi(token.c_str())));
+            token.clear();
+        }
+    }
+    if (!token.empty())
+        out.emplace_back(std::max(0, std::atoi(token.c_str())));
+    if (out.size() != expected_components)
+        return {};
+
+    int sum = 0;
+    for (const int v : out)
+        sum += std::max(0, v);
+    if (sum <= 0)
+        return {};
+    return out;
+}
+
+static std::vector<unsigned int> build_weighted_gradient_sequence(const std::vector<unsigned int> &ids,
+                                                                  const std::vector<int>          &weights)
+{
+    if (ids.empty())
+        return {};
+
+    std::vector<unsigned int> filtered_ids;
+    std::vector<int>          counts;
+    filtered_ids.reserve(ids.size());
+    counts.reserve(ids.size());
+    for (size_t i = 0; i < ids.size(); ++i) {
+        const int w = (i < weights.size()) ? std::max(0, weights[i]) : 0;
+        if (w <= 0)
+            continue;
+        filtered_ids.emplace_back(ids[i]);
+        counts.emplace_back(w);
+    }
+    if (filtered_ids.empty()) {
+        filtered_ids = ids;
+        counts.assign(ids.size(), 1);
+    }
+
+    int g = 0;
+    for (const int c : counts)
+        g = std::gcd(g, std::max(1, c));
+    if (g > 1) {
+        for (int &c : counts)
+            c = std::max(1, c / g);
+    }
+
+    int cycle = std::accumulate(counts.begin(), counts.end(), 0);
+    constexpr int k_max_cycle = 48;
+    if (cycle > k_max_cycle) {
+        const double scale = double(k_max_cycle) / double(cycle);
+        for (int &c : counts)
+            c = std::max(1, int(std::round(double(c) * scale)));
+        cycle = std::accumulate(counts.begin(), counts.end(), 0);
+        while (cycle > k_max_cycle) {
+            auto it = std::max_element(counts.begin(), counts.end());
+            if (it == counts.end() || *it <= 1)
+                break;
+            --(*it);
+            --cycle;
+        }
+    }
+    if (cycle <= 0)
+        return {};
+
+    std::vector<unsigned int> sequence;
+    sequence.reserve(size_t(cycle));
+    std::vector<int> emitted(counts.size(), 0);
+    for (int pos = 0; pos < cycle; ++pos) {
+        size_t best_idx = 0;
+        double best_score = -1e9;
+        for (size_t i = 0; i < counts.size(); ++i) {
+            const double target = double((pos + 1) * counts[i]) / double(cycle);
+            const double score = target - double(emitted[i]);
+            if (score > best_score) {
+                best_score = score;
+                best_idx = i;
+            }
+        }
+        ++emitted[best_idx];
+        sequence.emplace_back(filtered_ids[best_idx]);
+    }
+    return sequence;
+}
+
+static std::vector<unsigned int> pointillism_sequence_for_row(const MixedFilament &mf, size_t num_physical)
+{
+    if (!mf.enabled || num_physical == 0)
+        return {};
+
+    if (mf.distribution_mode != int(MixedFilament::SameLayerPointillisme))
+        return {};
+
+    if (!mf.manual_pattern.empty())
+        return decode_manual_pattern_sequence(mf, num_physical);
+
+    const std::vector<unsigned int> selected_gradient_ids = decode_gradient_component_ids(mf, num_physical);
+    if (selected_gradient_ids.size() >= 2) {
+        const std::vector<int> selected_gradient_weights = decode_gradient_component_weights(mf, selected_gradient_ids.size());
+        const std::vector<unsigned int> weighted_sequence =
+            build_weighted_gradient_sequence(selected_gradient_ids,
+                selected_gradient_weights.empty() ? std::vector<int>(selected_gradient_ids.size(), 1) : selected_gradient_weights);
+        if (!weighted_sequence.empty())
+            return weighted_sequence;
+    }
+
+    if (mf.component_a < 1 || mf.component_a > num_physical ||
+        mf.component_b < 1 || mf.component_b > num_physical ||
+        mf.component_a == mf.component_b)
+        return {};
+
+    int ratio_a = std::max(0, mf.ratio_a);
+    int ratio_b = std::max(0, mf.ratio_b);
+    if (ratio_a == 0 && ratio_b == 0)
+        ratio_a = 1;
+    if (ratio_a > 0 && ratio_b > 0) {
+        const int g = std::gcd(ratio_a, ratio_b);
+        if (g > 1) {
+            ratio_a /= g;
+            ratio_b /= g;
+        }
+    }
+
+    constexpr int k_max_cycle = 24;
+    if (ratio_a + ratio_b > k_max_cycle) {
+        const double scale = double(k_max_cycle) / double(ratio_a + ratio_b);
+        ratio_a = std::max(1, int(std::round(double(ratio_a) * scale)));
+        ratio_b = std::max(1, int(std::round(double(ratio_b) * scale)));
+    }
+
+    const int cycle = std::max(1, ratio_a + ratio_b);
+    std::vector<unsigned int> sequence;
+    sequence.reserve(size_t(cycle));
+    for (int pos = 0; pos < cycle; ++pos) {
+        const int b_before = (pos * ratio_b) / cycle;
+        const int b_after  = ((pos + 1) * ratio_b) / cycle;
+        sequence.emplace_back((b_after > b_before) ? mf.component_b : mf.component_a);
+    }
+    bool seen_a = false;
+    bool seen_b = false;
+    for (const unsigned int extruder_id : sequence) {
+        seen_a = seen_a || (extruder_id == mf.component_a);
+        seen_b = seen_b || (extruder_id == mf.component_b);
+        if (seen_a && seen_b)
+            break;
+    }
+    if (!seen_a || !seen_b)
+        return {};
+    return sequence;
+}
+
+static bool local_z_eligible_mixed_row(const MixedFilament &mf)
+{
+    // Local-Z flow-height modulation is intended for custom gradient rows.
+    // Keep auto-generated premix rows and manual pattern rows on nominal layers.
+    return mf.enabled &&
+           mf.custom &&
+           mf.manual_pattern.empty() &&
+           mf.distribution_mode != int(MixedFilament::SameLayerPointillisme);
+}
+
+static size_t unique_extruder_count(const std::vector<unsigned int> &sequence, size_t num_physical)
+{
+    if (sequence.empty() || num_physical == 0)
+        return 0;
+
+    std::vector<bool> seen(num_physical + 1, false);
+    size_t            unique_count = 0;
+    for (const unsigned int extruder_id : sequence) {
+        if (extruder_id == 0 || extruder_id > num_physical)
+            continue;
+        if (!seen[extruder_id]) {
+            seen[extruder_id] = true;
+            ++unique_count;
+        }
+    }
+    return unique_count;
+}
+
+static bool split_masks_pointillism_stripes(const ExPolygons               &source_masks,
+                                            const std::vector<unsigned int> &sequence,
+                                            size_t                           num_physical,
+                                            size_t                           layer_id,
+                                            coord_t                          stripe_pitch,
+                                            bool                             flip_orientation,
+                                            std::vector<ExPolygons>         &out_by_extruder)
+{
+    if (source_masks.empty() || sequence.empty() || num_physical == 0 || stripe_pitch <= 0)
+        return false;
+
+    const BoundingBox bbox = get_extents(source_masks);
+    if (!bbox.defined || bbox.min.x() >= bbox.max.x() || bbox.min.y() >= bbox.max.y())
+        return false;
+
+    out_by_extruder.assign(num_physical, ExPolygons());
+
+    const size_t slot_count = sequence.size();
+    const size_t phase      = slot_count > 0 ? (layer_id % slot_count) : 0;
+
+    auto align_down_to_grid = [stripe_pitch](coord_t value) {
+        coord_t rem = value % stripe_pitch;
+        if (rem < 0)
+            rem += stripe_pitch;
+        return value - rem;
+    };
+
+    std::vector<Polygons> stripe_polygons_by_slot(slot_count);
+    const bool vertical_base = (bbox.max.x() - bbox.min.x()) >= (bbox.max.y() - bbox.min.y());
+    // Alternate stripe orientation every layer so different faces of the model
+    // receive mixed-color variation instead of long single-direction bands.
+    const bool layer_alternates = (layer_id & 1) != 0;
+    bool       vertical = layer_alternates ? !vertical_base : vertical_base;
+    if (flip_orientation)
+        vertical = !vertical;
+
+    if (vertical) {
+        const coord_t y0 = bbox.min.y();
+        const coord_t y1 = bbox.max.y();
+        const coord_t x_start_aligned = align_down_to_grid(bbox.min.x());
+        size_t stripe_idx = 0;
+        for (coord_t x = x_start_aligned; x < bbox.max.x(); x += stripe_pitch, ++stripe_idx) {
+            const coord_t x0 = std::max(x, bbox.min.x());
+            const coord_t x1 = std::min<coord_t>(x + stripe_pitch, bbox.max.x());
+            if (x1 <= x0)
+                continue;
+
+            const size_t slot = (stripe_idx + phase) % slot_count;
+            stripe_polygons_by_slot[slot].emplace_back(BoundingBox(Point(x0, y0), Point(x1, y1)).polygon());
+        }
+    } else {
+        const coord_t x0 = bbox.min.x();
+        const coord_t x1 = bbox.max.x();
+        const coord_t y_start_aligned = align_down_to_grid(bbox.min.y());
+        size_t stripe_idx = 0;
+        for (coord_t y = y_start_aligned; y < bbox.max.y(); y += stripe_pitch, ++stripe_idx) {
+            const coord_t y0 = std::max(y, bbox.min.y());
+            const coord_t y1 = std::min<coord_t>(y + stripe_pitch, bbox.max.y());
+            if (y1 <= y0)
+                continue;
+
+            const size_t slot = (stripe_idx + phase) % slot_count;
+            stripe_polygons_by_slot[slot].emplace_back(BoundingBox(Point(x0, y0), Point(x1, y1)).polygon());
+        }
+    }
+
+    unsigned int fallback_extruder = 0;
+    for (const unsigned int extruder_id : sequence) {
+        if (extruder_id >= 1 && extruder_id <= num_physical) {
+            fallback_extruder = extruder_id;
+            break;
+        }
+    }
+    if (fallback_extruder == 0)
+        return false;
+
+    for (size_t slot = 0; slot < slot_count; ++slot) {
+        const unsigned int extruder_id = sequence[slot];
+        if (extruder_id == 0 || extruder_id > num_physical || stripe_polygons_by_slot[slot].empty())
+            continue;
+
+        ExPolygons clipped = intersection_ex(source_masks, stripe_polygons_by_slot[slot], ApplySafetyOffset::Yes);
+        if (!clipped.empty())
+            append(out_by_extruder[extruder_id - 1], std::move(clipped));
+    }
+
+    ExPolygons assigned_union;
+    for (ExPolygons &masks : out_by_extruder) {
+        if (masks.size() > 1)
+            masks = union_ex(masks);
+        append(assigned_union, masks);
+    }
+
+    if (assigned_union.empty()) {
+        append(out_by_extruder[fallback_extruder - 1], source_masks);
+        return true;
+    }
+
+    if (assigned_union.size() > 1)
+        assigned_union = union_ex(assigned_union);
+
+    ExPolygons remainder = diff_ex(source_masks, assigned_union, ApplySafetyOffset::Yes);
+    if (!remainder.empty()) {
+        append(out_by_extruder[fallback_extruder - 1], std::move(remainder));
+        ExPolygons &fallback_masks = out_by_extruder[fallback_extruder - 1];
+        if (fallback_masks.size() > 1)
+            fallback_masks = union_ex(fallback_masks);
+    }
+
+    return true;
+}
+
+static size_t non_empty_mask_count(const std::vector<ExPolygons> &masks_by_extruder)
+{
+    size_t count = 0;
+    for (const ExPolygons &masks : masks_by_extruder)
+        if (!masks.empty())
+            ++count;
+    return count;
+}
+
+template<typename ThrowOnCancel>
+static bool apply_pointillism_mixed_segmentation(PrintObject &print_object, std::vector<std::vector<ExPolygons>> &segmentation, ThrowOnCancel throw_on_cancel)
+{
+    const Print *print = print_object.print();
+    if (print == nullptr || segmentation.empty())
+        return false;
+
+    const PrintConfig &print_cfg = print->config();
+    const size_t       num_physical = print_cfg.filament_colour.size();
+    if (num_physical < 2)
+        return false;
+
+    const MixedFilamentManager &mixed_mgr  = print->mixed_filament_manager();
+    const auto                 &mixed_rows = mixed_mgr.mixed_filaments();
+    if (mixed_rows.empty())
+        return false;
+
+    const size_t num_channels = segmentation.front().size();
+    if (num_channels <= num_physical)
+        return false;
+
+    const double nozzle = print_cfg.nozzle_diameter.values.empty() ? 0.4 : print_cfg.nozzle_diameter.get_at(0);
+    // Keep stripe width at or above roughly one printable line to avoid
+    // non-printable slivers that can get dropped later and create holes.
+    const double stripe_pitch_mm = std::max(0.25, 1.10 * nozzle);
+    const coord_t stripe_pitch = std::max<coord_t>(scale_(0.25), scale_(stripe_pitch_mm));
+
+    std::vector<std::vector<unsigned int>> same_layer_sequences(mixed_rows.size());
+    std::vector<bool>                      same_layer_row_active(mixed_rows.size(), false);
+    std::vector<size_t>                    same_layer_row_indices;
+    for (size_t mixed_idx = 0; mixed_idx < mixed_rows.size(); ++mixed_idx) {
+        const MixedFilament &mf = mixed_rows[mixed_idx];
+        if (!mf.enabled || mf.distribution_mode != int(MixedFilament::SameLayerPointillisme))
+            continue;
+        same_layer_sequences[mixed_idx] = pointillism_sequence_for_row(mf, num_physical);
+        if (unique_extruder_count(same_layer_sequences[mixed_idx], num_physical) >= 2) {
+            same_layer_row_active[mixed_idx] = true;
+            same_layer_row_indices.emplace_back(mixed_idx);
+        }
+    }
+
+    auto find_sequence_override = [&](size_t mixed_idx) -> const std::vector<unsigned int> * {
+        if (mixed_idx >= mixed_rows.size())
+            return nullptr;
+        if (same_layer_row_active[mixed_idx])
+            return &same_layer_sequences[mixed_idx];
+
+        const MixedFilament &src = mixed_rows[mixed_idx];
+        for (size_t idx : same_layer_row_indices) {
+            if (idx >= mixed_rows.size())
+                continue;
+            const MixedFilament &candidate = mixed_rows[idx];
+            if ((candidate.component_a == src.component_a && candidate.component_b == src.component_b) ||
+                (candidate.component_a == src.component_b && candidate.component_b == src.component_a))
+                return &same_layer_sequences[idx];
+        }
+
+        if (same_layer_row_indices.size() == 1)
+            return &same_layer_sequences[same_layer_row_indices.front()];
+        return nullptr;
+    };
+
+    size_t same_layer_rows = 0;
+    for (size_t mixed_idx = 0; mixed_idx < mixed_rows.size(); ++mixed_idx) {
+        const MixedFilament &mf = mixed_rows[mixed_idx];
+        if (!same_layer_row_active[mixed_idx])
+            continue;
+        const std::vector<unsigned int> &seq = same_layer_sequences[mixed_idx];
+        const size_t unique = unique_extruder_count(seq, num_physical);
+        BOOST_LOG_TRIVIAL(debug) << "Same-layer pointillisme row"
+                                 << " mixed_idx=" << mixed_idx
+                                 << " component_a=" << mf.component_a
+                                 << " component_b=" << mf.component_b
+                                 << " mix_b_percent=" << mf.mix_b_percent
+                                 << " manual_pattern_len=" << mf.manual_pattern.size()
+                                 << " gradient_components=" << mf.gradient_component_ids
+                                 << " sequence_len=" << seq.size()
+                                 << " unique_extruders=" << unique;
+        if (unique >= 2)
+            ++same_layer_rows;
+    }
+
+    size_t transformed_layers = 0;
+    size_t transformed_states = 0;
+    size_t transformed_masks  = 0;
+    size_t skipped_states     = 0;
+    size_t retried_states     = 0;
+    size_t weak_split_states  = 0;
+    size_t pair_override_states = 0;
+    size_t global_override_states = 0;
+
+    for (size_t layer_id = 0; layer_id < segmentation.size(); ++layer_id) {
+        throw_on_cancel();
+        if (segmentation[layer_id].size() != num_channels) {
+            ++skipped_states;
+            continue;
+        }
+
+        bool layer_transformed = false;
+        std::vector<bool> touched_physical(num_physical, false);
+
+        for (size_t channel_idx = num_physical; channel_idx < num_channels; ++channel_idx) {
+            ExPolygons &state_masks = segmentation[layer_id][channel_idx];
+            if (state_masks.empty())
+                continue;
+
+            const unsigned int state_id = unsigned(channel_idx + 1);
+            const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+            if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_rows.size()) {
+                ++skipped_states;
+                continue;
+            }
+
+            const MixedFilament &mf = mixed_rows[size_t(mixed_idx)];
+            const std::vector<unsigned int> *sequence_ptr = find_sequence_override(size_t(mixed_idx));
+            if (sequence_ptr == nullptr || sequence_ptr->empty() || unique_extruder_count(*sequence_ptr, num_physical) < 2) {
+                ++skipped_states;
+                continue;
+            }
+            if (!same_layer_row_active[size_t(mixed_idx)]) {
+                bool pair_match = false;
+                for (size_t idx : same_layer_row_indices) {
+                    const MixedFilament &candidate = mixed_rows[idx];
+                    if ((candidate.component_a == mf.component_a && candidate.component_b == mf.component_b) ||
+                        (candidate.component_a == mf.component_b && candidate.component_b == mf.component_a)) {
+                        pair_match = true;
+                        break;
+                    }
+                }
+                if (pair_match)
+                    ++pair_override_states;
+                else if (same_layer_row_indices.size() == 1)
+                    ++global_override_states;
+            }
+
+            std::vector<ExPolygons> split_by_extruder;
+            if (!split_masks_pointillism_stripes(state_masks, *sequence_ptr, num_physical, layer_id, stripe_pitch, false, split_by_extruder)) {
+                ++skipped_states;
+                continue;
+            }
+            size_t split_unique = non_empty_mask_count(split_by_extruder);
+            if (split_unique < 2) {
+                std::vector<ExPolygons> retry_split;
+                if (split_masks_pointillism_stripes(state_masks, *sequence_ptr, num_physical, layer_id, stripe_pitch, true, retry_split)) {
+                    const size_t retry_unique = non_empty_mask_count(retry_split);
+                    if (retry_unique > split_unique) {
+                        split_by_extruder = std::move(retry_split);
+                        split_unique = retry_unique;
+                    }
+                    ++retried_states;
+                }
+            }
+            if (split_unique < 2)
+                ++weak_split_states;
+
+            for (size_t extruder_idx = 0; extruder_idx < num_physical; ++extruder_idx) {
+                if (split_by_extruder[extruder_idx].empty())
+                    continue;
+                append(segmentation[layer_id][extruder_idx], std::move(split_by_extruder[extruder_idx]));
+                touched_physical[extruder_idx] = true;
+            }
+
+            transformed_masks += state_masks.size();
+            state_masks.clear();
+            layer_transformed = true;
+            ++transformed_states;
+        }
+
+        if (layer_transformed) {
+            ++transformed_layers;
+            for (size_t extruder_idx = 0; extruder_idx < num_physical; ++extruder_idx) {
+                if (!touched_physical[extruder_idx] || segmentation[layer_id][extruder_idx].size() <= 1)
+                    continue;
+                segmentation[layer_id][extruder_idx] = union_ex(segmentation[layer_id][extruder_idx]);
+            }
+        }
+    }
+
+    if (transformed_states > 0) {
+        BOOST_LOG_TRIVIAL(warning) << "Mixed interleaved-stripe segmentation applied"
+                                   << " object=" << (print_object.model_object() ? print_object.model_object()->name : std::string("<unknown>"))
+                                   << " same_layer_rows=" << same_layer_rows
+                                   << " transformed_layers=" << transformed_layers
+                                   << " transformed_states=" << transformed_states
+                                   << " transformed_masks=" << transformed_masks
+                                   << " retried_states=" << retried_states
+                                   << " weak_split_states=" << weak_split_states
+                                   << " pair_override_states=" << pair_override_states
+                                   << " global_override_states=" << global_override_states
+                                   << " stripe_pitch_mm=" << stripe_pitch_mm
+                                   << " skipped_states=" << skipped_states;
+        return true;
+    }
+    if (same_layer_rows > 0) {
+        BOOST_LOG_TRIVIAL(warning) << "Same-layer pointillisme requested but produced no transformed states"
+                                   << " object=" << (print_object.model_object() ? print_object.model_object()->name : std::string("<unknown>"))
+                                   << " same_layer_rows=" << same_layer_rows
+                                   << " stripe_pitch_mm=" << stripe_pitch_mm
+                                   << " skipped_states=" << skipped_states;
+    }
+    return false;
+}
+
 static ExPolygons collect_layer_region_slices(const Layer &layer)
 {
     ExPolygons out;
@@ -1190,6 +1852,22 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
         return;
     }
 
+    const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
+    const auto                 &mixed_rows = mixed_mgr.mixed_filaments();
+    size_t pointillism_rows = 0;
+    for (const MixedFilament &mf : mixed_rows) {
+        const std::vector<unsigned int> sequence = pointillism_sequence_for_row(mf, num_physical);
+        if (unique_extruder_count(sequence, num_physical) >= 2)
+            ++pointillism_rows;
+    }
+
+    if (pointillism_rows > 0) {
+        BOOST_LOG_TRIVIAL(warning) << "Local-Z plan skipped: interleaved stripe mixed pattern active"
+                                   << " object=" << object_name
+                                   << " interleaved_rows=" << pointillism_rows;
+        return;
+    }
+
     BOOST_LOG_TRIVIAL(debug) << "Local-Z plan start"
                              << " object=" << object_name
                              << " layers=" << print_object.layer_count()
@@ -1199,7 +1877,6 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                              << " preferred_b=" << preferred_b
                              << " physical_filaments=" << num_physical;
 
-    const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
     std::vector<LocalZInterval> intervals;
     std::vector<SubLayerPlan>   plans;
     intervals.reserve(print_object.layer_count());
@@ -1209,21 +1886,16 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
     size_t total_generated_sublayer_cnt = 0;
     size_t total_mixed_state_layers     = 0;
     size_t forced_height_resolve_calls  = 0;
-    size_t forced_height_resolve_non_custom_calls = 0;
     size_t forced_height_resolve_invalid_target   = 0;
     size_t split_passes_total                     = 0;
     size_t split_passes_with_painted_masks        = 0;
     size_t split_intervals_without_painted_masks  = 0;
     size_t strict_ab_assignments                  = 0;
     size_t alternating_height_intervals           = 0;
-    size_t gradient_lock_mismatch_layers          = 0;
-    size_t gradient_lock_unset_mixed_layers       = 0;
-    size_t locked_gradient_source_layer           = size_t(-1);
-    size_t locked_gradient_mixed_idx              = size_t(-1);
-    double locked_gradient_h_a                    = 0.0;
-    double locked_gradient_h_b                    = 0.0;
-    bool   locked_gradient_valid                  = false;
-    const auto &mixed_rows = mixed_mgr.mixed_filaments();
+    // Preserve per-row local-Z phase across layers so pass orientation does not
+    // flip when a different mixed row dominates layer pass heights.
+    std::vector<uint8_t> row_next_component_a(mixed_rows.size(), uint8_t(1));
+    std::vector<uint8_t> row_phase_initialized(mixed_rows.size(), uint8_t(0));
 
     int cadence_index = 0;
     for (size_t layer_id = 0; layer_id < print_object.layer_count(); ++layer_id) {
@@ -1250,40 +1922,30 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
             if (state_masks.empty())
                 continue;
             const unsigned int state_id = unsigned(channel_idx + 1);
-            if (mixed_mgr.is_mixed(state_id, num_physical)) {
-                interval.has_mixed_paint = true;
-                ++mixed_state_count;
-                append(mixed_masks, state_masks);
-                const double mixed_area = std::abs(area(state_masks));
-                if (mixed_area > dominant_mixed_area) {
-                    dominant_mixed_area = mixed_area;
-                    dominant_mixed_idx  = state_id > num_physical ? size_t(state_id - num_physical - 1) : size_t(-1);
-                }
+            if (!mixed_mgr.is_mixed(state_id, num_physical))
+                continue;
+
+            const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+            if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_rows.size())
+                continue;
+            const MixedFilament &mf = mixed_rows[size_t(mixed_idx)];
+            if (!local_z_eligible_mixed_row(mf))
+                continue;
+
+            interval.has_mixed_paint = true;
+            ++mixed_state_count;
+            append(mixed_masks, state_masks);
+
+            const double mixed_area = std::abs(area(state_masks));
+            if (mixed_area > dominant_mixed_area) {
+                dominant_mixed_area = mixed_area;
+                dominant_mixed_idx  = size_t(mixed_idx);
             }
         }
         if (dominant_mixed_idx < mixed_rows.size()) {
             compute_local_z_gradient_component_heights(mixed_rows[dominant_mixed_idx].mix_b_percent, mixed_lower, mixed_upper,
                                                        dominant_gradient_h_a, dominant_gradient_h_b);
             dominant_gradient_valid = true;
-        }
-        if (interval.has_mixed_paint && preferred_a <= EPSILON && preferred_b <= EPSILON) {
-            if (!locked_gradient_valid && dominant_gradient_valid) {
-                locked_gradient_valid        = true;
-                locked_gradient_source_layer = layer_id;
-                locked_gradient_mixed_idx    = dominant_mixed_idx;
-                locked_gradient_h_a          = dominant_gradient_h_a;
-                locked_gradient_h_b          = dominant_gradient_h_b;
-                BOOST_LOG_TRIVIAL(warning) << "Local-Z gradient lock acquired"
-                                           << " object=" << object_name
-                                           << " layer_id=" << layer_id
-                                           << " mixed_idx=" << locked_gradient_mixed_idx
-                                           << " h_a=" << locked_gradient_h_a
-                                           << " h_b=" << locked_gradient_h_b;
-            }
-            if (!locked_gradient_valid)
-                ++gradient_lock_unset_mixed_layers;
-            else if (dominant_gradient_valid && dominant_mixed_idx != locked_gradient_mixed_idx)
-                ++gradient_lock_mismatch_layers;
         }
         total_mixed_state_layers += mixed_state_count;
         if (!mixed_masks.empty())
@@ -1306,12 +1968,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
             // Local-Z mode should emit an A/B/A/B pattern for mixed regions and
             // derive relative heights from mixed-filament gradient bounds.
             if (preferred_a <= EPSILON && preferred_b <= EPSILON) {
-                if (locked_gradient_valid) {
-                    pass_heights = build_local_z_alternating_pass_heights(interval.base_height, mixed_lower, mixed_upper,
-                                                                          locked_gradient_h_a, locked_gradient_h_b);
-                    if (pass_heights.size() > 1)
-                        ++alternating_height_intervals;
-                } else if (dominant_gradient_valid) {
+                if (dominant_gradient_valid) {
                     pass_heights = build_local_z_alternating_pass_heights(interval.base_height, mixed_lower, mixed_upper,
                                                                           dominant_gradient_h_a, dominant_gradient_h_b);
                     if (pass_heights.size() > 1)
@@ -1326,8 +1983,59 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
         else
             pass_heights.emplace_back(interval.base_height);
 
+        // Keep auto local-Z 2-pass cadence order stable across layers even if the
+        // dominant mixed row changes. Per-row phase assignment still controls
+        // which filament gets pass-0 vs pass-1.
+        if (interval.has_mixed_paint &&
+            preferred_a <= EPSILON &&
+            preferred_b <= EPSILON &&
+            pass_heights.size() == 2 &&
+            pass_heights[0] > pass_heights[1]) {
+            std::swap(pass_heights[0], pass_heights[1]);
+        }
+
         const bool split_interval = interval.has_mixed_paint && pass_heights.size() > 1;
         if (split_interval) {
+            // Derive per-row start phase against the selected layer pass heights so
+            // complementary mixed rows can coexist on the same nominal layer.
+            std::vector<uint8_t> start_with_component_a = row_next_component_a;
+            std::vector<uint8_t> row_seen_in_interval(mixed_rows.size(), uint8_t(0));
+            if (preferred_a <= EPSILON && preferred_b <= EPSILON) {
+                for (size_t channel_idx = 0; channel_idx < segmentation[layer_id].size(); ++channel_idx) {
+                    const ExPolygons &state_masks = segmentation[layer_id][channel_idx];
+                    if (state_masks.empty())
+                        continue;
+
+                    const unsigned int state_id = unsigned(channel_idx + 1);
+                    if (!mixed_mgr.is_mixed(state_id, num_physical))
+                        continue;
+                    const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+                    if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_rows.size())
+                        continue;
+                    const MixedFilament &mf = mixed_rows[size_t(mixed_idx)];
+                    if (!local_z_eligible_mixed_row(mf))
+                        continue;
+                    row_seen_in_interval[size_t(mixed_idx)] = uint8_t(1);
+                    if (row_phase_initialized[size_t(mixed_idx)] != 0)
+                        continue;
+
+                    double row_h_a = 0.0;
+                    double row_h_b = 0.0;
+                    compute_local_z_gradient_component_heights(mf.mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
+
+                    double err_ab = 0.0;
+                    double err_ba = 0.0;
+                    for (size_t pass_i = 0; pass_i < pass_heights.size(); ++pass_i) {
+                        const double expected_ab = (pass_i % 2) == 0 ? row_h_a : row_h_b;
+                        const double expected_ba = (pass_i % 2) == 0 ? row_h_b : row_h_a;
+                        err_ab += std::abs(pass_heights[pass_i] - expected_ab);
+                        err_ba += std::abs(pass_heights[pass_i] - expected_ba);
+                    }
+                    if (err_ba + 1e-6 < err_ab)
+                        start_with_component_a[size_t(mixed_idx)] = uint8_t(0);
+                }
+            }
+
             ++split_intervals;
             double z_cursor = interval.z_lo;
             size_t pass_idx = 0;
@@ -1359,19 +2067,24 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                     const unsigned int state_id = unsigned(channel_idx + 1);
                     if (!mixed_mgr.is_mixed(state_id, num_physical))
                         continue;
+                    const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+                    if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_rows.size())
+                        continue;
+                    const MixedFilament &mf = mixed_rows[size_t(mixed_idx)];
+                    if (!local_z_eligible_mixed_row(mf))
+                        continue;
+                    row_seen_in_interval[size_t(mixed_idx)] = uint8_t(1);
                     ++forced_height_resolve_calls;
-                    const size_t mixed_idx = state_id > num_physical ? size_t(state_id - num_physical - 1) : size_t(-1);
-                    if (mixed_idx >= mixed_rows.size() || !mixed_rows[mixed_idx].custom)
-                        ++forced_height_resolve_non_custom_calls;
                     unsigned int target_extruder = 0;
-                    if (mixed_idx < mixed_rows.size()) {
-                        const MixedFilament &mf = mixed_rows[mixed_idx];
-                        if (mf.component_a > 0 && mf.component_a <= num_physical &&
-                            mf.component_b > 0 && mf.component_b <= num_physical) {
-                            // Enforce strict per-pass alternation inside split local-Z intervals.
-                            target_extruder = ((pass_idx % 2) == 0) ? mf.component_a : mf.component_b;
-                            ++strict_ab_assignments;
-                        }
+                    if (mf.component_a > 0 && mf.component_a <= num_physical &&
+                        mf.component_b > 0 && mf.component_b <= num_physical) {
+                        const bool start_a = start_with_component_a[size_t(mixed_idx)] != 0;
+                        const bool even_pass = (pass_idx % 2) == 0;
+                        // Enforce strict per-pass alternation inside split local-Z intervals.
+                        target_extruder = even_pass
+                            ? (start_a ? mf.component_a : mf.component_b)
+                            : (start_a ? mf.component_b : mf.component_a);
+                        ++strict_ab_assignments;
                     }
                     if (target_extruder == 0) {
                         target_extruder = mixed_mgr.resolve(state_id, num_physical, cadence_index, float(plan.print_z), float(plan.flow_height), true);
@@ -1401,6 +2114,18 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                 ++cadence_index;
                 z_cursor = z_next;
             }
+
+            if (pass_idx > 0) {
+                const bool toggle_after_interval = (pass_idx % 2) != 0;
+                for (size_t mixed_idx = 0; mixed_idx < mixed_rows.size(); ++mixed_idx) {
+                    if (row_seen_in_interval[mixed_idx] == 0)
+                        continue;
+                    const bool start_a = start_with_component_a[mixed_idx] != 0;
+                    const bool next_a  = toggle_after_interval ? !start_a : start_a;
+                    row_next_component_a[mixed_idx] = next_a ? uint8_t(1) : uint8_t(0);
+                    row_phase_initialized[mixed_idx] = uint8_t(1);
+                }
+            }
             if (!interval_has_split_painted_masks)
                 ++split_intervals_without_painted_masks;
         } else {
@@ -1425,10 +2150,10 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                 const unsigned int state_id = unsigned(channel_idx + 1);
                 if (!mixed_mgr.is_mixed(state_id, num_physical))
                     continue;
+                const MixedFilament *mixed_row = mixed_mgr.mixed_filament_from_id(state_id, num_physical);
+                if (mixed_row == nullptr || !local_z_eligible_mixed_row(*mixed_row))
+                    continue;
                 ++forced_height_resolve_calls;
-                const size_t mixed_idx = state_id > num_physical ? size_t(state_id - num_physical - 1) : size_t(-1);
-                if (mixed_idx >= mixed_rows.size() || !mixed_rows[mixed_idx].custom)
-                    ++forced_height_resolve_non_custom_calls;
                 const unsigned int target_extruder =
                     mixed_mgr.resolve(state_id, num_physical, cadence_index, float(plan.print_z), float(plan.flow_height), true);
                 if (target_extruder == 0 || target_extruder > num_physical) {
@@ -1482,15 +2207,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                                    << " strict_ab_assignments=" << strict_ab_assignments
                                    << " mixed_state_layers=" << total_mixed_state_layers
                                    << " forced_height_resolve_calls=" << forced_height_resolve_calls
-                                   << " forced_height_resolve_non_custom_calls=" << forced_height_resolve_non_custom_calls
                                    << " forced_height_resolve_invalid_target=" << forced_height_resolve_invalid_target
-                                   << " gradient_lock_valid=" << locked_gradient_valid
-                                   << " gradient_lock_source_layer=" << locked_gradient_source_layer
-                                   << " gradient_lock_mixed_idx=" << locked_gradient_mixed_idx
-                                   << " gradient_lock_h_a=" << locked_gradient_h_a
-                                   << " gradient_lock_h_b=" << locked_gradient_h_b
-                                   << " gradient_lock_mismatch_layers=" << gradient_lock_mismatch_layers
-                                   << " gradient_lock_unset_mixed_layers=" << gradient_lock_unset_mixed_layers
                                    << " mixed_lower=" << mixed_lower
                                    << " mixed_upper=" << mixed_upper
                                    << " preferred_a=" << preferred_a
@@ -1540,6 +2257,8 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                 by_extruder.assign(num_extruders, ByExtruder());
                 by_region.assign(layer.region_count(), ByRegion());
                 bool layer_split = false;
+                size_t missing_target_regions = 0;
+                std::vector<int> missing_target_extruders;
                 for (size_t extruder_id = 0; extruder_id < num_extruders; ++ extruder_id) {
                     ByExtruder &region = by_extruder[extruder_id];
                     append(region.expolygons, std::move(segmentation[layer_id][extruder_id]));
@@ -1581,27 +2300,41 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     const BoundingBox parent_layer_region_bbox = get_extents(parent_layer_region.slices.surfaces);
                     bool              self_trimmed             = false;
                     int               self_extruder_id         = -1; // 1-based extruder ID
+                    if (const int cfg_wall = parent_print_region.config().wall_filament.value;
+                        cfg_wall >= 1 && cfg_wall <= int(by_extruder.size()))
+                        self_extruder_id = cfg_wall;
+                    std::vector<bool> assigned_extruder(by_extruder.size(), false);
+                    std::vector<int>  alias_to_self_extruders;
                     for (int extruder_id = 1; extruder_id <= int(by_extruder.size()); ++extruder_id) {
                         const ByExtruder &segmented = by_extruder[extruder_id - 1];
                         if (!segmented.bbox.defined || !parent_layer_region_bbox.overlap(segmented.bbox))
                             continue;
 
-                        // Find the first target region iterator.
-                        auto it_target_region = std::find_if(it_painted_region_begin, layer_range.painted_regions.cend(), [extruder_id](const auto &painted_region) {
-                            return int(painted_region.extruder_id) >= extruder_id;
+                        // Find the matching target region for this parent and extruder ID.
+                        auto it_target_region = std::find_if(it_painted_region_begin, layer_range.painted_regions.cend(), [&layer_range, &parent_print_region, extruder_id](const auto &painted_region) {
+                            return layer_range.volume_regions[painted_region.parent].region == &parent_print_region &&
+                                   int(painted_region.extruder_id) == extruder_id;
                         });
 
-                        assert(it_target_region != layer_range.painted_regions.end());
-                        assert(layer_range.volume_regions[it_target_region->parent].region == &parent_print_region && int(it_target_region->extruder_id) == extruder_id);
+                        if (it_target_region == layer_range.painted_regions.cend()) {
+                            ++missing_target_regions;
+                            missing_target_extruders.emplace_back(extruder_id);
+                            continue;
+                        }
 
                         // Update the beginning PaintedRegion iterator for the next iteration.
                         it_painted_region_begin = it_target_region;
 
                         // FIXME: Don't trim by self, it is not reliable.
                         if (it_target_region->region == &parent_print_region) {
-                            self_extruder_id = extruder_id;
+                            if (self_extruder_id < 0)
+                                self_extruder_id = extruder_id;
+                            if (extruder_id != self_extruder_id)
+                                alias_to_self_extruders.emplace_back(extruder_id);
                             continue;
                         }
+
+                        assigned_extruder[size_t(extruder_id - 1)] = true;
 
                         // Steal from this region.
                         int        target_region_id = it_target_region->region->print_object_region_id();
@@ -1620,8 +2353,11 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     if (!self_trimmed) {
                         // Trim slices of this LayerRegion with all the MM regions.
                         Polygons mine = to_polygons(parent_layer_region.slices.surfaces);
-                        for (auto &segmented : by_extruder) {
-                            if (&segmented - by_extruder.data() + 1 != self_extruder_id && segmented.bbox.defined && parent_layer_region_bbox.overlap(segmented.bbox)) {
+                        for (size_t extruder_idx = 0; extruder_idx < by_extruder.size(); ++extruder_idx) {
+                            const ByExtruder &segmented = by_extruder[extruder_idx];
+                            if (!assigned_extruder[extruder_idx])
+                                continue;
+                            if (int(extruder_idx + 1) != self_extruder_id && segmented.bbox.defined && parent_layer_region_bbox.overlap(segmented.bbox)) {
                                 mine = diff(mine, segmented.expolygons);
                                 if (mine.empty())
                                     break;
@@ -1647,6 +2383,41 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                             }
                         }
                     }
+
+                    if (!alias_to_self_extruders.empty()) {
+                        std::sort(alias_to_self_extruders.begin(), alias_to_self_extruders.end());
+                        alias_to_self_extruders.erase(std::unique(alias_to_self_extruders.begin(), alias_to_self_extruders.end()), alias_to_self_extruders.end());
+                        std::string alias_ids;
+                        for (size_t i = 0; i < alias_to_self_extruders.size(); ++i) {
+                            if (i > 0)
+                                alias_ids += ",";
+                            alias_ids += std::to_string(alias_to_self_extruders[i]);
+                        }
+                        BOOST_LOG_TRIVIAL(warning) << "MM segmentation alias-to-parent channels ignored"
+                                                   << " object=" << (print_object.model_object() ? print_object.model_object()->name : std::string("<unknown>"))
+                                                   << " layer_id=" << layer_id
+                                                   << " parent_region_id=" << parent_print_region.print_object_region_id()
+                                                   << " self_extruder_id=" << self_extruder_id
+                                                   << " alias_extruders=[" << alias_ids << "]";
+                    }
+                }
+
+                if (missing_target_regions > 0) {
+                    std::sort(missing_target_extruders.begin(), missing_target_extruders.end());
+                    missing_target_extruders.erase(std::unique(missing_target_extruders.begin(), missing_target_extruders.end()), missing_target_extruders.end());
+                    std::string missing_ids;
+                    for (size_t i = 0; i < missing_target_extruders.size(); ++i) {
+                        if (i > 0)
+                            missing_ids += ",";
+                        missing_ids += std::to_string(missing_target_extruders[i]);
+                    }
+                    BOOST_LOG_TRIVIAL(warning) << "MM segmentation missing painted target regions"
+                                               << " object=" << (print_object.model_object() ? print_object.model_object()->name : std::string("<unknown>"))
+                                               << " layer_id=" << layer_id
+                                               << " missing_targets=" << missing_target_regions
+                                               << " missing_extruders=[" << missing_ids << "]"
+                                               << " segmentation_channels=" << num_extruders
+                                               << " painted_regions=" << layer_range.painted_regions.size();
                 }
 
                 // Re-create Surfaces of LayerRegions.
@@ -1856,6 +2627,10 @@ void PrintObject::slice_volumes()
 
         BOOST_LOG_TRIVIAL(debug) << "Slicing volumes - MMU segmentation";
         std::vector<std::vector<ExPolygons>> mm_segmentation = multi_material_segmentation_by_painting(*this, [print]() { print->throw_if_canceled(); });
+        apply_mixed_surface_indentation(*this, mm_segmentation);
+        // Same-layer pointillisme is applied in G-code path domain (segment-level assignment),
+        // not by XY state mask splitting, to avoid boolean-induced voids.
+        BOOST_LOG_TRIVIAL(info) << "Same-layer pointillisme uses path-domain G-code segmentation";
         build_local_z_plan(*this, mm_segmentation, [print]() { print->throw_if_canceled(); });
         apply_mm_segmentation(*this, std::move(mm_segmentation), [print]() { print->throw_if_canceled(); });
     }

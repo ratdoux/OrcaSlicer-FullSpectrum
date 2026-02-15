@@ -47,6 +47,7 @@ static std::vector<std::string> s_project_options {
     "mixed_filament_height_upper_bound",
     "mixed_filament_cycle_layers",
     "mixed_filament_advanced_dithering",
+    "mixed_filament_surface_indentation",
     "mixed_filament_definitions",
     "mixed_color_layer_height_a",
     "mixed_color_layer_height_b",
