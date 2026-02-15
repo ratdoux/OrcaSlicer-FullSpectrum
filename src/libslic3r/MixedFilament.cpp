@@ -1,4 +1,5 @@
 #include "MixedFilament.hpp"
+#include "filament_mixer.h"
 
 #include <algorithm>
 #include <boost/log/trivial.hpp>
@@ -24,12 +25,12 @@ struct RGBf {
     float r = 0.f, g = 0.f, b = 0.f;
 };
 
-static float clamp01(float v)
+[[maybe_unused]] static float clamp01(float v)
 {
     return std::max(0.f, std::min(1.f, v));
 }
 
-static RGBf to_rgbf(const RGB &c)
+[[maybe_unused]] static RGBf to_rgbf(const RGB &c)
 {
     return {
         clamp01(static_cast<float>(c.r) / 255.f),
@@ -38,7 +39,7 @@ static RGBf to_rgbf(const RGB &c)
     };
 }
 
-static RGB to_rgb8(const RGBf &c)
+[[maybe_unused]] static RGB to_rgb8(const RGBf &c)
 {
     auto to_u8 = [](float v) -> int {
         return std::clamp(static_cast<int>(std::round(clamp01(v) * 255.f)), 0, 255);
@@ -46,10 +47,14 @@ static RGB to_rgb8(const RGBf &c)
     return { to_u8(c.r), to_u8(c.g), to_u8(c.b) };
 }
 
+
 // Convert RGB to an artist-pigment style RYB space.
 // This is an approximation, but it gives expected pair mixes:
 // Red + Blue -> Purple, Blue + Yellow -> Green, Red + Yellow -> Orange.
-static RGBf rgb_to_ryb(RGBf in)
+
+// Legacy RYB conversion helpers kept for reference.
+// Active code paths use FilamentMixer.
+[[maybe_unused]] static RGBf rgb_to_ryb(RGBf in)
 {
     float r = clamp01(in.r);
     float g = clamp01(in.g);
@@ -88,7 +93,7 @@ static RGBf rgb_to_ryb(RGBf in)
     return { clamp01(r), clamp01(y), clamp01(b) };
 }
 
-static RGBf ryb_to_rgb(RGBf in)
+[[maybe_unused]] static RGBf ryb_to_rgb(RGBf in)
 {
     float r = clamp01(in.r);
     float y = clamp01(in.g);
@@ -148,6 +153,41 @@ static std::string rgb_to_hex(const RGB &c)
     char buf[8];
     std::snprintf(buf, sizeof(buf), "#%02X%02X%02X", c.r, c.g, c.b);
     return std::string(buf);
+}
+
+[[maybe_unused]] static std::string blend_color_ryb_legacy(const RGB &rgb_a,
+                                                           const RGB &rgb_b,
+                                                           int        ratio_a,
+                                                           int        ratio_b)
+{
+    const int safe_a = std::max(0, ratio_a);
+    const int safe_b = std::max(0, ratio_b);
+    const float total = static_cast<float>(safe_a + safe_b);
+    const float wa    = (total > 0.f) ? static_cast<float>(safe_a) / total : 0.5f;
+    const float wb    = 1.f - wa;
+
+    const RGBf color_a = to_rgbf(rgb_a);
+    const RGBf color_b = to_rgbf(rgb_b);
+    const RGBf ryb_a = rgb_to_ryb(color_a);
+    const RGBf ryb_b = rgb_to_ryb(color_b);
+
+    RGBf ryb_out;
+    ryb_out.r = wa * ryb_a.r + wb * ryb_b.r;
+    ryb_out.g = wa * ryb_a.g + wb * ryb_b.g;
+    ryb_out.b = wa * ryb_a.b + wb * ryb_b.b;
+
+    RGBf rgb_out = ryb_to_rgb(ryb_out);
+    const float v_out = std::max({ rgb_out.r, rgb_out.g, rgb_out.b });
+    const float v_tgt = wa * std::max({ color_a.r, color_a.g, color_a.b }) +
+                        wb * std::max({ color_b.r, color_b.g, color_b.b });
+    if (v_out > 1e-6f && v_tgt > 0.f) {
+        const float scale = v_tgt / v_out;
+        rgb_out.r = clamp01(rgb_out.r * scale);
+        rgb_out.g = clamp01(rgb_out.g * scale);
+        rgb_out.b = clamp01(rgb_out.b * scale);
+    }
+
+    return rgb_to_hex(to_rgb8(rgb_out));
 }
 
 static int clamp_int(int v, int lo, int hi)
@@ -980,38 +1020,79 @@ const MixedFilament *MixedFilamentManager::mixed_filament_from_id(unsigned int f
     return idx >= 0 ? &m_mixed[size_t(idx)] : nullptr;
 }
 
+// Blend N colours using weighted pairwise FilamentMixer blending.
+std::string MixedFilamentManager::blend_color_multi(
+    const std::vector<std::pair<std::string, int>> &color_percents)
+{
+    if (color_percents.empty())
+        return "#000000";
+    if (color_percents.size() == 1)
+        return color_percents.front().first;
+
+    struct WeightedColor {
+        RGB color;
+        int pct;
+    };
+    std::vector<WeightedColor> colors;
+    colors.reserve(color_percents.size());
+
+    int total_pct = 0;
+    for (const auto &[hex, pct] : color_percents) {
+        if (pct <= 0)
+            continue;
+        colors.push_back({parse_hex_color(hex), pct});
+        total_pct += pct;
+    }
+    if (colors.empty() || total_pct <= 0)
+        return "#000000";
+
+    unsigned char r = static_cast<unsigned char>(colors.front().color.r);
+    unsigned char g = static_cast<unsigned char>(colors.front().color.g);
+    unsigned char b = static_cast<unsigned char>(colors.front().color.b);
+    int accumulated_pct = colors.front().pct;
+
+    for (size_t i = 1; i < colors.size(); ++i) {
+        const auto &next = colors[i];
+        const int new_total = accumulated_pct + next.pct;
+        if (new_total <= 0)
+            continue;
+        const float t = static_cast<float>(next.pct) / static_cast<float>(new_total);
+        filament_mixer_lerp(
+            r, g, b,
+            static_cast<unsigned char>(next.color.r),
+            static_cast<unsigned char>(next.color.g),
+            static_cast<unsigned char>(next.color.b),
+            t, &r, &g, &b);
+        accumulated_pct = new_total;
+    }
+
+    return rgb_to_hex({int(r), int(g), int(b)});
+}
+
 std::string MixedFilamentManager::blend_color(const std::string &color_a,
                                               const std::string &color_b,
                                               int ratio_a, int ratio_b)
 {
     const int safe_a = std::max(0, ratio_a);
     const int safe_b = std::max(0, ratio_b);
-    const float total = static_cast<float>(safe_a + safe_b);
-    const float wa    = (total > 0.f) ? static_cast<float>(safe_a) / total : 0.5f;
-    const float wb    = 1.f - wa;
+    const int total  = safe_a + safe_b;
+    const float t    = (total > 0) ? (static_cast<float>(safe_b) / static_cast<float>(total)) : 0.5f;
 
-    const RGBf rgb_a = to_rgbf(parse_hex_color(color_a));
-    const RGBf rgb_b = to_rgbf(parse_hex_color(color_b));
-    const RGBf ryb_a = rgb_to_ryb(rgb_a);
-    const RGBf ryb_b = rgb_to_ryb(rgb_b);
+    const RGB rgb_a = parse_hex_color(color_a);
+    const RGB rgb_b = parse_hex_color(color_b);
 
-    RGBf ryb_out;
-    ryb_out.r = wa * ryb_a.r + wb * ryb_b.r;
-    ryb_out.g = wa * ryb_a.g + wb * ryb_b.g;
-    ryb_out.b = wa * ryb_a.b + wb * ryb_b.b;
+    unsigned char out_r = static_cast<unsigned char>(rgb_a.r);
+    unsigned char out_g = static_cast<unsigned char>(rgb_a.g);
+    unsigned char out_b = static_cast<unsigned char>(rgb_a.b);
+    filament_mixer_lerp(static_cast<unsigned char>(rgb_a.r),
+                        static_cast<unsigned char>(rgb_a.g),
+                        static_cast<unsigned char>(rgb_a.b),
+                        static_cast<unsigned char>(rgb_b.r),
+                        static_cast<unsigned char>(rgb_b.g),
+                        static_cast<unsigned char>(rgb_b.b),
+                        t, &out_r, &out_g, &out_b);
 
-    RGBf rgb_out = ryb_to_rgb(ryb_out);
-    const float v_out = std::max({ rgb_out.r, rgb_out.g, rgb_out.b });
-    const float v_tgt = wa * std::max({ rgb_a.r, rgb_a.g, rgb_a.b }) +
-                        wb * std::max({ rgb_b.r, rgb_b.g, rgb_b.b });
-    if (v_out > 1e-6f && v_tgt > 0.f) {
-        const float scale = v_tgt / v_out;
-        rgb_out.r = clamp01(rgb_out.r * scale);
-        rgb_out.g = clamp01(rgb_out.g * scale);
-        rgb_out.b = clamp01(rgb_out.b * scale);
-    }
-
-    return rgb_to_hex(to_rgb8(rgb_out));
+    return rgb_to_hex({int(out_r), int(out_g), int(out_b)});
 }
 
 void MixedFilamentManager::refresh_display_colors(const std::vector<std::string> &filament_colours)
@@ -1035,17 +1116,15 @@ void MixedFilamentManager::refresh_display_colors(const std::vector<std::string>
                 if (it != gradient_ids.end())
                     ++counts[size_t(it - gradient_ids.begin())];
             }
-
-            std::string blended = filament_colours[gradient_ids.front() - 1];
-            int accum = std::max(1, counts.front());
-            for (size_t i = 1; i < gradient_ids.size(); ++i) {
+            std::vector<std::pair<std::string, int>> color_percents;
+            color_percents.reserve(gradient_ids.size());
+            for (size_t i = 0; i < gradient_ids.size(); ++i) {
                 const int wi = std::max(0, counts[i]);
                 if (wi == 0)
                     continue;
-                blended = blend_color(blended, filament_colours[gradient_ids[i] - 1], accum, wi);
-                accum += wi;
+                color_percents.emplace_back(filament_colours[gradient_ids[i] - 1], wi);
             }
-            mf.display_color = blended;
+            mf.display_color = blend_color_multi(color_percents);
             continue;
         }
         if (mf.component_a == 0 || mf.component_b == 0 ||
@@ -1081,4 +1160,3 @@ std::vector<std::string> MixedFilamentManager::display_colors() const
 }
 
 } // namespace Slic3r
-
