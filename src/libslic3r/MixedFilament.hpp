@@ -10,10 +10,11 @@
 namespace Slic3r {
 
 // Represents a virtual "mixed" filament created from physical filaments
-// (layer cadence and/or same-layer interleaved stripe distribution). The display
-// colour uses a FilamentMixer-based multi-color blend (and RYB pair blend) so
-// pair previews better match expected print mixing (for example Blue+Yellow
-// -> Green, Red+Yellow -> Orange, Red+Blue -> Purple).
+// (layer cadence and/or same-layer interleaved stripe distribution). Display
+// colour blending uses FilamentMixer  so pair previews better
+//  match expected print mixing 
+// (for example Blue+Yellow -> Green, Red+Yellow -> Orange, Red+Blue -> Purple). 
+// Legacy RYB code is retained in source for reference only.
 struct MixedFilament
 {
     enum DistributionMode : uint8_t {
@@ -160,7 +161,7 @@ public:
 
     const MixedFilament *mixed_filament_from_id(unsigned int filament_id, size_t num_physical) const;
 
-    // Compute a display colour by blending in RYB pigment space.
+    // Compute a display colour by blending two colours with FilamentMixer.
     static std::string blend_color(const std::string &color_a,
                                    const std::string &color_b,
                                    int ratio_a, int ratio_b);
