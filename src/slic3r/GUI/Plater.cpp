@@ -1,6 +1,7 @@
 #include "Plater.hpp"
 #include "libslic3r/Config.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/filament_mixer.h"
 #include "common_func/common_func.hpp"
 
 #include <cstddef>
@@ -2446,7 +2447,21 @@ private:
                 }
             }
         } else {
-            dc.GradientFillLinear(rect, m_left, m_right, wxEAST);
+            const int w = rect.GetWidth();
+            if (w > 0) {
+                wxPen pen;
+                for (int x = 0; x < w; ++x) {
+                    float t = static_cast<float>(x) / static_cast<float>(w > 1 ? w - 1 : 1);
+                    unsigned char out_r, out_g, out_b;
+                    filament_mixer_lerp(
+                        m_left.Red(), m_left.Green(), m_left.Blue(),
+                        m_right.Red(), m_right.Green(), m_right.Blue(),
+                        t, &out_r, &out_g, &out_b);
+                    pen.SetColour(out_r, out_g, out_b);
+                    dc.SetPen(pen);
+                    dc.DrawLine(rect.GetLeft() + x, rect.GetTop(), rect.GetLeft() + x, rect.GetBottom() + 1);
+                }
+            }
         }
         dc.SetPen(wxPen(is_dark ? wxColour(100, 100, 106) : wxColour(170, 170, 170), 1));
         dc.SetBrush(*wxTRANSPARENT_BRUSH);
