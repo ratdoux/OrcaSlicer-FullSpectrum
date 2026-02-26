@@ -103,14 +103,18 @@ These settings give you precise control over how your mixed colors appear in the
           -  This file may already be available on your computer if you've installed visual studio.  Check the following location: `%VCINSTALLDIR%Redist\MSVC\v142`
 
 **Mac**:
-1. Download the DMG for your computer: `arm64` version for Apple Silicon and `x86_64` for Intel CPU.  
-2. Drag Snapmaker_Orca.app to Application folder. 
-3. *If you want to run a build from a PR, you also need to follow the instructions below:*  
+1. Download the release file for your computer: `arm64` version for Apple Silicon.
+2. Unzip the release zip file.
+3. Open Terminal and run `chmod +x /Applications/0.9x-alpha_MacOS_arm64.app/Contents/MacOS/Snapmaker_Orca`
+4. Drag the release .app file to your Applications folder.
+
+   *Note: If you install homebrew package manager on MacOS, your homebrew folder has moved and the app will crash when it doesn't find the required library.  To fix this, run "brew install zstd" from the Terminal.*
+
+*If you want to run a build from a PR, you also need to follow the instructions below:*  
     <details quarantine>
     - Option 1 (You only need to do this once. After that the app can be opened normally.):
       - Step 1: Hold _cmd_ and right click the app, from the context menu choose **Open**.
-      - Step 2: A warning window will pop up, click _Open_  
-      
+      - Step 2: A warning window will pop up, click _Open_ 
     - Option 2:  
       Execute this command in terminal: `xattr -dr com.apple.quarantine /Applications/Snapmaker_Orca.app`
       ```console
@@ -122,6 +126,7 @@ These settings give you precise control over how your mixed colors appear in the
         - Step 2: in `System Settings` -> `Privacy & Security`, click `Open Anyway`:  
             ![image](./SoftFever_doc/mac_security_setting.png)  
     </details>
+    
     
 **Linux (Ubuntu)**:
  1. If you run into trouble executing it, try this command in the terminal:  
