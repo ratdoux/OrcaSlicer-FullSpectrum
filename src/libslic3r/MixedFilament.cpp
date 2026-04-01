@@ -320,6 +320,38 @@ static bool use_component_b_advanced_dither(int layer_index, int ratio_a, int ra
     return b_after > b_before;
 }
 
+static std::string percent_encode_name(const std::string &name)
+{
+    std::string out;
+    out.reserve(name.size() + 8);
+    for (unsigned char c : name) {
+        if      (c == '%') { out += "%25"; }
+        else if (c == ',') { out += "%2C"; }
+        else if (c == ';') { out += "%3B"; }
+        else               { out += char(c); }
+    }
+    return out;
+}
+
+static std::string percent_decode_name(const std::string &encoded)
+{
+    std::string out;
+    out.reserve(encoded.size());
+    for (size_t i = 0; i < encoded.size(); ++i) {
+        if (encoded[i] == '%' && i + 2 < encoded.size()) {
+            const char h1 = encoded[i + 1];
+            const char h2 = encoded[i + 2];
+            if      (h1 == '2' && (h2 == 'C' || h2 == 'c')) { out += ','; i += 2; }
+            else if (h1 == '3' && (h2 == 'B' || h2 == 'b')) { out += ';'; i += 2; }
+            else if (h1 == '2' && h2 == '5')                 { out += '%'; i += 2; }
+            else { out += encoded[i]; }
+        } else {
+            out += encoded[i];
+        }
+    }
+    return out;
+}
+
 static bool parse_row_definition(const std::string &row,
                                  unsigned int      &a,
                                  unsigned int      &b,
@@ -333,7 +365,8 @@ static bool parse_row_definition(const std::string &row,
                                  std::string       &gradient_component_weights,
                                  std::string       &manual_pattern,
                                  int               &distribution_mode,
-                                 bool              &deleted)
+                                 bool              &deleted,
+                                 std::string       &custom_name)
 {
     auto trim_copy = [](const std::string &s) {
         size_t lo = 0;
@@ -417,6 +450,7 @@ static bool parse_row_definition(const std::string &row,
     manual_pattern.clear();
     distribution_mode = int(MixedFilament::Simple);
     deleted = false;
+    custom_name.clear();
 
     size_t token_idx = 5;
     if (tokens.size() >= 6) {
@@ -474,6 +508,10 @@ static bool parse_row_definition(const std::string &row,
             uint64_t parsed_stable_id = stable_id;
             if (parse_uint64_token(tok.substr(1), parsed_stable_id))
                 stable_id = parsed_stable_id;
+            continue;
+        }
+        if (tok[0] == 'n' || tok[0] == 'N') {
+            custom_name = percent_decode_name(tok.substr(1));
             continue;
         }
         pattern_tokens.push_back(tok);
@@ -1001,6 +1039,8 @@ std::string MixedFilamentManager::serialize_custom_entries()
            << 'd' << (mf.deleted ? 1 : 0) << ','
            << 'o' << (mf.origin_auto ? 1 : 0) << ','
            << 'u' << mf.stable_id;
+        if (!mf.custom_name.empty())
+            ss << ",n" << percent_encode_name(mf.custom_name);
         const std::string normalized_pattern = normalize_manual_pattern(mf.manual_pattern);
         if (!normalized_pattern.empty())
             ss << ',' << normalized_pattern;
@@ -1069,8 +1109,9 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
         std::string manual_pattern;
         int distribution_mode = int(MixedFilament::Simple);
         bool deleted = false;
+        std::string custom_name;
         if (!parse_row_definition(row, a, b, stable_id, enabled, custom, origin_auto, mix, pointillism_all_filaments,
-                                  gradient_component_ids, gradient_component_weights, manual_pattern, distribution_mode, deleted)) {
+                                  gradient_component_ids, gradient_component_weights, manual_pattern, distribution_mode, deleted, custom_name)) {
             ++skipped_rows;
             BOOST_LOG_TRIVIAL(warning) << "MixedFilamentManager::load_custom_entries invalid row format: " << row;
             continue;
@@ -1123,6 +1164,7 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
                 mf.enabled = false;
             mf.custom = false;
             mf.origin_auto = true;
+            mf.custom_name = custom_name;
 
             rebuilt.push_back(std::move(mf));
             consumed_auto_pairs.insert(key);
@@ -1151,6 +1193,7 @@ void MixedFilamentManager::load_custom_entries(const std::string &serialized, co
             mf.enabled = false;
         mf.custom = custom;
         mf.origin_auto = origin_auto;
+        mf.custom_name = custom_name;
         rebuilt.push_back(std::move(mf));
         ++loaded_rows;
     }

@@ -77,6 +77,11 @@ static wxString filament_menu_item_name(const int filament_id_1based, const int 
         return wxString::Format(_L("Filament %d"), filament_id_1based);
     }
 
+    const auto &mixed_mgr = wxGetApp().preset_bundle->mixed_filaments;
+    const Slic3r::MixedFilament *mf = mixed_mgr.mixed_filament_from_id(
+        unsigned(filament_id_1based), size_t(physical));
+    if (mf != nullptr && !mf->custom_name.empty())
+        return wxString::FromUTF8(mf->custom_name.c_str());
     return wxString::Format(_L("Mixed Filament %d"), display_filament_id_1based);
 }
 

@@ -2839,8 +2839,11 @@ int ObjectTablePanel::init_filaments_and_colors()
                 continue;
             }
 
-            m_filaments_name[i] = wxString::Format("%d: Mixed Filament %d (F%u + F%u)",
-                                                   i + 1, i + 1,
+            const wxString mix_label = mf.custom_name.empty()
+                ? wxString::Format("Mixed Filament %d", i + 1)
+                : wxString::FromUTF8(mf.custom_name.c_str());
+            m_filaments_name[i] = wxString::Format("%d: %s (F%u + F%u)",
+                                                   i + 1, mix_label,
                                                    unsigned(mf.component_a), unsigned(mf.component_b));
             break;
         }

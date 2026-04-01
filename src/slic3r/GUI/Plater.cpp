@@ -4646,7 +4646,10 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
         header_sizer->Add(swatch, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, compact_gap_x);
 
         const int virtual_filament_id = int(num_physical + display_mixed_idx + 1);
-        auto *name_label = new wxStaticText(header_panel, wxID_ANY, wxString::Format("Mixed Filament %d", virtual_filament_id));
+        const wxString display_name = mf.custom_name.empty()
+            ? wxString::Format("Mixed Filament %d", virtual_filament_id)
+            : wxString::FromUTF8(mf.custom_name.c_str());
+        auto *name_label = new wxStaticText(header_panel, wxID_ANY, display_name);
         name_label->SetForegroundColour(mixed_text_fg);
         header_sizer->Add(name_label, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, compact_gap_x);
 
@@ -4676,7 +4679,42 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
             apply_mixed_entry_changes(mixed_id, updated, false, true);
         });
 
-        auto *del_btn = new ScalableButton(header_panel, wxID_ANY, "cross"); 
+        auto *rename_btn = new ScalableButton(header_panel, wxID_ANY, "rename_edit");
+        rename_btn->SetToolTip(_L("Rename mixed filament"));
+        header_sizer->Add(rename_btn, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, compact_gap_x);
+        rename_btn->Bind(wxEVT_LEFT_UP, [](wxMouseEvent &evt) {
+            evt.StopPropagation();
+            evt.Skip();
+        });
+        rename_btn->Bind(wxEVT_BUTTON, [mixed_id, name_label, virtual_filament_id,
+                                         apply_mixed_entry_changes, preset_bundle,
+                                         header_panel](wxCommandEvent &) {
+            if (!preset_bundle || !name_label)
+                return;
+            auto &mfs = preset_bundle->mixed_filaments.mixed_filaments();
+            if (mixed_id >= mfs.size())
+                return;
+            const wxString current = mfs[mixed_id].custom_name.empty()
+                ? wxString::Format("Mixed Filament %d", virtual_filament_id)
+                : wxString::FromUTF8(mfs[mixed_id].custom_name.c_str());
+            const wxString new_name = wxGetTextFromUser(
+                _L("Enter new name") + ":",
+                _L("Rename Mixed Filament"),
+                current,
+                nullptr);
+            if (new_name.IsEmpty())
+                return;
+            wxString trimmed = new_name.Strip(wxString::both);
+            if (trimmed.IsEmpty())
+                return;
+            MixedFilament updated = mfs[mixed_id];
+            updated.custom_name = trimmed.ToUTF8().data();
+            name_label->SetLabel(trimmed);
+            if (header_panel) header_panel->Layout();
+            apply_mixed_entry_changes(mixed_id, updated, true, false);
+        });
+
+        auto *del_btn = new ScalableButton(header_panel, wxID_ANY, "cross");
         del_btn->SetToolTip(_L("Delete mixed filament"));
         header_sizer->Add(del_btn, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, compact_gap_x);
         

@@ -77,6 +77,9 @@ struct MixedFilament
     // Computed display colour as "#RRGGBB".
     std::string display_color;
 
+    // Optional user-assigned display name. Empty means auto-generate "Mixed Filament N".
+    std::string custom_name;
+
     bool operator==(const MixedFilament &rhs) const
     {
         return component_a == rhs.component_a &&
@@ -93,7 +96,8 @@ struct MixedFilament
                enabled      == rhs.enabled &&
                deleted      == rhs.deleted &&
                custom       == rhs.custom &&
-               origin_auto  == rhs.origin_auto;
+               origin_auto  == rhs.origin_auto &&
+               custom_name  == rhs.custom_name;
     }
     bool operator!=(const MixedFilament &rhs) const { return !(*this == rhs); }
 };
