@@ -385,6 +385,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/SendSystemInfoDialog.hpp
     GUI/SendToPrinter.cpp
     GUI/SendToPrinter.hpp
+    GUI/SidebarFilamentMenu.cpp
+    GUI/SidebarFilamentMenu.hpp
     GUI/SingleChoiceDialog.cpp
     GUI/SingleChoiceDialog.hpp
     GUI/SliceInfoPanel.cpp
@@ -447,6 +449,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/ErrorMsgStaticText.hpp
     GUI/Widgets/FanControl.cpp
     GUI/Widgets/FanControl.hpp
+    GUI/Widgets/FilamentCard.cpp
+    GUI/Widgets/FilamentCard.hpp
     GUI/Widgets/ImageSwitchButton.cpp
     GUI/Widgets/ImageSwitchButton.hpp
     GUI/Widgets/Label.cpp

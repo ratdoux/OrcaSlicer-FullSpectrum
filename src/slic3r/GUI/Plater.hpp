@@ -78,6 +78,7 @@ struct Camera;
 class GLToolbar;
 class PlaterPresetComboBox;
 class PartPlateList;
+class SidebarFilamentMenu;
 
 using t_optgroups = std::vector <std::shared_ptr<ConfigOptionsGroup>>;
 
@@ -155,7 +156,7 @@ public:
     void add_custom_filament(wxColour new_col);
     void edit_filament();
 
-    void on_filaments_delete(size_t filament_id);
+    void on_filaments_delete(size_t num_filaments);
     void update_mixed_filament_panel(bool sync_manager = true);
     std::vector<unsigned int> get_ui_ordered_filament_ids() const;
     // BBS
@@ -164,7 +165,6 @@ public:
     std::map<int, DynamicPrintConfig> build_filament_ams_list(MachineObject* obj);
     void sync_ams_list();
     // Orca
-    void show_SEMM_buttons(bool bshow);
     void update_dynamic_filament_list();
 
     void update_nozzle_settings(bool switch_machine = false);
@@ -173,8 +173,8 @@ public:
     ObjectSettings*         obj_settings();
     ObjectLayers*           obj_layers();
     wxPanel*                scrolled_panel();
-    wxPanel* print_panel();
-    wxPanel* filament_panel();
+    wxPanel*                print_panel();
+    SidebarFilamentMenu*    filament_menu();
 
     ConfigOptionsGroup*     og_freq_chng_params(const bool is_fff);
     wxButton*               get_wiping_dialog_button();
@@ -203,7 +203,6 @@ public:
     void                    show_mode_sizer(bool show);
 #endif
 
-    std::vector<PlaterPresetComboBox*>&   combos_filament();
     Search::OptionsSearcher&        get_searcher();
     std::string&                    get_search_line();
     void                            update_printer_thumbnail();
@@ -216,7 +215,6 @@ private:
     ComboBox* m_bed_type_list = nullptr;
     ScalableButton* connection_btn = nullptr;
     ScalableButton* machine_connecting_btn = nullptr;
-    ScalableButton* ams_btn = nullptr;
 };
 
 class Plater: public wxPanel
