@@ -18,6 +18,7 @@
 #include "PartPlate.hpp"
 #include "Gizmos/GLGizmoEmboss.hpp"
 #include "Gizmos/GLGizmoSVG.hpp"
+#include "slic3r/GUI/SidebarFilamentMenu.hpp"
 
 #include <boost/algorithm/string.hpp>
 #include "slic3r/GUI/Tab.hpp"
@@ -1514,7 +1515,7 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
     if (init) {
         append_menu_item(
             menu, wxID_ANY, _L("Delete"), _L("Delete this filament"), [](wxCommandEvent&) { plater()->sidebar().delete_filament(-2); }, "",
-            nullptr, []() { return plater()->sidebar().combos_filament().size() > 1; }, m_parent);
+            nullptr, []() { return plater()->sidebar().filament_menu()->m_physical_count() > 1; }, m_parent);
     }
 
     const int item_id = menu->FindItem(_L("Merge with"));
