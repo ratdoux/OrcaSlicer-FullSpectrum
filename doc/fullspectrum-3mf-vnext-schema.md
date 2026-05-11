@@ -150,16 +150,16 @@ No semantic identity may depend only on:
 - array position
 - plate index
 - object export order
-- enabled-row order
+- visible-row order
 - filename suffix
 
-Array positions, export-order IDs, numeric extruder IDs, and enabled-row indexes are still allowed as runtime handles. They are useful inside a slicer session and in legacy projections. They must be derived from canonical stable IDs when loading and must not be the only saved meaning in FullSpectrum standard parts.
+Array positions, export-order IDs, numeric extruder IDs, and visible-row indexes are still allowed as runtime handles. They are useful inside a slicer session and in legacy projections. They must be derived from canonical stable IDs when loading and must not be the only saved meaning in FullSpectrum standard parts.
 
 For example, current legacy FullSpectrum files effectively use:
 
 ```text
 1..N = physical filaments by current array position
-N+1.. = enabled mixed rows by current enabled-row order
+N+1.. = visible mixed rows by current visible-row order
 ```
 
 This is acceptable as a transient projection, but it is not stable project identity. If a physical filament is inserted, deleted, or reordered, or if a mixed row is hidden or moved, the same numeric value may refer to a different material. Profile v1 therefore stores assignments as stable material references such as `fil_...` and `mix_...`, then maps those references back to transient numeric IDs only after import.
@@ -708,7 +708,6 @@ Example:
   "virtual_filaments": [
     {
       "id": "mix_4d5d1f5b-98fe-4d13-b4db-96c3a58c0f15",
-      "enabled": true,
       "visibility_state": "active",
       "source_kind": "custom",
       "origin": {
@@ -745,7 +744,6 @@ The standard mixed row state should cover the semantics currently hidden inside 
 |---|---|
 | `u<stable_id>` | `id` |
 | physical `a,b` slots | `origin.component_refs` |
-| `enabled` | `enabled` |
 | `deleted` tombstone | `visibility_state: "tombstoned"` |
 | `custom` / `origin_auto` | `source_kind` and `origin.origin_auto_generated` |
 | `mix` | `blend.component_b_percent` |
@@ -1522,7 +1520,6 @@ Metadata/slice_info.config
   "virtual_filaments": [
     {
       "id": "<mixed_filament_id>",
-      "enabled": true,
       "visibility_state": "<active|hidden|tombstoned>",
       "source_kind": "<auto|custom|imported>",
       "origin": {

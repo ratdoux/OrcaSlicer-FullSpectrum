@@ -257,7 +257,7 @@ std::unordered_map<std::string, int> runtime_material_map(const Materials       
     if (mixed_filaments) {
         int runtime_id = int(materials.physical_filaments.size() + 1);
         for (const VirtualFilament &vf : mixed_filaments->virtual_filaments) {
-            if (vf.enabled && vf.visibility_state != "tombstoned")
+            if (vf.visibility_state != "tombstoned")
                 map[vf.id] = runtime_id++;
         }
     }

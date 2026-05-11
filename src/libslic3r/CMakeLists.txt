@@ -299,6 +299,16 @@ set(lisbslic3r_sources
     MinimumSpanningTree.cpp
     MinimumSpanningTree.hpp
     MixedFilament.cpp
+    MixedFilament/Common.cpp
+    MixedFilament/Definition.cpp
+    MixedFilament/Display.cpp
+    MixedFilament/Gradient.cpp
+    MixedFilament/Internal.hpp
+    MixedFilament/Manager.cpp
+    MixedFilament/Pattern.cpp
+    MixedFilament/Preview.cpp
+    MixedFilament/Resolver.cpp
+    MixedFilament/LegacyRow.cpp
     MixedFilament.hpp
     filament_mixer.cpp
     filament_mixer.h

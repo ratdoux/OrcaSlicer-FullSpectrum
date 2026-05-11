@@ -2831,8 +2831,9 @@ int ObjectTablePanel::init_filaments_and_colors()
         }
 
         size_t mixed_offset = 0;
-        for (const MixedFilament &mf : wxGetApp().preset_bundle->mixed_filaments.mixed_filaments()) {
-            if (!mf.enabled || mf.deleted)
+        for (const MixedFilamentDefinition &definition :
+             wxGetApp().preset_bundle->mixed_filaments.mixed_filament_definitions(physical_count)) {
+            if (definition.visibility.tombstoned)
                 continue;
             if (size_t(i) != physical_count + mixed_offset) {
                 ++mixed_offset;
@@ -2841,7 +2842,8 @@ int ObjectTablePanel::init_filaments_and_colors()
 
             m_filaments_name[i] = wxString::Format("%d: Mixed Filament %d (F%u + F%u)",
                                                    i + 1, i + 1,
-                                                   unsigned(mf.component_a), unsigned(mf.component_b));
+                                                   unsigned(definition.recipe.blend.component_a_id()),
+                                                   unsigned(definition.recipe.blend.component_b_id()));
             break;
         }
 

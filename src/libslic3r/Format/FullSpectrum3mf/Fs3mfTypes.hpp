@@ -182,7 +182,6 @@ struct VirtualFilament
 {
     std::string                         id;
     uint64_t                            legacy_stable_id = 0;
-    bool                                enabled = true;
     std::string                         visibility_state = "active";
     std::string                         source_kind = "auto";
     MixedFilamentOrigin                 origin;

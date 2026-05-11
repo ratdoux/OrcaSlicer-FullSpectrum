@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mixed Filament Refactor Map</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1c2430;
+      --muted: #667085;
+      --line: #d9dee7;
+      --accent: #0d766e;
+      --accent-2: #4353b8;
+      --warn: #9a5b00;
+      --code: #eef2f7;
+      --shadow: 0 12px 32px rgba(18, 28, 45, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(246, 247, 249, 0.95);
+      backdrop-filter: blur(10px);
+    }
+
+    .bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 14px 22px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    .subtle {
+      color: var(--muted);
+    }
+
+    nav {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    nav button,
+    .pill,
+    .mode button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 7px;
+      padding: 7px 10px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    nav button.active,
+    .mode button.active {
+      border-color: var(--accent);
+      color: #ffffff;
+      background: var(--accent);
+    }
+
+    main {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 28px 22px 60px;
+    }
+
+    section {
+      display: none;
+    }
+
+    section.active {
+      display: block;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 22px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .panel h2,
+    .panel h3 {
+      margin: 0 0 10px;
+      letter-spacing: 0;
+    }
+
+    .panel h2 {
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .panel h3 {
+      font-size: 17px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 120px;
+    }
+
+    .card h3,
+    .card h4 {
+      margin: 0 0 8px;
+      letter-spacing: 0;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--code);
+    }
+
+    pre {
+      overflow: auto;
+      margin: 12px 0 0;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #101828;
+      color: #eef4ff;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 44px 1fr 44px 1fr;
+      gap: 10px;
+      align-items: stretch;
+      margin-top: 18px;
+    }
+
+    .flow .node {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px;
+      min-height: 150px;
+    }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: var(--accent-2);
+      font-weight: 700;
+      font-size: 20px;
+    }
+
+    .tagrow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tag {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      padding: 4px 8px;
+      background: #fafbfc;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mode {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 14px;
+    }
+
+    .example {
+      display: none;
+    }
+
+    .example.active {
+      display: block;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .before {
+      border-top: 4px solid var(--warn);
+    }
+
+    .after {
+      border-top: 4px solid var(--accent);
+    }
+
+    .search {
+      display: flex;
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .search input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font: inherit;
+      background: var(--panel);
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      margin: 10px 0;
+      padding: 0;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 13px 15px;
+      font-weight: 700;
+    }
+
+    details > div {
+      border-top: 1px solid var(--line);
+      padding: 14px 15px;
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2f7;
+    }
+
+    .foot {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .bar,
+      .hero,
+      .compare {
+        grid-template-columns: 1fr;
+      }
+
+      .bar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      nav {
+        justify-content: flex-start;
+      }
+
+      .grid,
+      .two,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .arrow {
+        min-height: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>Mixed Filament Refactor Map</h1>
+        <div class="subtle">Typed definition first, compatibility DTO at the edge.</div>
+      </div>
+      <nav aria-label="Views">
+        <button class="active" data-view="overview">Overview</button>
+        <button data-view="schema">Schema</button>
+        <button data-view="flow">Flow</button>
+        <button data-view="examples">Examples</button>
+        <button data-view="glossary">Glossary</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section id="overview" class="active">
+      <div class="hero">
+        <div class="panel">
+          <h2>What changed?</h2>
+          <p>
+            Mixed filament state now has a readable domain object:
+            <code>MixedFilamentDefinition</code>. The old flat row still exists
+            as <code>MixedFilamentLegacyRow</code>, but only as a derived
+            compatibility DTO rather than the manager's source of truth.
+          </p>
+          <div class="tagrow">
+            <span class="tag">weighted blends</span>
+            <span class="tag">manual pattern groups</span>
+            <span class="tag">visibility tombstones</span>
+            <span class="tag">legacy adapters</span>
+            <span class="tag">vNext bridge</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Rule of thumb</h3>
+          <p>
+            If code is about UI, package import/export, display, slicing intent,
+            or feature behavior, use <code>MixedFilamentDefinition</code>. Only
+            old project-config and legacy/compat 3MF boundaries should cross
+            through <code>MixedFilamentLegacyRow</code>. There is no generic
+            <code>MixedFilament</code> alias anymore.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>One blend shape</h3>
+          <p>Two-filament pair blends and 3+ multi-color blends both use weighted physical components.</p>
+        </div>
+        <div class="card">
+          <h3>Patterns stay exact</h3>
+          <p>Manual and multi-perimeter recipes keep their grouped sequence instead of being collapsed into percentages.</p>
+        </div>
+        <div class="card">
+          <h3>Compatibility contained</h3>
+          <p>Flat row tokens, gradient strings, and A/B token conversion sit behind explicit DTO adapters.</p>
+        </div>
+        <div class="card">
+          <h3>Manager owns definitions</h3>
+          <p><code>MixedFilamentManager</code> stores typed definitions. Legacy DTO rows are snapshots rebuilt on demand.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="schema">
+      <div class="compare">
+        <div class="panel before">
+          <h2>Before</h2>
+          <p>The old compatibility DTO mixes identity, source, lifecycle, recipe, behavior, and display into one flat shape.</p>
+<pre><code>struct MixedFilamentLegacyRow {
+    unsigned int component_a;
+    unsigned int component_b;
+    uint64_t stable_id;
+    int ratio_a;
+    int ratio_b;
+    int mix_b_percent;
+    std::string manual_pattern;
+    std::string gradient_component_ids;
+    std::string gradient_component_weights;
+    int distribution_mode;
+    int local_z_max_sublayers;
+    bool enabled;  // legacy only now
+    bool deleted;
+    bool custom;
+    bool origin_auto;
+};</code></pre>
+        </div>
+        <div class="panel after">
+          <h2>After</h2>
+          <p>The typed model groups state by meaning. The manager owns this shape directly.</p>
+<pre><code>struct MixedFilamentDefinition {
+    MixedFilamentIdentity     identity;
+    MixedFilamentSource       source;
+    MixedFilamentVisibility   visibility;
+    MixedFilamentRecipe       recipe;
+    MixedFilamentBehavior     behavior;
+    MixedFilamentPresentation presentation;
+};</code></pre>
+        </div>
+      </div>
+
+      <div class="grid two" style="margin-top: 14px;">
+        <div class="card">
+          <h3>Recipe</h3>
+<pre><code>struct MixedFilamentRecipe {
+    MixedFilamentWeightedBlend blend;
+    std::optional&lt;MixedFilamentManualPattern&gt; manual_pattern;
+    MixedFilamentRecipeKind kind;
+};</code></pre>
+        </div>
+        <div class="card">
+          <h3>Behavior</h3>
+<pre><code>struct MixedFilamentBehavior {
+    MixedFilamentDistributionMode distribution;
+    MixedFilamentLayerCadence     layer_cadence;
+    MixedFilamentLocalZBehavior   local_z;
+    MixedFilamentSurfaceBias      surface_bias;
+};</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="flow">
+      <div class="panel">
+        <h2>Data Boundaries</h2>
+        <p class="subtle">
+          <code>MixedFilamentDefinition</code> is the canonical in-memory object. Legacy rows and package JSON are edge formats
+          translated into and out of it.
+        </p>
+        <div class="flow">
+          <div class="node">
+            <h3>Compatibility DTO</h3>
+            <p>Import/export adapter for <code>mixed_filament_definitions</code>, compact A/B fields, pattern tokens, gradient strings, and deleted tombstones.</p>
+          </div>
+          <div class="arrow">&lt;-&gt;</div>
+          <div class="node">
+            <h3>MixedFilamentDefinition</h3>
+            <p>Identity, source, visibility, recipe, behavior, and presentation as typed C++ fields. This is the manager-owned source of truth.</p>
+          </div>
+          <div class="arrow">&lt;-&gt;</div>
+          <div class="node">
+            <h3>vNext package model</h3>
+            <p>Import/export adapter for <code>VirtualFilament</code> with stable refs, visibility state, origin, blend, gradient, pattern, and Local-Z.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 14px;">
+        <div class="card">
+          <h3>DTO adapters</h3>
+          <p><code>Definition.cpp</code>, <code>LegacyRow.cpp</code>, <code>Pattern.cpp</code>, and <code>Gradient.cpp</code>.</p>
+        </div>
+        <div class="card">
+          <h3>Runtime</h3>
+          <p><code>Resolver.cpp</code> maps virtual IDs back to physical filament IDs for layers and perimeters.</p>
+        </div>
+        <div class="card">
+          <h3>Presentation</h3>
+          <p><code>Display.cpp</code> and <code>Preview.cpp</code> compute preview color and UI sequences.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="examples">
+      <div class="panel">
+        <h2>Examples</h2>
+        <div class="mode" aria-label="Example selector">
+          <button class="active" data-example="pair">Two-Component Mix</button>
+          <button data-example="multi">3+ Weighted Blend</button>
+          <button data-example="pattern">Manual Pattern</button>
+          <button data-example="visibility">Tombstone</button>
+        </div>
+
+        <div id="pair" class="example active">
+<pre><code>definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+definition.recipe.blend.components = {
+    { {1}, 35 },
+    { {2}, 65 }
+};
+definition.behavior.distribution = MixedFilamentDistributionMode::Simple;</code></pre>
+          <p class="subtle">The legacy row writes A/B plus <code>mix_b_percent</code>. No gradient strings are needed.</p>
+        </div>
+
+        <div id="multi" class="example">
+<pre><code>definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+definition.recipe.blend.components = {
+    { {1}, 50 },
+    { {2}, 25 },
+    { {3}, 25 }
+};
+definition.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;</code></pre>
+          <p class="subtle">The legacy row projects this to <code>gradient_component_ids</code> and weights. vNext writes the explicit component set as canonical gradient data.</p>
+        </div>
+
+        <div id="pattern" class="example">
+<pre><code>definition.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
+definition.recipe.manual_pattern = MixedFilamentManualPattern{
+    {
+        { {1}, {1}, {1}, {2} },
+        { {2}, {1}, {1}, {1} }
+    }
+};
+definition.recipe.blend.components = {
+    { {1}, 75 },
+    { {2}, 25 }
+};</code></pre>
+          <p class="subtle">The blend is the summary; the grouped pattern is the exact perimeter sequence.</p>
+        </div>
+
+        <div id="visibility" class="example">
+<pre><code>definition.visibility.tombstoned = true;</code></pre>
+          <p class="subtle">This maps to legacy <code>deleted</code> and vNext <code>visibility_state: "tombstoned"</code>. The old <code>enabled</code> bit is legacy-only.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="glossary">
+      <div class="panel">
+        <h2>Glossary</h2>
+        <div class="search">
+          <input id="filter" type="search" placeholder="Filter terms, files, or fields">
+        </div>
+        <div id="terms">
+          <details open data-text="MixedFilamentDefinition typed model public schema UI package">
+            <summary>MixedFilamentDefinition</summary>
+            <div>The typed decoded object. Use this for UI, package code, display logic, and feature behavior.</div>
+          </details>
+          <details data-text="MixedFilamentLegacyRow compact row mixed_filament_definitions compatibility snapshot">
+            <summary>MixedFilamentLegacyRow</summary>
+            <div>The explicit DTO used by existing project settings and legacy 3MF projections. It is derived from the typed definition; the old <code>MixedFilament</code> alias has been removed.</div>
+          </details>
+          <details data-text="MixedFilamentWeightedBlend components two component pair gradient multi color">
+            <summary>MixedFilamentWeightedBlend</summary>
+            <div>A weighted list of physical filament refs. Two components are a pair blend; three or more components are the explicit multi-color path.</div>
+          </details>
+          <details data-text="MixedFilamentManualPattern groups perimeter wall exact sequence">
+            <summary>MixedFilamentManualPattern</summary>
+            <div>Exact grouped sequence for manual and multi-perimeter patterns. It is not replaced by percentages.</div>
+          </details>
+          <details data-text="visibility tombstoned deleted enabled active">
+            <summary>visibility.tombstoned</summary>
+            <div>The meaningful hidden/deleted state. It preserves deleted auto rows so regeneration does not resurrect them.</div>
+          </details>
+          <details data-text="enabled legacy column ignored runtime">
+            <summary>enabled</summary>
+            <div>A legacy column. Runtime treats every non-tombstoned row as available.</div>
+          </details>
+          <details data-text="component_a component_b first two blend components local z surface bias token">
+            <summary>Primary A/B pair</summary>
+            <div>The first two blend components are the deterministic pair used by legacy tokens, Local-Z pair splitting, and surface bias.</div>
+          </details>
+          <details data-text="Internal.hpp legacy pair adapter Pattern Definition">
+            <summary>Legacy pair adapter</summary>
+            <div>The old public pair helper is now private to mixed filament internals because it only exists to translate compact legacy tokens.</div>
+          </details>
+          <details data-text="Gradient.cpp legacy weighted component ids weights">
+            <summary>Legacy weighted fields</summary>
+            <div>The old <code>g123</code> and <code>w50/25/25</code> fields are compatibility encodings for 3+ weighted blend components.</div>
+          </details>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top: 14px;">
+        <h2>Field Mapping</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Legacy Row</th>
+              <th>Typed Definition</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>component_a</code>, <code>component_b</code></td><td>first two <code>recipe.blend.components</code></td></tr>
+            <tr><td><code>stable_id</code></td><td><code>identity.stable_id</code></td></tr>
+            <tr><td><code>deleted</code></td><td><code>visibility.tombstoned</code></td></tr>
+            <tr><td><code>custom</code>, <code>origin_auto</code></td><td><code>source.kind</code>, <code>source.origin_auto</code></td></tr>
+            <tr><td><code>mix_b_percent</code></td><td>second blend component percent</td></tr>
+            <tr><td><code>manual_pattern</code></td><td><code>recipe.manual_pattern.groups</code></td></tr>
+            <tr><td><code>gradient_component_ids</code></td><td>3+ blend component physical refs</td></tr>
+            <tr><td><code>gradient_component_weights</code></td><td>3+ blend component percents</td></tr>
+            <tr><td><code>local_z_max_sublayers</code></td><td><code>behavior.local_z.max_sublayers</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="foot">
+        Related docs: <code>doc/mixed-filament-refactor.md</code>,
+        <code>doc/fullspectrum-3mf-vnext-schema.md</code>, and
+        <code>doc/fullspectrum-3mf-vnext-implementation.md</code>.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const navButtons = document.querySelectorAll("nav button");
+    const sections = document.querySelectorAll("main section");
+    navButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        navButtons.forEach((b) => b.classList.remove("active"));
+        sections.forEach((section) => section.classList.remove("active"));
+        button.classList.add("active");
+        document.getElementById(button.dataset.view).classList.add("active");
+      });
+    });
+
+    const exampleButtons = document.querySelectorAll("[data-example]");
+    const examples = document.querySelectorAll(".example");
+    exampleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        exampleButtons.forEach((b) => b.classList.remove("active"));
+        examples.forEach((example) => example.classList.remove("active"));
+        button.classList.add("active");
+        document.getElementById(button.dataset.example).classList.add("active");
+      });
+    });
+
+    const filter = document.getElementById("filter");
+    const terms = document.querySelectorAll("#terms details");
+    filter.addEventListener("input", () => {
+      const q = filter.value.trim().toLowerCase();
+      terms.forEach((term) => {
+        const text = (term.dataset.text + " " + term.textContent).toLowerCase();
+        const visible = q.length === 0 || text.includes(q);
+        term.style.display = visible ? "" : "none";
+        if (q.length > 0 && visible) term.open = true;
+      });
+    });
+  </script>
+</body>
+</html>

@@ -3459,7 +3459,7 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
     const size_t old_num_filaments = (old_num_filaments_arg != size_t(-1))
         ? old_num_filaments_arg
         : (deleting_filament ? (num_filaments + 1) : num_filaments);
-    const std::vector<MixedFilament> old_mixed = this->mixed_filaments.mixed_filaments();
+    const std::vector<MixedFilamentDefinition> old_mixed = this->mixed_filaments.mixed_filament_definitions(old_num_filaments);
     m_last_filament_id_remap.clear();
 
     // Now verify if flush_volumes_matrix has proper size (it is used to deduce number of extruders in wipe tower generator):
@@ -3577,30 +3577,31 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
     // Build old->new filament ID remap for painted facet data normalization.
     // This is needed for both deletion and addition of physical filaments so
     // painted mixed states keep pointing at the same virtual mixed entries.
-    if (old_num_filaments != num_filaments || deleting_filament || old_mixed != this->mixed_filaments.mixed_filaments())
+    if (old_num_filaments != num_filaments || deleting_filament || old_mixed.size() != this->mixed_filaments.mixed_filament_count())
         build_filament_id_remap(old_mixed, old_num_filaments, num_filaments, deleting_filament,
                                 deleting_filament ? unsigned(to_delete_filament_id + 1) : 0u);
 }
 
-void PresetBundle::update_mixed_filament_id_remap(const std::vector<MixedFilament> &old_mixed,
+void PresetBundle::update_mixed_filament_id_remap(const std::vector<MixedFilamentDefinition> &old_mixed,
                                                   size_t old_num_filaments,
                                                   size_t new_num_filaments)
 {
     build_filament_id_remap(old_mixed, old_num_filaments, new_num_filaments, false, 0u);
 }
 
-void PresetBundle::build_filament_id_remap(const std::vector<MixedFilament> &old_mixed,
+void PresetBundle::build_filament_id_remap(const std::vector<MixedFilamentDefinition> &old_mixed,
                                            size_t old_num_filaments,
                                            size_t new_num_filaments,
                                            bool deleting_filament,
                                            unsigned int deleted_1based)
 {
-    size_t old_enabled_mixed = 0;
-    for (const auto &mf : old_mixed)
-        if (mf.enabled)
-            ++old_enabled_mixed;
+    size_t old_visible_mixed = 0;
+    for (const MixedFilamentDefinition &definition : old_mixed) {
+        if (!definition.visibility.tombstoned)
+            ++old_visible_mixed;
+    }
 
-    const size_t old_total_filaments = old_num_filaments + old_enabled_mixed;
+    const size_t old_total_filaments = old_num_filaments + old_visible_mixed;
     m_last_filament_id_remap.assign(old_total_filaments + 1, 0);
 
     for (unsigned int old_id = 1; old_id <= unsigned(old_num_filaments); ++old_id) {
@@ -3622,12 +3623,13 @@ void PresetBundle::build_filament_id_remap(const std::vector<MixedFilament> &old
     std::unordered_map<uint64_t, unsigned int> new_stable_id_to_virtual_id;
     std::map<std::pair<unsigned int, unsigned int>, std::vector<unsigned int>> new_pair_to_ids;
     unsigned int next_virtual_id = unsigned(new_num_filaments + 1);
-    for (const auto &mf : this->mixed_filaments.mixed_filaments()) {
-        if (!mf.enabled)
+    for (const MixedFilamentDefinition &definition : this->mixed_filaments.mixed_filament_definitions(new_num_filaments)) {
+        if (definition.visibility.tombstoned)
             continue;
-        if (mf.stable_id != 0)
-            new_stable_id_to_virtual_id.emplace(mf.stable_id, next_virtual_id);
-        new_pair_to_ids[canonical_pair(mf.component_a, mf.component_b)].push_back(next_virtual_id++);
+        if (definition.identity.stable_id != 0)
+            new_stable_id_to_virtual_id.emplace(definition.identity.stable_id, next_virtual_id);
+        new_pair_to_ids[canonical_pair(definition.recipe.blend.component_a_id(),
+                                       definition.recipe.blend.component_b_id())].push_back(next_virtual_id++);
     }
 
     std::map<std::pair<unsigned int, unsigned int>, size_t> used_per_pair;
@@ -3635,19 +3637,19 @@ void PresetBundle::build_filament_id_remap(const std::vector<MixedFilament> &old
     size_t fallback_pair_hits = 0;
     size_t missing_hits = 0;
     unsigned int old_virtual_id = unsigned(old_num_filaments + 1);
-    for (const auto &mf : old_mixed) {
-        if (!mf.enabled)
+    for (const MixedFilamentDefinition &definition : old_mixed) {
+        if (definition.visibility.tombstoned)
             continue;
 
-        unsigned int a = mf.component_a;
-        unsigned int b = mf.component_b;
+        unsigned int a = definition.recipe.blend.component_a_id();
+        unsigned int b = definition.recipe.blend.component_b_id();
         if (a == deleted_1based || b == deleted_1based) {
             m_last_filament_id_remap[old_virtual_id] = 0;
             ++missing_hits;
         } else {
             bool mapped_by_stable_id = false;
-            if (mf.stable_id != 0) {
-                auto it_stable = new_stable_id_to_virtual_id.find(mf.stable_id);
+            if (definition.identity.stable_id != 0) {
+                auto it_stable = new_stable_id_to_virtual_id.find(definition.identity.stable_id);
                 if (it_stable != new_stable_id_to_virtual_id.end()) {
                     m_last_filament_id_remap[old_virtual_id] = it_stable->second;
                     mapped_by_stable_id = true;
@@ -3700,8 +3702,8 @@ void PresetBundle::build_filament_id_remap(const std::vector<MixedFilament> &old
                             << " new_physical=" << new_num_filaments
                             << " deleting=" << (deleting_filament ? 1 : 0)
                             << " deleted_id=" << deleted_1based
-                            << " old_mixed_enabled=" << old_enabled_mixed
-                            << " new_mixed_enabled=" << this->mixed_filaments.enabled_count()
+                            << " old_mixed_visible=" << old_visible_mixed
+                            << " new_mixed_visible=" << this->mixed_filaments.visible_count()
                             << " stable_id_hits=" << stable_id_hits
                             << " fallback_pair_hits=" << fallback_pair_hits
                             << " missing_hits=" << missing_hits

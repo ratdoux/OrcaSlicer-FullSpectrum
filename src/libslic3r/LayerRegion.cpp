@@ -3,6 +3,7 @@
 #include "ClipperUtils.hpp"
 #include "Exception.hpp"
 #include "Geometry.hpp"
+#include "MixedFilament.hpp"
 #include "PerimeterGenerator.hpp"
 #include "Print.hpp"
 #include "Surface.hpp"
@@ -62,12 +63,11 @@ unsigned int effective_infill_filament_id(const Layer &layer, const PrintRegionC
         return filament_id;
 
     const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
-    const MixedFilament *mixed_row = mixed_mgr.mixed_filament_from_id(filament_id, num_physical);
-    if (mixed_row == nullptr)
+    const std::optional<MixedFilamentDefinition> definition = mixed_mgr.mixed_filament_definition_from_id(filament_id, num_physical);
+    if (!definition)
         return filament_id;
 
-    const std::string normalized_pattern = MixedFilamentManager::normalize_manual_pattern(mixed_row->manual_pattern);
-    if (normalized_pattern.find(',') == std::string::npos)
+    if (!definition->recipe.manual_pattern || definition->recipe.manual_pattern->groups.size() < 2)
         return filament_id;
 
     const int innermost_perimeter_index = std::max(0, config.wall_loops.value - 1);

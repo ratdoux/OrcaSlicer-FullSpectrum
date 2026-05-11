@@ -1360,8 +1360,6 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              mixed_filament_height_lower_bound))
     ((ConfigOptionFloat,              mixed_filament_height_upper_bound))
     ((ConfigOptionBool,               mixed_filament_advanced_dithering))
-    ((ConfigOptionFloat,              mixed_filament_pointillism_pixel_size))
-    ((ConfigOptionFloat,              mixed_filament_pointillism_line_gap))
     ((ConfigOptionBool,               mixed_filament_component_bias_enabled))
     ((ConfigOptionFloat,              mixed_filament_surface_indentation))
     ((ConfigOptionBool,               mixed_filament_region_collapse))

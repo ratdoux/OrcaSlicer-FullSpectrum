@@ -223,7 +223,7 @@ The current implementation still uses positional numeric IDs as the working mate
 
 ```text
 1..N = physical filaments by current config array position
-N+1.. = enabled mixed rows by current enabled-row order
+N+1.. = visible mixed rows by current visible-row order
 ```
 
 Those IDs are fine inside one slicer session and in legacy compatibility files. They are not stable saved identity. Adding or deleting a physical filament changes where mixed rows start, and disabling or reordering mixed rows changes which virtual material a numeric ID points to. The vNext importer should therefore treat numeric filament IDs as runtime handles derived from canonical `fil_...` and `mix_...` references.
@@ -445,7 +445,7 @@ Implementation source:
 - object IDs from the current BBS object export map
 - volume IDs from the current volume/object mapping
 - runtime material bindings from project filament config arrays
-- mixed-filament runtime bindings from enabled canonical mixed row order
+- mixed-filament runtime bindings from visible canonical mixed row order
 
 Implementation notes:
 
@@ -520,7 +520,6 @@ Mapping from current fields:
 | `MixedFilament::stable_id` | `virtual_filaments[].id` through ID map |
 | `filament_id` / `a` | `origin.component_refs[0]` |
 | `filament_id_b` / `b` | `origin.component_refs[1]` |
-| `enabled` | `enabled` |
 | `deleted` | `visibility_state` |
 | `custom` | `source_kind` |
 | `origin_auto_generated` | `origin.origin_auto_generated` |
@@ -535,11 +534,11 @@ Mapping from current fields:
 
 Distribution mode conversion:
 
-| Current Enum | Canonical Value | Notes |
+| Current Mode | Canonical Value | Notes |
 |---|---|---|
 | `LayerCycle` | `layer_cycle` | Standard v1 mode |
 | `Simple` | `simple` | Standard v1 mode |
-| `SameLayerPointillisme` | extension or fallback | Do not emit as standard v1 mode |
+| retired storage value `1` | none | Read only for old compact rows; normalize before writing vnext data |
 
 Manual pattern conversion:
 
@@ -643,7 +642,7 @@ Required writer checks:
 - every assignment material ref resolves to a physical or mixed material
 - every mixed row component ref resolves to a physical filament
 - no mixed or virtual filament is emitted as a physical filament
-- every enabled mixed row has a stable ID
+- every visible mixed row has a stable ID
 - generated canonical material IDs are unique after de-duping duplicate source IDs
 - every declared checksum matches the serialized bytes
 - FullSpectrum sidecar failures do not abort ordinary BBS 3MF saving

@@ -76,7 +76,7 @@ std::unordered_map<int, std::string> build_runtime_material_map(const Materials 
     if (mixed_filaments) {
         int runtime_id = int(materials.physical_filaments.size() + 1);
         for (const VirtualFilament &vf : mixed_filaments->virtual_filaments) {
-            if (vf.enabled && vf.visibility_state != "tombstoned")
+            if (vf.visibility_state != "tombstoned")
                 map.emplace(runtime_id++, vf.id);
         }
     }
@@ -256,7 +256,7 @@ PackageModel build_package_model(const DynamicPrintConfig &config,
     if (model.mixed_filaments) {
         int runtime_id = int(model.materials.physical_filaments.size() + 1);
         for (const VirtualFilament &vf : model.mixed_filaments->virtual_filaments) {
-            if (vf.enabled && vf.visibility_state != "tombstoned")
+            if (vf.visibility_state != "tombstoned")
                 model.identity_map.mixed_filament_bindings.push_back({runtime_id++, vf.legacy_stable_id, vf.id});
         }
     }

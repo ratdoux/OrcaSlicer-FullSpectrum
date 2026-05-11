@@ -47,17 +47,25 @@ static std::string join_rows(const std::vector<std::string> &rows)
     return ss.str();
 }
 
-static unsigned int virtual_id_for_stable_id(const std::vector<MixedFilament> &mixed, size_t num_physical, uint64_t stable_id)
+static unsigned int virtual_id_for_stable_id(const std::vector<MixedFilamentLegacyRow> &mixed, size_t num_physical, uint64_t stable_id)
 {
     unsigned int next_virtual_id = unsigned(num_physical + 1);
-    for (const MixedFilament &mf : mixed) {
-        if (!mf.enabled || mf.deleted)
+    for (const MixedFilamentLegacyRow &mf : mixed) {
+        if (mf.deleted)
             continue;
         if (mf.stable_id == stable_id)
             return next_virtual_id;
         ++next_virtual_id;
     }
     return 0;
+}
+
+static void set_legacy_row(MixedFilamentManager &manager,
+                           size_t                index,
+                           const MixedFilamentLegacyRow  &row,
+                           const std::vector<std::string> &colors)
+{
+    REQUIRE(manager.set_mixed_filament_legacy_row(index, row, colors.size(), colors));
 }
 
 struct MixedAutoGenerateGuard
@@ -177,20 +185,19 @@ TEST_CASE("Mixed filament remap follows stable row ids when same-pair rows reord
     bundle.update_multi_material_filament_presets();
 
     auto &mgr = bundle.mixed_filaments;
-    auto &mixed = mgr.mixed_filaments();
+    auto mixed = mgr.mixed_filament_legacy_rows();
     REQUIRE(mixed.size() == 1);
 
     mixed[0].deleted = true;
-    mixed[0].enabled = false;
-
     const auto colors = bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values;
+    mgr.set_mixed_filament_legacy_rows(mixed, colors.size(), colors);
     mgr.add_custom_filament(1, 2, 25, colors);
     mgr.add_custom_filament(1, 2, 75, colors);
 
-    auto &old_mixed = mgr.mixed_filaments();
+    const auto &old_mixed = mgr.mixed_filament_legacy_rows();
     REQUIRE(old_mixed.size() == 3);
-    REQUIRE(old_mixed[1].enabled);
-    REQUIRE(old_mixed[2].enabled);
+    REQUIRE(!old_mixed[1].deleted);
+    REQUIRE(!old_mixed[2].deleted);
     const uint64_t first_custom_id = old_mixed[1].stable_id;
     const uint64_t second_custom_id = old_mixed[2].stable_id;
 
@@ -209,7 +216,7 @@ TEST_CASE("Mixed filament remap follows stable row ids when same-pair rows reord
     const std::vector<unsigned int> remap = bundle.consume_last_filament_id_remap();
     REQUIRE(remap.size() >= 5);
 
-    const auto &rebuilt = bundle.mixed_filaments.mixed_filaments();
+    const auto &rebuilt = bundle.mixed_filaments.mixed_filament_legacy_rows();
     const unsigned int new_first_custom_virtual_id = virtual_id_for_stable_id(rebuilt, 3, first_custom_id);
     const unsigned int new_second_custom_virtual_id = virtual_id_for_stable_id(rebuilt, 3, second_custom_id);
 
@@ -226,24 +233,25 @@ TEST_CASE("Mixed filament remap keeps later painted colors stable when an earlie
     bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values = {"#FF0000", "#00FF00", "#0000FF", "#FFFF00"};
     bundle.update_multi_material_filament_presets();
 
-    auto &mixed = bundle.mixed_filaments.mixed_filaments();
+    auto mixed = bundle.mixed_filaments.mixed_filament_legacy_rows();
     REQUIRE(mixed.size() >= 6);
 
     const uint64_t stable_id_6 = mixed[1].stable_id;
     const uint64_t stable_id_7 = mixed[2].stable_id;
     const uint64_t stable_id_8 = mixed[3].stable_id;
 
-    const std::vector<MixedFilament> old_mixed = mixed;
-    mixed[0].enabled = false;
+    const std::vector<MixedFilamentDefinition> old_mixed = bundle.mixed_filaments.mixed_filament_definitions(4);
     mixed[0].deleted = true;
+    bundle.mixed_filaments.set_mixed_filament_legacy_rows(mixed, 4, bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values);
 
     bundle.update_mixed_filament_id_remap(old_mixed, 4, 4);
     const std::vector<unsigned int> remap = bundle.consume_last_filament_id_remap();
+    const auto &updated_mixed = bundle.mixed_filaments.mixed_filament_legacy_rows();
 
     REQUIRE(remap.size() >= 11);
-    CHECK(remap[6] == virtual_id_for_stable_id(mixed, 4, stable_id_6));
-    CHECK(remap[7] == virtual_id_for_stable_id(mixed, 4, stable_id_7));
-    CHECK(remap[8] == virtual_id_for_stable_id(mixed, 4, stable_id_8));
+    CHECK(remap[6] == virtual_id_for_stable_id(updated_mixed, 4, stable_id_6));
+    CHECK(remap[7] == virtual_id_for_stable_id(updated_mixed, 4, stable_id_7));
+    CHECK(remap[8] == virtual_id_for_stable_id(updated_mixed, 4, stable_id_8));
 }
 
 TEST_CASE("Mixed filament grouped manual patterns normalize and round-trip", "[MixedFilament]")
@@ -252,19 +260,20 @@ TEST_CASE("Mixed filament grouped manual patterns normalize and round-trip", "[M
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("1/1/1/1/1/1/1/2, 1/1/1/2/1/1/1/1");
     REQUIRE(row.manual_pattern == "11111112,11121111");
+    set_legacy_row(mgr, 0, row, colors);
 
     const std::string serialized = mgr.serialize_custom_entries();
 
     MixedFilamentManager loaded;
     loaded.load_custom_entries(serialized, colors);
-    REQUIRE(loaded.mixed_filaments().size() == 1);
-    CHECK(loaded.mixed_filaments().front().manual_pattern == "11111112,11121111");
-    CHECK(loaded.mixed_filaments().front().mix_b_percent == 13);
+    REQUIRE(loaded.mixed_filament_legacy_rows().size() == 1);
+    CHECK(loaded.mixed_filament_legacy_rows().front().manual_pattern == "11111112,11121111");
+    CHECK(loaded.mixed_filament_legacy_rows().front().mix_b_percent == 13);
 }
 
 TEST_CASE("Mixed filament component surface offsets round-trip and bias the second layer component", "[MixedFilament]")
@@ -273,13 +282,14 @@ TEST_CASE("Mixed filament component surface offsets round-trip and bias the seco
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.ratio_a = 1;
     row.ratio_b = 1;
     row.component_a_surface_offset = 0.02f;
     row.component_b_surface_offset = -0.01f;
+    set_legacy_row(mgr, 0, row, colors);
 
     const std::string serialized = mgr.serialize_custom_entries();
     CHECK(serialized.find("xa0.02") != std::string::npos);
@@ -287,9 +297,9 @@ TEST_CASE("Mixed filament component surface offsets round-trip and bias the seco
 
     MixedFilamentManager loaded;
     loaded.load_custom_entries(serialized, colors);
-    REQUIRE(loaded.mixed_filaments().size() == 1);
+    REQUIRE(loaded.mixed_filament_legacy_rows().size() == 1);
 
-    const MixedFilament &loaded_row = loaded.mixed_filaments().front();
+    const MixedFilamentLegacyRow &loaded_row = loaded.mixed_filament_legacy_rows().front();
     CHECK(loaded_row.component_a_surface_offset == Approx(0.02f));
     CHECK(loaded_row.component_b_surface_offset == Approx(-0.01f));
     CHECK(loaded.component_surface_offset(3, 2, 0) == Approx(0.01f));
@@ -343,18 +353,20 @@ TEST_CASE("Mixed filament component surface offsets follow the signed bias targe
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern.clear();
-    row.distribution_mode = int(MixedFilament::Simple);
+    row.distribution_mode = int(MixedFilamentLegacyRow::Simple);
     row.ratio_a = 1;
     row.ratio_b = 1;
+    set_legacy_row(mgr, 0, row, colors);
 
     {
         const auto [offset_a, offset_b] = MixedFilamentManager::surface_offset_pair_from_signed_bias(0.05f, 0.4f);
         row.component_a_surface_offset = offset_a;
         row.component_b_surface_offset = offset_b;
+        set_legacy_row(mgr, 0, row, colors);
 
         CHECK(mgr.component_surface_offset(3, 2, 0) == Approx(0.0f));
         CHECK(mgr.component_surface_offset(3, 2, 1) == Approx(0.05f));
@@ -365,6 +377,7 @@ TEST_CASE("Mixed filament component surface offsets follow the signed bias targe
     {
         row.component_a_surface_offset = 0.05f;
         row.component_b_surface_offset = 0.0f;
+        set_legacy_row(mgr, 0, row, colors);
 
         CHECK(mgr.component_surface_offset(3, 2, 0) == Approx(0.05f));
         CHECK(mgr.component_surface_offset(3, 2, 1) == Approx(0.0f));
@@ -376,6 +389,7 @@ TEST_CASE("Mixed filament component surface offsets follow the signed bias targe
         const auto [offset_a, offset_b] = MixedFilamentManager::surface_offset_pair_from_signed_bias(-0.05f, 0.4f);
         row.component_a_surface_offset = offset_a;
         row.component_b_surface_offset = offset_b;
+        set_legacy_row(mgr, 0, row, colors);
 
         CHECK(mgr.component_surface_offset(3, 2, 0) == Approx(0.05f));
         CHECK(mgr.component_surface_offset(3, 2, 1) == Approx(0.0f));
@@ -390,24 +404,154 @@ TEST_CASE("Mixed filament auto generation can be disabled without dropping custo
 
     MixedFilamentManager enabled_mgr;
     enabled_mgr.auto_generate(colors);
-    REQUIRE(enabled_mgr.mixed_filaments().size() == 3);
+    REQUIRE(enabled_mgr.mixed_filament_legacy_rows().size() == 3);
     const std::string serialized_auto_rows = enabled_mgr.serialize_custom_entries();
 
     MixedAutoGenerateGuard guard(false);
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
     mgr.auto_generate(colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
-    CHECK(mgr.mixed_filaments().front().custom);
-    CHECK(mgr.mixed_filaments().front().component_a == 1);
-    CHECK(mgr.mixed_filaments().front().component_b == 2);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
+    CHECK(mgr.mixed_filament_legacy_rows().front().custom);
+    CHECK(mgr.mixed_filament_legacy_rows().front().component_a == 1);
+    CHECK(mgr.mixed_filament_legacy_rows().front().component_b == 2);
 
     MixedFilamentManager loaded;
     loaded.load_custom_entries(serialized_auto_rows, colors);
-    CHECK(loaded.mixed_filaments().empty());
+    CHECK(loaded.mixed_filament_legacy_rows().empty());
+}
+
+TEST_CASE("Mixed filament typed definition resolves legacy manual pattern tokens", "[MixedFilament]")
+{
+    MixedFilamentLegacyRow row;
+    row.component_a = 4;
+    row.component_b = 2;
+    row.stable_id = 123;
+    row.custom = true;
+    row.origin_auto = false;
+    row.mix_b_percent = 50;
+    row.ratio_a = 3;
+    row.ratio_b = 1;
+    row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("1/2, 3/1");
+    row.local_z_max_sublayers = 5;
+    row.component_a_surface_offset = 0.02f;
+    row.component_b_surface_offset = -0.01f;
+    row.display_color = "#123456";
+
+    const MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(row, 9);
+    CHECK(definition.identity.stable_id == 123);
+    CHECK(definition.source.kind == MixedFilamentSourceKind::Custom);
+    CHECK(definition.recipe.kind == MixedFilamentRecipeKind::ManualPattern);
+    REQUIRE(definition.recipe.blend.components.size() == 3);
+    CHECK(definition.recipe.blend.components[0].filament.id == 4);
+    CHECK(definition.recipe.blend.components[0].percent == 50);
+    CHECK(definition.recipe.blend.components[1].filament.id == 2);
+    CHECK(definition.recipe.blend.components[1].percent == 25);
+    CHECK(definition.recipe.blend.components[2].filament.id == 3);
+    CHECK(definition.recipe.blend.components[2].percent == 25);
+    CHECK(definition.behavior.layer_cadence.component_a_layers == 3);
+    CHECK(definition.behavior.layer_cadence.component_b_layers == 1);
+    CHECK(definition.behavior.local_z.max_sublayers == 5);
+    CHECK(definition.behavior.surface_bias.component_a_offset_mm == Approx(0.02f));
+    CHECK(definition.behavior.surface_bias.component_b_offset_mm == Approx(-0.01f));
+    CHECK(definition.presentation.display_color == "#123456");
+
+    REQUIRE(definition.recipe.manual_pattern);
+    REQUIRE(definition.recipe.manual_pattern->groups.size() == 2);
+    REQUIRE(definition.recipe.manual_pattern->groups[0].size() == 2);
+    REQUIRE(definition.recipe.manual_pattern->groups[1].size() == 2);
+    CHECK(definition.recipe.manual_pattern->groups[0][0].id == 4);
+    CHECK(definition.recipe.manual_pattern->groups[0][1].id == 2);
+    CHECK(definition.recipe.manual_pattern->groups[1][0].id == 3);
+    CHECK(definition.recipe.manual_pattern->groups[1][1].id == 4);
+
+    CHECK(mixed_filament_manual_pattern_sequence(definition, 9) == std::vector<unsigned int>{4, 2, 3, 4});
+    CHECK(mixed_filament_manual_pattern_preview_sequence(definition, 9, 2) == std::vector<unsigned int>{4, 3, 2, 4});
+
+    const MixedFilamentLegacyRow rebuilt = mixed_filament_legacy_row_from_definition(definition);
+    CHECK(rebuilt.component_a == 4);
+    CHECK(rebuilt.component_b == 2);
+    CHECK(rebuilt.manual_pattern == "12,31");
+    CHECK(rebuilt.mix_b_percent == 25);
+    CHECK(rebuilt.gradient_component_ids.empty());
+    CHECK(rebuilt.gradient_component_weights.empty());
+}
+
+TEST_CASE("Mixed filament typed definition exposes weighted blend components and weights", "[MixedFilament]")
+{
+    MixedFilamentLegacyRow row;
+    row.component_a = 1;
+    row.component_b = 2;
+    row.stable_id = 456;
+    row.custom = true;
+    row.gradient_component_ids = "312";
+    row.gradient_component_weights = "50/25/25";
+    row.distribution_mode = int(MixedFilamentLegacyRow::LayerCycle);
+
+    const MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(row, 9);
+    CHECK(definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend);
+    CHECK(definition.behavior.distribution == MixedFilamentDistributionMode::LayerCycle);
+
+    REQUIRE(definition.recipe.blend.components.size() == 3);
+    CHECK(definition.recipe.blend.components[0].filament.id == 3);
+    CHECK(definition.recipe.blend.components[0].percent == 50);
+    CHECK(definition.recipe.blend.components[1].filament.id == 1);
+    CHECK(definition.recipe.blend.components[1].percent == 25);
+    CHECK(definition.recipe.blend.components[2].filament.id == 2);
+    CHECK(definition.recipe.blend.components[2].percent == 25);
+    CHECK(mixed_filament_blend_component_ids(definition, 9) == std::vector<unsigned int>{3, 1, 2});
+    CHECK(mixed_filament_blend_component_weights(definition) == std::vector<int>{50, 25, 25});
+
+    const MixedFilamentLegacyRow rebuilt = mixed_filament_legacy_row_from_definition(definition);
+    CHECK(rebuilt.gradient_component_ids == "312");
+    CHECK(rebuilt.gradient_component_weights == "50/25/25");
+    CHECK(rebuilt.manual_pattern.empty());
+}
+
+TEST_CASE("Mixed filament manager accepts typed definitions at the boundary", "[MixedFilament]")
+{
+    const std::vector<std::string> colors = {"#FF0000", "#00FF00", "#0000FF"};
+
+    MixedFilamentDefinition definition;
+    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend = MixedFilamentWeightedBlend{
+        {
+            {MixedFilamentPhysicalRef{1}, 50},
+            {MixedFilamentPhysicalRef{2}, 25},
+            {MixedFilamentPhysicalRef{3}, 25}
+        }
+    };
+    definition.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;
+
+    MixedFilamentManager mgr;
+    REQUIRE(mgr.add_custom_filament_definition(definition, colors));
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
+
+    const std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(colors.size());
+    REQUIRE(definitions.size() == 1);
+    CHECK(definitions.front().source.kind == MixedFilamentSourceKind::Custom);
+    CHECK(definitions.front().identity.stable_id != 0);
+    CHECK(mixed_filament_blend_component_ids(definitions.front(), colors.size()) == std::vector<unsigned int>{1, 2, 3});
+
+    MixedFilamentDefinition edited = definitions.front();
+    edited.recipe.blend.components = {
+        {MixedFilamentPhysicalRef{1}, 35},
+        {MixedFilamentPhysicalRef{2}, 65}
+    };
+    edited.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+    edited.behavior.distribution = MixedFilamentDistributionMode::Simple;
+    REQUIRE(mgr.set_mixed_filament_definition(0, edited, colors));
+
+    const auto roundtrip = mgr.mixed_filament_definition_from_id(4, colors.size());
+    REQUIRE(roundtrip);
+    CHECK(roundtrip->identity.stable_id == definitions.front().identity.stable_id);
+    CHECK(roundtrip->recipe.kind == MixedFilamentRecipeKind::WeightedBlend);
+    CHECK(roundtrip->recipe.blend.is_pair());
+    CHECK(roundtrip->recipe.blend.component_b_percent() == 65);
+    CHECK(mixed_filament_blend_component_ids(*roundtrip, colors.size()) == std::vector<unsigned int>{1, 2});
 }
 
 TEST_CASE("Mixed filament perimeter resolver uses grouped manual patterns by inset", "[MixedFilament]")
@@ -416,11 +560,12 @@ TEST_CASE("Mixed filament perimeter resolver uses grouped manual patterns by ins
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("12,21");
     REQUIRE(row.manual_pattern == "12,21");
+    set_legacy_row(mgr, 0, row, colors);
 
     const unsigned int mixed_filament_id = 3;
     CHECK(mgr.resolve(mixed_filament_id, 2, 0) == 1);
@@ -449,11 +594,12 @@ TEST_CASE("Grouped manual perimeter patterns keep grouped resolution on collapse
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("2,12");
     REQUIRE(row.manual_pattern == "2,12");
+    set_legacy_row(mgr, 0, row, colors);
 
     const unsigned int mixed_filament_id = 3;
 
@@ -477,11 +623,12 @@ TEST_CASE("Grouped manual perimeter patterns resolve overlapping singleton inner
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("12,1");
     REQUIRE(row.manual_pattern == "12,1");
+    set_legacy_row(mgr, 0, row, colors);
 
     const unsigned int mixed_filament_id = 3;
 
@@ -508,11 +655,12 @@ TEST_CASE("Grouped manual wall patterns make infill follow the innermost perimet
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("12,1");
     REQUIRE(row.manual_pattern == "12,1");
+    set_legacy_row(mgr, 0, row, colors);
 
     PrintRegionConfig region_config = static_cast<const PrintRegionConfig &>(FullPrintConfig::defaults());
     region_config.wall_filament.value                  = 3;
@@ -562,37 +710,50 @@ TEST_CASE("Mixed filament painted-region resolver collapses ordinary mixed rows 
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.ratio_a = 1;
     row.ratio_b = 1;
     row.manual_pattern.clear();
-    row.distribution_mode = int(MixedFilament::Simple);
+    row.distribution_mode = int(MixedFilamentLegacyRow::Simple);
+    set_legacy_row(mgr, 0, row, colors);
 
     CHECK(mgr.effective_painted_region_filament_id(3, 2, 0) == 1);
     CHECK(mgr.effective_painted_region_filament_id(3, 2, 1) == 2);
 }
 
-TEST_CASE("Mixed filament painted-region resolver preserves virtual channels for grouped and same-layer modes", "[MixedFilament]")
+TEST_CASE("Mixed filament painted-region resolver preserves virtual channels for grouped patterns", "[MixedFilament]")
 {
     const std::vector<std::string> colors = {"#00FFFF", "#FF00FF"};
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("12,21");
+    set_legacy_row(mgr, 0, row, colors);
     CHECK(mgr.effective_painted_region_filament_id(3, 2, 0) == 3);
     row.component_a_surface_offset = 0.02f;
     row.component_b_surface_offset = -0.02f;
+    set_legacy_row(mgr, 0, row, colors);
     CHECK(mgr.component_surface_offset(3, 2, 0) == Approx(0.0f));
+}
 
-    row.manual_pattern.clear();
-    row.distribution_mode = int(MixedFilament::SameLayerPointillisme);
-    CHECK(mgr.effective_painted_region_filament_id(3, 2, 0) == 3);
-    CHECK(mgr.component_surface_offset(3, 2, 0) == Approx(0.0f));
+TEST_CASE("Mixed filament loader normalizes retired distribution rows", "[MixedFilament]")
+{
+    const std::vector<std::string> colors = {"#00FFFF", "#FF00FF", "#FFFF00"};
+
+    MixedFilamentManager pair_mgr;
+    pair_mgr.load_custom_entries("1,2,1,1,50,0,m1,u123", colors);
+    REQUIRE(pair_mgr.mixed_filament_legacy_rows().size() == 1);
+    CHECK(pair_mgr.mixed_filament_legacy_rows().front().distribution_mode == int(MixedFilamentLegacyRow::Simple));
+
+    MixedFilamentManager gradient_mgr;
+    gradient_mgr.load_custom_entries("1,2,1,1,50,0,g123,w50/25/25,m1,u456", colors);
+    REQUIRE(gradient_mgr.mixed_filament_legacy_rows().size() == 1);
+    CHECK(gradient_mgr.mixed_filament_legacy_rows().front().distribution_mode == int(MixedFilamentLegacyRow::LayerCycle));
 }
 
 TEST_CASE("ExtrusionPath copies preserve inset index", "[MixedFilament]")
@@ -639,17 +800,18 @@ TEST_CASE("FullSpectrum mixed filaments round-trip canonical grouped pattern dat
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, colors);
-    REQUIRE(mgr.mixed_filaments().size() == 1);
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
 
-    MixedFilament &row = mgr.mixed_filaments().front();
+    MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
     row.stable_id = 4242;
     row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("1/2, 2/3");
     row.gradient_component_ids = "123";
     row.gradient_component_weights = "50/25/25";
-    row.distribution_mode = int(MixedFilament::LayerCycle);
+    row.distribution_mode = int(MixedFilamentLegacyRow::LayerCycle);
     row.local_z_max_sublayers = 4;
     row.component_a_surface_offset = 0.02f;
     row.component_b_surface_offset = -0.01f;
+    set_legacy_row(mgr, 0, row, colors);
 
     const MixedFilaments canonical = mixed_filaments_from_manager(mgr, refs);
     REQUIRE(canonical.virtual_filaments.size() == 1);
@@ -663,13 +825,13 @@ TEST_CASE("FullSpectrum mixed filaments round-trip canonical grouped pattern dat
 
     const MixedFilaments parsed = parse_json<MixedFilaments>(serialize_json(canonical));
     MixedFilamentManager rebuilt = manager_from_mixed_filaments(parsed, colors, refs);
-    REQUIRE(rebuilt.mixed_filaments().size() == 1);
-    CHECK(rebuilt.mixed_filaments().front().stable_id == 4242);
-    CHECK(rebuilt.mixed_filaments().front().manual_pattern == "12,23");
-    CHECK(rebuilt.mixed_filaments().front().gradient_component_ids == "123");
-    CHECK(rebuilt.mixed_filaments().front().gradient_component_weights == "50/25/25");
-    CHECK(rebuilt.mixed_filaments().front().component_a_surface_offset == Approx(0.02f));
-    CHECK(rebuilt.mixed_filaments().front().component_b_surface_offset == Approx(-0.01f));
+    REQUIRE(rebuilt.mixed_filament_legacy_rows().size() == 1);
+    CHECK(rebuilt.mixed_filament_legacy_rows().front().stable_id == 4242);
+    CHECK(rebuilt.mixed_filament_legacy_rows().front().manual_pattern == "12,23");
+    CHECK(rebuilt.mixed_filament_legacy_rows().front().gradient_component_ids == "123");
+    CHECK(rebuilt.mixed_filament_legacy_rows().front().gradient_component_weights == "50/25/25");
+    CHECK(rebuilt.mixed_filament_legacy_rows().front().component_a_surface_offset == Approx(0.02f));
+    CHECK(rebuilt.mixed_filament_legacy_rows().front().component_b_surface_offset == Approx(-0.01f));
 }
 
 TEST_CASE("FullSpectrum writer emits core package parts and mixed assignments", "[FullSpectrum3mf]")
@@ -678,8 +840,12 @@ TEST_CASE("FullSpectrum writer emits core package parts and mixed assignments", 
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 25, {"#FF0000", "#0000FF"});
-    REQUIRE(mgr.mixed_filaments().size() == 1);
-    mgr.mixed_filaments().front().stable_id = 9001;
+    REQUIRE(mgr.mixed_filament_legacy_rows().size() == 1);
+    {
+        MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
+        row.stable_id = 9001;
+        set_legacy_row(mgr, 0, row, {"#FF0000", "#0000FF"});
+    }
     bundle.project_config.option<ConfigOptionString>("mixed_filament_definitions")->value = mgr.serialize_custom_entries();
 
     GeometryBindingInput geometry;
@@ -717,8 +883,12 @@ TEST_CASE("FullSpectrum writer keeps material ids unique for duplicate filament 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 50, {"#FF0000", "#0000FF", "#00FF00"});
     mgr.add_custom_filament(1, 3, 50, {"#FF0000", "#0000FF", "#00FF00"});
-    mgr.mixed_filaments()[0].stable_id = 1234;
-    mgr.mixed_filaments()[1].stable_id = 1234;
+    {
+        std::vector<MixedFilamentLegacyRow> rows = mgr.mixed_filament_legacy_rows();
+        rows[0].stable_id = 1234;
+        rows[1].stable_id = 1234;
+        mgr.set_mixed_filament_legacy_rows(rows, 3, {"#FF0000", "#0000FF", "#00FF00"});
+    }
     bundle.project_config.option<ConfigOptionString>("mixed_filament_definitions")->value = mgr.serialize_custom_entries();
 
     const PackageWritePlan plan = build_write_plan(bundle.project_config, {}, true);
@@ -739,7 +909,11 @@ TEST_CASE("FullSpectrum canonical mixed rows override legacy mixed definitions o
 
     MixedFilamentManager mgr;
     mgr.add_custom_filament(1, 2, 25, {"#FF0000", "#0000FF"});
-    mgr.mixed_filaments().front().stable_id = 777;
+    {
+        MixedFilamentLegacyRow row = mgr.mixed_filament_legacy_rows().front();
+        row.stable_id = 777;
+        set_legacy_row(mgr, 0, row, {"#FF0000", "#0000FF"});
+    }
     bundle.project_config.option<ConfigOptionString>("mixed_filament_definitions")->value = mgr.serialize_custom_entries();
 
     const PackageWritePlan plan = build_write_plan(bundle.project_config, {}, true);

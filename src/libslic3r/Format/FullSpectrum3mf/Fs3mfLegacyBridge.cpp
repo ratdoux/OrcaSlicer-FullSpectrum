@@ -9,12 +9,17 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace Slic3r::FullSpectrum3mf {
 
 namespace {
+
+struct CanonicalPairRefs
+{
+    MixedFilamentPhysicalRef component_a;
+    MixedFilamentPhysicalRef component_b;
+};
 
 std::vector<std::string> string_values(const DynamicPrintConfig &config, const std::string &key)
 {
@@ -56,38 +61,40 @@ double value_at(const std::vector<double> &values, size_t idx, double fallback)
     return idx < values.size() ? values[idx] : fallback;
 }
 
-std::vector<std::string> split_pattern_groups(const std::string &pattern)
+unsigned int physical_index_from_ref(const std::string &ref, const std::vector<std::string> &physical_refs)
 {
-    std::vector<std::string> groups;
-    std::stringstream ss(pattern);
-    std::string group;
-    while (std::getline(ss, group, ',')) {
-        if (!group.empty())
-            groups.emplace_back(group);
-    }
-    return groups;
+    auto it = std::find(physical_refs.begin(), physical_refs.end(), ref);
+    if (it == physical_refs.end())
+        return 0;
+    return unsigned(std::distance(physical_refs.begin(), it) + 1);
 }
 
-std::optional<ManualPattern> manual_pattern_from_legacy(const std::string              &pattern,
-                                                        const std::vector<std::string> &physical_refs)
+std::string physical_ref_from_index(unsigned int index, const std::vector<std::string> &physical_refs)
 {
-    const std::string normalized = MixedFilamentManager::normalize_manual_pattern(pattern);
-    if (normalized.empty())
+    return index >= 1 && index <= physical_refs.size() ? physical_refs[index - 1] : std::string();
+}
+
+std::optional<ManualPattern> manual_pattern_from_definition(const MixedFilamentDefinition &definition,
+                                                            const std::vector<std::string> &physical_refs)
+{
+    if (!definition.recipe.manual_pattern || definition.recipe.manual_pattern->groups.empty())
         return std::nullopt;
 
     ManualPattern out;
-    for (const std::string &group : split_pattern_groups(normalized)) {
+    const unsigned int component_a = definition.recipe.blend.component_a_id(0);
+    const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+    for (const std::vector<MixedFilamentPhysicalRef> &group : definition.recipe.manual_pattern->groups) {
         std::vector<std::string> steps;
         steps.reserve(group.size());
-        for (char c : group) {
-            if (c == '1')
+        for (const MixedFilamentPhysicalRef &step : group) {
+            if (step.id == component_a) {
                 steps.emplace_back("component_a");
-            else if (c == '2')
+            } else if (step.id == component_b) {
                 steps.emplace_back("component_b");
-            else if (c >= '3' && c <= '9') {
-                const size_t physical_idx = size_t(c - '1');
-                if (physical_idx < physical_refs.size())
-                    steps.emplace_back("physical:" + physical_refs[physical_idx]);
+            } else {
+                const std::string ref = physical_ref_from_index(step.id, physical_refs);
+                if (!ref.empty())
+                    steps.emplace_back("physical:" + ref);
             }
         }
         if (!steps.empty())
@@ -97,120 +104,87 @@ std::optional<ManualPattern> manual_pattern_from_legacy(const std::string       
     return out.groups.empty() ? std::nullopt : std::optional<ManualPattern>(std::move(out));
 }
 
-std::string legacy_pattern_from_manual_pattern(const std::optional<ManualPattern> &manual_pattern,
-                                               const std::vector<std::string>     &physical_refs)
+std::optional<Gradient> gradient_from_definition(const MixedFilamentDefinition &definition,
+                                                 const std::vector<std::string> &physical_refs)
 {
-    if (!manual_pattern || manual_pattern->groups.empty())
-        return {};
-
-    std::unordered_map<std::string, char> physical_token_by_ref;
-    for (size_t i = 0; i < physical_refs.size() && i < 9; ++i)
-        physical_token_by_ref.emplace(physical_refs[i], char('1' + i));
-
-    std::ostringstream ss;
-    for (size_t group_idx = 0; group_idx < manual_pattern->groups.size(); ++group_idx) {
-        if (group_idx != 0)
-            ss << ',';
-        for (const std::string &step : manual_pattern->groups[group_idx]) {
-            if (step == "component_a")
-                ss << '1';
-            else if (step == "component_b")
-                ss << '2';
-            else if (step.rfind("physical:", 0) == 0) {
-                const std::string physical_ref = step.substr(9);
-                auto it = physical_token_by_ref.find(physical_ref);
-                if (it != physical_token_by_ref.end())
-                    ss << it->second;
-            }
-        }
-    }
-
-    return MixedFilamentManager::normalize_manual_pattern(ss.str());
-}
-
-std::optional<Gradient> gradient_from_legacy(const std::string              &ids,
-                                             const std::string              &weights,
-                                             const std::vector<std::string> &physical_refs)
-{
-    Gradient gradient;
-    for (char c : ids) {
-        if (c < '1' || c > '9')
-            continue;
-        const size_t physical_idx = size_t(c - '1');
-        if (physical_idx < physical_refs.size())
-            gradient.component_refs.emplace_back(physical_refs[physical_idx]);
-    }
-
-    if (gradient.component_refs.size() < 3)
+    if (definition.recipe.blend.components.size() < 3 || definition.behavior.distribution != MixedFilamentDistributionMode::LayerCycle)
         return std::nullopt;
 
-    std::stringstream ss(weights);
-    std::string token;
-    while (std::getline(ss, token, '/')) {
-        try {
-            gradient.weights.emplace_back(std::max(0, std::stoi(token)));
-        } catch (...) {
-            gradient.weights.emplace_back(0);
-        }
+    Gradient out;
+    for (const MixedFilamentWeightedComponent &component : definition.recipe.blend.components) {
+        const std::string ref = physical_ref_from_index(component.filament.id, physical_refs);
+        if (ref.empty())
+            continue;
+        out.component_refs.emplace_back(ref);
+        out.weights.emplace_back(std::max(0, component.percent));
     }
-    if (gradient.weights.size() != gradient.component_refs.size())
-        gradient.weights.assign(gradient.component_refs.size(), 1);
 
-    return gradient;
+    if (out.component_refs.size() < 3)
+        return std::nullopt;
+    if (out.weights.size() != out.component_refs.size())
+        out.weights.assign(out.component_refs.size(), 1);
+    return out;
 }
 
-std::string legacy_gradient_ids(const std::optional<Gradient>     &gradient,
-                                const std::vector<std::string>    &physical_refs)
+std::optional<MixedFilamentManualPattern> definition_manual_pattern_from_canonical(
+    const std::optional<ManualPattern> &manual_pattern,
+    const CanonicalPairRefs            &pair,
+    const std::vector<std::string>     &physical_refs)
+{
+    if (!manual_pattern || manual_pattern->groups.empty())
+        return std::nullopt;
+
+    MixedFilamentManualPattern out;
+    for (const std::vector<std::string> &group : manual_pattern->groups) {
+        std::vector<MixedFilamentPhysicalRef> refs;
+        refs.reserve(group.size());
+        for (const std::string &step : group) {
+            if (step == "component_a") {
+                refs.push_back(pair.component_a);
+            } else if (step == "component_b") {
+                refs.push_back(pair.component_b);
+            } else if (step.rfind("physical:", 0) == 0) {
+                const unsigned int index = physical_index_from_ref(step.substr(9), physical_refs);
+                if (index != 0)
+                    refs.push_back({ index });
+            }
+        }
+        if (!refs.empty())
+            out.groups.emplace_back(std::move(refs));
+    }
+
+    return out.groups.empty() ? std::nullopt : std::optional<MixedFilamentManualPattern>(std::move(out));
+}
+
+std::optional<MixedFilamentWeightedBlend> definition_gradient_from_canonical(
+    const std::optional<Gradient>     &gradient,
+    const std::vector<std::string>    &physical_refs)
 {
     if (!gradient || gradient->component_refs.size() < 3)
-        return {};
+        return std::nullopt;
 
-    std::string out;
-    for (const std::string &ref : gradient->component_refs) {
-        auto it = std::find(physical_refs.begin(), physical_refs.end(), ref);
-        if (it == physical_refs.end())
+    MixedFilamentWeightedBlend out;
+    for (size_t i = 0; i < gradient->component_refs.size(); ++i) {
+        const unsigned int index = physical_index_from_ref(gradient->component_refs[i], physical_refs);
+        if (index == 0)
             continue;
-        const size_t idx = size_t(std::distance(physical_refs.begin(), it));
-        if (idx < 9)
-            out.push_back(char('1' + idx));
+        const int weight = i < gradient->weights.size() ? std::max(0, gradient->weights[i]) : 0;
+        out.components.push_back({ { index }, weight });
     }
-    return out.size() >= 3 ? out : std::string();
+
+    return out.components.size() < 3 ? std::nullopt : std::optional<MixedFilamentWeightedBlend>(std::move(out));
 }
 
-std::string legacy_gradient_weights(const std::optional<Gradient> &gradient)
+std::string distribution_mode_from_definition(MixedFilamentDistributionMode mode)
 {
-    if (!gradient || gradient->weights.empty())
-        return {};
-
-    std::ostringstream ss;
-    for (size_t i = 0; i < gradient->weights.size(); ++i) {
-        if (i != 0)
-            ss << '/';
-        ss << std::max(0, gradient->weights[i]);
-    }
-    return ss.str();
+    return mode == MixedFilamentDistributionMode::LayerCycle ? "layer_cycle" : "simple";
 }
 
-std::string distribution_mode_from_legacy(int mode)
-{
-    if (mode == int(MixedFilament::LayerCycle))
-        return "layer_cycle";
-    return "simple";
-}
-
-int legacy_distribution_mode(const std::string &mode, bool has_gradient)
+MixedFilamentDistributionMode definition_distribution_mode(const std::string &mode, bool has_gradient)
 {
     if (mode == "layer_cycle" || mode == "height_weighted")
-        return int(MixedFilament::LayerCycle);
-    return has_gradient ? int(MixedFilament::LayerCycle) : int(MixedFilament::Simple);
-}
-
-unsigned int physical_index_from_ref(const std::string &ref, const std::vector<std::string> &physical_refs)
-{
-    auto it = std::find(physical_refs.begin(), physical_refs.end(), ref);
-    if (it == physical_refs.end())
-        return 0;
-    return unsigned(std::distance(physical_refs.begin(), it) + 1);
+        return MixedFilamentDistributionMode::LayerCycle;
+    return has_gradient ? MixedFilamentDistributionMode::LayerCycle : MixedFilamentDistributionMode::Simple;
 }
 
 } // namespace
@@ -272,33 +246,34 @@ MixedFilaments mixed_filaments_from_manager(const MixedFilamentManager    &manag
 
     std::unordered_set<std::string> used_ids(physical_refs.begin(), physical_refs.end());
     size_t row_idx = 0;
-    for (const MixedFilament &row : manager.mixed_filaments()) {
+    for (const MixedFilamentDefinition &definition : manager.mixed_filament_definitions(physical_refs.size())) {
         ++row_idx;
-        if (row.component_a == 0 || row.component_b == 0 ||
-            row.component_a > physical_refs.size() || row.component_b > physical_refs.size())
+        const unsigned int component_a = definition.recipe.blend.component_a_id(0);
+        const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+        if (component_a == 0 || component_b == 0 ||
+            component_a > physical_refs.size() || component_b > physical_refs.size())
             continue;
 
         VirtualFilament vf;
-        vf.legacy_stable_id = row.stable_id;
-        vf.id = unique_id(mixed_filament_id_from_legacy_stable_id(row.stable_id,
-                                                                  std::to_string(row.component_a) + "|" +
-                                                                  std::to_string(row.component_b) + "|" +
-                                                                  std::to_string(row.mix_b_percent)),
+        vf.legacy_stable_id = definition.identity.stable_id;
+        vf.id = unique_id(mixed_filament_id_from_legacy_stable_id(definition.identity.stable_id,
+                                                                  std::to_string(component_a) + "|" +
+                                                                  std::to_string(component_b) + "|" +
+                                                                  std::to_string(definition.recipe.blend.component_b_percent())),
                           row_idx,
                           used_ids);
-        vf.enabled = row.enabled;
-        vf.visibility_state = row.deleted ? "tombstoned" : "active";
-        vf.source_kind = row.custom ? "custom" : "auto";
-        vf.origin.component_refs = {physical_refs[row.component_a - 1], physical_refs[row.component_b - 1]};
-        vf.origin.origin_auto_generated = row.origin_auto;
-        vf.blend.component_b_percent = std::clamp(row.mix_b_percent, 0, 100);
-        vf.distribution.mode = distribution_mode_from_legacy(row.distribution_mode);
-        vf.manual_pattern = manual_pattern_from_legacy(row.manual_pattern, physical_refs);
-        vf.gradient = gradient_from_legacy(row.gradient_component_ids, row.gradient_component_weights, physical_refs);
-        vf.surface_bias.component_a_offset_mm = row.component_a_surface_offset;
-        vf.surface_bias.component_b_offset_mm = row.component_b_surface_offset;
-        if (row.local_z_max_sublayers > 0)
-            vf.local_z = LocalZ{row.local_z_max_sublayers, "standard-pair-split"};
+        vf.visibility_state = definition.visibility.tombstoned ? "tombstoned" : "active";
+        vf.source_kind = definition.source.kind == MixedFilamentSourceKind::Custom ? "custom" : "auto";
+        vf.origin.component_refs = {physical_refs[component_a - 1], physical_refs[component_b - 1]};
+        vf.origin.origin_auto_generated = definition.source.origin_auto;
+        vf.blend.component_b_percent = definition.recipe.blend.component_b_percent();
+        vf.distribution.mode = distribution_mode_from_definition(definition.behavior.distribution);
+        vf.manual_pattern = manual_pattern_from_definition(definition, physical_refs);
+        vf.gradient = gradient_from_definition(definition, physical_refs);
+        vf.surface_bias.component_a_offset_mm = definition.behavior.surface_bias.component_a_offset_mm;
+        vf.surface_bias.component_b_offset_mm = definition.behavior.surface_bias.component_b_offset_mm;
+        if (definition.behavior.local_z.max_sublayers > 0)
+            vf.local_z = LocalZ{definition.behavior.local_z.max_sublayers, "standard-pair-split"};
         mixed.virtual_filaments.emplace_back(std::move(vf));
     }
 
@@ -310,9 +285,8 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
                                                   const std::vector<std::string> &physical_refs)
 {
     MixedFilamentManager manager;
-    std::vector<MixedFilament> &rows = manager.mixed_filaments();
-    rows.clear();
-    rows.reserve(mixed_filaments.virtual_filaments.size());
+    std::vector<MixedFilamentDefinition> definitions;
+    definitions.reserve(mixed_filaments.virtual_filaments.size());
 
     for (const VirtualFilament &vf : mixed_filaments.virtual_filaments) {
         if (vf.origin.component_refs.size() < 2)
@@ -323,32 +297,43 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
         if (a == 0 || b == 0)
             continue;
 
-        MixedFilament row;
-        row.component_a = a;
-        row.component_b = b;
-        row.stable_id = vf.legacy_stable_id;
-        if (row.stable_id == 0 && vf.id.rfind("mix_", 0) == 0) {
+        MixedFilamentDefinition definition;
+        definition.recipe.blend.components = {
+            {{a}, 100 - std::clamp(vf.blend.component_b_percent, 0, 100)},
+            {{b}, std::clamp(vf.blend.component_b_percent, 0, 100)}
+        };
+        definition.identity.stable_id = vf.legacy_stable_id;
+        if (definition.identity.stable_id == 0 && vf.id.rfind("mix_", 0) == 0) {
             try {
-                row.stable_id = std::stoull(vf.id.substr(4));
+                definition.identity.stable_id = std::stoull(vf.id.substr(4));
             } catch (...) {
-                row.stable_id = 0;
+                definition.identity.stable_id = 0;
             }
         }
-        row.enabled = vf.enabled;
-        row.deleted = vf.visibility_state == "tombstoned";
-        row.custom = vf.source_kind == "custom";
-        row.origin_auto = vf.origin.origin_auto_generated;
-        row.mix_b_percent = std::clamp(vf.blend.component_b_percent, 0, 100);
-        row.manual_pattern = legacy_pattern_from_manual_pattern(vf.manual_pattern, physical_refs);
-        row.gradient_component_ids = legacy_gradient_ids(vf.gradient, physical_refs);
-        row.gradient_component_weights = legacy_gradient_weights(vf.gradient);
-        row.distribution_mode = legacy_distribution_mode(vf.distribution.mode, vf.gradient.has_value());
-        row.local_z_max_sublayers = vf.local_z ? std::max(0, vf.local_z->max_sublayers) : 0;
-        row.component_a_surface_offset = float(vf.surface_bias.component_a_offset_mm);
-        row.component_b_surface_offset = float(vf.surface_bias.component_b_offset_mm);
-        rows.emplace_back(std::move(row));
+        definition.visibility.tombstoned = vf.visibility_state == "tombstoned";
+        definition.source.kind = vf.source_kind == "custom" ? MixedFilamentSourceKind::Custom : MixedFilamentSourceKind::AutoGenerated;
+        definition.source.origin_auto = vf.origin.origin_auto_generated;
+        const CanonicalPairRefs pair{{a}, {b}};
+        definition.recipe.manual_pattern =
+            definition_manual_pattern_from_canonical(vf.manual_pattern, pair, physical_refs);
+        const std::optional<MixedFilamentWeightedBlend> gradient = definition_gradient_from_canonical(vf.gradient, physical_refs);
+        if (definition.recipe.manual_pattern) {
+            definition.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
+            if (gradient)
+                definition.recipe.blend = *gradient;
+        } else {
+            definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+            if (gradient)
+                definition.recipe.blend = *gradient;
+        }
+        definition.behavior.distribution = definition_distribution_mode(vf.distribution.mode, gradient.has_value());
+        definition.behavior.local_z.max_sublayers = vf.local_z ? std::max(0, vf.local_z->max_sublayers) : 0;
+        definition.behavior.surface_bias.component_a_offset_mm = float(vf.surface_bias.component_a_offset_mm);
+        definition.behavior.surface_bias.component_b_offset_mm = float(vf.surface_bias.component_b_offset_mm);
+        definitions.emplace_back(std::move(definition));
     }
 
+    manager.set_mixed_filament_definitions(std::move(definitions), filament_colours);
     manager.set_display_context(MixedFilamentDisplayContext{filament_colours.size(), filament_colours});
     return manager;
 }

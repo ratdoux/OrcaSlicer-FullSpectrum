@@ -397,7 +397,6 @@ void to_json(nlohmann::json &j, const VirtualFilament &v)
     j = nlohmann::json{
         {"id", v.id},
         {"legacy_stable_id", v.legacy_stable_id},
-        {"enabled", v.enabled},
         {"visibility_state", v.visibility_state},
         {"source_kind", v.source_kind},
         {"origin", v.origin},
@@ -415,7 +414,6 @@ void from_json(const nlohmann::json &j, VirtualFilament &v)
 {
     get_if_present(j, "id", v.id);
     get_if_present(j, "legacy_stable_id", v.legacy_stable_id);
-    get_if_present(j, "enabled", v.enabled);
     get_if_present(j, "visibility_state", v.visibility_state);
     get_if_present(j, "source_kind", v.source_kind);
     get_if_present(j, "origin", v.origin);

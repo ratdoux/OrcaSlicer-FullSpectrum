@@ -6414,8 +6414,6 @@ void GUI_App::load_current_presets(bool active_preset_combox/*= false*/, bool ch
             "dithering_local_z_whole_objects",
             "dithering_local_z_direct_multicolor",
             "dithering_step_painted_zones_only",
-            "mixed_filament_pointillism_pixel_size",
-            "mixed_filament_pointillism_line_gap",
             "mixed_filament_definitions"
         };
 

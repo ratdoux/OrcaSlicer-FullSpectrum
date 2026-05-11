@@ -4212,34 +4212,12 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
-    def = this->add("mixed_filament_pointillism_pixel_size", coFloat);
-    def->label = L("Pointillisme pixel size");
-    def->category = L("Others");
-    def->tooltip = L("Length of one pointillisme segment along an extrusion path for same-layer pointillisme mode. "
-                     "Set to 0 to use automatic nozzle-based sizing.\n\n"
-                     "Warning: Same-layer pointillisme is extremely experimental and may produce unusable results.");
-    def->sidetext = "mm";
-    def->min = 0.;
-    def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.0));
-
-    def = this->add("mixed_filament_pointillism_line_gap", coFloat);
-    def->label = L("Pointillisme line gap");
-    def->category = L("Others");
-    def->tooltip = L("Optional non-extruded spacing between adjacent pointillisme segments. "
-                     "Increase carefully to improve separation and print quality.\n\n"
-                     "Warning: Same-layer pointillisme is extremely experimental and may produce unusable results.");
-    def->sidetext = "mm";
-    def->min = 0.;
-    def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.0));
-
     def = this->add("mixed_filament_component_bias_enabled", coBool);
     def->label = L("Enable mixed filament bias");
     def->category = L("Others");
     def->tooltip = L("Show and apply the per-row mixed filament Bias control.\n\n"
                      "When enabled, the selected filament in a mixed pair is recessed slightly so the other component becomes more visible.\n\n"
-                     "Bias is ignored for grouped wall patterns, same-layer pointillisme, and Local Z dithering.");
+                     "Bias is ignored for grouped wall patterns and Local Z dithering.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
@@ -4248,7 +4226,7 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Others");
     def->tooltip = L("XY offset applied to mixed-filament painted regions before region assignment.\n\n"
                      "Positive values contract the mixed zone inward. Negative values expand it outward.\n\n"
-                     "This applies to mixed filament usage in layer cadence, height cadence, same-layer pointillisme, and local Z dithering.");
+                     "This applies to mixed filament usage in layer cadence, height cadence, and local Z dithering.");
     def->sidetext = "mm";
     def->min = -2.0;
     def->max = 2.0;

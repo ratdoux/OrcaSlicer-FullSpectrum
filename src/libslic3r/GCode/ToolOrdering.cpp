@@ -40,8 +40,8 @@ unsigned int resolve_mixed_with_layer_heights(const MixedFilamentManager *mixed_
     if (!(mixed_mgr && mixed_mgr->is_mixed(filament_id_1based, num_physical)))
         return filament_id_1based;
 
-    const MixedFilament *mixed_row = mixed_mgr->mixed_filament_from_id(filament_id_1based, num_physical);
-    const bool is_custom_mixed = mixed_row != nullptr && mixed_row->custom;
+    const std::optional<MixedFilamentDefinition> definition = mixed_mgr->mixed_filament_definition_from_id(filament_id_1based, num_physical);
+    const bool is_custom_mixed = definition && definition->source.kind == MixedFilamentSourceKind::Custom;
 
     if (!is_custom_mixed && (layer_height_a > 0.f || layer_height_b > 0.f)) {
         const float safe_base = std::max<float>(0.01f, base_layer_height);
@@ -50,9 +50,9 @@ unsigned int resolve_mixed_with_layer_heights(const MixedFilamentManager *mixed_
         const int cycle   = ratio_a + ratio_b;
 
         if (cycle > 0) {
-            if (mixed_row != nullptr) {
+            if (definition) {
                 const int pos = ((layer_index % cycle) + cycle) % cycle;
-                return pos < ratio_a ? mixed_row->component_a : mixed_row->component_b;
+                return pos < ratio_a ? definition->recipe.blend.component_a_id(1) : definition->recipe.blend.component_b_id(2);
             }
         }
     }
@@ -66,11 +66,10 @@ bool has_grouped_manual_pattern(const MixedFilamentManager *mixed_mgr,
 {
     if (!(mixed_mgr && mixed_mgr->is_mixed(filament_id_1based, num_physical)))
         return false;
-    const MixedFilament *mixed_row = mixed_mgr->mixed_filament_from_id(filament_id_1based, num_physical);
-    if (mixed_row == nullptr)
+    const std::optional<MixedFilamentDefinition> definition = mixed_mgr->mixed_filament_definition_from_id(filament_id_1based, num_physical);
+    if (!definition || !definition->recipe.manual_pattern)
         return false;
-    const std::string normalized = MixedFilamentManager::normalize_manual_pattern(mixed_row->manual_pattern);
-    return normalized.find(',') != std::string::npos;
+    return definition->recipe.manual_pattern->groups.size() > 1;
 }
 
 void append_unique_preserve_order(std::vector<unsigned int> &dst, unsigned int value)

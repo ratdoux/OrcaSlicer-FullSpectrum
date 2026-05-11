@@ -3698,12 +3698,11 @@ static bool mixed_state_heights(const MixedFilamentManager &mixed_mgr,
     if (state_id <= num_physical)
         return false;
 
-    const size_t idx = state_id - num_physical - 1;
-    const auto  &mixed = mixed_mgr.mixed_filaments();
-    if (idx >= mixed.size())
+    const std::optional<MixedFilamentDefinition> definition = mixed_mgr.mixed_filament_definition_from_id(unsigned(state_id), num_physical);
+    if (!definition)
         return false;
 
-    const int mix_b = std::clamp(mixed[idx].mix_b_percent, 0, 100);
+    const int mix_b = definition->recipe.blend.component_b_percent();
     const coordf_t pct_b = coordf_t(mix_b) / coordf_t(100.f);
     const coordf_t pct_a = coordf_t(1.f) - pct_b;
     const coordf_t lo = std::max<coordf_t>(0.01f, lower_bound);

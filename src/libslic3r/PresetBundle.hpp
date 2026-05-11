@@ -256,7 +256,7 @@ public:
                                                                        size_t old_num_filaments = size_t(-1));
     // Rebuild old->new virtual filament mapping after mixed-row enable/delete
     // changes when the physical filament count itself did not change.
-    void                        update_mixed_filament_id_remap(const std::vector<MixedFilament> &old_mixed,
+    void                        update_mixed_filament_id_remap(const std::vector<MixedFilamentDefinition> &old_mixed,
                                                                size_t old_num_filaments,
                                                                size_t new_num_filaments);
     // Mapping generated during the latest filament count change.
@@ -317,7 +317,7 @@ private:
     std::pair<PresetsConfigSubstitutions, std::string> load_system_presets_from_json(ForwardCompatibilitySubstitutionRule compatibility_rule);
     // Merge one vendor's presets with the other vendor's presets, report duplicates.
     std::vector<std::string>    merge_presets(PresetBundle &&other);
-    void                        build_filament_id_remap(const std::vector<MixedFilament> &old_mixed,
+    void                        build_filament_id_remap(const std::vector<MixedFilamentDefinition> &old_mixed,
                                                         size_t old_num_filaments,
                                                         size_t new_num_filaments,
                                                         bool deleting_filament,
