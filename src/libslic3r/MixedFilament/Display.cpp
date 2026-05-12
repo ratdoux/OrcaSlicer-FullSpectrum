@@ -14,7 +14,7 @@ using namespace MixedFilamentInternal;
 int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDefinition&     definition,
                                                            const MixedFilamentPreviewSettings& preview_settings)
 {
-    const int mix_b_percent = definition.recipe.blend.component_b_percent();
+    const int mix_b_percent = definition.recipe.blend.primary_pair_or().component_b_percent;
     if (!preview_settings.local_z_mode)
         return std::clamp(mix_b_percent, 0, 100);
 
@@ -88,8 +88,9 @@ bool mixed_filament_supports_bias_apparent_color(const MixedFilamentDefinition& 
         return false;
     if (definition.recipe.kind != MixedFilamentRecipeKind::WeightedBlend || !definition.recipe.blend.is_pair())
         return false;
-    const unsigned int component_a = definition.recipe.blend.component_a_id(0);
-    const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
     return component_a >= 1 && component_b >= 1 && component_a != component_b;
 }
 
@@ -102,8 +103,9 @@ std::pair<int, int> mixed_filament_apparent_pair_percentages(const MixedFilament
     if (!mixed_filament_supports_bias_apparent_color(definition, preview_settings, bias_mode_enabled))
         return {100 - base_b, base_b};
 
-    const unsigned int component_a = definition.recipe.blend.component_a_id(0);
-    const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
     const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(component_a, component_b, nozzle_diameters);
     const int    apparent_b          = MixedFilamentManager::apparent_mix_b_percent(
         base_b,
@@ -119,8 +121,9 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
     if (context.num_physical == 0 || context.physical_colors.empty())
         return fallback;
 
-    const unsigned int component_a = definition.recipe.blend.component_a_id(0);
-    const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
 
     if (mixed_filament_supports_bias_apparent_color(definition, context.preview_settings, context.component_bias_enabled) &&
         component_a >= 1 && component_b >= 1 && component_a <= context.num_physical &&
@@ -141,7 +144,7 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
     }
 
     if (definition.behavior.distribution != MixedFilamentDistributionMode::Simple) {
-        const std::vector<unsigned int> blend_ids = mixed_filament_blend_component_ids(definition, context.num_physical);
+        const std::vector<unsigned int> blend_ids = definition.recipe.blend.component_ids(context.num_physical);
         if (blend_ids.size() >= 3) {
             const std::vector<unsigned int> sequence = mixed_filament_weighted_blend_sequence(definition, context.num_physical);
             if (!sequence.empty())
@@ -161,7 +164,7 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
         return fallback;
     }
 
-    const int mix_b = std::clamp(definition.recipe.blend.component_b_percent(), 0, 100);
+    const int mix_b = std::clamp(pair.component_b_percent, 0, 100);
     return MixedFilamentManager::blend_color(context.physical_colors[component_a - 1], context.physical_colors[component_b - 1],
                                              100 - mix_b, mix_b);
 }

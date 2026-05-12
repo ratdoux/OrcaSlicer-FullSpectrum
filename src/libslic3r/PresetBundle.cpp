@@ -3628,8 +3628,8 @@ void PresetBundle::build_filament_id_remap(const std::vector<MixedFilamentDefini
             continue;
         if (definition.identity.stable_id != 0)
             new_stable_id_to_virtual_id.emplace(definition.identity.stable_id, next_virtual_id);
-        new_pair_to_ids[canonical_pair(definition.recipe.blend.component_a_id(),
-                                       definition.recipe.blend.component_b_id())].push_back(next_virtual_id++);
+        const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+        new_pair_to_ids[canonical_pair(pair.component_a.id, pair.component_b.id)].push_back(next_virtual_id++);
     }
 
     std::map<std::pair<unsigned int, unsigned int>, size_t> used_per_pair;
@@ -3641,8 +3641,9 @@ void PresetBundle::build_filament_id_remap(const std::vector<MixedFilamentDefini
         if (definition.visibility.tombstoned)
             continue;
 
-        unsigned int a = definition.recipe.blend.component_a_id();
-        unsigned int b = definition.recipe.blend.component_b_id();
+        const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+        unsigned int a = pair.component_a.id;
+        unsigned int b = pair.component_b.id;
         if (a == deleted_1based || b == deleted_1based) {
             m_last_filament_id_remap[old_virtual_id] = 0;
             ++missing_hits;

@@ -74,9 +74,23 @@ struct MixedFilamentWeightedComponent
     int                      percent;
 };
 
+struct MixedFilamentPrimaryPairView
+{
+    MixedFilamentPhysicalRef component_a;
+    MixedFilamentPhysicalRef component_b;
+    int                      component_b_percent;
+};
+
 struct MixedFilamentWeightedBlend
 {
     std::vector<MixedFilamentWeightedComponent> components;
+
+    std::optional<MixedFilamentPrimaryPairView> primary_pair() const;
+    MixedFilamentPrimaryPairView primary_pair_or(unsigned int component_a = 1,
+                                                 unsigned int component_b = 2,
+                                                 int component_b_percent = 50) const;
+    std::vector<unsigned int> component_ids(size_t num_physical = 0) const;
+    std::vector<int> component_percents(size_t num_physical = 0) const;
 };
 
 struct MixedFilamentManualPattern
@@ -99,6 +113,11 @@ represent the explicit multi-color blend path.
 The first two blend components remain the primary A/B pair when compatibility or
 runtime pair behavior needs one. That keeps legacy tokens, Local-Z pair splitting,
 surface bias, and vNext `origin.component_refs` deterministic.
+
+Legacy and vNext gradient importers preserve that rule by normalizing incoming
+component order around the stored A/B origin first, then appending any additional
+weighted components. Manual-pattern summaries follow the same rule. Percentages
+stay attached to their physical component ref.
 
 Manual patterns are separate because they are not just percentages. They preserve
 exact grouped/perimeter sequencing:
@@ -225,9 +244,11 @@ read through the same `MixedFilamentWeightedBlend` aggregate.
 - Do not mutate manager-owned legacy rows; there are none. Use
   `set_mixed_filament_definition(...)`, `set_mixed_filament_definitions(...)`,
   or the explicit legacy-row adapter setters when crossing old boundaries.
-- Use `mixed_filament_blend_component_ids(...)` and
-  `mixed_filament_blend_component_weights(...)` when code wants the weighted
+- Use `definition.recipe.blend.component_ids(...)` and
+  `definition.recipe.blend.component_percents(...)` when code wants the weighted
   component list.
+- Use `definition.recipe.blend.primary_pair()` or `primary_pair_or(...)` only
+  where code truly needs the compatibility/runtime A/B projection.
 - Check `definition.recipe.blend.components.size() >= 3` when code specifically
   needs the explicit multi-color path.
 - Use `definition.recipe.manual_pattern` for exact grouped/perimeter sequencing.

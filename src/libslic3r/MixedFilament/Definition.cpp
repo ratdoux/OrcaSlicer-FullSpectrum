@@ -10,31 +10,50 @@ namespace Slic3r {
 
 using namespace MixedFilamentInternal;
 
-std::optional<MixedFilamentPhysicalRef> MixedFilamentWeightedBlend::component_a() const
+std::optional<MixedFilamentPrimaryPairView> MixedFilamentWeightedBlend::primary_pair() const
 {
-    return components.empty() ? std::nullopt : std::optional<MixedFilamentPhysicalRef>(components.front().filament);
+    if (components.size() < 2)
+        return std::nullopt;
+    return MixedFilamentPrimaryPairView{components[0].filament, components[1].filament, std::clamp(components[1].percent, 0, 100)};
 }
 
-std::optional<MixedFilamentPhysicalRef> MixedFilamentWeightedBlend::component_b() const
+MixedFilamentPrimaryPairView MixedFilamentWeightedBlend::primary_pair_or(unsigned int component_a,
+                                                                         unsigned int component_b,
+                                                                         int          component_b_percent) const
 {
-    return components.size() < 2 ? std::nullopt : std::optional<MixedFilamentPhysicalRef>(components[1].filament);
+    MixedFilamentPrimaryPairView pair =
+        primary_pair().value_or(MixedFilamentPrimaryPairView{{component_a}, {component_b}, std::clamp(component_b_percent, 0, 100)});
+    if (pair.component_a.id == 0)
+        pair.component_a.id = component_a;
+    if (pair.component_b.id == 0)
+        pair.component_b.id = component_b;
+    pair.component_b_percent = std::clamp(pair.component_b_percent, 0, 100);
+    return pair;
 }
 
-unsigned int MixedFilamentWeightedBlend::component_a_id(unsigned int fallback) const
+std::vector<unsigned int> MixedFilamentWeightedBlend::component_ids(size_t num_physical) const
 {
-    const std::optional<MixedFilamentPhysicalRef> ref = component_a();
-    return ref && ref->id != 0 ? ref->id : fallback;
+    std::vector<unsigned int> ids;
+    ids.reserve(components.size());
+    for (const MixedFilamentWeightedComponent& component : components) {
+        const unsigned int id = component.filament.id;
+        if (id >= 1 && (num_physical == 0 || id <= num_physical))
+            ids.emplace_back(id);
+    }
+    return ids;
 }
 
-unsigned int MixedFilamentWeightedBlend::component_b_id(unsigned int fallback) const
+std::vector<int> MixedFilamentWeightedBlend::component_percents(size_t num_physical) const
 {
-    const std::optional<MixedFilamentPhysicalRef> ref = component_b();
-    return ref && ref->id != 0 ? ref->id : fallback;
-}
-
-int MixedFilamentWeightedBlend::component_b_percent() const
-{
-    return components.size() < 2 ? 50 : std::clamp(components[1].percent, 0, 100);
+    std::vector<int> percents;
+    percents.reserve(components.size());
+    for (const MixedFilamentWeightedComponent& component : components) {
+        const unsigned int id = component.filament.id;
+        if (id < 1 || (num_physical != 0 && id > num_physical))
+            continue;
+        percents.emplace_back(std::max(0, component.percent));
+    }
+    return percents;
 }
 
 namespace {
@@ -47,7 +66,8 @@ MixedFilamentWeightedBlend pair_blend_from_components(unsigned int component_a, 
 
 MixedFilamentLegacyPair legacy_pair_from_blend(const MixedFilamentWeightedBlend& blend)
 {
-    return MixedFilamentLegacyPair{{blend.component_a_id(1)}, {blend.component_b_id(2)}};
+    const MixedFilamentPrimaryPairView pair = blend.primary_pair_or();
+    return MixedFilamentLegacyPair{pair.component_a, pair.component_b};
 }
 
 MixedFilamentWeightedBlend aggregate_blend_from_manual_pattern(const MixedFilamentManualPattern& pattern,
@@ -72,17 +92,39 @@ MixedFilamentWeightedBlend aggregate_blend_from_manual_pattern(const MixedFilame
     if (ordered_ids.empty())
         return fallback;
 
-    const std::vector<int> percents = normalize_weight_vector_to_percent(counts);
+    const auto count_for = [&](unsigned int id) {
+        const auto it = std::find(ordered_ids.begin(), ordered_ids.end(), id);
+        return it == ordered_ids.end() ? 0 : counts[size_t(std::distance(ordered_ids.begin(), it))];
+    };
+
+    std::vector<unsigned int> output_ids;
+    std::vector<int>          output_counts;
+    output_ids.reserve(ordered_ids.size() + 2);
+    output_counts.reserve(ordered_ids.size() + 2);
+    const auto add_id = [&](unsigned int id) {
+        if (id == 0 || std::find(output_ids.begin(), output_ids.end(), id) != output_ids.end())
+            return;
+        output_ids.emplace_back(id);
+        output_counts.emplace_back(count_for(id));
+    };
+
+    const MixedFilamentPrimaryPairView pair = fallback.primary_pair_or(0, 0);
+    add_id(pair.component_a.id);
+    add_id(pair.component_b.id);
+    for (const unsigned int id : ordered_ids)
+        add_id(id);
+
+    const std::vector<int> percents = normalize_weight_vector_to_percent(output_counts);
     MixedFilamentWeightedBlend out;
-    out.components.reserve(ordered_ids.size());
-    for (size_t i = 0; i < ordered_ids.size(); ++i)
-        out.components.push_back({{ordered_ids[i]}, percents[i]});
+    out.components.reserve(output_ids.size());
+    for (size_t i = 0; i < output_ids.size(); ++i)
+        out.components.push_back({{output_ids[i]}, percents[i]});
     return out;
 }
 
 } // namespace
 
-MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFilamentLegacyRow& row, size_t)
+MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFilamentLegacyRow& row, size_t num_physical)
 {
     MixedFilamentDefinition definition;
 
@@ -94,8 +136,10 @@ MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFil
     definition.visibility.tombstoned = row.deleted;
 
     const MixedFilamentWeightedBlend legacy_pair_blend = pair_blend_from_components(row.component_a, row.component_b, row.mix_b_percent);
-    definition.recipe.manual_pattern              = mixed_filament_manual_pattern_from_legacy_row(row);
-    const std::optional<MixedFilamentWeightedBlend> legacy_weighted_blend = mixed_filament_weighted_blend_from_legacy_row(row);
+    definition.recipe.manual_pattern =
+        mixed_filament_manual_pattern_from_string(row.manual_pattern, row.component_a, row.component_b, num_physical);
+    const std::optional<MixedFilamentWeightedBlend> legacy_weighted_blend =
+        mixed_filament_weighted_blend_from_legacy_row(row, num_physical);
 
     if (definition.recipe.manual_pattern) {
         definition.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
@@ -106,7 +150,9 @@ MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFil
         definition.recipe.blend = legacy_weighted_blend.value_or(legacy_pair_blend);
     }
 
-    definition.behavior.distribution = mixed_filament_distribution_from_legacy_mode(row.distribution_mode, row.gradient_component_ids);
+    definition.behavior.distribution =
+        mixed_filament_distribution_from_legacy_mode(row.distribution_mode,
+                                                     legacy_weighted_blend ? row.gradient_component_ids : std::string());
     definition.behavior.layer_cadence.component_a_layers   = row.ratio_a;
     definition.behavior.layer_cadence.component_b_layers   = row.ratio_b;
     definition.behavior.local_z.max_sublayers              = row.local_z_max_sublayers;
@@ -127,7 +173,7 @@ void apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition
     row.stable_id                  = definition.identity.stable_id;
     row.ratio_a                    = std::max(0, definition.behavior.layer_cadence.component_a_layers);
     row.ratio_b                    = std::max(0, definition.behavior.layer_cadence.component_b_layers);
-    row.mix_b_percent              = definition.recipe.blend.component_b_percent();
+    row.mix_b_percent              = definition.recipe.blend.primary_pair_or().component_b_percent;
     row.distribution_mode          = legacy_distribution_mode_from_mixed_filament_distribution(definition.behavior.distribution);
     row.local_z_max_sublayers      = std::max(0, definition.behavior.local_z.max_sublayers);
     row.component_a_surface_offset = definition.behavior.surface_bias.component_a_offset_mm;
@@ -263,32 +309,13 @@ std::vector<unsigned int> mixed_filament_manual_pattern_preview_sequence(const M
     return sequence;
 }
 
-std::vector<unsigned int> mixed_filament_blend_component_ids(const MixedFilamentDefinition& definition, size_t num_physical)
-{
-    std::vector<unsigned int> ids;
-    ids.reserve(definition.recipe.blend.components.size());
-    for (const MixedFilamentWeightedComponent& component : definition.recipe.blend.components)
-        if (physical_ref_is_valid(component.filament, num_physical))
-            ids.emplace_back(component.filament.id);
-    return ids;
-}
-
-std::vector<int> mixed_filament_blend_component_weights(const MixedFilamentDefinition& definition)
-{
-    std::vector<int> weights;
-    weights.reserve(definition.recipe.blend.components.size());
-    for (const MixedFilamentWeightedComponent& component : definition.recipe.blend.components)
-        weights.emplace_back(std::max(0, component.percent));
-    return weights;
-}
-
 std::vector<unsigned int> mixed_filament_weighted_blend_sequence(const MixedFilamentDefinition& definition, size_t num_physical)
 {
-    const std::vector<unsigned int> ids = mixed_filament_blend_component_ids(definition, num_physical);
+    const std::vector<unsigned int> ids = definition.recipe.blend.component_ids(num_physical);
     if (ids.empty())
         return {};
 
-    std::vector<int> weights = mixed_filament_blend_component_weights(definition);
+    std::vector<int> weights = definition.recipe.blend.component_percents(num_physical);
     if (weights.size() != ids.size())
         weights.assign(ids.size(), 1);
     return build_weighted_gradient_sequence(ids, weights);

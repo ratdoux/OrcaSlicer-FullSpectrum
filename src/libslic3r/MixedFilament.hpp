@@ -120,6 +120,13 @@ struct MixedFilamentWeightedComponent
     int                      percent = 0;
 };
 
+struct MixedFilamentPrimaryPairView
+{
+    MixedFilamentPhysicalRef component_a;
+    MixedFilamentPhysicalRef component_b;
+    int                      component_b_percent = 50;
+};
+
 struct MixedFilamentWeightedBlend
 {
     // Weighted physical filament refs. A two-component blend is the ordinary
@@ -129,11 +136,18 @@ struct MixedFilamentWeightedBlend
     std::vector<MixedFilamentWeightedComponent> components;
 
     bool is_pair() const { return components.size() == 2; }
-    std::optional<MixedFilamentPhysicalRef> component_a() const;
-    std::optional<MixedFilamentPhysicalRef> component_b() const;
-    unsigned int component_a_id(unsigned int fallback = 1) const;
-    unsigned int component_b_id(unsigned int fallback = 2) const;
-    int          component_b_percent() const;
+
+    // Pair-shaped view for legacy adapters and slicer behavior that still
+    // needs an A/B interpretation. The weighted component array remains the
+    // source of truth.
+    std::optional<MixedFilamentPrimaryPairView> primary_pair() const;
+    MixedFilamentPrimaryPairView                primary_pair_or(unsigned int component_a = 1,
+                                                                unsigned int component_b = 2,
+                                                                int          component_b_percent = 50) const;
+
+    // UI/package-friendly array views over the weighted component source.
+    std::vector<unsigned int> component_ids(size_t num_physical = 0) const;
+    std::vector<int>          component_percents(size_t num_physical = 0) const;
 };
 
 struct MixedFilamentIdentity
@@ -281,9 +295,6 @@ std::vector<unsigned int> mixed_filament_manual_pattern_sequence(const MixedFila
 std::vector<unsigned int> mixed_filament_manual_pattern_preview_sequence(const MixedFilamentDefinition &definition,
                                                                          size_t                         num_physical,
                                                                          size_t                         wall_loops);
-std::vector<unsigned int> mixed_filament_blend_component_ids(const MixedFilamentDefinition &definition,
-                                                             size_t                         num_physical = 0);
-std::vector<int>          mixed_filament_blend_component_weights(const MixedFilamentDefinition &definition);
 std::vector<unsigned int> mixed_filament_weighted_blend_sequence(const MixedFilamentDefinition &definition,
                                                                  size_t                         num_physical = 0);
 

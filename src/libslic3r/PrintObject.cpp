@@ -3702,7 +3702,7 @@ static bool mixed_state_heights(const MixedFilamentManager &mixed_mgr,
     if (!definition)
         return false;
 
-    const int mix_b = definition->recipe.blend.component_b_percent();
+    const int mix_b = definition->recipe.blend.primary_pair_or().component_b_percent;
     const coordf_t pct_b = coordf_t(mix_b) / coordf_t(100.f);
     const coordf_t pct_a = coordf_t(1.f) - pct_b;
     const coordf_t lo = std::max<coordf_t>(0.01f, lower_bound);

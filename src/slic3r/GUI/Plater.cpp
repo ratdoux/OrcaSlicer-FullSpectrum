@@ -4420,6 +4420,7 @@ private:
     static std::string summarize_sequence(const std::vector<unsigned int> &seq);
     static std::string summarize_local_z_breakdown(const MixedFilamentDefinition &definition,
                                                    const std::vector<int> &weights,
+                                                   size_t num_physical,
                                                    const MixedFilamentPreviewSettings &preview_settings);
     static std::string blend_from_sequence(const std::vector<std::string> &colors, const std::vector<unsigned int> &seq, const std::string &fallback);
     static std::vector<double> build_local_z_preview_pass_heights(double nominal_layer_height,
@@ -5192,8 +5193,9 @@ static double mixed_filament_reference_nozzle_mm(unsigned int               comp
 
 static double mixed_filament_bias_limit_mm(const MixedFilamentDefinition &definition, const std::vector<double> &nozzle_diameters)
 {
-    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(definition.recipe.blend.component_a_id(),
-                                                                         definition.recipe.blend.component_b_id(),
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(pair.component_a.id,
+                                                                         pair.component_b.id,
                                                                          nozzle_diameters);
     return MixedFilamentManager::max_pair_bias_mm(float(reference_nozzle_mm));
 }
@@ -5201,8 +5203,9 @@ static double mixed_filament_bias_limit_mm(const MixedFilamentDefinition &defini
 static float mixed_filament_single_surface_offset_value(const MixedFilamentDefinition &definition,
                                                         const std::vector<double> &nozzle_diameters)
 {
-    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(definition.recipe.blend.component_a_id(),
-                                                                         definition.recipe.blend.component_b_id(),
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(pair.component_a.id,
+                                                                         pair.component_b.id,
                                                                          nozzle_diameters);
     return MixedFilamentManager::bias_ui_value_from_surface_offsets(
         definition.behavior.surface_bias.component_a_offset_mm,
@@ -5214,8 +5217,9 @@ static std::pair<float, float> mixed_filament_single_surface_offset_pair(const M
                                                                          float                      value,
                                                                          const std::vector<double> &nozzle_diameters)
 {
-    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(definition.recipe.blend.component_a_id(),
-                                                                         definition.recipe.blend.component_b_id(),
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(pair.component_a.id,
+                                                                         pair.component_b.id,
                                                                          nozzle_diameters);
     return MixedFilamentManager::surface_offset_pair_from_signed_bias(value, float(reference_nozzle_mm));
 }
@@ -5478,6 +5482,7 @@ std::string MixedFilamentConfigPanel::summarize_sequence(const std::vector<unsig
 
 std::string MixedFilamentConfigPanel::summarize_local_z_breakdown(const MixedFilamentDefinition &definition,
                                                                   const std::vector<int> &weights,
+                                                                  size_t num_physical,
                                                                   const MixedFilamentPreviewSettings &preview_settings)
 {
     if (definition.recipe.manual_pattern)
@@ -5506,7 +5511,7 @@ std::string MixedFilamentConfigPanel::summarize_local_z_breakdown(const MixedFil
         return ss.str();
     };
 
-    const std::vector<unsigned int> ids = mixed_filament_blend_component_ids(definition);
+    const std::vector<unsigned int> ids = definition.recipe.blend.component_ids(num_physical);
     const int local_z_max_sublayers = definition.behavior.local_z.max_sublayers;
     if (preview_settings.local_z_mode && preview_settings.local_z_direct_multicolor && ids.size() >= 3) {
         const std::vector<int> normalized = normalize_gradient_weights(weights, ids.size());
@@ -5614,10 +5619,11 @@ std::string MixedFilamentConfigPanel::summarize_local_z_breakdown(const MixedFil
         return ss.str();
     }
 
-    const unsigned int component_a = definition.recipe.blend.component_a_id(0);
-    const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
     if (component_a >= 1 && component_b >= 1 && component_a != component_b) {
-        const int pct_b = std::clamp(definition.recipe.blend.component_b_percent(), 0, 100);
+        const int pct_b = std::clamp(pair.component_b_percent, 0, 100);
         const int pct_a = 100 - pct_b;
         std::ostringstream ss;
         ss << "Local-Z pair split: requested F" << component_a << "/F" << component_b
@@ -5730,10 +5736,11 @@ void MixedFilamentConfigPanel::build_ui()
     for (size_t i = 0; i < m_num_physical; ++i)
         optional_filament_choices.Add(wxString::Format("F%d", int(i + 1)));
 
-    const int component_a = std::clamp(int(initial_definition.recipe.blend.component_a_id()), 1, int(m_num_physical));
-    const int component_b = std::clamp(int(initial_definition.recipe.blend.component_b_id()), 1, int(m_num_physical));
+    const MixedFilamentPrimaryPairView initial_pair = initial_definition.recipe.blend.primary_pair_or();
+    const int component_a = std::clamp(int(initial_pair.component_a.id), 1, int(m_num_physical));
+    const int component_b = std::clamp(int(initial_pair.component_b.id), 1, int(m_num_physical));
 
-    const std::vector<unsigned int> initial_blend_ids = mixed_filament_blend_component_ids(initial_definition, m_num_physical);
+    const std::vector<unsigned int> initial_blend_ids = initial_definition.recipe.blend.component_ids(m_num_physical);
     const MixedFilamentDistributionMode distribution_mode =
         initial_blend_ids.size() >= 3 ? MixedFilamentDistributionMode::LayerCycle : MixedFilamentDistributionMode::Simple;
     m_definition.behavior.distribution = distribution_mode;
@@ -5868,7 +5875,7 @@ void MixedFilamentConfigPanel::build_ui()
         }
         const bool multi_gradient_mode = selected_blend_ids.size() >= 3;
         *m_selected_weight_state = normalize_gradient_weights(
-            mixed_filament_blend_component_weights(initial_definition),
+            initial_definition.recipe.blend.component_percents(m_num_physical),
             selected_blend_ids.size());
 
         wxColour color_a = (component_a >= 1 && component_a <= int(m_palette.size())) ? m_palette[component_a - 1] : wxColour("#26A69A");
@@ -5876,7 +5883,7 @@ void MixedFilamentConfigPanel::build_ui()
         m_blend_selector = new MixedGradientSelector(this,
                                                      color_a,
                                                      color_b,
-                                                     std::clamp(m_definition.recipe.blend.component_b_percent(), 0, 100));
+                                                     std::clamp(m_definition.recipe.blend.primary_pair_or().component_b_percent, 0, 100));
         m_blend_selector->SetBackgroundColour(panel_bg);
         m_blend_label = nullptr;
         picker_row->AddSpacer(gap);
@@ -6018,13 +6025,14 @@ void MixedFilamentConfigPanel::build_ui()
         }
         update_component_picker_visuals();
 
+        const MixedFilamentPrimaryPairView current_pair = m_definition.recipe.blend.primary_pair_or();
         if (m_local_z_limit_spin)
             m_local_z_limit_spin->Enable(m_local_z_limit_checkbox != nullptr &&
                                          m_local_z_limit_checkbox->GetValue());
 
         m_definition.recipe.blend = mixed_filament_pair_blend(unsigned(a),
                                                               unsigned(b),
-                                                              m_definition.recipe.blend.component_b_percent());
+                                                              current_pair.component_b_percent);
         if (m_bias_mode_enabled) {
             const double bias_limit = mixed_filament_bias_limit_mm(m_definition, m_nozzle_diameters);
             const float clamped_surface_offset_value = std::clamp(float(surface_offset_value), -float(bias_limit), float(bias_limit));
@@ -6041,7 +6049,7 @@ void MixedFilamentConfigPanel::build_ui()
                 0;
 
         bool simple_mode = true;
-        int preview_mix_b_percent = std::clamp(m_definition.recipe.blend.component_b_percent(), 0, 100);
+        int preview_mix_b_percent = std::clamp(m_definition.recipe.blend.primary_pair_or().component_b_percent, 0, 100);
         std::vector<unsigned int> preview_sequence;
 
         if (m_pattern_ctrl) {
@@ -6102,7 +6110,7 @@ void MixedFilamentConfigPanel::build_ui()
 
             if (multi_gradient_mode) {
                 const std::vector<int> decoded_weights =
-                    normalize_gradient_weights(mixed_filament_blend_component_weights(m_definition), selected_ids.size());
+                    normalize_gradient_weights(m_definition.recipe.blend.component_percents(m_num_physical), selected_ids.size());
                 if (m_selected_weight_state->size() != selected_ids.size())
                     *m_selected_weight_state = decoded_weights;
                 *m_selected_weight_state = normalize_gradient_weights(*m_selected_weight_state, selected_ids.size());
@@ -6117,16 +6125,19 @@ void MixedFilamentConfigPanel::build_ui()
         m_definition.source.kind = MixedFilamentSourceKind::Custom;
 
         const std::vector<unsigned int> selected_blend_ids =
-            mixed_filament_blend_component_ids(m_definition, m_num_physical);
+            m_definition.recipe.blend.component_ids(m_num_physical);
         const bool component_surface_offsets_supported = m_bias_mode_enabled &&
                                                          (m_pattern_ctrl == nullptr) &&
                                                          !m_preview_settings.local_z_mode;
         if (m_surface_offset_spin)
             m_surface_offset_spin->Enable(component_surface_offsets_supported);
         if (preview_sequence.empty())
-            preview_sequence = build_weighted_pair_sequence(m_definition.recipe.blend.component_a_id(),
-                                                            m_definition.recipe.blend.component_b_id(),
+        {
+            const MixedFilamentPrimaryPairView pair = m_definition.recipe.blend.primary_pair_or();
+            preview_sequence = build_weighted_pair_sequence(pair.component_a.id,
+                                                            pair.component_b.id,
                                                             preview_mix_b_percent);
+        }
 
         if (m_blend_selector && selected_blend_ids.size() >= 3) {
             std::vector<wxColour> corner_colors;
@@ -6139,8 +6150,9 @@ void MixedFilamentConfigPanel::build_ui()
                 m_blend_selector->set_multi_preview(corner_colors, *m_selected_weight_state);
         }
 
-        const unsigned int component_a = m_definition.recipe.blend.component_a_id(0);
-        const unsigned int component_b = m_definition.recipe.blend.component_b_id(0);
+        const MixedFilamentPrimaryPairView pair = m_definition.recipe.blend.primary_pair_or(0, 0);
+        const unsigned int component_a = pair.component_a.id;
+        const unsigned int component_b = pair.component_b.id;
         if (Slic3r::mixed_filament_supports_bias_apparent_color(m_definition, m_preview_settings, m_bias_mode_enabled) &&
             component_a >= 1 && component_b >= 1 &&
             component_a <= m_physical_colors.size() && component_b <= m_physical_colors.size()) {
@@ -6388,16 +6400,17 @@ void MixedFilamentConfigPanel::update_component_picker_visuals()
     update_one(m_choice_d, m_picker_d_container, m_picker_d_swatch, m_picker_d_label);
 
     if (m_surface_offset_target_container || m_surface_offset_target_swatch || m_surface_offset_target_label || m_surface_offset_spin) {
-        const int a_filament = std::clamp(m_choice_a ? (m_choice_a->GetSelection() + 1) : int(m_definition.recipe.blend.component_a_id()),
+        const MixedFilamentPrimaryPairView pair = m_definition.recipe.blend.primary_pair_or();
+        const int a_filament = std::clamp(m_choice_a ? (m_choice_a->GetSelection() + 1) : int(pair.component_a.id),
                                           1,
                                           int(std::max<size_t>(1, m_num_physical)));
-        const int b_filament = std::clamp(m_choice_b ? (m_choice_b->GetSelection() + 1) : int(m_definition.recipe.blend.component_b_id()),
+        const int b_filament = std::clamp(m_choice_b ? (m_choice_b->GetSelection() + 1) : int(pair.component_b.id),
                                           1,
                                           int(std::max<size_t>(1, m_num_physical)));
         MixedFilamentDefinition active_pair = m_definition;
         active_pair.recipe.blend = mixed_filament_pair_blend(unsigned(a_filament),
                                                              unsigned(b_filament),
-                                                             m_definition.recipe.blend.component_b_percent());
+                                                             pair.component_b_percent);
         double signed_bias_value = mixed_filament_single_surface_offset_value(active_pair, m_nozzle_diameters);
 
         if (m_surface_offset_spin && m_bias_mode_enabled) {
@@ -6427,8 +6440,9 @@ void MixedFilamentConfigPanel::update_preview()
     const MixedFilamentDefinition definition = m_definition;
     const bool simple_mode = definition.behavior.distribution == MixedFilamentDistributionMode::Simple;
     const bool pattern_row_mode = bool(definition.recipe.manual_pattern);
-    const unsigned int component_a = definition.recipe.blend.component_a_id();
-    const unsigned int component_b = definition.recipe.blend.component_b_id();
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
 
     std::vector<unsigned int> initial_sequence;
     if (pattern_row_mode) {
@@ -6437,7 +6451,7 @@ void MixedFilamentConfigPanel::update_preview()
                                                                           m_preview_settings.wall_loops);
     } else {
         std::vector<unsigned int> initial_blend_ids =
-            simple_mode ? std::vector<unsigned int>() : mixed_filament_blend_component_ids(definition, m_num_physical);
+            simple_mode ? std::vector<unsigned int>() : definition.recipe.blend.component_ids(m_num_physical);
         if (initial_blend_ids.size() >= 3)
             initial_sequence = build_weighted_multi_sequence(initial_blend_ids, *m_selected_weight_state);
         else
@@ -6491,15 +6505,15 @@ void MixedFilamentConfigPanel::update_local_z_breakdown()
 
     const MixedFilamentDefinition definition = m_definition;
     std::vector<int> weights = *m_selected_weight_state;
-    const std::vector<unsigned int> ids = mixed_filament_blend_component_ids(definition, m_num_physical);
+    const std::vector<unsigned int> ids = definition.recipe.blend.component_ids(m_num_physical);
     if (!ids.empty()) {
-        const std::vector<int> definition_weights = mixed_filament_blend_component_weights(definition);
+        const std::vector<int> definition_weights = definition.recipe.blend.component_percents(m_num_physical);
         if (!definition_weights.empty())
             weights = definition_weights;
         weights = normalize_gradient_weights(weights, ids.size());
     }
 
-    const std::string breakdown = summarize_local_z_breakdown(m_definition, weights, m_preview_settings);
+    const std::string breakdown = summarize_local_z_breakdown(m_definition, weights, m_num_physical, m_preview_settings);
     m_breakdown_label->SetLabel(from_u8(breakdown));
     m_breakdown_label->Wrap(FromDIP(360));
     m_breakdown_label->Show(!breakdown.empty());
@@ -6974,17 +6988,18 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
         palette.emplace_back(parse_mixed_color(hex));
 
     auto mixed_summary_text = [](const MixedFilamentDefinition &definition) {
+        const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
         if (definition.source.kind != MixedFilamentSourceKind::Custom)
             return wxString::Format("(Filament %u + Filament %u)",
-                                    unsigned(definition.recipe.blend.component_a_id()),
-                                    unsigned(definition.recipe.blend.component_b_id()));
+                                    unsigned(pair.component_a.id),
+                                    unsigned(pair.component_b.id));
         if (definition.recipe.manual_pattern)
             return _L("(Pattern)");
         if (definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend && definition.recipe.blend.components.size() >= 3)
             return _L("(Color)");
         return wxString::Format("(F%u + F%u)",
-                                unsigned(definition.recipe.blend.component_a_id()),
-                                unsigned(definition.recipe.blend.component_b_id()));
+                                unsigned(pair.component_a.id),
+                                unsigned(pair.component_b.id));
     };
 
     auto apply_mixed_entry_changes = [this, preset_bundle, print_cfg, num_physical, physical_colors](size_t mixed_id,
@@ -7137,7 +7152,8 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
                          return std::make_pair(std::min(a, b), std::max(a, b));
                      };
                      MixedFilamentDefinition &target = definitions[mixed_id];
-                     const auto target_pair = canonical_pair(target.recipe.blend.component_a_id(), target.recipe.blend.component_b_id());
+                     const MixedFilamentPrimaryPairView target_primary_pair = target.recipe.blend.primary_pair_or();
+                     const auto target_pair = canonical_pair(target_primary_pair.component_a.id, target_primary_pair.component_b.id);
                      const bool valid_auto_pair = target_pair.first >= 1 &&
                                                   target_pair.second >= 1 &&
                                                   target_pair.first <= num_physical &&
@@ -7151,7 +7167,8 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
                              MixedFilamentDefinition &candidate = definitions[idx];
                              if (candidate.source.kind == MixedFilamentSourceKind::Custom)
                                  continue;
-                             if (canonical_pair(candidate.recipe.blend.component_a_id(), candidate.recipe.blend.component_b_id()) != target_pair)
+                             const MixedFilamentPrimaryPairView candidate_pair = candidate.recipe.blend.primary_pair_or();
+                             if (canonical_pair(candidate_pair.component_a.id, candidate_pair.component_b.id) != target_pair)
                                  continue;
                              candidate.visibility.tombstoned = true;
                              tombstoned_existing_auto = true;

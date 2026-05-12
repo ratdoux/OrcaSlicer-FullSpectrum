@@ -52,7 +52,8 @@ unsigned int resolve_mixed_with_layer_heights(const MixedFilamentManager *mixed_
         if (cycle > 0) {
             if (definition) {
                 const int pos = ((layer_index % cycle) + cycle) % cycle;
-                return pos < ratio_a ? definition->recipe.blend.component_a_id(1) : definition->recipe.blend.component_b_id(2);
+                const MixedFilamentPrimaryPairView pair = definition->recipe.blend.primary_pair_or(1, 2);
+                return pos < ratio_a ? pair.component_a.id : pair.component_b.id;
             }
         }
     }

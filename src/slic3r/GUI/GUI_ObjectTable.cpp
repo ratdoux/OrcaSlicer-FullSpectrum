@@ -2840,10 +2840,11 @@ int ObjectTablePanel::init_filaments_and_colors()
                 continue;
             }
 
+            const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
             m_filaments_name[i] = wxString::Format("%d: Mixed Filament %d (F%u + F%u)",
                                                    i + 1, i + 1,
-                                                   unsigned(definition.recipe.blend.component_a_id()),
-                                                   unsigned(definition.recipe.blend.component_b_id()));
+                                                   unsigned(pair.component_a.id),
+                                                   unsigned(pair.component_b.id));
             break;
         }
 

@@ -151,8 +151,9 @@ void MixedFilamentManager::auto_generate(const std::vector<std::string>& filamen
     std::unordered_map<uint64_t, const MixedFilamentDefinition*> old_auto_definitions;
     old_auto_definitions.reserve(old.size());
     for (MixedFilamentDefinition& prev : old) {
-        const unsigned int component_a = prev.recipe.blend.component_a_id();
-        const unsigned int component_b = prev.recipe.blend.component_b_id();
+        const MixedFilamentPrimaryPairView pair = prev.recipe.blend.primary_pair_or();
+        const unsigned int component_a = pair.component_a.id;
+        const unsigned int component_b = pair.component_b.id;
         if (prev.source.kind != MixedFilamentSourceKind::Custom) {
             old_auto_definitions.emplace(canonical_pair_key(component_a, component_b), &prev);
             continue;
@@ -243,8 +244,9 @@ bool MixedFilamentManager::add_custom_filament_definition(MixedFilamentDefinitio
 
     definition.recipe.blend = normalized_manager_blend(std::move(definition.recipe.blend), n);
 
-    unsigned int component_a = definition.recipe.blend.component_a_id();
-    unsigned int component_b = definition.recipe.blend.component_b_id();
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    unsigned int component_a = pair.component_a.id;
+    unsigned int component_b = pair.component_b.id;
     component_a              = std::max<unsigned int>(1, std::min<unsigned int>(component_a, unsigned(n)));
     component_b              = std::max<unsigned int>(1, std::min<unsigned int>(component_b, unsigned(n)));
     if (component_a == component_b)
@@ -321,7 +323,10 @@ void MixedFilamentManager::apply_gradient_settings(int gradient_mode, float lowe
             continue;
         }
         const std::pair<int, int> ratios =
-            gradient_ratios_from_mix(definition.recipe.blend.component_b_percent(), m_gradient_mode, m_height_lower_bound, m_height_upper_bound);
+            gradient_ratios_from_mix(definition.recipe.blend.primary_pair_or().component_b_percent,
+                                     m_gradient_mode,
+                                     m_height_lower_bound,
+                                     m_height_upper_bound);
         definition.behavior.layer_cadence.component_a_layers = ratios.first;
         definition.behavior.layer_cadence.component_b_layers = ratios.second;
     }

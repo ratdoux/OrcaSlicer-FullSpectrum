@@ -5,6 +5,7 @@
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfJson.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfLegacyBridge.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfReader.hpp"
+#include "libslic3r/Format/FullSpectrum3mf/Fs3mfValidation.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfWriter.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -17,6 +18,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 using namespace Slic3r;
@@ -480,6 +482,28 @@ TEST_CASE("Mixed filament typed definition resolves legacy manual pattern tokens
     CHECK(rebuilt.gradient_component_weights.empty());
 }
 
+TEST_CASE("Mixed filament manual pattern aggregate keeps legacy primary pair", "[MixedFilament]")
+{
+    MixedFilamentLegacyRow row;
+    row.component_a = 1;
+    row.component_b = 2;
+    row.mix_b_percent = 50;
+    row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("2,12");
+
+    const MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(row, 2);
+    REQUIRE(definition.recipe.manual_pattern);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    CHECK(pair.component_a.id == 1);
+    CHECK(pair.component_b.id == 2);
+    CHECK(definition.recipe.blend.component_ids(2) == std::vector<unsigned int>{1, 2});
+    CHECK(definition.recipe.blend.component_percents(2) == std::vector<int>{33, 67});
+
+    const MixedFilamentLegacyRow rebuilt = mixed_filament_legacy_row_from_definition(definition);
+    CHECK(rebuilt.component_a == 1);
+    CHECK(rebuilt.component_b == 2);
+    CHECK(rebuilt.manual_pattern == "2,12");
+}
+
 TEST_CASE("Mixed filament typed definition exposes weighted blend components and weights", "[MixedFilament]")
 {
     MixedFilamentLegacyRow row;
@@ -496,19 +520,47 @@ TEST_CASE("Mixed filament typed definition exposes weighted blend components and
     CHECK(definition.behavior.distribution == MixedFilamentDistributionMode::LayerCycle);
 
     REQUIRE(definition.recipe.blend.components.size() == 3);
-    CHECK(definition.recipe.blend.components[0].filament.id == 3);
-    CHECK(definition.recipe.blend.components[0].percent == 50);
-    CHECK(definition.recipe.blend.components[1].filament.id == 1);
+    CHECK(definition.recipe.blend.components[0].filament.id == 1);
+    CHECK(definition.recipe.blend.components[0].percent == 25);
+    CHECK(definition.recipe.blend.components[1].filament.id == 2);
     CHECK(definition.recipe.blend.components[1].percent == 25);
-    CHECK(definition.recipe.blend.components[2].filament.id == 2);
-    CHECK(definition.recipe.blend.components[2].percent == 25);
-    CHECK(mixed_filament_blend_component_ids(definition, 9) == std::vector<unsigned int>{3, 1, 2});
-    CHECK(mixed_filament_blend_component_weights(definition) == std::vector<int>{50, 25, 25});
+    CHECK(definition.recipe.blend.components[2].filament.id == 3);
+    CHECK(definition.recipe.blend.components[2].percent == 50);
+    CHECK(definition.recipe.blend.component_ids(9) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(definition.recipe.blend.component_percents(9) == std::vector<int>{25, 25, 50});
+    CHECK(definition.recipe.blend.component_ids(2) == std::vector<unsigned int>{1, 2});
+    CHECK(definition.recipe.blend.component_percents(2) == std::vector<int>{25, 25});
 
     const MixedFilamentLegacyRow rebuilt = mixed_filament_legacy_row_from_definition(definition);
-    CHECK(rebuilt.gradient_component_ids == "312");
-    CHECK(rebuilt.gradient_component_weights == "50/25/25");
+    CHECK(rebuilt.gradient_component_ids == "123");
+    CHECK(rebuilt.gradient_component_weights == "25/25/50");
     CHECK(rebuilt.manual_pattern.empty());
+}
+
+TEST_CASE("Mixed filament legacy gradient decoding filters unavailable physical components", "[MixedFilament]")
+{
+    MixedFilamentLegacyRow row;
+    row.component_a = 1;
+    row.component_b = 2;
+    row.mix_b_percent = 50;
+    row.gradient_component_ids = "1235";
+    row.gradient_component_weights = "10/20/30/40";
+    row.distribution_mode = int(MixedFilamentLegacyRow::LayerCycle);
+
+    MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(row, 3);
+    CHECK(definition.recipe.blend.component_ids(3) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(definition.recipe.blend.component_percents(3) == std::vector<int>{17, 33, 50});
+    CHECK(definition.behavior.distribution == MixedFilamentDistributionMode::LayerCycle);
+
+    row.gradient_component_ids = "125";
+    row.gradient_component_weights = "10/20/70";
+    definition = mixed_filament_definition_from_legacy_row(row, 2);
+    CHECK(definition.recipe.blend.component_ids(2) == std::vector<unsigned int>{1, 2});
+    CHECK(definition.behavior.distribution == MixedFilamentDistributionMode::LayerCycle);
+
+    row.manual_pattern = MixedFilamentManager::normalize_manual_pattern("125");
+    definition = mixed_filament_definition_from_legacy_row(row, 2);
+    CHECK(mixed_filament_manual_pattern_sequence(definition, 2) == std::vector<unsigned int>{1, 2});
 }
 
 TEST_CASE("Mixed filament manager accepts typed definitions at the boundary", "[MixedFilament]")
@@ -534,7 +586,7 @@ TEST_CASE("Mixed filament manager accepts typed definitions at the boundary", "[
     REQUIRE(definitions.size() == 1);
     CHECK(definitions.front().source.kind == MixedFilamentSourceKind::Custom);
     CHECK(definitions.front().identity.stable_id != 0);
-    CHECK(mixed_filament_blend_component_ids(definitions.front(), colors.size()) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(definitions.front().recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2, 3});
 
     MixedFilamentDefinition edited = definitions.front();
     edited.recipe.blend.components = {
@@ -550,8 +602,8 @@ TEST_CASE("Mixed filament manager accepts typed definitions at the boundary", "[
     CHECK(roundtrip->identity.stable_id == definitions.front().identity.stable_id);
     CHECK(roundtrip->recipe.kind == MixedFilamentRecipeKind::WeightedBlend);
     CHECK(roundtrip->recipe.blend.is_pair());
-    CHECK(roundtrip->recipe.blend.component_b_percent() == 65);
-    CHECK(mixed_filament_blend_component_ids(*roundtrip, colors.size()) == std::vector<unsigned int>{1, 2});
+    CHECK(roundtrip->recipe.blend.primary_pair_or().component_b_percent == 65);
+    CHECK(roundtrip->recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2});
 }
 
 TEST_CASE("Mixed filament perimeter resolver uses grouped manual patterns by inset", "[MixedFilament]")
@@ -832,6 +884,119 @@ TEST_CASE("FullSpectrum mixed filaments round-trip canonical grouped pattern dat
     CHECK(rebuilt.mixed_filament_legacy_rows().front().gradient_component_weights == "50/25/25");
     CHECK(rebuilt.mixed_filament_legacy_rows().front().component_a_surface_offset == Approx(0.02f));
     CHECK(rebuilt.mixed_filament_legacy_rows().front().component_b_surface_offset == Approx(-0.01f));
+}
+
+TEST_CASE("FullSpectrum validation checks canonical mixed component references", "[FullSpectrum3mf]")
+{
+    PackageModel model;
+    model.materials.physical_filaments = {
+        {"fil_red", "Red"},
+        {"fil_blue", "Blue"},
+        {"fil_green", "Green"}
+    };
+
+    VirtualFilament vf;
+    vf.id = "mix_bad_refs";
+    vf.visibility_state = "ghost";
+    vf.source_kind = "maybe";
+    vf.origin.kind = "triple";
+    vf.origin.component_refs = {"fil_red", "fil_red"};
+    vf.blend.type = "unknown";
+    vf.blend.component_b_percent = 120;
+    vf.distribution.mode = "sparkle";
+    vf.gradient = Gradient{{"fil_red", "fil_missing", "fil_red"}, {50, 25, 25}};
+    vf.manual_pattern = ManualPattern{{{"component_a", "physical:fil_missing"}}};
+    vf.local_z = LocalZ{-1, "standard-pair-split"};
+
+    MixedFilaments mixed;
+    mixed.virtual_filaments.push_back(std::move(vf));
+    model.mixed_filaments = std::move(mixed);
+
+    const ValidationResult result = validate_package_model(model);
+    CHECK_FALSE(result.valid);
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("gradient references missing physical filament fil_missing") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("invalid visibility state ghost") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("invalid source kind maybe") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("invalid origin kind triple") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("duplicate origin component ref fil_red") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("invalid blend type unknown") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("blend percent is outside 0..100") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("invalid distribution mode sparkle") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("gradient has duplicate component ref fil_red") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("manual pattern has invalid step physical:fil_missing") != std::string::npos;
+    }));
+    CHECK(std::any_of(result.errors.begin(), result.errors.end(), [](const std::string &error) {
+        return error.find("Local-Z max_sublayers is negative") != std::string::npos;
+    }));
+}
+
+TEST_CASE("FullSpectrum canonical gradient keeps origin pair as primary pair", "[FullSpectrum3mf]")
+{
+    const std::vector<std::string> refs = {"fil_red", "fil_blue", "fil_green"};
+    const std::vector<std::string> colors = {"#FF0000", "#0000FF", "#00FF00"};
+
+    VirtualFilament vf;
+    vf.id = "mix_reordered_gradient";
+    vf.source_kind = "custom";
+    vf.origin.component_refs = {"fil_red", "fil_blue"};
+    vf.blend.component_b_percent = 65;
+    vf.gradient = Gradient{{"fil_green", "fil_red", "fil_blue"}, {50, 30, 20}};
+    vf.distribution.mode = "layer_cycle";
+
+    MixedFilaments mixed;
+    mixed.virtual_filaments.push_back(std::move(vf));
+
+    const MixedFilamentManager manager = manager_from_mixed_filaments(mixed, colors, refs);
+    const std::vector<MixedFilamentDefinition> definitions = manager.mixed_filament_definitions(colors.size());
+    REQUIRE(definitions.size() == 1);
+    CHECK(definitions.front().recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(definitions.front().recipe.blend.component_percents(colors.size()) == std::vector<int>{30, 20, 50});
+    const std::optional<MixedFilamentPrimaryPairView> pair = definitions.front().recipe.blend.primary_pair();
+    REQUIRE(pair);
+    CHECK(pair->component_a.id == 1);
+    CHECK(pair->component_b.id == 2);
+    CHECK(pair->component_b_percent == 20);
+}
+
+TEST_CASE("FullSpectrum canonical gradient falls back to equal weights when weights are malformed", "[FullSpectrum3mf]")
+{
+    const std::vector<std::string> refs = {"fil_red", "fil_blue", "fil_green"};
+    const std::vector<std::string> colors = {"#FF0000", "#0000FF", "#00FF00"};
+
+    VirtualFilament vf;
+    vf.id = "mix_weights";
+    vf.source_kind = "custom";
+    vf.origin.component_refs = {"fil_red", "fil_blue"};
+    vf.gradient = Gradient{{"fil_red", "fil_blue", "fil_green"}, {80, 20}};
+    vf.distribution.mode = "layer_cycle";
+
+    MixedFilaments mixed;
+    mixed.virtual_filaments.push_back(std::move(vf));
+
+    const MixedFilamentManager manager = manager_from_mixed_filaments(mixed, colors, refs);
+    const std::vector<MixedFilamentDefinition> definitions = manager.mixed_filament_definitions(colors.size());
+    REQUIRE(definitions.size() == 1);
+    CHECK(definitions.front().recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(definitions.front().recipe.blend.component_percents(colors.size()) == std::vector<int>{34, 33, 33});
 }
 
 TEST_CASE("FullSpectrum writer emits core package parts and mixed assignments", "[FullSpectrum3mf]")

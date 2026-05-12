@@ -907,8 +907,9 @@ static float mixed_filament_reference_nozzle_mm(const MixedFilamentDefinition &d
             samples.emplace_back(std::max(0.05f, float(nozzle_diameters.get_at(component_id - 1))));
     };
 
-    append_if_valid(definition.recipe.blend.component_a_id());
-    append_if_valid(definition.recipe.blend.component_b_id());
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    append_if_valid(pair.component_a.id);
+    append_if_valid(pair.component_b.id);
 
     if (samples.empty())
         return 0.4f;
@@ -1602,15 +1603,17 @@ static std::vector<unsigned int> decode_manual_pattern_sequence(const MixedFilam
 
 static std::vector<unsigned int> decode_blend_component_ids(const MixedFilamentDefinition &definition, size_t num_physical)
 {
-    return mixed_filament_blend_component_ids(definition, num_physical);
+    return definition.recipe.blend.component_ids(num_physical);
 }
 
-static std::vector<int> decode_blend_component_weights(const MixedFilamentDefinition &definition, size_t expected_components)
+static std::vector<int> decode_blend_component_weights(const MixedFilamentDefinition &definition,
+                                                       size_t                         num_physical,
+                                                       size_t                         expected_components)
 {
     if (expected_components == 0)
         return {};
 
-    std::vector<int> out = mixed_filament_blend_component_weights(definition);
+    std::vector<int> out = definition.recipe.blend.component_percents(num_physical);
     if (out.size() != expected_components)
         return {};
 
@@ -1809,7 +1812,7 @@ static bool local_z_direct_multicolor_definition(const MixedFilamentDefinition &
     if (component_ids != nullptr)
         *component_ids = ids;
     if (component_weights != nullptr) {
-        std::vector<int> weights = decode_blend_component_weights(definition, ids.size());
+        std::vector<int> weights = decode_blend_component_weights(definition, num_physical, ids.size());
         if (weights.empty())
             weights.assign(ids.size(), 1);
         *component_weights = std::move(weights);
@@ -1861,11 +1864,11 @@ static std::vector<LocalZActivePair> build_local_z_pair_cycle_for_definition(con
         definition.behavior.distribution == MixedFilamentDistributionMode::Simple)
         return pair_options;
 
-    const std::vector<unsigned int> blend_ids = mixed_filament_blend_component_ids(definition, num_physical);
+    const std::vector<unsigned int> blend_ids = definition.recipe.blend.component_ids(num_physical);
     if (blend_ids.size() < 3)
         return pair_options;
 
-    std::vector<int> gradient_weights = decode_blend_component_weights(definition, blend_ids.size());
+    std::vector<int> gradient_weights = decode_blend_component_weights(definition, num_physical, blend_ids.size());
     if (gradient_weights.empty())
         gradient_weights.assign(blend_ids.size(), 1);
 
@@ -2086,9 +2089,10 @@ static LocalZActivePair derive_local_z_active_pair(const MixedFilamentDefinition
         return pair_cycle[pos];
     }
 
-    out.component_a = definition.recipe.blend.component_a_id(0);
-    out.component_b = definition.recipe.blend.component_b_id(0);
-    out.mix_b_percent = definition.recipe.blend.component_b_percent();
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    out.component_a = pair.component_a.id;
+    out.component_b = pair.component_b.id;
+    out.mix_b_percent = pair.component_b_percent;
     out.uses_layer_cycle_sequence = false;
     return out;
 }
@@ -2754,7 +2758,8 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
             const LocalZActivePair &dominant_pair = row_active_pairs[dominant_mixed_idx];
             const int dominant_mix_b_percent =
                 dominant_pair.valid_pair(num_physical) ? dominant_pair.mix_b_percent :
-                                                          mixed_definitions[dominant_mixed_idx].recipe.blend.component_b_percent();
+                                                          mixed_definitions[dominant_mixed_idx]
+                                                              .recipe.blend.primary_pair_or().component_b_percent;
             if (row_uses_direct_multicolor_solver[dominant_mixed_idx] == 0) {
                 compute_local_z_gradient_component_heights(dominant_mix_b_percent, mixed_lower, mixed_upper,
                                                            dominant_gradient_h_a, dominant_gradient_h_b);
@@ -2898,7 +2903,8 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                     const LocalZActivePair &active_pair = row_active_pairs[row_idx];
                     const int row_mix_b_percent =
                         active_pair.valid_pair(num_physical) ? active_pair.mix_b_percent :
-                                                               mixed_definitions[row_idx].recipe.blend.component_b_percent();
+                                                               mixed_definitions[row_idx]
+                                                                   .recipe.blend.primary_pair_or().component_b_percent;
                     compute_local_z_gradient_component_heights(row_mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
                     row_passes = active_pair.uses_layer_cycle_sequence
                         ? build_local_z_two_pass_heights(interval.base_height, mixed_lower, mixed_upper, row_h_a, row_h_b)

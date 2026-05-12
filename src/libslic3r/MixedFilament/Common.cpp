@@ -93,11 +93,6 @@ void compute_gradient_heights_from_mix(int mix_b_percent, float lower_bound, flo
     h_b = lo + pct_b * (hi - lo);
 }
 
-void compute_gradient_heights(const MixedFilamentLegacyRow& mf, float lower_bound, float upper_bound, float& h_a, float& h_b)
-{
-    compute_gradient_heights_from_mix(mf.mix_b_percent, lower_bound, upper_bound, h_a, h_b);
-}
-
 void normalize_ratio_pair(int& a, int& b)
 {
     a = std::max(0, a);
@@ -154,13 +149,6 @@ std::pair<int, int> gradient_ratios_from_mix(int mix_b_percent, int gradient_mod
 
     normalize_ratio_pair(ratio_a, ratio_b);
     return { ratio_a, ratio_b };
-}
-
-void compute_gradient_ratios(MixedFilamentLegacyRow& mf, int gradient_mode, float lower_bound, float upper_bound)
-{
-    const std::pair<int, int> ratios = gradient_ratios_from_mix(mf.mix_b_percent, gradient_mode, lower_bound, upper_bound);
-    mf.ratio_a                      = ratios.first;
-    mf.ratio_b                      = ratios.second;
 }
 
 int safe_mod(int x, int m)

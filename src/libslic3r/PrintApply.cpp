@@ -1162,10 +1162,11 @@ static void append_mixed_component_extruders(const MixedFilamentManager &mixed_m
     if (definition.visibility.tombstoned)
         return;
 
-    append_unique_painted_extruder(painting_extruders, definition.recipe.blend.component_a_id(), num_physical_extruders);
-    append_unique_painted_extruder(painting_extruders, definition.recipe.blend.component_b_id(), num_physical_extruders);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
+    append_unique_painted_extruder(painting_extruders, pair.component_a.id, num_physical_extruders);
+    append_unique_painted_extruder(painting_extruders, pair.component_b.id, num_physical_extruders);
 
-    for (const unsigned int extruder_id : mixed_filament_blend_component_ids(definition, num_physical_extruders))
+    for (const unsigned int extruder_id : definition.recipe.blend.component_ids(num_physical_extruders))
         append_unique_painted_extruder(painting_extruders, extruder_id, num_physical_extruders);
 
     for (const unsigned int extruder_id : mixed_filament_manual_pattern_sequence(definition, num_physical_extruders))

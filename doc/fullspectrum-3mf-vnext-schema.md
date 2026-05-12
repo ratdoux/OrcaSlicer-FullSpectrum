@@ -736,6 +736,9 @@ Example:
 }
 ```
 
+`origin.kind` is `pair`, and `origin.component_refs` must contain exactly two
+distinct physical filaments.
+
 ### Standard Row State
 
 The standard mixed row state should cover the semantics currently hidden inside the compact row blob:
@@ -828,6 +831,11 @@ Use explicit component references and numeric weights:
   }
 }
 ```
+
+`gradient.component_refs` must be distinct physical filament refs. When a package
+also provides `origin.component_refs`, readers preserve that origin pair as the
+first two in-memory weighted components and append the remaining gradient refs
+after it.
 
 ### Tombstones
 
@@ -1520,8 +1528,8 @@ Metadata/slice_info.config
   "virtual_filaments": [
     {
       "id": "<mixed_filament_id>",
-      "visibility_state": "<active|hidden|tombstoned>",
-      "source_kind": "<auto|custom|imported>",
+      "visibility_state": "<active|tombstoned>",
+      "source_kind": "<auto|custom>",
       "origin": {
         "kind": "pair",
         "component_refs": [
@@ -1548,11 +1556,13 @@ Metadata/slice_info.config
       "gradient": {
         "component_refs": [
           "<physical_filament_id>",
+          "<physical_filament_id>",
           "<physical_filament_id>"
         ],
         "weights": [
           50,
-          50
+          25,
+          25
         ]
       },
       "surface_bias": {

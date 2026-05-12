@@ -57,20 +57,6 @@ std::string flatten_manual_pattern_groups(const std::string& pattern)
     return flattened;
 }
 
-unsigned int physical_filament_from_pattern_step(char token, const MixedFilamentLegacyRow& mf, size_t num_physical)
-{
-    if (token == '1')
-        return mf.component_a;
-    if (token == '2')
-        return mf.component_b;
-    if (token >= '3' && token <= '9') {
-        const unsigned int direct = unsigned(token - '0');
-        if (direct >= 1 && direct <= num_physical)
-            return direct;
-    }
-    return 0;
-}
-
 int mix_percent_from_normalized_pattern(const std::string& pattern)
 {
     const std::vector<std::string> groups = split_manual_pattern_groups(pattern);
@@ -99,26 +85,6 @@ unsigned int physical_filament_from_legacy_pattern_token(char token, const Mixed
     if (token >= '3' && token <= '9')
         return unsigned(token - '0');
     return 0;
-}
-
-std::optional<MixedFilamentManualPattern> mixed_filament_manual_pattern_from_legacy_row(const MixedFilamentLegacyRow& row)
-{
-    const std::string normalized = MixedFilamentManager::normalize_manual_pattern(row.manual_pattern);
-    if (normalized.empty())
-        return std::nullopt;
-
-    MixedFilamentManualPattern out;
-    const MixedFilamentLegacyPair pair{{row.component_a}, {row.component_b}};
-    for (const std::string& group : split_manual_pattern_groups(normalized)) {
-        std::vector<MixedFilamentPhysicalRef> refs;
-        refs.reserve(group.size());
-        for (const char token : group)
-            refs.push_back({physical_filament_from_legacy_pattern_token(token, pair)});
-        if (!refs.empty())
-            out.groups.emplace_back(std::move(refs));
-    }
-
-    return out.groups.empty() ? std::nullopt : std::optional<MixedFilamentManualPattern>(std::move(out));
 }
 
 std::string legacy_manual_pattern_from_mixed_filament_pattern(const MixedFilamentManualPattern& pattern, const MixedFilamentLegacyPair& pair)

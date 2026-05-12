@@ -30,8 +30,9 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
         return filament_id;
 
     const MixedFilamentDefinition& definition = m_definitions[size_t(mixed_idx)];
-    const unsigned int component_a = definition.recipe.blend.component_a_id(1);
-    const unsigned int component_b = definition.recipe.blend.component_b_id(2);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(1, 2);
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
 
     // Manual pattern takes precedence when provided.
     if (definition.recipe.manual_pattern) {
@@ -59,7 +60,7 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
     if (use_height_weighted) {
         float h_a = 0.f;
         float h_b = 0.f;
-        compute_gradient_heights_from_mix(definition.recipe.blend.component_b_percent(), m_height_lower_bound, m_height_upper_bound, h_a, h_b);
+        compute_gradient_heights_from_mix(pair.component_b_percent, m_height_lower_bound, m_height_upper_bound, h_a, h_b);
         const float cycle_h  = std::max(0.01f, h_a + h_b);
         const float z_anchor = (layer_height > 1e-6f) ? std::max(0.f, layer_print_z - 0.5f * layer_height) : std::max(0.f, layer_print_z);
         float       phase    = std::fmod(z_anchor, cycle_h);
@@ -136,7 +137,8 @@ unsigned int MixedFilamentManager::effective_painted_region_filament_id(unsigned
 
         if (cycle > 0) {
             const int pos = safe_mod(layer_index, cycle);
-            return pos < ratio_a ? definition.recipe.blend.component_a_id(1) : definition.recipe.blend.component_b_id(2);
+            const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(1, 2);
+            return pos < ratio_a ? pair.component_a.id : pair.component_b.id;
         }
     }
 
@@ -161,9 +163,10 @@ float MixedFilamentManager::component_surface_offset(unsigned int filament_id,
     const unsigned int resolved = resolve(filament_id, num_physical, layer_index, layer_print_z, layer_height, force_height_weighted);
     const float signed_bias     = canonical_signed_bias_value(definition.behavior.surface_bias.component_a_offset_mm,
                                                               definition.behavior.surface_bias.component_b_offset_mm);
-    if (signed_bias > EPSILON && resolved == definition.recipe.blend.component_b_id(0))
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    if (signed_bias > EPSILON && resolved == pair.component_b.id)
         return signed_bias;
-    if (signed_bias < -EPSILON && resolved == definition.recipe.blend.component_a_id(0))
+    if (signed_bias < -EPSILON && resolved == pair.component_a.id)
         return -signed_bias;
     return 0.f;
 }

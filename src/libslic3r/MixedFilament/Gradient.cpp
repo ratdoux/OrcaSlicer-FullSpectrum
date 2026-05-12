@@ -243,19 +243,48 @@ std::vector<int> normalized_percent_vector_or_equal(const std::vector<int>& weig
     return normalized;
 }
 
-std::optional<MixedFilamentWeightedBlend> mixed_filament_weighted_blend_from_legacy_row(const MixedFilamentLegacyRow& row)
+std::optional<MixedFilamentWeightedBlend> mixed_filament_weighted_blend_from_legacy_row(const MixedFilamentLegacyRow& row,
+                                                                                       size_t                        num_physical)
 {
     const std::string normalized_ids = normalize_gradient_component_ids(row.gradient_component_ids);
     if (normalized_ids.size() < 3)
         return std::nullopt;
 
+    const std::vector<int> parsed_weights = parse_gradient_weight_tokens(row.gradient_component_weights);
+    const bool             use_parsed_weights = parsed_weights.size() == normalized_ids.size();
     std::vector<unsigned int> ids;
-    ids.reserve(normalized_ids.size());
-    for (const char token : normalized_ids)
-        ids.emplace_back(unsigned(token - '0'));
+    std::vector<int>          weights;
+    ids.reserve(normalized_ids.size() + 2);
+    weights.reserve(normalized_ids.size() + 2);
 
-    const std::vector<int> weights = normalized_percent_vector_or_equal(parse_gradient_weight_tokens(row.gradient_component_weights),
-                                                                        ids.size());
+    const auto is_valid_id = [num_physical](unsigned int id) {
+        return id != 0 && (num_physical == 0 || id <= num_physical);
+    };
+    const auto parsed_weight_for = [&](unsigned int id) -> std::optional<int> {
+        if (!use_parsed_weights)
+            return std::nullopt;
+        for (size_t i = 0; i < normalized_ids.size(); ++i)
+            if (unsigned(normalized_ids[i] - '0') == id)
+                return parsed_weights[i];
+        return std::nullopt;
+    };
+    const auto add_id = [&](unsigned int id, int fallback_weight) {
+        if (!is_valid_id(id) || std::find(ids.begin(), ids.end(), id) != ids.end())
+            return;
+        ids.emplace_back(id);
+        weights.emplace_back(use_parsed_weights ? parsed_weight_for(id).value_or(fallback_weight) : 0);
+    };
+
+    const int pair_b_percent = std::clamp(row.mix_b_percent, 0, 100);
+    add_id(row.component_a, 100 - pair_b_percent);
+    add_id(row.component_b, pair_b_percent);
+    for (const char c : normalized_ids)
+        add_id(unsigned(c - '0'), 0);
+
+    if (ids.size() < 3)
+        return std::nullopt;
+
+    weights = normalized_percent_vector_or_equal(weights, ids.size());
 
     MixedFilamentWeightedBlend out;
     out.components.reserve(ids.size());

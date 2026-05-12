@@ -81,8 +81,9 @@ std::optional<ManualPattern> manual_pattern_from_definition(const MixedFilamentD
         return std::nullopt;
 
     ManualPattern out;
-    const unsigned int component_a = definition.recipe.blend.component_a_id(0);
-    const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+    const unsigned int component_a = pair.component_a.id;
+    const unsigned int component_b = pair.component_b.id;
     for (const std::vector<MixedFilamentPhysicalRef> &group : definition.recipe.manual_pattern->groups) {
         std::vector<std::string> steps;
         steps.reserve(group.size());
@@ -158,19 +159,37 @@ std::optional<MixedFilamentManualPattern> definition_manual_pattern_from_canonic
 
 std::optional<MixedFilamentWeightedBlend> definition_gradient_from_canonical(
     const std::optional<Gradient>     &gradient,
+    const CanonicalPairRefs           &pair,
+    int                                component_b_percent,
     const std::vector<std::string>    &physical_refs)
 {
     if (!gradient || gradient->component_refs.size() < 3)
         return std::nullopt;
 
     MixedFilamentWeightedBlend out;
-    for (size_t i = 0; i < gradient->component_refs.size(); ++i) {
-        const unsigned int index = physical_index_from_ref(gradient->component_refs[i], physical_refs);
-        if (index == 0)
-            continue;
-        const int weight = i < gradient->weights.size() ? std::max(0, gradient->weights[i]) : 0;
+    std::unordered_set<unsigned int> seen;
+
+    const bool use_weights = gradient->weights.size() == gradient->component_refs.size();
+    const auto parsed_weight_for = [&](unsigned int index) -> std::optional<int> {
+        if (!use_weights)
+            return std::nullopt;
+        for (size_t i = 0; i < gradient->component_refs.size(); ++i)
+            if (physical_index_from_ref(gradient->component_refs[i], physical_refs) == index)
+                return std::max(0, gradient->weights[i]);
+        return std::nullopt;
+    };
+    const auto add_index = [&](unsigned int index, int fallback_weight) {
+        if (index == 0 || !seen.insert(index).second)
+            return;
+        const int weight = use_weights ? parsed_weight_for(index).value_or(fallback_weight) : 0;
         out.components.push_back({ { index }, weight });
-    }
+    };
+
+    const int pair_b_percent = std::clamp(component_b_percent, 0, 100);
+    add_index(pair.component_a.id, 100 - pair_b_percent);
+    add_index(pair.component_b.id, pair_b_percent);
+    for (const std::string &ref : gradient->component_refs)
+        add_index(physical_index_from_ref(ref, physical_refs), 0);
 
     return out.components.size() < 3 ? std::nullopt : std::optional<MixedFilamentWeightedBlend>(std::move(out));
 }
@@ -248,8 +267,9 @@ MixedFilaments mixed_filaments_from_manager(const MixedFilamentManager    &manag
     size_t row_idx = 0;
     for (const MixedFilamentDefinition &definition : manager.mixed_filament_definitions(physical_refs.size())) {
         ++row_idx;
-        const unsigned int component_a = definition.recipe.blend.component_a_id(0);
-        const unsigned int component_b = definition.recipe.blend.component_b_id(0);
+        const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
+        const unsigned int component_a = pair.component_a.id;
+        const unsigned int component_b = pair.component_b.id;
         if (component_a == 0 || component_b == 0 ||
             component_a > physical_refs.size() || component_b > physical_refs.size())
             continue;
@@ -259,14 +279,14 @@ MixedFilaments mixed_filaments_from_manager(const MixedFilamentManager    &manag
         vf.id = unique_id(mixed_filament_id_from_legacy_stable_id(definition.identity.stable_id,
                                                                   std::to_string(component_a) + "|" +
                                                                   std::to_string(component_b) + "|" +
-                                                                  std::to_string(definition.recipe.blend.component_b_percent())),
+                                                                  std::to_string(pair.component_b_percent)),
                           row_idx,
                           used_ids);
         vf.visibility_state = definition.visibility.tombstoned ? "tombstoned" : "active";
         vf.source_kind = definition.source.kind == MixedFilamentSourceKind::Custom ? "custom" : "auto";
         vf.origin.component_refs = {physical_refs[component_a - 1], physical_refs[component_b - 1]};
         vf.origin.origin_auto_generated = definition.source.origin_auto;
-        vf.blend.component_b_percent = definition.recipe.blend.component_b_percent();
+        vf.blend.component_b_percent = pair.component_b_percent;
         vf.distribution.mode = distribution_mode_from_definition(definition.behavior.distribution);
         vf.manual_pattern = manual_pattern_from_definition(definition, physical_refs);
         vf.gradient = gradient_from_definition(definition, physical_refs);
@@ -289,7 +309,7 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
     definitions.reserve(mixed_filaments.virtual_filaments.size());
 
     for (const VirtualFilament &vf : mixed_filaments.virtual_filaments) {
-        if (vf.origin.component_refs.size() < 2)
+        if (vf.origin.component_refs.size() != 2)
             continue;
 
         const unsigned int a = physical_index_from_ref(vf.origin.component_refs[0], physical_refs);
@@ -316,7 +336,8 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
         const CanonicalPairRefs pair{{a}, {b}};
         definition.recipe.manual_pattern =
             definition_manual_pattern_from_canonical(vf.manual_pattern, pair, physical_refs);
-        const std::optional<MixedFilamentWeightedBlend> gradient = definition_gradient_from_canonical(vf.gradient, physical_refs);
+        const std::optional<MixedFilamentWeightedBlend> gradient =
+            definition_gradient_from_canonical(vf.gradient, pair, vf.blend.component_b_percent, physical_refs);
         if (definition.recipe.manual_pattern) {
             definition.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
             if (gradient)

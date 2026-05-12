@@ -451,7 +451,15 @@
       <div class="grid two" style="margin-top: 14px;">
         <div class="card">
           <h3>Recipe</h3>
-<pre><code>struct MixedFilamentRecipe {
+<pre><code>struct MixedFilamentWeightedBlend {
+    std::vector&lt;MixedFilamentWeightedComponent&gt; components;
+    std::optional&lt;MixedFilamentPrimaryPairView&gt; primary_pair() const;
+    MixedFilamentPrimaryPairView primary_pair_or(...) const;
+    std::vector&lt;unsigned int&gt; component_ids(size_t num_physical = 0) const;
+    std::vector&lt;int&gt; component_percents(size_t num_physical = 0) const;
+};
+
+struct MixedFilamentRecipe {
     MixedFilamentWeightedBlend blend;
     std::optional&lt;MixedFilamentManualPattern&gt; manual_pattern;
     MixedFilamentRecipeKind kind;
@@ -580,7 +588,11 @@ definition.recipe.blend.components = {
           </details>
           <details data-text="MixedFilamentWeightedBlend components two component pair gradient multi color">
             <summary>MixedFilamentWeightedBlend</summary>
-            <div>A weighted list of physical filament refs. Two components are a pair blend; three or more components are the explicit multi-color path.</div>
+            <div>
+              A weighted list of physical filament refs. Use <code>component_ids(...)</code> and
+              <code>component_percents(...)</code> for aligned component arrays;
+              <code>primary_pair()</code> is only the A/B projection.
+            </div>
           </details>
           <details data-text="MixedFilamentManualPattern groups perimeter wall exact sequence">
             <summary>MixedFilamentManualPattern</summary>
@@ -596,7 +608,7 @@ definition.recipe.blend.components = {
           </details>
           <details data-text="component_a component_b first two blend components local z surface bias token">
             <summary>Primary A/B pair</summary>
-            <div>The first two blend components are the deterministic pair used by legacy tokens, Local-Z pair splitting, and surface bias.</div>
+            <div>The first two blend components are the deterministic pair used by legacy tokens, Local-Z pair splitting, surface bias, and vNext origin refs. Importers and manual-pattern summaries normalize component order around this pair, then append extra weighted components.</div>
           </details>
           <details data-text="Internal.hpp legacy pair adapter Pattern Definition">
             <summary>Legacy pair adapter</summary>
@@ -623,7 +635,7 @@ definition.recipe.blend.components = {
             <tr><td><code>stable_id</code></td><td><code>identity.stable_id</code></td></tr>
             <tr><td><code>deleted</code></td><td><code>visibility.tombstoned</code></td></tr>
             <tr><td><code>custom</code>, <code>origin_auto</code></td><td><code>source.kind</code>, <code>source.origin_auto</code></td></tr>
-            <tr><td><code>mix_b_percent</code></td><td>second blend component percent</td></tr>
+            <tr><td><code>mix_b_percent</code></td><td><code>recipe.blend.primary_pair_or().component_b_percent</code></td></tr>
             <tr><td><code>manual_pattern</code></td><td><code>recipe.manual_pattern.groups</code></td></tr>
             <tr><td><code>gradient_component_ids</code></td><td>3+ blend component physical refs</td></tr>
             <tr><td><code>gradient_component_weights</code></td><td>3+ blend component percents</td></tr>
