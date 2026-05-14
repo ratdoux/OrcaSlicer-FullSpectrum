@@ -277,6 +277,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/MediaPlayCtrl.h
     GUI/MeshUtils.cpp
     GUI/MeshUtils.hpp
+    GUI/MixedFilamentDialog.cpp
+    GUI/MixedFilamentDialog.hpp
     GUI/ModelMall.cpp
     GUI/ModelMall.hpp
     GUI/MonitorBasePanel.cpp
@@ -451,6 +453,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/FanControl.hpp
     GUI/Widgets/FilamentCard.cpp
     GUI/Widgets/FilamentCard.hpp
+    GUI/Widgets/FilamentCardMixed.cpp
+    GUI/Widgets/FilamentCardMixed.hpp
     GUI/Widgets/ImageSwitchButton.cpp
     GUI/Widgets/ImageSwitchButton.hpp
     GUI/Widgets/Label.cpp

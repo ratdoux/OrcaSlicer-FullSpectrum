@@ -17,7 +17,7 @@ public:
 
     void set_on_edit_callback(std::function<void(int index, wxWindow* anchor)> callback)
     {
-        m_on_edit = std::move(callback);
+        m_on_edit_btn = std::move(callback);
     }
     wxPoint get_edit_btn_client_position();
     void    update_state();
@@ -30,7 +30,7 @@ private:
     wxBoxSizer*                         m_sizer{nullptr};
     ScalableButton*                     m_filament_edit_btn {nullptr};
 
-    std::function<void(int, wxWindow*)> m_on_edit;
+    std::function<void(int, wxWindow*)> m_on_edit_btn;
 
     void build_ui();
 };

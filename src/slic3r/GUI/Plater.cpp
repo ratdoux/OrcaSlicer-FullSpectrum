@@ -1282,7 +1282,20 @@ Sidebar::Sidebar(Plater *parent)
         p->m_sidebar_filament_menu = new SidebarFilamentMenu(p->scrolled, title_bg);
         scrolled_sizer->Add(p->m_sidebar_filament_menu, 0, wxEXPAND | wxALL, 0);
 
-        p->m_sidebar_filament_menu->set_on_action(SidebarFilamentMenu::ActionType::CollapseToggle, [this]() { m_scrolled_sizer->Layout(); });
+        p->m_sidebar_filament_menu->set_get_physical_colors([this]() -> std::vector<std::string> {
+            if (wxGetApp().preset_bundle == nullptr)
+                return std::vector<std::string>();
+
+            ConfigOptionStrings* phyiscal_filament_config = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
+            
+            const std::vector<std::string>& physical_colors = 
+                phyiscal_filament_config
+                ? phyiscal_filament_config->values
+                : std::vector<std::string>();
+            
+            return physical_colors;
+        });
+
         p->m_sidebar_filament_menu->set_on_edit_physical([this](int index) {
             auto menu = p->plater->filament_action_menu(index);
 
@@ -1290,6 +1303,10 @@ Sidebar::Sidebar(Plater *parent)
 
             p->m_menu_filament_id = index;
             p->plater->PopupMenu(menu, (int) pt.x, pt.y);
+        });
+
+        p->m_sidebar_filament_menu->set_on_action(SidebarFilamentMenu::ActionType::CollapseToggle, [this]() { 
+            m_scrolled_sizer->Layout(); 
         });
 
         // BBS
@@ -2153,7 +2170,11 @@ void Sidebar::on_filaments_change(size_t num_filaments)
         return;
     }
 
-    p->m_sidebar_filament_menu->on_filaments_change(num_filaments);
+    auto* preset_bundle = wxGetApp().preset_bundle;
+    auto& mixed_mgr = preset_bundle->mixed_filaments;
+    std::vector<MixedFilamentDefinition> mixed_filaments = mixed_mgr.mixed_filament_definitions(num_filaments);
+
+    p->m_sidebar_filament_menu->on_filaments_change(num_filaments, mixed_filaments);
 
     p->m_skip_mixed_filament_sync_once = false;
     wxWindowUpdateLocker noUpdates_scrolled_panel(this);
@@ -7505,8 +7526,12 @@ void Sidebar::on_filaments_delete(size_t num_filaments)
         return;
 
     wxWindowUpdateLocker noUpdates_scrolled_panel(this);
+        
+    auto*                                      preset_bundle   = wxGetApp().preset_bundle;
+    auto&                                      mixed_mgr       = preset_bundle->mixed_filaments;
+    std::vector<MixedFilamentDefinition> mixed_filaments = mixed_mgr.mixed_filament_definitions(num_filaments);
 
-    p->m_sidebar_filament_menu->on_filaments_change(num_filaments);
+    p->m_sidebar_filament_menu->on_filaments_change(num_filaments, mixed_filaments);
 
     Layout();
     update_ui_from_settings();

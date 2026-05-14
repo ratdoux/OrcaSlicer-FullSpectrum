@@ -7,9 +7,11 @@
 #include <string>
 #include <map>
 #include "Widgets/FilamentCard.hpp"
+#include "Widgets/FilamentCardMixed.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/Button.hpp"
 #include "Widgets/StaticBox.hpp"
+#include "libslic3r/MixedFilament.hpp"
 
 
 namespace Slic3r::GUI {
@@ -21,60 +23,116 @@ public:
 
     SidebarFilamentMenu(wxWindow* parent, const wxColour& title_bg);
 
-    void on_filaments_change(size_t physical_count);
+    void on_filaments_change(size_t physical_count, std::vector<MixedFilamentDefinition>& mixed_filaments);
 
     // Intent Callbacks
     void set_on_action(ActionType type, std::function<void()> cb)
     {
         m_callbacks[type] = std::move(cb);
     }
-    void set_on_edit_physical(std::function<void(int)> cb)
-    {
-        m_on_edit_physical = std::move(cb);
-    }
-    wxPoint get_edit_btn_client_position(int index);
-    bool    switch_to_tab(int index);
 
     // State Setters
     void update_title(const wxString& label, const std::string& icon_name);
-
-    int m_physical_count() const { return static_cast<int>(m_physical_cards.size()); }
-    void update_physical_states();
-
-    void msw_rescale();
-    void sys_color_changed();
     void toggle_collapse(bool only_open);
     void show_SEMM_buttons(bool is_single_extruder_multi_material);
     void show_AMS_button(bool show);
 
+    // Physical specific
+    int m_physical_count() const { return static_cast<int>(m_physical_cards.size()); }
+    void update_physical_states();
+    bool switch_to_tab(int index);
+    wxPoint get_edit_btn_client_position(int index);
+    void set_on_edit_physical(std::function<void(int)> cb)
+    {
+        m_on_edit_physical = std::move(cb);
+    }
+        void set_get_physical_colors(std::function<std::vector<std::string>()> cb)
+    {
+        m_get_physical_colors = std::move(cb);
+    }
+
+    // Mixed specific
+    int m_mixed_count() const { return static_cast<int>(m_mixed_cards.size()); }
+    void update_mixed_states(std::vector<MixedFilamentDefinition>& mixed_filaments);
+
+    // UI 
+    void msw_rescale();
+    void sys_color_changed();
+
 private:
+    const int m_scrollbar_threshold = FromDIP(120); // height in pixels after which scrollbar appears
+
+    std::vector<MixedFilamentDefinition> m_mixed_filaments{};
+    std::vector<FilamentCardPhysical*>   m_physical_cards;
+    std::vector<FilamentCardMixed*>      m_mixed_cards;
+    
     void build_ui(const wxColour& title_bg);
 
-    std::vector<FilamentCardPhysical*> m_physical_cards;
-
-    StaticBox* m_title_panel{nullptr};
-    wxPanel*   m_content_panel{nullptr};
-    wxPanel*   m_physical_panel{nullptr};
-    wxPanel*   m_mixed_panel{nullptr};
-
-    wxBoxSizer*  m_main_sizer{nullptr};
-    wxBoxSizer*  m_title_sizer{nullptr};
-    wxBoxSizer*  m_content_sizer{nullptr};
-    wxGridSizer* m_physical_sizer{nullptr};
-    wxGridSizer* m_mixed_sizer{nullptr};
-
-    // Title bar elements
-    ScalableButton* m_btn_icon{nullptr};
-    Label*          m_lbl_title{nullptr};
-    ScalableButton* m_btn_add{nullptr};
-    ScalableButton* m_btn_del{nullptr};
-    ScalableButton* m_btn_ams{nullptr};
-    ScalableButton* m_btn_settings{nullptr};
-    Button*         m_btn_flushing{nullptr};
+    void on_physical_change(size_t physical_count);
+    void on_mixed_change(std::vector<MixedFilamentDefinition>& mixed_filaments);
+    
+    std::function<std::vector<std::string>()>   m_get_physical_colors;
+    void                                        update_physical_colors();
+    std::vector<std::string>                    m_physical_colors;
 
     std::map<ActionType, std::function<void()>> m_callbacks;
     std::function<void(int)>                    m_on_edit_physical; // Callback for edit button in physical filament card
 
+    // Drag handling for physical and mixed panels
+    struct DragState
+    {
+        bool is_dragging   = false;
+        int  drag_start_y  = 0;
+        int  panel_start_height = 0;
+        int  max_content_height = 0; 
+        std::chrono::steady_clock::time_point last_layout_time;
+    };
+
+    void start_drag(const wxMouseEvent& event, DragState* drag_state, wxPanel* grap_panel, wxScrolledWindow* panel);
+    void on_drag(const wxMouseEvent& event, DragState* drag_state, wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel);
+    void end_drag(const wxMouseEvent& event, DragState* drag_state, wxPanel* grap_panel);
+    void update_grab_panel_visibility(wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel, int max_content_height);
+    
+    DragState* m_physical_drag_state = new DragState();
+    DragState* m_mixed_drag_state = new DragState();
+
+    // Main panels and sizers
+    StaticBox*          m_title_panel{nullptr};
+    wxPanel*            m_content_panel{nullptr};
+    wxPanel*            m_physical_title_panel{nullptr};
+    wxScrolledWindow*   m_physical_panel{nullptr};
+    wxPanel*            m_physical_grab_panel{nullptr}; 
+    ScalableButton*     m_btn_mixed_add_big{nullptr}; // only shown when no mixed filaments are present
+    wxPanel*            m_mixed_title_panel{nullptr};
+    wxScrolledWindow*   m_mixed_panel{nullptr};
+    wxPanel*            m_mixed_grab_panel{nullptr}; 
+
+    wxBoxSizer*         m_main_sizer{nullptr};
+    wxBoxSizer*         m_title_sizer{nullptr};
+    wxBoxSizer*         m_content_sizer{nullptr};
+    wxBoxSizer*         m_physical_title_sizer{nullptr};
+    wxGridSizer*        m_physical_sizer{nullptr};
+    wxBoxSizer*         m_mixed_title_sizer{nullptr};
+    wxGridSizer*        m_mixed_sizer{nullptr};
+
+    // Title bar elements
+    ScalableButton* m_btn_icon{nullptr};
+    Label*          m_lbl_title{nullptr};
+    ScalableButton* m_btn_settings{nullptr};
+    Button*         m_btn_flushing{nullptr};
+
+    // Physical Title panel elements
+    wxStaticText*   m_lbl_physical_title{nullptr};
+    wxPanel*        m_physical_divider{nullptr};
+    ScalableButton* m_btn_physical_del{nullptr};
+    ScalableButton* m_btn_physical_add{nullptr};
+    ScalableButton* m_btn_ams{nullptr};
+
+    // Mixed Title panel elements
+    wxStaticText*   m_lbl_mixed_title{nullptr};
+    wxPanel*        m_mixed_divider{nullptr};
+    ScalableButton* m_btn_mixed_del{nullptr};
+    ScalableButton* m_btn_mixed_add{nullptr};
 };
 
 } // namespace Slic3r::GUI
