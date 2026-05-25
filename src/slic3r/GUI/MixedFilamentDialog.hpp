@@ -31,15 +31,25 @@ private:
     int m_height_min;
     std::vector<std::string>& m_physical_colors;
 
-    void build_ui();
+    void build_ui(wxWindow* parent);
 
+    wxColour getTabBorderColor(bool is_selected, bool is_hovered) const;
+    void     paintRoundedPanel(wxPanel* panel,
+                               bool     round_left,
+                               bool     round_right,
+                               double   radius,
+                               wxString label,
+                               wxString icon_name ,
+                               bool     is_selected,
+                               bool     is_hovered);
     void update_tabs();
-    void on_tab_hover_enter(wxMouseEvent& event, Tab tab);
-    void on_tab_hover_leave(wxMouseEvent& event);
+    bool m_mix_tab_hovered = false;
+    bool m_pattern_tab_hovered = false;
 
     // fallback, when MinSize/MaxSize constraints are not sufficient, 
     // restrict to only vertical resizing with a minimum height
     void on_sizing(wxSizeEvent& event);
+
 
     // UI 
     wxPanel* m_title_panel{nullptr};
@@ -52,8 +62,8 @@ private:
     wxBoxSizer* m_footer_sizer{nullptr};
 
     // Title
-    ScalableButton* m_mix_btn{nullptr};
-    ScalableButton* m_pattern_btn{nullptr};
+    wxPanel*        m_mix_tab_btn;
+    wxPanel*        m_pattern_tab_btn;
 
     // Content
 
