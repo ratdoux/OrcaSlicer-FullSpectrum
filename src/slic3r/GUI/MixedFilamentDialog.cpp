@@ -11,6 +11,7 @@
 #include "Widgets/ComboBox.hpp"
 #include "Widgets/DropDown.hpp"
 #include "Widgets/Label.hpp"
+#include "Widgets/FilamentCardMixed.hpp"
 #include <wx/dcgraph.h>
 
 namespace Slic3r::GUI {
@@ -18,8 +19,8 @@ namespace Slic3r::GUI {
 	MixedFilamentDialog::MixedFilamentDialog(
         wxWindow*                   parent,
         MixedFilamentDialog::Action dialog_action,
-        std::vector<std::string>&   physical_colors) 
-		: DPIDialog(
+        std::vector<std::pair<std::string, std::string>>&   physical_filaments
+    ) : DPIDialog(
             parent, 
             wxID_ANY, 
             dialog_action == MixedFilamentDialog::Action::Add ? _L("Add Mixed Filament") : _L("Edit Mixed Filament"), 
@@ -27,7 +28,7 @@ namespace Slic3r::GUI {
             wxDefaultSize, 
             wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER
         ),
-        m_physical_colors(physical_colors), m_action(dialog_action)
+        m_physical_filaments(physical_filaments), m_action(dialog_action)
 	{ 
 		m_width_fixed  = this->wxWindow::FromDIP(400);
         m_height_start = this->wxWindow::FromDIP(600);
@@ -104,8 +105,45 @@ namespace Slic3r::GUI {
         m_content_sizer = new wxBoxSizer(wxVERTICAL);
         m_content_panel->SetSizer(m_content_sizer);
 
-        Label* placeholder_label = new Label(m_content_panel, _L("Content goes here... "));
-        m_content_sizer->Add(placeholder_label, 0, wxALIGN_CENTER | wxLEFT, FromDIP(8));
+        // Material Section
+        m_material_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+        m_material_sizer = new wxBoxSizer(wxVERTICAL);
+        m_material_panel->SetSizer(m_material_sizer);
+
+        // Material Title (incl buttons)
+        m_material_title_panel  = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+        m_material_title_sizer = new wxBoxSizer(wxHORIZONTAL);
+        m_material_title_panel->SetSizer(m_material_title_sizer);
+
+        m_material_title_text = new wxStaticText(m_material_title_panel, wxID_ANY, _L("Select Mixed Materials"));
+        m_material_title_text->SetForegroundColour("#7e7e7e");
+        m_material_title_text->SetFont(::Label::Body_14);
+
+        m_delete_material_btn = new ScalableButton(m_material_title_panel, wxID_ANY, "delete_filament");
+        m_delete_material_btn->SetToolTip(_L("Remove last material"));
+        m_delete_material_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { remove_material_combobox(); });
+        m_delete_material_btn->Enable(false); // Enable when filament 3 or 4
+
+        m_add_material_btn = new ScalableButton(m_material_title_panel, wxID_ANY, "add_filament");
+        m_add_material_btn->SetToolTip(_L("Add material"));
+        m_delete_material_btn->Enable(false); // Enable when filament 2 or 3
+        m_add_material_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { add_material_combobox(); });
+
+        m_material_title_sizer->Add(m_material_title_text, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+        m_material_title_sizer->AddStretchSpacer();
+        m_material_title_sizer->Add(m_delete_material_btn, 0, wxALIGN_CENTER_VERTICAL);
+        m_material_title_sizer->Add(m_add_material_btn, 0, wxALIGN_CENTER_VERTICAL);
+
+        // Material Selections
+        m_material_combobox_panel = new wxPanel(m_material_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+        m_material_combobox_sizer = new wxBoxSizer(wxVERTICAL);
+        m_material_combobox_panel->SetSizer(m_material_combobox_sizer);
+
+
+        m_material_sizer->Add(m_material_title_panel, 0, wxEXPAND); // TODO margins?
+        m_material_sizer->Add(m_material_combobox_panel, 0, wxEXPAND);
+
+        m_content_sizer->Add(m_material_panel, 0);
 
         m_main_sizer->Add(m_content_panel, 1, wxEXPAND);
 
@@ -127,6 +165,8 @@ namespace Slic3r::GUI {
         CentreOnParent();
 
         update_tabs();
+        add_material_combobox();
+        add_material_combobox();
     }
 
     wxColour MixedFilamentDialog::getTabBorderColor(bool is_selected, bool is_hovered) const
@@ -204,8 +244,14 @@ namespace Slic3r::GUI {
         wxBitmap icon_bmp  = ScalableBitmap(panel, icon_name.ToStdString(), 14).bmp();
         wxSize   icon_size = icon_bmp.GetSize();
 
-        // Measure text
-        gc->SetFont(panel->GetFont(), text_color);
+        wxFont font = panel->GetFont();
+        font.SetPointSize(font.GetPointSize() + 2);
+        if (is_selected || is_hovered) {
+            font = font.Bold();
+        }
+        gc->SetFont(font, text_color);
+
+        // Measure text to center it
         double text_width, text_height;
         gc->GetTextExtent(label, &text_width, &text_height);
 
@@ -252,6 +298,75 @@ namespace Slic3r::GUI {
         m_pattern_tab_btn->Refresh();
 
         // TODO: update content panel based on the current tab selection
+    }
+
+    // TODO fix add and delete buttons not working
+
+    void MixedFilamentDialog::add_material_combobox() {
+        const int current_count = m_material_comboboxes.size();
+        const int new_index     = current_count + 1;
+        int       swatch_size   = FromDIP(20);
+
+        wxSize combobox_size = wxSize(FromDIP(166), FromDIP(24));
+        ComboBox* combobox = new ComboBox(m_material_combobox_panel, wxID_ANY, wxEmptyString, wxDefaultPosition, combobox_size, 0, nullptr,
+                                          wxCB_READONLY);
+        combobox->SetMinSize(combobox_size);
+        //combobox->SetKeepDropArrow(true);
+
+        for (size_t i = 0; i < m_physical_filaments.size(); ++i) {
+
+            const auto& [color_hex, name] = m_physical_filaments[i];
+            wxColor color(color_hex);
+            wxString index = wxString::Format("%zu", i + 1);
+
+            wxBitmap clr_swatch_bmp(swatch_size, swatch_size);
+            wxMemoryDC dc(clr_swatch_bmp);
+            FilamentCardMixed::paint_clr_swatch(dc, wxSize(swatch_size, swatch_size), color, index, wxGetApp().dark_mode());
+
+
+            wxString text = wxString::Format("%s", name);
+            combobox->Append(text, clr_swatch_bmp);
+        }
+
+        if (!m_physical_filaments.empty()) 
+            combobox->SetSelection(0);
+
+        size_t index = new_index;
+        combobox->Bind(wxEVT_COMBOBOX, [this, index](wxCommandEvent&) {
+            on_selected_filaments_changed(index);
+        });
+
+        m_material_comboboxes.push_back(combobox);
+        m_material_combobox_sizer->Add(combobox, 0, wxEXPAND | wxTOP, FromDIP(8));
+
+        m_delete_material_btn->Enable(new_index > 1);
+        m_add_material_btn->Enable(new_index < 4);
+        Layout();
+    }
+
+    void MixedFilamentDialog::remove_material_combobox() {
+        if (m_material_comboboxes.size() <= 1 || m_selected_filaments.size() <= 1)
+            return;
+
+        const size_t last_index = m_selected_filaments.size() - 1;
+        ComboBox* last_combobox = m_material_comboboxes[last_index];
+
+        m_material_combobox_sizer->Detach(last_index);
+        last_combobox->Destroy();
+
+        m_selected_filaments.pop_back();
+
+        const int new_count = (last_index - 1);
+        m_delete_material_btn->Enable(new_count > 1);
+        m_add_material_btn->Enable(new_count < 3);
+        Layout();
+    }
+
+    void MixedFilamentDialog::on_selected_filaments_changed(int selection_index) 
+    {
+        
+        // TODO if select already selected filament, switch them
+        // TODO redraw comboboxes
     }
 
     void MixedFilamentDialog::on_dpi_changed(const wxRect& suggested_rect)

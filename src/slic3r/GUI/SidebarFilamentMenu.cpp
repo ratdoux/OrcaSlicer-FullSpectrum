@@ -63,7 +63,7 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
 
     update_physical_states();
 
-    update_physical_colors();
+    update_physical_filaments();
 
 
     if (physical_count == 1)
@@ -108,7 +108,7 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
         auto* card = new FilamentCardMixed(m_mixed_panel, &mixed_filaments[i]);
         card->set_on_box_edit_callback([this]() 
         { 
-            auto dlg = MixedFilamentDialog(this, MixedFilamentDialog::Action::Edit, m_physical_colors);
+            auto dlg = MixedFilamentDialog(this, MixedFilamentDialog::Action::Edit, m_physical_filaments);
             dlg.ShowModal();
         });
 
@@ -159,12 +159,12 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     m_title_panel->Refresh();
 }
 
-void SidebarFilamentMenu::update_physical_colors() 
+void SidebarFilamentMenu::update_physical_filaments() 
 {
-    if (!m_get_physical_colors)
+    if (!m_get_physical_filaments)
         return;
 
-    m_physical_colors = m_get_physical_colors();
+    m_physical_filaments = m_get_physical_filaments();
 }
 
 void SidebarFilamentMenu::build_ui(const wxColour& title_bg)

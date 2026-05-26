@@ -46,9 +46,9 @@ public:
     {
         m_on_edit_physical = std::move(cb);
     }
-        void set_get_physical_colors(std::function<std::vector<std::string>()> cb)
+    void set_get_physical_filaments(std::function<std::vector<std::pair<std::string, std::string>>()> cb)
     {
-        m_get_physical_colors = std::move(cb);
+        m_get_physical_filaments = std::move(cb);
     }
 
     // Mixed specific
@@ -71,9 +71,10 @@ private:
     void on_physical_change(size_t physical_count);
     void on_mixed_change(std::vector<MixedFilamentDefinition>& mixed_filaments);
     
-    std::function<std::vector<std::string>()>   m_get_physical_colors;
-    void                                        update_physical_colors();
-    std::vector<std::string>                    m_physical_colors;
+    std::function<std::vector<std::pair<std::string, std::string>>()>   m_get_physical_filaments;
+    void                                        update_physical_filaments();
+    // filament <name, color>
+    std::vector<std::pair<std::string, std::string>> m_physical_filaments;
 
     std::map<ActionType, std::function<void()>> m_callbacks;
     std::function<void(int)>                    m_on_edit_physical; // Callback for edit button in physical filament card

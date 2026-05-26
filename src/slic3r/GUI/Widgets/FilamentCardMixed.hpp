@@ -38,6 +38,35 @@ public:
 
     void update_state(MixedFilamentDefinition* definition);
 
+    // TODO refactor other paint functions to take in DC too (->Backgroundcolor!)
+    static void paint_clr_swatch(
+        wxDC&           context, 
+        const wxSize&   size, 
+        wxColor&        color, 
+        wxString&       index_text, 
+        bool            is_dark
+    );
+
+    static void paint_box_mix(
+        wxPanel&               panel,
+        wxPaintEvent&          event,
+        std::vector<int>&      percentages,
+        std::vector<wxColor>&  colors,
+        std::vector<wxString>& index_texts,
+        bool                   is_dark,
+        bool                   is_hovered,
+        wxSize&                swatch_size
+    );
+
+    static void paint_box_pattern(
+        wxPanel&               panel,
+        wxPaintEvent&          event,
+        std::vector<wxColor>&  colors,
+        std::vector<wxString>& index_texts,
+        bool                   is_dark,
+        bool                   is_hovered,
+        wxSize&                swatch_size);
+
 private:
     FilamentCardMixedData m_data;
 
@@ -53,28 +82,6 @@ private:
 
     bool            m_is_box_panel_hovered = false;
 
-    void paint_clr_swatch(
-        wxPaintEvent& event, 
-        wxColor color, 
-        wxString index_text, 
-        bool is_dark
-    );
-    void paint_box_mix(
-        wxPaintEvent&         event,
-        std::vector<int>      percentages,
-        std::vector<wxColor>  colors,
-        std::vector<wxString> index_texts,
-        bool                  is_dark,
-        wxSize                swatch_size
-    );
-
-    
-    void paint_box_pattern(
-        wxPaintEvent&         event,
-        std::vector<wxColor>  colors,
-        std::vector<wxString> index_texts,
-        bool                  is_dark,
-        wxSize                swatch_size);
 };
 
 } // namespace Slic3r::GUI

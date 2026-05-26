@@ -1282,9 +1282,9 @@ Sidebar::Sidebar(Plater *parent)
         p->m_sidebar_filament_menu = new SidebarFilamentMenu(p->scrolled, title_bg);
         scrolled_sizer->Add(p->m_sidebar_filament_menu, 0, wxEXPAND | wxALL, 0);
 
-        p->m_sidebar_filament_menu->set_get_physical_colors([this]() -> std::vector<std::string> {
+        p->m_sidebar_filament_menu->set_get_physical_filaments([this]() -> std::vector<std::pair<std::string, std::string>> {
             if (wxGetApp().preset_bundle == nullptr)
-                return std::vector<std::string>();
+                return std::vector<std::pair<std::string, std::string>>();
 
             ConfigOptionStrings* phyiscal_filament_config = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
             
@@ -1292,8 +1292,19 @@ Sidebar::Sidebar(Plater *parent)
                 phyiscal_filament_config
                 ? phyiscal_filament_config->values
                 : std::vector<std::string>();
+
             
-            return physical_colors;
+            auto         preset_bundle  = wxGetApp().preset_bundle;
+            const std::vector < std::string>physical_names = preset_bundle ? preset_bundle->filament_presets : std::vector<std::string>();
+            
+            std::vector<std::pair<std::string, std::string>> physical_filaments;
+            for (size_t i = 0; i < physical_colors.size(); ++i) {
+                const std::string& color = physical_colors[i];
+                const std::string& name  = i < physical_names.size() ? physical_names[i] : "";
+                physical_filaments.emplace_back(color, name);
+            }
+            
+            return physical_filaments;
         });
 
         p->m_sidebar_filament_menu->set_on_edit_physical([this](int index) {

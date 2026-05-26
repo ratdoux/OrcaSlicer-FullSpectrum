@@ -70,9 +70,15 @@ void FilamentCardMixed::build_ui()
             return wxColor(red, green, blue);
         };
 
+        
+        wxPaintDC    context(m_clr_swatch_panel);
+        const wxSize size = m_clr_swatch_panel->GetClientSize();
+
+
         //TODO get color and text from data
         paint_clr_swatch(
-            event, 
+            context,
+            size, 
             HexStringToWxColor("AABBCC"), // m_data.definition->presentation.display_color), 
             wxString(std::to_string(m_data.definition->identity.stable_id)),
             wxGetApp().dark_mode()
@@ -134,10 +140,12 @@ void FilamentCardMixed::build_ui()
         // TODO actual logic
         if (m_data.definition->identity.stable_id % 2 == 0) {
             paint_box_pattern(
+                *m_box_panel,
                 event,
-                {wxColor("Light Blue"), wxColor("Orange"), wxColor("Light Blue"), wxColor("Light Blue"), wxColor("Orange"), wxColor("Light Blue")}, 
-                {wxString("2"), wxString("5"), wxString("2"), wxString("2"), wxString("5"), wxString("2")},
+                std::vector<wxColor>{wxColor("Light Blue"), wxColor("Orange"), wxColor("Light Blue"), wxColor("Light Blue"), wxColor("Orange"), wxColor("Light Blue")}, 
+                std::vector<wxString>{wxString("2"), wxString("5"), wxString("2"), wxString("2"), wxString("5"), wxString("2")},
                 wxGetApp().dark_mode(), 
+                m_is_box_panel_hovered,
                 wxSize(swatch_size, swatch_size)
             );
         } else {
@@ -146,11 +154,13 @@ void FilamentCardMixed::build_ui()
                 : std::vector<wxString>{wxString("2"), wxString("2"), wxString("4")};
 
             paint_box_mix(
+                *m_box_panel,
                 event, 
-                {5, 5, 90},     // m_data.definition->recipe.blend.component_percents(), 
-                {wxColor("Green"), wxColor("Blue"), wxColor("Red")}, // colors, 
+                std::vector<int>{5, 5, 90}, // m_data.definition->recipe.blend.component_percents(), 
+                std::vector<wxColor>{wxColor("Green"), wxColor("Blue"), wxColor("Red")}, // colors, 
                 display_texts, // index_texts, 
                 wxGetApp().dark_mode(), 
+                m_is_box_panel_hovered,
                 wxSize(swatch_size, swatch_size)
             );
         }
@@ -170,11 +180,8 @@ void FilamentCardMixed::build_ui()
 }
 
 // paint background, text and optional border of color swatch
-void FilamentCardMixed::paint_clr_swatch(wxPaintEvent& event, wxColor color, wxString text, bool is_dark)
+void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxColor& color, wxString& text, bool is_dark)
 {
-    wxPaintDC    context(m_clr_swatch_panel);
-    const wxSize size = m_clr_swatch_panel->GetClientSize();
-
     // background
     context.SetBackground(wxBrush(color));
     context.Clear();
@@ -202,24 +209,26 @@ void FilamentCardMixed::paint_clr_swatch(wxPaintEvent& event, wxColor color, wxS
     context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
 }
 
-// TODO: change border on hover
+
 void FilamentCardMixed::paint_box_mix(
+    wxPanel& panel, 
     wxPaintEvent& event, 
-    std::vector<int>      percentages,
-    std::vector<wxColor>  colors, 
-    std::vector<wxString> index_texts, 
+    std::vector<int>&      percentages,
+    std::vector<wxColor>&  colors, 
+    std::vector<wxString>& index_texts, 
     bool is_dark, 
-    wxSize swatch_size)
+    bool is_hovered,
+    wxSize& swatch_size)
 {
-    wxPaintDC context(m_box_panel);
-    const wxSize size                   = m_box_panel->GetClientSize();
+    wxPaintDC context(&panel);
+    const wxSize size = panel.GetClientSize();
 
     if (colors.size() != index_texts.size() || colors.size() != percentages.size()) {
         return;
     }
         
     // background
-    context.SetBrush(wxBrush(GetBackgroundColour()));
+    context.SetBrush(wxBrush(panel.GetBackgroundColour()));
     context.SetPen(*wxTRANSPARENT_PEN);
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 
@@ -304,7 +313,7 @@ void FilamentCardMixed::paint_box_mix(
 
     // border (draw last, so its on top)
     const int border_width = 1;
-    const wxColor border_color = m_is_box_panel_hovered
+    const wxColor border_color = is_hovered
         ? wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1) 
         : wxColor("#CECECE");
 
@@ -314,21 +323,23 @@ void FilamentCardMixed::paint_box_mix(
 }
 
 void FilamentCardMixed::paint_box_pattern(
-    wxPaintEvent&         event,
-    std::vector<wxColor>  colors,
-    std::vector<wxString> index_texts,
-    bool                  is_dark,
-    wxSize                swatch_size)
+    wxPanel&                panel, 
+    wxPaintEvent&           event,
+    std::vector<wxColor>&   colors,
+    std::vector<wxString>&  index_texts,
+    bool                    is_dark,
+    bool                    is_hovered,
+    wxSize&                 swatch_size)
 {
-    wxPaintDC    context(m_box_panel);
-    const wxSize size = m_box_panel->GetClientSize();
+    wxPaintDC    context(&panel);
+    const wxSize size = panel.GetClientSize();
 
     if (colors.size() != index_texts.size()) {
         return;
     }
 
     // background
-    context.SetBrush(wxBrush(GetBackgroundColour()));
+    context.SetBrush(wxBrush(panel.GetBackgroundColour()));
     context.SetPen(*wxTRANSPARENT_PEN);
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 
@@ -387,9 +398,9 @@ void FilamentCardMixed::paint_box_pattern(
         std::unique_ptr<wxGraphicsContext> graphics_context(wxGraphicsContext::Create(context));
 
         if (graphics_context) {
-            const int fade_width = std::min(FromDIP(26), size.x / 3); 
+            const int fade_width = std::min(panel.FromDIP(26), size.x / 3); 
 
-            wxColour base_color = GetBackgroundColour();
+            wxColour base_color = panel.GetBackgroundColour();
             wxColour transparent_color = wxColour(base_color.Red(), base_color.Green(), base_color.Blue(), 0);
 
             wxGraphicsBrush gradient_brush = graphics_context->CreateLinearGradientBrush(
@@ -412,7 +423,7 @@ void FilamentCardMixed::paint_box_pattern(
 
     // border (draw last, so its on top)
     const int border_width = 1;
-    const wxColor border_color = m_is_box_panel_hovered
+    const wxColor border_color = is_hovered
         ? wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1) 
         : wxColor("#CECECE");
 

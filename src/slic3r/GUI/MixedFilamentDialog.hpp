@@ -6,6 +6,7 @@
 
 #include "Widgets/Label.hpp"
 #include "Widgets/Button.hpp"
+#include "Widgets/ComboBox.hpp"
 #include "GUI_Utils.hpp"
 
 namespace Slic3r::GUI {
@@ -17,7 +18,7 @@ public:
     enum class Action { Add, Edit };
     enum class Tab { Mix, Pattern };
  
-    MixedFilamentDialog(wxWindow* parent, Action action, std::vector<std::string>& physical_colors);
+    MixedFilamentDialog(wxWindow* parent, Action action, std::vector<std::pair<std::string, std::string>>& physical_filaments);
 
 protected:
     void on_dpi_changed(const wxRect& suggested_rect) override;
@@ -29,7 +30,8 @@ private:
     int m_width_fixed;
     int m_height_start;
     int m_height_min;
-    std::vector<std::string>& m_physical_colors;
+    std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
+    std::vector<int>                                  m_selected_filaments;
 
     void build_ui(wxWindow* parent);
 
@@ -50,6 +52,11 @@ private:
     // restrict to only vertical resizing with a minimum height
     void on_sizing(wxSizeEvent& event);
 
+    // content is filled by m_physical_filaments
+    void add_material_combobox();
+    void remove_material_combobox();
+    void on_selected_filaments_changed(int selection_index);
+
 
     // UI 
     wxPanel* m_title_panel{nullptr};
@@ -66,6 +73,18 @@ private:
     wxPanel*        m_pattern_tab_btn;
 
     // Content
+    wxPanel*                        m_material_panel;
+    wxPanel*                        m_material_title_panel;
+    wxStaticText*                   m_material_title_text;
+    ScalableButton*                 m_add_material_btn;
+    ScalableButton*                 m_delete_material_btn;
+    wxPanel*                        m_material_combobox_panel;
+    std::vector<ComboBox*>  m_material_comboboxes;
+    
+    wxBoxSizer* m_material_sizer;
+    wxBoxSizer* m_material_title_sizer;
+    wxBoxSizer* m_material_combobox_sizer;
+
 
     // Footer
 };
