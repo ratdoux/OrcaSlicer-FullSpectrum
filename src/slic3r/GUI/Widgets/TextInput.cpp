@@ -232,7 +232,7 @@ void TextInput::DoSetSize(int x, int y, int width, int height, int sizeFlags)
     }
     if (this->icon_1.bmp().IsOk()) {
         wxSize szIcon = this->icon_1.GetBmpSize();
-        textPos.x += (szIcon.x);
+        textPos.x += szIcon.x + szIcon.x / 4.f;
     }
     bool align_right = GetWindowStyle() & wxALIGN_RIGHT;
     if (align_right)
@@ -301,9 +301,8 @@ void TextInput::render(wxDC& dc)
             if (pt.x * 2 + szIcon.x + 0 + labelSize.x < size.x)
                 pt.x = (size.x - (szIcon.x + 0 + labelSize.x)) / 2;
         }
-        pt.x += szIcon.x / 4.f;
         dc.DrawBitmap(icon_1.bmp(), pt);
-        pt.x += szIcon.x + 0;
+        pt.x += szIcon.x + szIcon.x / 4.f;
     }
     auto text = wxWindow::GetLabel();
     if (!text.IsEmpty()) {
