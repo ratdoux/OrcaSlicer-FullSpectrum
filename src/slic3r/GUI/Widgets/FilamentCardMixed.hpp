@@ -48,24 +48,26 @@ public:
     );
 
     static void paint_box_mix(
-        wxPanel&               panel,
-        wxPaintEvent&          event,
-        std::vector<int>&      percentages,
-        std::vector<wxColor>&  colors,
-        std::vector<wxString>& index_texts,
-        bool                   is_dark,
-        bool                   is_hovered,
-        wxSize&                swatch_size
+        wxDC&                   context, 
+        const wxSize&           size, 
+        const wxColor&          background_color,
+        std::vector<int>&       percentages,
+        std::vector<wxColor>&   colors,
+        std::vector<wxString>&  index_texts,
+        bool                    is_dark,
+        bool                    is_hovered,
+        wxSize&                 swatch_size
     );
 
     static void paint_box_pattern(
-        wxPanel&               panel,
-        wxPaintEvent&          event,
-        std::vector<wxColor>&  colors,
-        std::vector<wxString>& index_texts,
-        bool                   is_dark,
-        bool                   is_hovered,
-        wxSize&                swatch_size);
+        wxDC&                   context, 
+        const wxSize&           size, 
+        const wxColor&          background_color,
+        std::vector<wxColor>&   colors,
+        std::vector<wxString>&  index_texts,
+        bool                    is_dark,
+        bool                    is_hovered,
+        wxSize&                 swatch_size);
 
 private:
     FilamentCardMixedData m_data;

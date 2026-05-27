@@ -27,23 +27,30 @@ private:
     Action m_action{Action::Add};
     Tab    m_current_tab{Tab::Mix};
 
+    int max_filament = 4; // mix 2-4 physical filaments
+    const int min_filament = 2;
+
     int m_width_fixed;
     int m_height_start;
     int m_height_min;
+    int m_clr_swatch_size;
     std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
     std::vector<int>                                  m_selected_filaments;
 
     void build_ui(wxWindow* parent);
 
     wxColour getTabBorderColor(bool is_selected, bool is_hovered) const;
-    void     paintRoundedPanel(wxPanel* panel,
-                               bool     round_left,
-                               bool     round_right,
-                               double   radius,
-                               wxString label,
-                               wxString icon_name ,
-                               bool     is_selected,
-                               bool     is_hovered);
+    wxColour getTabBackgroundColor(bool is_selected, bool is_hovered) const;
+    wxColour getTabTextColor(bool is_selected, bool is_hovered) const;
+    void     paintTabBtn(
+        wxPanel* panel,
+        bool     round_left,
+        bool     round_right,
+        double   radius,
+        wxString label,
+        wxString icon_name ,
+        bool     is_selected,
+        bool     is_hovered);
     void update_tabs();
     bool m_mix_tab_hovered = false;
     bool m_pattern_tab_hovered = false;
@@ -53,9 +60,11 @@ private:
     void on_sizing(wxSizeEvent& event);
 
     // content is filled by m_physical_filaments
-    void add_material_combobox();
+    void add_material_combobox(wxPanel* parent, wxBoxSizer* sizer);
     void remove_material_combobox();
-    void on_selected_filaments_changed(int selection_index);
+    void on_selected_filaments_changed(int index);
+    int  find_first_free_filament() const;
+    void refresh_material_combobox_items();
 
 
     // UI 
