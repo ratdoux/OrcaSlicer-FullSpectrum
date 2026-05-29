@@ -293,7 +293,7 @@ else ()
         set(MACOSX_BUNDLE_ICON_FILE Icon.icns)
         set_target_properties(Snapmaker_Orca PROPERTIES
             MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME "Snapmaker Orca"
+            MACOSX_BUNDLE_BUNDLE_NAME "SnapmakerOrca-FullSpectrum"
             MACOSX_BUNDLE_SHORT_VERSION_STRING ${Snapmaker_VERSION}
             MACOSX_BUNDLE_COPYRIGHT "Copyright © 2024-2026 Snapmaker. All rights reserved.")
         # Get the bundle directory by going up from the executable to the .app bundle

@@ -936,7 +936,7 @@ set (CPACK_PACKAGE_VERSION_MAJOR "${ORCA_VERSION_MAJOR}")
 set (CPACK_PACKAGE_VERSION_MINOR "${ORCA_VERSION_MINOR}")
 set (CPACK_PACKAGE_VERSION_PATCH "${ORCA_VERSION_PATCH}")
 set (CPACK_PACKAGE_FILE_NAME "Snapmaker_Orca_Windows_Installer_V${Snapmaker_VERSION}")
-set (CPACK_PACKAGE_DESCRIPTION_SUMMARY "Snapmaker Orca is an open source slicer for FDM printers")
+set (CPACK_PACKAGE_DESCRIPTION_SUMMARY "SnapmakerOrca-FullSpectrum is an open source slicer for FDM printers")
 set (CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Snapmaker/OrcaSlicer")
 set (CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
 set (CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/resources/images\\\\Snapmaker_Orca.ico")
@@ -965,7 +965,7 @@ SnapmakerOrcaPre_silent:
   SetErrorLevel 7
   Quit
 SnapmakerOrcaPre_prompt:
-  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Snapmaker Orca is still running.$\nClose the program, then click Retry to continue, or Cancel to exit the installer." IDRETRY SnapmakerOrcaPre_check_loop
+  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "SnapmakerOrca-FullSpectrum is still running.$\nClose the program, then click Retry to continue, or Cancel to exit the installer." IDRETRY SnapmakerOrcaPre_check_loop
   Abort
 SnapmakerOrcaPre_done:
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca" "UninstallString"
@@ -1021,14 +1021,14 @@ SnapmakerOrcaPre_uninst_launch_failed:
 SnapmakerOrcaPre_finish:
 ]=])
 set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
-    CreateShortCut \\\"$DESKTOP\\\\Snapmaker Orca.lnk\\\" \\\"$INSTDIR\\\\snapmaker-orca.exe\\\"
+    CreateShortCut \\\"$DESKTOP\\\\SnapmakerOrca-FullSpectrum.lnk\\\" \\\"$INSTDIR\\\\snapmaker-orca.exe\\\"
 ")
 set (CPACK_PACKAGE_CHECKSUM SHA256)
 set (CPACK_PACKAGE_INSTALL_REGISTRY_KEY "Snapmaker_Orca")
 set (CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set (CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 # set (CPACK_NSIS_MODIFY_PATH "ON")
-set(CPACK_PACKAGE_EXECUTABLES "snapmaker-orca;Snapmaker Orca")
+set(CPACK_PACKAGE_EXECUTABLES "snapmaker-orca;SnapmakerOrca-FullSpectrum")
 set(CPACK_CREATE_DESKTOP_LINKS "snapmaker-orca")
 set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_SOURCE_DIR}/LICENSE.txt) # must also include in install command
 

@@ -1,20 +1,105 @@
 
-<h1> <p "font-size:200px;"> Snapmaker Orca</p> </h1>
+<h1> <p "font-size:200px;"> Snapmaker Orca FullSpectrum</p> </h1>
+
+### A Snapmaker Orca Fork with Mixed-Color Filament Support
 
 [![Build all](https://github.com/Snapmaker/OrcaSlicer/actions/workflows/build_all.yml/badge.svg?branch=main)](https://github.com/Snapmaker/OrcaSlicer/actions/workflows/build_all.yml)
-<br>Snapmaker Orca is an open source slicer for FDM printers based on OrcaSlicer.
+
+---
+
+## ☕ Support Development
+
+If you find this fun or interesting!
+
+<a href="https://www.buymeacoffee.com/ratdoux" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+---
+
+## ⚠️ **IMPORTANT DISCLAIMER** ⚠️
+
+**This fork is currently in active development and has been tested on actual hardware.**
+
+- **Use at Your Own Risk**: As with any slicer fork, please review critical prints and generated G-code before production use
+- **Project Compatibility Warning**: Some `.3mf` files created with older FullSpectrum builds may not open or migrate cleanly in newer versions because mixed-filament data and project serialization have changed over time
+
+---
+
+**Snapmaker Orca FullSpectrum** is an open source slicer for FDM printers based on Snapmaker Orca and OrcaSlicer, optimized for Snapmaker's U1 multi-color 3D printer with independent tool heads. This fork adds support for virtual mixed-color filaments, enabling you to create new colors by alternating layers between physical filaments.
  
 
 
 # Download
 
 ### Stable Release
-📥 **[Download the Latest Stable Release](https://github.com/Snapmaker/OrcaSlicer/releases/latest)**  
-Visit our GitHub Releases page for the latest stable version of Snapmaker Slicer, recommended for most users.
+📥 **[Download the Latest Stable Release](https://github.com/ratdoux/OrcaSlicer-FullSpectrum/releases)**
+Visit our GitHub Releases page for the latest stable version of Snapmaker Orca FullSpectrum, recommended for most users.
+
+# Features
+
+## Mixed-Color Filaments
+Snapmaker Orca FullSpectrum includes support for **virtual mixed-color filaments** designed for the Snapmaker U1 multi-color printer with independent print heads.
+
+### How It Works
+- **Create new colors by mixing**: Combine two physical filaments to create a new color appearance through layer alternation
+- **Example**: One layer of red + one layer of green = apparent yellow color
+- **Customizable ratios**: Adjust the alternation pattern (e.g., 2:1 ratio = two layers of filament A, one layer of filament B)
+
+### Features
+- Automatic generation of all possible color combinations from your loaded filaments
+- Visual preview showing the additive color blend
+- Enable/disable individual mixed filaments
+- Per-layer resolution control with customizable ratios
+- Optional per-pair Bias control for slightly recessing one component to push the apparent color toward the other
+- Seamless integration with the existing filament management system
+
+### Using Mixed Filaments
+1. Load 2 or more physical filaments in your printer
+2. The "Mixed Colors" panel will automatically appear in the sidebar
+3. Each combination shows:
+   - Color preview swatch
+   - Component filaments (e.g., "Filament 1 + Filament 2")
+   - Layer ratio controls (spin controls for fine-tuning)
+   - Enable/disable checkbox
+4. Mixed filaments can be assigned to objects just like physical filaments
+5. During slicing, the mixed filament resolves to alternating layers of its components
+
+### Bias Control
+Snapmaker Orca FullSpectrum also includes an optional **Bias** control for mixed filament pairs. When enabled in **Print Settings -> Others -> Mixed Filaments**, each mixed row gets a compact inline Bias value:
+
+- **Positive Bias** recesses the second filament in the pair
+- **Negative Bias** recesses the first filament in the pair
+- This lets you shift the apparent color without changing the nominal layer cadence
+- The inline preview updates to show the estimated apparent mix shift
+
+Example: for a pair like `F1 + F2`, a positive bias makes `F2` sit slightly lower, so `F1` visually dominates more. A negative bias does the opposite and recesses `F1`.
+
+### Dithering Settings
+Snapmaker Orca FullSpectrum includes advanced dithering controls to fine-tune the layer alternation behavior for mixed filaments. These settings are found in **Others → Dithering** in the print settings:
+
+#### Dithering Cadence Height A & B
+- **What it does**: Controls the height (in mm) of each alternating segment for the two component filaments
+- **Cadence Height A**: The height of layers using the first filament in the mix
+- **Cadence Height B**: The height of layers using the second filament in the mix
+- **Example**: Setting A=0.3mm and B=0.15mm creates a 2:1 ratio pattern where you get twice as much of filament A as filament B
+- **Use case**: Fine-tune color intensity by adjusting the relative amounts of each component color
+
+#### Dithering Step Size
+- **What it does**: Defines the Z-height increment (in mm) for each dithering step
+- **Purpose**: Controls the resolution of the layer alternation pattern
+- **Default**: Typically matches your layer height setting
+- **Advanced usage**: Set smaller values for smoother color transitions, or larger values for more distinct color banding
+- **Compatibility**: Must be compatible with your printer's Z-axis resolution
+
+These settings give you precise control over how your mixed colors appear in the final print, allowing you to achieve different visual effects from the same filament combinations.
+
+### Technical Details
+- Virtual filament IDs start after physical filaments (e.g., with 4 physical filaments, first mixed ID is 5)
+- Layer-based alternation is computed during tool ordering
+- Works with all existing features: supports, infill, and multi-material painting
 
 # How to install
 **Windows**: 
-1.  Download the installer for your preferred version from the [releases page](https://github.com/Snapmaker/OrcaSlicer/releases).
+1.  Download the installer for your preferred version from the [releases page](https://github.com/ratdoux/OrcaSlicer-FullSpectrum/releases).
     - *For convenience there is also a portable build available.*
     - *If you have troubles to run the build, you might need to install following runtimes:*
       - [MicrosoftEdgeWebView2RuntimeInstallerX64](https://github.com/SoftFever/OrcaSlicer/releases/download/v1.0.10-sf2/MicrosoftEdgeWebView2RuntimeInstallerX64.exe)
@@ -89,16 +174,21 @@ resolution: 0.1
 
 
 ## Some background
-Snapmaker Orca is originally forked from Snapmaker_Orca.
+**Snapmaker Orca FullSpectrum** is forked from Snapmaker Orca, which is originally forked from Orca Slicer by SoftFever.
 
-Snapmaker_Orca is originally forked from Bambu Studio, it was previously known as BambuStudio-SoftFever.
+Orca Slicer was originally forked from Bambu Studio, it was previously known as BambuStudio-SoftFever.
 Bambu Studio is forked from [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer) by Prusa Research, which is from [Slic3r](https://github.com/Slic3r/Slic3r) by Alessandro Ranellucci and the RepRap community. 
 Orca Slicer incorporates a lot of features from SuperSlicer by @supermerill
-Orca Slicer's logo is designed by community member Justin Levine(@freejstnalxndr)  
+Orca Slicer's logo is designed by community member Justin Levine(@freejstnalxndr)
+
+## Acknowledgements
+Special thanks to [u/Aceman11100](https://www.reddit.com/user/Aceman11100/) for the inspiration and idea behind the mixed-color filament feature!
 
 
 # License
-Snapmaker Orca is licensed under the GNU Affero General Public License, version 3. Orca Slicer is based on Snapmaker_Orca by SoftFever
+Snapmaker Orca FullSpectrum is licensed under the GNU Affero General Public License, version 3. Snapmaker Orca FullSpectrum is based on Snapmaker Orca.
+
+Snapmaker Orca is licensed under the GNU Affero General Public License, version 3. Snapmaker Orca is based on Orca Slicer by SoftFever.
 
 Orca Slicer is licensed under the GNU Affero General Public License, version 3. Orca Slicer is based on Bambu Studio by BambuLab.
 
@@ -114,7 +204,9 @@ Orca Slicer includes a pressure advance calibration pattern test adapted from An
 
 The Bambu networking plugin is based on non-free libraries from BambuLab. It is optional to the Orca Slicer and provides extended functionalities for Bambulab printer users.
 
+Filament color blending is powered by [FilamentMixer](https://github.com/justinh-rahb/filament-mixer), an openly licensed library.
+
 # Feedback & Contribution
-We greatly value feedback and contributions from our users. Your feedback will help us to further develop Snapmaker Orca for our community.
-- To submit a bug or feature request, file an issue in GitHub Issues or email us at support@snapmaker.com.
+We greatly value feedback and contributions from our users. Your feedback will help us to further develop Snapmaker Orca FullSpectrum for our community.
+- To submit a bug or feature request, file an issue in GitHub Issues.
 - To contribute some code, make sure you have read and followed our guidelines for contributing.

@@ -40,7 +40,7 @@ END_EVENT_TABLE()
 
 int SMUserLogin::web_sequence_id = 20000;
 
-SMUserLogin::SMUserLogin(bool isLogout) : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_ANY, "Snapmaker Orca")
+SMUserLogin::SMUserLogin(bool isLogout) : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_ANY, "SnapmakerOrca-FullSpectrum")
 {
     // url
     auto region = wxGetApp().app_config->get_country_code();

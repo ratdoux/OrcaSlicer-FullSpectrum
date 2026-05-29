@@ -14364,7 +14364,7 @@ void Plater::priv::set_project_name(const wxString& project_name)
     m_project_name = project_name;
     //update topbar title
 #ifdef __WINDOWS__
-    wxGetApp().mainframe->SetTitle(m_project_name + " - Snapmaker Orca");
+    wxGetApp().mainframe->SetTitle(m_project_name + " - SnapmakerOrca-FullSpectrum");
     wxGetApp().mainframe->topbar()->SetTitle(m_project_name);
 #else
     wxGetApp().mainframe->SetTitle(m_project_name);

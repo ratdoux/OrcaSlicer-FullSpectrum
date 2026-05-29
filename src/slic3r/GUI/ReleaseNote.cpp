@@ -252,7 +252,7 @@ void UpdatePluginDialog::update_info(std::string json_path)
 }
 
 UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
-    : DPIDialog(parent, wxID_ANY, _L("New version of Snapmaker Orca"), wxDefaultPosition, wxDefaultSize, wxCAPTION | wxCLOSE_BOX | wxRESIZE_BORDER)
+    : DPIDialog(parent, wxID_ANY, _L("New version of SnapmakerOrca-FullSpectrum"), wxDefaultPosition, wxDefaultSize, wxCAPTION | wxCLOSE_BOX | wxRESIZE_BORDER)
 {
     std::string icon_path = (boost::format("%1%/images/Snapmaker_OrcaTitle.ico") % resources_dir()).str();
     SetIcon(wxIcon(encode_path(icon_path.c_str()), wxBITMAP_TYPE_ICO));

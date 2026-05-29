@@ -9,7 +9,7 @@
   <key>CFBundleIconFile</key>
   <string>images/Snapmaker_Orca.icns</string>
   <key>CFBundleName</key>
-  <string>@SLIC3R_APP_KEY@</string>
+  <string>@SLIC3R_APP_NAME@</string>
   <key>CFBundleShortVersionString</key>
   <string>@SLIC3R_APP_NAME@ @SLIC3R_BUILD_ID@</string>
   <key>CFBundleIdentifier</key>
@@ -132,7 +132,7 @@
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Snapmaker Orca needs access to your local network to discover and connect to your 3D printer(s), and to serve the app's device interface on localhost.</string>
+  <string>@SLIC3R_APP_NAME@ needs access to your local network to discover and connect to your 3D printer(s), and to serve the app's device interface on localhost.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_http._tcp</string>
