@@ -19,6 +19,9 @@ public:
     enum class Tab { Mix, Pattern };
  
     MixedFilamentDialog(wxWindow* parent, Action action, std::vector<std::pair<std::string, std::string>>& physical_filaments);
+   
+ 
+
 
 protected:
     void on_dpi_changed(const wxRect& suggested_rect) override;
@@ -35,7 +38,10 @@ private:
     int m_height_min;
     int m_clr_swatch_size;
     std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
-    std::vector<int>                                  m_selected_filaments;
+
+    std::vector<int>    m_selected_filaments;
+    std::vector<double>  m_selected_filaments_weights; // 0...1 (e.g. 0.5 for 50%)
+    std::vector<wxColor> m_selected_filaments_colors;
 
     void build_ui(wxWindow* parent);
 
@@ -66,6 +72,9 @@ private:
     int  find_first_free_filament() const;
     void refresh_material_combobox_items();
 
+    std::vector<double> get_default_weights(int filament_count);
+    std::vector<wxColor> get_selected_filaments_colors(const std::vector<int>& filament_indices) const;
+
 
     // UI 
     wxPanel* m_title_panel{nullptr};
@@ -82,21 +91,25 @@ private:
     wxPanel*        m_pattern_tab_btn;
 
     // Content
-    wxPanel*                        m_material_panel;
-    wxPanel*                        m_material_title_panel;
-    wxStaticText*                   m_material_title_text;
-    ScalableButton*                 m_add_material_btn;
-    ScalableButton*                 m_delete_material_btn;
-    wxPanel*                        m_material_combobox_panel;
+    wxPanel*                m_material_panel;
+    wxPanel*                m_material_title_panel;
+    wxStaticText*           m_material_title_text;
+    ScalableButton*         m_add_material_btn;
+    ScalableButton*         m_delete_material_btn;
+    wxPanel*                m_material_combobox_panel;
     std::vector<ComboBox*>  m_material_comboboxes;
-    
+
     wxBoxSizer* m_material_sizer;
     wxBoxSizer* m_material_title_sizer;
     wxBoxSizer* m_material_combobox_sizer;
 
+    wxPanel*    m_mix_ratio_panel;
+    wxBoxSizer* m_mix_ratio_sizer;
 
     // Footer
+    
 };
+
 
 } // namespace Slic3r::GUI
 #endif

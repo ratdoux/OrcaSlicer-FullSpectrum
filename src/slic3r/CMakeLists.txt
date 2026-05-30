@@ -458,9 +458,11 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/ImageSwitchButton.cpp
     GUI/Widgets/ImageSwitchButton.hpp
     GUI/Widgets/Label.cpp
+    GUI/Widgets/Label.hpp
     GUI/Widgets/LabeledStaticBox.cpp
     GUI/Widgets/LabeledStaticBox.hpp
-    GUI/Widgets/Label.hpp
+    GUI/Widgets/MixedFilamentRatioPanel.cpp
+    GUI/Widgets/MixedFilamentRatioPanel.hpp
     GUI/Widgets/PopupWindow.cpp
     GUI/Widgets/PopupWindow.hpp
     GUI/Widgets/ProgressBar.cpp

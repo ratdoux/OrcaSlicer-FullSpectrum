@@ -184,6 +184,7 @@ void FilamentCardMixed::build_ui()
     m_main_sizer->Add(m_filament_edit_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
 }
 
+// static
 // paint background, text and optional border of color swatch
 void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxColor& color, wxString& text, bool is_dark)
 {
@@ -214,7 +215,7 @@ void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxCo
     context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
 }
 
-
+// static
 void FilamentCardMixed::paint_box_mix(
     wxDC& context, 
     const wxSize& size, 
@@ -325,6 +326,7 @@ void FilamentCardMixed::paint_box_mix(
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 }
 
+// static
 void FilamentCardMixed::paint_box_pattern(
     wxDC& context, 
     const wxSize& size, 
