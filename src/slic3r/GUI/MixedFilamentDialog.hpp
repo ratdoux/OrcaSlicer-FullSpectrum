@@ -7,6 +7,7 @@
 #include "Widgets/Label.hpp"
 #include "Widgets/Button.hpp"
 #include "Widgets/ComboBox.hpp"
+#include "Widgets/MixedFilamentRatioPanel.hpp"
 #include "GUI_Utils.hpp"
 
 namespace Slic3r::GUI {
@@ -19,8 +20,6 @@ public:
     enum class Tab { Mix, Pattern };
  
     MixedFilamentDialog(wxWindow* parent, Action action, std::vector<std::pair<std::string, std::string>>& physical_filaments);
-   
- 
 
 
 protected:
@@ -29,6 +28,8 @@ protected:
 private:
     Action m_action{Action::Add};
     Tab    m_current_tab{Tab::Mix};
+
+    double m_min_weight_ratio{0.15};
 
     int max_filament = 4; // mix 2-4 physical filaments
     const int min_filament = 2;
@@ -71,6 +72,9 @@ private:
     void on_selected_filaments_changed(int index);
     int  find_first_free_filament() const;
     void refresh_material_combobox_items();
+    void refresh_material_weight_labels();
+    void update_min_weight_slider_bounds();
+    void apply_min_weight(int new_percentage);
 
     std::vector<double> get_default_weights(int filament_count);
     std::vector<wxColor> get_selected_filaments_colors(const std::vector<int>& filament_indices) const;
@@ -87,25 +91,34 @@ private:
     wxBoxSizer* m_footer_sizer{nullptr};
 
     // Title
-    wxPanel*        m_mix_tab_btn;
-    wxPanel*        m_pattern_tab_btn;
+    wxPanel* m_mix_tab_btn{nullptr};
+    wxPanel* m_pattern_tab_btn{nullptr};
 
     // Content
-    wxPanel*                m_material_panel;
-    wxPanel*                m_material_title_panel;
-    wxStaticText*           m_material_title_text;
-    ScalableButton*         m_add_material_btn;
-    ScalableButton*         m_delete_material_btn;
-    wxPanel*                m_material_combobox_panel;
-    std::vector<ComboBox*>  m_material_comboboxes;
+    wxPanel*                    m_material_panel{nullptr};
+    wxPanel*                    m_material_title_panel{nullptr};
+    wxStaticText*               m_material_title_text{nullptr};
+    ScalableButton*             m_add_material_btn{nullptr};
+    ScalableButton*             m_delete_material_btn{nullptr};
+    wxPanel*                    m_material_combobox_panel{nullptr};
+    std::vector<ComboBox*>      m_material_comboboxes;
+    std::vector<wxStaticText*>  m_material_weight_labels;
 
-    wxBoxSizer* m_material_sizer;
-    wxBoxSizer* m_material_title_sizer;
-    wxBoxSizer* m_material_combobox_sizer;
+    wxBoxSizer* m_material_sizer{nullptr};
+    wxBoxSizer* m_material_title_sizer{nullptr};
+    wxBoxSizer* m_material_combobox_sizer{nullptr};
 
-    wxPanel*    m_mix_ratio_panel;
-    wxBoxSizer* m_mix_ratio_sizer;
+    MixedFilamentRatioPanel* m_mix_ratio_panel{nullptr};
+    wxBoxSizer*              m_mix_ratio_sizer{nullptr};
 
+    wxPanel*      m_min_weight_panel{nullptr};
+    wxStaticText* m_min_weight_label{nullptr};
+    wxSlider*     m_min_weight_slider{nullptr};
+    wxTextCtrl*   m_min_weight_value_input{nullptr};
+    wxStaticText* m_min_weight_value_label{nullptr}; // "%" label next to input
+
+    wxBoxSizer*   m_min_weight_sizer{nullptr};
+    
     // Footer
     
 };
