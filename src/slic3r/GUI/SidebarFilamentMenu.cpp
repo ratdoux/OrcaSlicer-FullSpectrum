@@ -105,7 +105,7 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     
     // ADD new cards if mixed_count increased
     for (int i = current_count; i < new_count; i++) {
-        auto* card = new FilamentCardMixed(m_mixed_panel, &mixed_filaments[i]);
+        auto* card = new FilamentCardMixed(m_mixed_panel, &mixed_filaments[i], m_physical_filaments);
         card->set_on_box_edit_callback([this]() 
         { 
             auto dlg = MixedFilamentDialog(this, MixedFilamentDialog::Action::Edit, m_physical_filaments);
@@ -544,7 +544,7 @@ void SidebarFilamentMenu::update_mixed_states(std::vector<MixedFilamentDefinitio
 
     for (int i = 0; i < mixed_card_count; i++) {
         if (i < mixed_filament_count)
-            m_mixed_cards[i]->update_state(&m_mixed_filaments[i]);
+            m_mixed_cards[i]->update_state(&m_mixed_filaments[i], true);
     }
 }
 

@@ -154,9 +154,17 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_material_sizer->Add(m_material_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8)); 
     m_material_sizer->Add(m_material_combobox_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
 
-    m_content_sizer->Add(m_material_panel, 0, wxEXPAND);
+    m_content_sizer->Add(m_material_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
 
     // Mix Gradient Selector
+    m_mix_ratio_title_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+
+    m_mix_ratio_title_text = new wxStaticText(m_mix_ratio_title_panel, wxID_ANY, _L("Select Ratio"));
+    m_mix_ratio_title_text->SetForegroundColour("#7e7e7e");
+    m_mix_ratio_title_text->SetFont(::Label::Body_14);
+
+    m_content_sizer->Add(m_mix_ratio_title_panel, 0, wxEXPAND | wxTOP | wxLEFT | wxRIGHT, FromDIP(8));
+
     m_mix_ratio_panel = new MixedFilamentRatioPanel(m_content_panel, m_selected_filaments_weights, m_selected_filaments_colors, m_min_weight_ratio,
                                                     [this]() { refresh_material_weight_labels(); });
     m_mix_ratio_sizer = new wxBoxSizer(wxVERTICAL);
@@ -633,20 +641,25 @@ void MixedFilamentDialog::update_min_weight_slider_bounds()
     int max_val = std::floor(100.0 / count);
     m_min_weight_slider->SetRange(0, max_val);
 
-    if (m_min_weight_ratio > max_val) {
-        m_min_weight_slider->SetValue(max_val);
-        m_min_weight_value_input->SetValue(wxString::Format("%d", max_val));
-
+    int cur_val = static_cast<int>(std::round(m_min_weight_ratio * 100.0));
+    if (cur_val > max_val) {
+        cur_val = max_val;
         m_min_weight_ratio = max_val / 100.0;
     }
+    m_min_weight_slider->SetValue(cur_val);
+    m_min_weight_value_input->SetValue(wxString::Format("%d", cur_val));
 }
 
 void MixedFilamentDialog::apply_min_weight(int new_percentage)
 {
     m_min_weight_ratio = new_percentage / 100.0;
 
+    int filament_count = m_selected_filaments_weights.size();
+    if (filament_count == 0)
+        return;
+
     bool recalculate_weights = false;
-    for (double& weight : m_selected_filaments_weights) {
+    for (double weight : m_selected_filaments_weights) {
         if (weight < m_min_weight_ratio) {
             recalculate_weights = true;
             break;
@@ -654,18 +667,15 @@ void MixedFilamentDialog::apply_min_weight(int new_percentage)
     }
 
     if (recalculate_weights) {
-        for (double& weight : m_selected_filaments_weights)
-            weight = std::max(weight, m_min_weight_ratio);
-
-        // renormalize to ensure total is 1.0
-        double temp_total_weight = 0;
-        for (double& weight : m_selected_filaments_weights)
-            temp_total_weight += weight;
-
-        for (double& weight : m_selected_filaments_weights)
-            weight = weight / temp_total_weight;
+        switch (filament_count) {
+            case 2: MixedFilamentRatioPanel::clamp_weights_2(m_selected_filaments_weights, m_min_weight_ratio); break;
+            case 3: MixedFilamentRatioPanel::clamp_weights_3(m_selected_filaments_weights, m_min_weight_ratio); break;
+            case 4: MixedFilamentRatioPanel::clamp_weights_4(m_selected_filaments_weights, m_min_weight_ratio); break;
+            default: break;
+        }
     }
 
+    refresh_material_weight_labels();
     m_mix_ratio_panel->Refresh();
 }
 

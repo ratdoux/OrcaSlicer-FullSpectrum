@@ -41,6 +41,10 @@ public:
 
     void update_sizing();
 
+    static void clamp_weights_2(std::vector<double>& weights, double min_weight_ratio);
+    static void clamp_weights_3(std::vector<double>& weights, double min_weight_ratio);
+    static void clamp_weights_4(std::vector<double>& weights, double min_weight_ratio);
+
 private:
 
     std::function<void()> m_on_weights_changed_callback;
@@ -58,17 +62,17 @@ private:
     void on_left_up(wxMouseEvent&);
     void on_motion(wxMouseEvent&);
 
-    void update_from_mouse(int x, int y);
+    void update_weights_from_mouse(int x, int y);
     
-    void update_from_mouse_2(int x);
+    void update_weights_from_mouse_2(int x);
     void paint_2(wxGraphicsContext& context, const wxSize& size, std::vector<wxColor>& colors, std::vector<double>& weights);
     void paint_2_handle(wxGraphicsContext& gc, const wxSize& size, const std::vector<wxColor>& colors, const std::vector<double>& weights);
 
-    void update_from_mouse_3(int x, int y);
+    void update_weights_from_mouse_3(int x, int y);
     void paint_3(wxGraphicsContext& context, const wxSize& size, std::vector<wxColor>& colors, std::vector<double>& weights);
     void paint_3_handle(wxGraphicsContext& gc, const wxSize& size, const std::vector<wxColor>& colors, const std::vector<double>& weights);
 
-    void update_from_mouse_4(int x, int y);
+    void update_weights_from_mouse_4(int x, int y);
     void paint_4(wxGraphicsContext& context, const wxSize& size, std::vector<wxColor>& colors, std::vector<double>& weights);
     void paint_4_handle(wxGraphicsContext& gc, const wxSize& size, const std::vector<wxColor>& colors, const std::vector<double>& weights);
 

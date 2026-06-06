@@ -108,6 +108,9 @@ private:
     wxBoxSizer* m_material_title_sizer{nullptr};
     wxBoxSizer* m_material_combobox_sizer{nullptr};
 
+    wxPanel*      m_mix_ratio_title_panel{nullptr};
+    wxStaticText*   m_mix_ratio_title_text{nullptr};
+
     MixedFilamentRatioPanel* m_mix_ratio_panel{nullptr};
     wxBoxSizer*              m_mix_ratio_sizer{nullptr};
 

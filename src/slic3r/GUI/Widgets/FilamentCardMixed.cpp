@@ -15,11 +15,14 @@
 
 namespace Slic3r::GUI {
 
-FilamentCardMixed::FilamentCardMixed(wxWindow* parent, MixedFilamentDefinition* definition)
+FilamentCardMixed::FilamentCardMixed(wxWindow* parent, MixedFilamentDefinition* definition, std::vector<std::pair<std::string, std::string>>& physical_filaments)
     : ::wxPanel(parent, wxID_ANY)
-    , m_data{definition}
+    , m_definition{definition}
+    , m_physical_filaments{physical_filaments}
 {
     SetBackgroundColour(*wxWHITE);
+    update_state(definition, false);
+
     build_ui();
 }
 
@@ -38,10 +41,11 @@ void FilamentCardMixed::build_ui()
     // paint
     m_clr_swatch_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_clr_swatch_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
-        if (!m_data.definition) {
+        if (!m_definition) {
             wxPaintDC context(m_clr_swatch_panel);
             return;
         }
+
 
         // TODO implement function in MxiedFilamentPresentation
         auto HexStringToWxColor = [](const std::string& hexStr) -> wxColor {
@@ -78,8 +82,8 @@ void FilamentCardMixed::build_ui()
         paint_clr_swatch(
             context,
             size, 
-            HexStringToWxColor("AABBCC"), // m_data.definition->presentation.display_color), 
-            wxString(std::to_string(m_data.definition->identity.stable_id)),
+            HexStringToWxColor("AABBCC"), // m_definition->presentation.display_color), 
+            wxString(std::to_string(m_definition->identity.stable_id)),
             wxGetApp().dark_mode()
         );
     });
@@ -113,7 +117,7 @@ void FilamentCardMixed::build_ui()
     // paint
     m_box_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_box_panel->Bind(wxEVT_PAINT, [this, swatch_size](wxPaintEvent& event) {
-        if (!m_data.definition) {
+        if (!m_definition) {
             wxPaintDC context(m_box_panel);
             return;
         }
@@ -137,38 +141,31 @@ void FilamentCardMixed::build_ui()
         }*/
 
         // TODO actual logic
-        wxPaintDC    context(m_box_panel);
-        const wxSize size = m_box_panel->GetClientSize();
-        const wxColor background_color    = GetBackgroundColour();
-        if (m_data.definition->identity.stable_id % 2 == 0) {
+        wxPaintDC context(m_box_panel);
 
-            paint_box_pattern(
-                context,
-                size,
-                background_color,
-                std::vector<wxColor>{wxColor("Light Blue"), wxColor("Orange"), wxColor("Light Blue"), wxColor("Light Blue"), wxColor("Orange"), wxColor("Light Blue")}, 
-                std::vector<wxString>{wxString("2"), wxString("5"), wxString("2"), wxString("2"), wxString("5"), wxString("2")},
-                wxGetApp().dark_mode(), 
-                m_is_box_panel_hovered,
-                wxSize(swatch_size, swatch_size)
-            );
-        } else {
-            std::vector<wxString> display_texts = m_is_box_panel_hovered 
-                ? std::vector<wxString>{wxString("5"), wxString("5"), wxString("90")} 
-                : std::vector<wxString>{wxString("2"), wxString("2"), wxString("4")};
+        const wxSize size               = m_box_panel->GetClientSize();
+        const wxColor background_color  = GetBackgroundColour();
 
+        if (m_definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) 
+        {
             paint_box_mix(
-                context,
-                size,
-                background_color,
-                std::vector<int>{5, 5, 90}, // m_data.definition->recipe.blend.component_percents(), 
-                std::vector<wxColor>{wxColor("Green"), wxColor("Blue"), wxColor("Red")}, // colors, 
-                display_texts, // index_texts, 
-                wxGetApp().dark_mode(), 
-                m_is_box_panel_hovered,
-                wxSize(swatch_size, swatch_size)
+                context, size, background_color,
+                m_physical_filaments_indices,
+                m_physical_filaments_percentages,
+                m_physical_filaments_colors,    
+                wxGetApp().dark_mode(), m_is_box_panel_hovered, wxSize(swatch_size, swatch_size)
+            );
+        } 
+        else if (m_definition->recipe.kind == MixedFilamentRecipeKind::ManualPattern) 
+        {
+            paint_box_pattern(
+                context, size, background_color,
+                m_physical_filaments_indices, 
+                m_physical_filaments_colors,
+                wxGetApp().dark_mode(), m_is_box_panel_hovered, wxSize(swatch_size, swatch_size)
             );
         }
+
 
     });
 
@@ -182,6 +179,23 @@ void FilamentCardMixed::build_ui()
     m_main_sizer->Add(m_clr_swatch_panel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
     m_main_sizer->Add(m_box_panel, 1, wxEXPAND | wxALL, FromDIP(2));
     m_main_sizer->Add(m_filament_edit_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+}
+
+std::vector<wxColor> FilamentCardMixed::get_physical_filaments_colors(const std::vector<unsigned int>& filament_indices) const
+{
+    std::vector<wxColor> colors;
+    colors.reserve(filament_indices.size());
+
+    for (auto physical_filament_index : filament_indices) {
+        if (physical_filament_index < 0 || physical_filament_index >= (int) m_physical_filaments.size()) {
+            colors.push_back(wxColor(*wxBLACK));
+        } else {
+            const auto& [color_hex, name] = m_physical_filaments[physical_filament_index - 1];
+            colors.push_back(wxColor(color_hex));
+        }
+    }
+
+    return colors;
 }
 
 // static
@@ -220,21 +234,21 @@ void FilamentCardMixed::paint_box_mix(
     wxDC& context, 
     const wxSize& size, 
     const wxColor& background_color,
+    std::vector<unsigned int> indices,
     std::vector<int>&      percentages,
     std::vector<wxColor>&  colors, 
-    std::vector<wxString>& index_texts, 
     bool is_dark, 
     bool is_hovered,
     wxSize& swatch_size)
 {
-    if (colors.size() != index_texts.size() || colors.size() != percentages.size()) {
-        return;
-    }
-        
     // background
     context.SetBrush(wxBrush(background_color));
     context.SetPen(*wxTRANSPARENT_PEN);
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+    if (colors.size() != percentages.size()) {
+        return;
+    }
 
     const int    physical_count             = percentages.size();
     const int    padding                    = (size.y - swatch_size.y) / 2;
@@ -307,12 +321,15 @@ void FilamentCardMixed::paint_box_mix(
         context.SetFont(::Label::Body_14);
         context.SetTextForeground(colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
 
-        const wxSize text_size = context.GetTextExtent(index_texts[i]);
+        const wxString text = is_hovered 
+            ? wxString(std::to_string(percentages[i]) + "%") 
+            : wxString(std::to_string(indices[i]));
+        const wxSize text_size = context.GetTextExtent(text);
         const wxPoint text_baseline_start_pos(
             swatch_start_x_positions[i] + (swatch_widths[i] - text_size.x) / 2, 
             padding + (swatch_size.y - text_size.y) / 2
         );
-        context.DrawText(index_texts[i], text_baseline_start_pos.x, text_baseline_start_pos.y);
+        context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
     }
 
     // border (draw last, so its on top)
@@ -331,20 +348,20 @@ void FilamentCardMixed::paint_box_pattern(
     wxDC& context, 
     const wxSize& size, 
     const wxColor& background_color,
+    std::vector<unsigned int> indices,
     std::vector<wxColor>&   colors,
-    std::vector<wxString>&  index_texts,
     bool                    is_dark,
     bool                    is_hovered,
     wxSize&                 swatch_size)
 {
-    if (colors.size() != index_texts.size()) {
-        return;
-    }
-
     // background
     context.SetBrush(wxBrush(background_color));
     context.SetPen(*wxTRANSPARENT_PEN);
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+    if (colors.size() != indices.size()) {
+        return;
+    }
 
     const int pattern_count          = colors.size();
     const int padding                = (size.y - swatch_size.y) / 2;
@@ -388,10 +405,11 @@ void FilamentCardMixed::paint_box_pattern(
         context.SetFont(::Label::Body_14);
         context.SetTextForeground(colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
 
-        const wxSize  text_size = context.GetTextExtent(index_texts[i]);
+        const wxString text = wxString(std::to_string(indices[i]));
+        const wxSize  text_size = context.GetTextExtent(text);
         const wxPoint text_baseline_start_pos(swatch_start_x_positions[i] + (swatch_width - text_size.x) / 2,
                                               padding + (swatch_size.y - text_size.y) / 2);
-        context.DrawText(index_texts[i], text_baseline_start_pos.x, text_baseline_start_pos.y);
+        context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
     }
 
     // fade (when not all swatches fit)
@@ -436,9 +454,30 @@ void FilamentCardMixed::paint_box_pattern(
 }
 
 
-void FilamentCardMixed::update_state(MixedFilamentDefinition* definition)
+void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool refresh)
 {
     // TODO update color swatch and content panel based on data
+
+    if (definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) {
+        m_physical_filaments_indices     = definition->recipe.blend.component_ids(definition->recipe.blend.components.size());
+        m_physical_filaments_colors      = get_physical_filaments_colors(m_physical_filaments_indices);
+        m_physical_filaments_percentages = definition->recipe.blend.component_percents();
+    } else {
+        std::vector<unsigned int> main_pattern_indices;
+        for (const auto& group : definition->recipe.manual_pattern->groups[0]) {
+            main_pattern_indices.push_back(group.id);
+        }
+
+        m_physical_filaments_indices     = main_pattern_indices;
+        m_physical_filaments_colors      = get_physical_filaments_colors(m_physical_filaments_indices);
+        m_physical_filaments_percentages = {};
+    }
+
+    m_definition = definition;
+
+    if (refresh)
+        Refresh();
+
 }
 
 } // namespace Slic3r::GUI

@@ -150,7 +150,7 @@ void MixedFilamentRatioPanel::on_left_down(wxMouseEvent& event)
     if (!HasCapture())
         CaptureMouse();
 
-    update_from_mouse(event.GetX(), event.GetY());
+    update_weights_from_mouse(event.GetX(), event.GetY());
 }
 
 void MixedFilamentRatioPanel::on_motion(wxMouseEvent& event)
@@ -158,7 +158,7 @@ void MixedFilamentRatioPanel::on_motion(wxMouseEvent& event)
     if (!m_dragging)
         return;
 
-    update_from_mouse(event.GetX(), event.GetY());
+    update_weights_from_mouse(event.GetX(), event.GetY());
 }
 
 void MixedFilamentRatioPanel::on_left_up(wxMouseEvent&)
@@ -216,7 +216,7 @@ void MixedFilamentRatioPanel::on_paint(wxPaintEvent&)
     }
 }
 
-void MixedFilamentRatioPanel::update_from_mouse(int x, int y)
+void MixedFilamentRatioPanel::update_weights_from_mouse(int x, int y)
 {
     if (m_filament_weights.empty())
         return;
@@ -224,9 +224,9 @@ void MixedFilamentRatioPanel::update_from_mouse(int x, int y)
     const int filament_count = m_filament_weights.size();
 
     switch (filament_count) {
-    case 2: update_from_mouse_2(x); break;
-    case 3: update_from_mouse_3(x, y); break;
-    case 4: update_from_mouse_4(x, y); break;
+    case 2: update_weights_from_mouse_2(x); break;
+    case 3: update_weights_from_mouse_3(x, y); break;
+    case 4: update_weights_from_mouse_4(x, y); break;
     default: break;
     }
 
@@ -235,17 +235,30 @@ void MixedFilamentRatioPanel::update_from_mouse(int x, int y)
     }
 }
 
-void MixedFilamentRatioPanel::update_from_mouse_2(int x)
+void MixedFilamentRatioPanel::clamp_weights_2(std::vector<double>& weights, double min_weight_ratio)
+{
+    if (weights.size() != 2)
+        return;
+
+    double u = weights[1];
+    double m = min_weight_ratio;
+    u = std::clamp(u, m, 1.0 - m);
+
+    weights[0] = 1.0 - u;
+    weights[1] = u;
+}
+
+void MixedFilamentRatioPanel::update_weights_from_mouse_2(int x)
 {
     double margin = get_margin();
     int width = std::max(1.0, GetClientSize().x - margin * 2);
     double adjusted_x = (double) x - margin;
 
-    double m = m_min_weight_ratio;
-    double weight_1 = std::clamp(adjusted_x / width, m, 1.0 - m);
+    double weight_1 = adjusted_x / width;
     double weight_0 = 1.0 - weight_1;
 
     m_filament_weights = {weight_0, weight_1};
+    clamp_weights_2(m_filament_weights, m_min_weight_ratio);
 
     Refresh(false);
 }
@@ -316,7 +329,42 @@ void MixedFilamentRatioPanel::paint_2_handle(wxGraphicsContext&          gc,
     gc.DrawEllipse(handle_x - handle_radius, (start_y + height / 2.0) - handle_radius, handle_radius * 2.0, handle_radius * 2.0);
 }
 
-void MixedFilamentRatioPanel::update_from_mouse_3(int x, int y)
+void MixedFilamentRatioPanel::clamp_weights_3(std::vector<double>& weights, double min_weight_ratio)
+{
+    if (weights.size() != 3)
+        return;
+
+    double m                   = min_weight_ratio;
+    bool   recalculate_weights = false;
+    for (double weight : weights) {
+        if (weight < m) {
+            recalculate_weights = true;
+            break;
+        }
+    }
+
+    if (recalculate_weights) {
+        std::vector<double> diffs(3, 0.0);
+        double              diff_sum = 0.0;
+        for (int i = 0; i < 3; ++i) {
+            double diff = std::max(0.0, weights[i] - m);
+            diffs[i]    = diff;
+            diff_sum += diff;
+        }
+
+        if (diff_sum > 1e-9) {
+            for (int i = 0; i < 3; ++i) {
+                weights[i] = m + (1.0 - 3.0 * m) * (diffs[i] / diff_sum);
+            }
+        } else {
+            for (int i = 0; i < 3; ++i) {
+                weights[i] = 1.0 / 3.0;
+            }
+        }
+    }
+}
+
+void MixedFilamentRatioPanel::update_weights_from_mouse_3(int x, int y)
 {
     auto [corner_0, corner_1, corner_2] = triangle_vertices();
 
@@ -432,7 +480,108 @@ void MixedFilamentRatioPanel::paint_3_handle(
     gc.DrawEllipse(px - handle_radius, py - handle_radius, handle_radius * 2.0, handle_radius * 2.0);
 }
 
-void MixedFilamentRatioPanel::update_from_mouse_4(int x, int y)
+
+void MixedFilamentRatioPanel::clamp_weights_4(std::vector<double>& weights, double min_weight_ratio)
+{
+    if (weights.size() != 4)
+        return;
+
+    double u = weights[1] + weights[3];
+    double v = weights[2] + weights[3];
+
+    double m = min_weight_ratio;
+
+    if (m > 0.0) {
+        if (m >= 0.25) {
+            u = 0.5;
+            v = 0.5;
+        } else {
+            // Check if (u, v) is already inside the allowed boundary
+            double w0 = (1.0 - u) * (1.0 - v);
+            double w1 = u * (1.0 - v);
+            double w2 = (1.0 - u) * v;
+            double w3 = u * v;
+
+            bool inside = (w0 >= m && w1 >= m && w2 >= m && w3 >= m);
+
+            // fast ternary search implementation to find the closest point on the boundary curves if outside
+            if (!inside) {
+                struct LocalCurve
+                {
+                    double u_start;
+                    double u_end;
+                    int    type; // 1, 2, 3, or 4
+                };
+
+                auto get_v_func = [](int type, double u_val, double m_val) -> double {
+                    switch (type) {
+                    case 1: return m_val / u_val;
+                    case 2: return m_val / (1.0 - u_val);
+                    case 3: return 1.0 - m_val / u_val;
+                    case 4: return 1.0 - m_val / (1.0 - u_val);
+                    default: return 0.0;
+                    }
+                };
+
+                auto closest_point_on_curve = [&](double u_mouse, double v_mouse, const LocalCurve& curve) {
+                    double l = curve.u_start;
+                    double r = curve.u_end;
+                    // 15 iterations of ternary search for high precision
+                    for (int iter = 0; iter < 15; ++iter) {
+                        double m1 = l + (r - l) / 3.0;
+                        double m2 = r - (r - l) / 3.0;
+
+                        double v1 = get_v_func(curve.type, m1, m);
+                        double v2 = get_v_func(curve.type, m2, m);
+
+                        double d1 = (m1 - u_mouse) * (m1 - u_mouse) + (v1 - v_mouse) * (v1 - v_mouse);
+                        double d2 = (m2 - u_mouse) * (m2 - u_mouse) + (v2 - v_mouse) * (v2 - v_mouse);
+
+                        if (d1 < d2) {
+                            r = m2;
+                        } else {
+                            l = m1;
+                        }
+                    }
+                    double u_best = (l + r) * 0.5;
+                    return TriPoint{u_best, get_v_func(curve.type, u_best, m)};
+                };
+
+                // Define the 4 boundary curves
+                LocalCurve curves[4] = {
+                    {2.0 * m, 0.5, 1},       // Curve 1 (bottom-left boundary)
+                    {0.5, 1.0 - 2.0 * m, 2}, // Curve 2 (bottom-right boundary)
+                    {2.0 * m, 0.5, 3},       // Curve 3 (top-left boundary)
+                    {0.5, 1.0 - 2.0 * m, 4}  // Curve 4 (top-right boundary)
+                };
+
+                TriPoint best_point  = closest_point_on_curve(u, v, curves[0]);
+                double   min_dist_sq = (best_point.x - u) * (best_point.x - u) + (best_point.y - v) * (best_point.y - v);
+
+                for (int i = 1; i < 4; ++i) {
+                    TriPoint pt      = closest_point_on_curve(u, v, curves[i]);
+                    double   dist_sq = (pt.x - u) * (pt.x - u) + (pt.y - v) * (pt.y - v);
+                    if (dist_sq < min_dist_sq) {
+                        min_dist_sq = dist_sq;
+                        best_point  = pt;
+                    }
+                }
+                u = best_point.x;
+                v = best_point.y;
+            }
+        }
+    } else {
+        u = std::clamp(u, 0.0, 1.0);
+        v = std::clamp(v, 0.0, 1.0);
+    }
+
+    weights[0] = (1.0 - u) * (1.0 - v);
+    weights[1] = u * (1.0 - v);
+    weights[2] = (1.0 - u) * v;
+    weights[3] = u * v;
+}
+
+void MixedFilamentRatioPanel::update_weights_from_mouse_4(int x, int y)
 {
     auto [corner_0, corner_1, corner_2, corner_3] = quad_vertices();
 
@@ -448,45 +597,13 @@ void MixedFilamentRatioPanel::update_from_mouse_4(int x, int y)
     double u = (mouse.x - corner_0.x) / side;
     double v = (mouse.y - corner_0.y) / side;
 
-    double m = m_min_weight_ratio;
-
-    if (m > 0.0) {
-        double u_min = (2.0 * m) + 1e-6;
-        double u_max = (1.0 - 2.0 * m) - 1e-6;
-
-        // If m >= 0.25 (25%), the region mathematically collapses/inverts.
-        // The only valid position is dead center.
-        if (u_min >= u_max) {
-            u = 0.5;
-            v = 0.5;
-        } else {
-            auto get_v_min = [m](double u_val) { return std::max(m / std::max(u_val, 1e-5), m / std::max(1.0 - u_val, 1e-5)); };
-            auto get_v_max = [m](double u_val) { return std::min(1.0 - m / std::max(u_val, 1e-5), 1.0 - m / std::max(1.0 - u_val, 1e-5)); };
-
-            u = std::clamp(u, u_min, u_max);
-
-            double v_min = get_v_min(u);
-            double v_max = get_v_max(u);
-
-            // Absolute safety check, though epsilon makes this mathematically impossible
-            if (v_min > v_max) {
-                double mid = (v_min + v_max) * 0.5;
-                v_min = v_max = mid;
-            }
-
-            v = std::clamp(v, v_min, v_max);
-        }
-    } else {
-        u = std::clamp(u, 0.0, 1.0);
-        v = std::clamp(v, 0.0, 1.0);
-    }
-
-    double weight_0 = (1.0 - u) * (1.0 - v);
-    double weight_1 = u * (1.0 - v);
-    double weight_2 = (1.0 - u) * v;
-    double weight_3 = u * v;
-
-    m_filament_weights = {weight_0, weight_1, weight_2, weight_3};
+    m_filament_weights = {
+        (1.0 - u) * (1.0 - v),
+        u * (1.0 - v),
+        (1.0 - u) * v,
+        u * v
+    };
+    clamp_weights_4(m_filament_weights, m_min_weight_ratio);
 
     Refresh(false);
 }
