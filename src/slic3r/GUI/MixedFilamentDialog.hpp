@@ -3,6 +3,7 @@
 
 #include <memory> 
 #include <wx/wx.h>
+#include <wx/scrolwin.h>
 
 #include "Widgets/Label.hpp"
 #include "Widgets/Button.hpp"
@@ -37,6 +38,7 @@ private:
     int m_width_fixed;
     int m_height_start;
     int m_height_min;
+    int m_height_max_auto;
     int m_clr_swatch_size;
     std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
 
@@ -74,6 +76,8 @@ private:
     void refresh_material_combobox_items();
     void refresh_material_weight_labels();
     void update_min_weight_slider_bounds();
+    void update_content_max_height();
+    void auto_resize_dialog_to_fit();
     void apply_min_weight(int new_percentage);
 
     std::vector<double> get_default_weights(int filament_count);
@@ -81,8 +85,8 @@ private:
 
 
     // UI 
-    wxPanel* m_title_panel{nullptr};
-    wxPanel* m_content_panel{nullptr};
+    wxPanel*          m_title_panel{nullptr};
+    wxScrolledWindow* m_content_panel{nullptr};
     wxPanel* m_footer_panel{nullptr};
 
     wxBoxSizer* m_main_sizer{nullptr};
@@ -108,6 +112,9 @@ private:
     wxBoxSizer* m_material_title_sizer{nullptr};
     wxBoxSizer* m_material_combobox_sizer{nullptr};
 
+    wxPanel*    m_ratio_section_panel{nullptr};
+    wxBoxSizer* m_ratio_section_sizer{nullptr};
+
     wxPanel*      m_mix_ratio_title_panel{nullptr};
     wxStaticText*   m_mix_ratio_title_text{nullptr};
 
@@ -121,6 +128,12 @@ private:
     wxStaticText* m_min_weight_value_label{nullptr}; // "%" label next to input
 
     wxBoxSizer*   m_min_weight_sizer{nullptr};
+
+    // Recommendations
+    wxPanel*      m_recommendations_panel{nullptr};
+    wxBoxSizer*   m_recommendations_sizer{nullptr};
+    wxPanel*      m_recommendations_title_panel{nullptr};
+    wxStaticText* m_recommendations_title_text{nullptr};
     
     // Footer
     

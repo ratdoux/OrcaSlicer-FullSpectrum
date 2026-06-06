@@ -37,6 +37,7 @@ MixedFilamentDialog::MixedFilamentDialog(
 	m_width_fixed       = this->wxWindow::FromDIP(400);
     m_height_start      = this->wxWindow::FromDIP(600);
     m_height_min        = this->wxWindow::FromDIP(400);
+    m_height_max_auto   = this->wxWindow::FromDIP(800);
     m_clr_swatch_size   = this->wxWindow::FromDIP(20);
 
     SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
@@ -105,10 +106,18 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
       
     m_main_sizer->Add(m_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
         
-    // Content
-    m_content_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
+    // Content (scrollable)
+    m_content_panel = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
+    m_content_panel->SetScrollRate(0, 20);
+    m_content_panel->SetBackgroundColour(GetBackgroundColour());
     m_content_sizer = new wxBoxSizer(wxVERTICAL);
     m_content_panel->SetSizer(m_content_sizer);
+
+    // refresh m_content_panel on resize (due to e.g. scrollbar appearing) to prevent rendering artifacts
+    m_content_panel->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
+        event.Skip();
+        m_content_panel->Refresh();
+    });
 
     // Material Section
     m_material_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
@@ -156,24 +165,29 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
 
     m_content_sizer->Add(m_material_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
 
+    // Ratio Section (groups ratio title, ratio panel, min weight slider)
+    m_ratio_section_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_ratio_section_sizer = new wxBoxSizer(wxVERTICAL);
+    m_ratio_section_panel->SetSizer(m_ratio_section_sizer);
+
     // Mix Gradient Selector
-    m_mix_ratio_title_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_mix_ratio_title_panel = new wxPanel(m_ratio_section_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 
     m_mix_ratio_title_text = new wxStaticText(m_mix_ratio_title_panel, wxID_ANY, _L("Select Ratio"));
     m_mix_ratio_title_text->SetForegroundColour("#7e7e7e");
     m_mix_ratio_title_text->SetFont(::Label::Body_14);
 
-    m_content_sizer->Add(m_mix_ratio_title_panel, 0, wxEXPAND | wxTOP | wxLEFT | wxRIGHT, FromDIP(8));
+    m_ratio_section_sizer->Add(m_mix_ratio_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
 
-    m_mix_ratio_panel = new MixedFilamentRatioPanel(m_content_panel, m_selected_filaments_weights, m_selected_filaments_colors, m_min_weight_ratio,
+    m_mix_ratio_panel = new MixedFilamentRatioPanel(m_ratio_section_panel, m_selected_filaments_weights, m_selected_filaments_colors, m_min_weight_ratio,
                                                     [this]() { refresh_material_weight_labels(); });
     m_mix_ratio_sizer = new wxBoxSizer(wxVERTICAL);
     m_mix_ratio_panel->SetSizer(m_mix_ratio_sizer);
 
-    m_content_sizer->Add(m_mix_ratio_panel, 0, wxEXPAND);
+    m_ratio_section_sizer->Add(m_mix_ratio_panel, 0, wxEXPAND);
 
     // Min Weight Ratio Selector
-    m_min_weight_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_min_weight_panel = new wxPanel(m_ratio_section_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_min_weight_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_min_weight_panel->SetSizer(m_min_weight_sizer);
 
@@ -230,7 +244,28 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_min_weight_sizer->Add(m_min_weight_value_input, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     m_min_weight_sizer->Add(m_min_weight_value_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
-    m_content_sizer->Add(m_min_weight_panel, 0, wxEXPAND | wxTOP | wxBOTTOM, FromDIP(8));
+    m_ratio_section_sizer->Add(m_min_weight_panel, 0, wxEXPAND | wxTOP | wxBOTTOM, FromDIP(8));
+
+    m_content_sizer->Add(m_ratio_section_panel, 0, wxEXPAND | wxTOP, FromDIP(8));
+
+    // Mixing Recommendations (placeholder for future implementation)
+    m_recommendations_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_recommendations_sizer = new wxBoxSizer(wxVERTICAL);
+    m_recommendations_panel->SetSizer(m_recommendations_sizer);
+
+    m_recommendations_title_panel = new wxPanel(m_recommendations_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_recommendations_title_text = new wxStaticText(m_recommendations_title_panel, wxID_ANY, _L("Mixing Recommendations"));
+    m_recommendations_title_text->SetForegroundColour("#7e7e7e");
+    m_recommendations_title_text->SetFont(::Label::Body_14);
+
+    // Dummy placeholder with minimum height for scroll testing
+    wxPanel* recommendations_placeholder = new wxPanel(m_recommendations_panel, wxID_ANY);
+    recommendations_placeholder->SetMinSize(wxSize(-1, FromDIP(200)));
+
+    m_recommendations_sizer->Add(m_recommendations_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+    m_recommendations_sizer->Add(recommendations_placeholder, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+
+    m_content_sizer->Add(m_recommendations_panel, 0, wxEXPAND | wxTOP, FromDIP(8));
 
     m_main_sizer->Add(m_content_panel, 1, wxEXPAND);
 
@@ -248,12 +283,15 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
 
     SetSizer(m_main_sizer);
 	Layout();
+    m_content_panel->FitInside();
     SetSize(m_width_fixed, m_height_start);
     CentreOnParent();
 
     update_tabs();
     add_material_combobox(m_material_combobox_panel, m_material_combobox_sizer);
     add_material_combobox(m_material_combobox_panel, m_material_combobox_sizer);
+
+    update_content_max_height();
 }
 
 wxColour MixedFilamentDialog::getTabBorderColor(bool is_selected, bool is_hovered) const
@@ -485,6 +523,10 @@ void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* siz
     m_mix_ratio_panel->update_sizing();
     m_mix_ratio_panel->Refresh();
 
+    m_content_panel->FitInside();
+    update_content_max_height();
+    auto_resize_dialog_to_fit();
+
     parent->Thaw();
 }
 
@@ -517,6 +559,10 @@ void MixedFilamentDialog::remove_material_combobox() {
     refresh_material_weight_labels();
     m_mix_ratio_panel->update_sizing();
     m_mix_ratio_panel->Refresh();
+
+    m_content_panel->FitInside();
+    update_content_max_height();
+    auto_resize_dialog_to_fit();
 }
 
 void MixedFilamentDialog::on_selected_filaments_changed(int index) 
@@ -716,14 +762,53 @@ std::vector<double> MixedFilamentDialog::get_default_weights(int filament_count)
     }
 }
 
+void MixedFilamentDialog::update_content_max_height()
+{
+    // Compute the ideal total height where no scrollbar is needed
+    m_content_panel->GetSizer()->Layout();
+    int content_ideal_height = m_content_panel->GetSizer()->GetMinSize().GetHeight();
+
+    // Add title panel height, footer panel height, and main sizer margins
+    int title_height  = m_title_panel->GetBestSize().GetHeight() + FromDIP(8) * 2; // wxALL margin
+    int footer_height = m_footer_panel->GetBestSize().GetHeight();
+    int total_ideal   = title_height + content_ideal_height + footer_height;
+
+    // Account for dialog frame/border decorations
+    wxSize frame_size    = GetSize();
+    wxSize client_size   = GetClientSize();
+    int    frame_padding = frame_size.GetHeight() - client_size.GetHeight();
+    total_ideal += frame_padding;
+
+    SetMaxSize(wxSize(m_width_fixed, total_ideal));
+
+    // If current size exceeds the new max, shrink to fit
+    wxSize current_size = GetSize();
+    if (current_size.GetHeight() > total_ideal) {
+        SetSize(m_width_fixed, total_ideal);
+    }
+}
+
+void MixedFilamentDialog::auto_resize_dialog_to_fit()
+{
+    // Automatically resize the dialog to fit content, capped at m_height_max_auto.
+    // Manual resizing is not affected — SetMaxSize (from update_content_max_height)
+    // allows the user to manually resize up to the full content height.
+    int max_height = GetMaxSize().GetHeight();
+    int target_height = std::min(max_height, m_height_max_auto);
+    target_height = std::max(target_height, m_height_min);
+    SetSize(m_width_fixed, target_height);
+}
+
 void MixedFilamentDialog::on_dpi_changed(const wxRect& suggested_rect)
 {
-    m_width_fixed  = FromDIP(400);
-    m_height_start = FromDIP(600);
-    m_height_min   = FromDIP(400);
+    m_width_fixed     = FromDIP(400);
+    m_height_start    = FromDIP(600);
+    m_height_min      = FromDIP(400);
+    m_height_max_auto = FromDIP(800);
 
 	SetMinSize(wxSize(m_width_fixed, m_height_min));
-    SetMaxSize(wxSize(m_width_fixed, wxDefaultCoord));
+
+    update_content_max_height();
 
     // TODO: implement DPI change handling if necessary (e.g., adjust layout, fonts, etc.)
 	Refresh();
