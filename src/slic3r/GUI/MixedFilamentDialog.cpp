@@ -1,6 +1,7 @@
 #include "MixedFilamentDialog.hpp"
 
 #include <wx/wx.h>
+#include <wx/wrapsizer.h>
 
 #include "I18N.hpp"
 #include "GUI.hpp"
@@ -248,22 +249,28 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
 
     m_content_sizer->Add(m_ratio_section_panel, 0, wxEXPAND | wxTOP, FromDIP(8));
 
-    // Mixing Recommendations (placeholder for future implementation)
+    // Mixing Recommendations
     m_recommendations_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_recommendations_sizer = new wxBoxSizer(wxVERTICAL);
     m_recommendations_panel->SetSizer(m_recommendations_sizer);
 
     m_recommendations_title_panel = new wxPanel(m_recommendations_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_recommendations_title_panel->SetBackgroundColour(this->GetBackgroundColour());
     m_recommendations_title_text = new wxStaticText(m_recommendations_title_panel, wxID_ANY, _L("Mixing Recommendations"));
     m_recommendations_title_text->SetForegroundColour("#7e7e7e");
     m_recommendations_title_text->SetFont(::Label::Body_14);
 
-    // Dummy placeholder with minimum height for scroll testing
-    wxPanel* recommendations_placeholder = new wxPanel(m_recommendations_panel, wxID_ANY);
-    recommendations_placeholder->SetMinSize(wxSize(-1, FromDIP(200)));
+    m_recommendations_title_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_recommendations_title_panel->SetSizer(m_recommendations_title_sizer);
+    m_recommendations_title_sizer->Add(m_recommendations_title_text, 0, wxALL, FromDIP(8));
 
-    m_recommendations_sizer->Add(m_recommendations_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
-    m_recommendations_sizer->Add(recommendations_placeholder, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+    m_recommendations_mix_panel = new wxPanel(m_recommendations_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_recommendations_mix_panel->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F5F5F5")));
+    m_recommendations_mix_sizer = new wxBoxSizer(wxVERTICAL);
+    m_recommendations_mix_panel->SetSizer(m_recommendations_mix_sizer);
+
+    m_recommendations_sizer->Add(m_recommendations_title_panel, 0, wxEXPAND);
+    fill_recommendations(m_recommendations_mix_panel, m_recommendations_mix_sizer);
 
     m_content_sizer->Add(m_recommendations_panel, 0, wxEXPAND | wxTOP, FromDIP(8));
 
@@ -444,10 +451,12 @@ void MixedFilamentDialog::update_tabs()
     m_pattern_tab_btn->Refresh();
 }
 
-void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* sizer) {
+void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* sizer, int selected_filament_index) {
     const int current_count             = m_material_comboboxes.size();
     const int new_count                 = current_count + 1;
-    const int selected_filament_index   = find_first_free_filament();
+    if (selected_filament_index == -1) {
+        selected_filament_index = find_first_free_filament();
+    }
     if (new_count > max_filament || selected_filament_index == -1)
         return;
 
@@ -827,6 +836,155 @@ void MixedFilamentDialog::on_sizing(wxSizeEvent& event)
     event.SetSize(size);
     // Dont call event.Skip(), as this would evoke the default sizer
 }
- 
+
+void MixedFilamentDialog::fill_recommendations(wxPanel* container, wxBoxSizer* container_sizer)
+{
+    if (!container)
+        return;
+
+    int filament_count = m_physical_filaments.size();
+
+    auto format_tooltip = [this](const std::vector<int>& phys_indices, const std::vector<double>& weights, const wxColor& mixed_color) -> wxString {
+        wxString tooltip = wxString("");
+        for (size_t i = 0; i < phys_indices.size(); ++i) {
+            if (i > 0) {
+                tooltip += " + ";
+            }
+            int pct = static_cast<int>(std::round(weights[i] * 100.0));
+            tooltip += wxString::Format("%d%% Filament [%d]", pct, phys_indices[i] + 1);
+        }
+        tooltip +=wxString::Format(" = #%02X%02X%02X", mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
+        return tooltip;
+    };
+
+    auto get_mixed_color = [this](const std::vector<int>& phys_indices, const std::vector<double>& weights) -> wxColor {
+        double r = 0, g = 0, b = 0;
+        for (size_t i = 0; i < phys_indices.size(); ++i) {
+            wxColor col(m_physical_filaments[phys_indices[i]].first);
+            r += weights[i] * col.Red();
+            g += weights[i] * col.Green();
+            b += weights[i] * col.Blue();
+        }
+        return wxColor(std::clamp((int)r, 0, 255), std::clamp((int)g, 0, 255), std::clamp((int)b, 0, 255));
+    };
+
+    
+    auto create_mix_tile = [this](wxPanel* parent, const wxColor& color, const wxString& tooltip, const std::vector<int>& physical_indices, const std::vector<double>& weights) -> wxPanel* {
+        wxPanel* tile = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(24), FromDIP(24)), wxBORDER_NONE);
+        tile->SetBackgroundColour(color);
+        tile->SetCursor(wxCursor(wxCURSOR_HAND));
+        tile->SetToolTip(tooltip);
+        tile->Bind(wxEVT_LEFT_UP, [weights, physical_indices, this](wxMouseEvent&) {
+            if (weights[0] < m_min_weight_ratio || weights[1] < m_min_weight_ratio) {
+                m_min_weight_ratio = std::min(weights[0], weights[1]);
+                m_min_weight_slider->SetValue(static_cast<int>(std::round(m_min_weight_ratio * 100.0)));
+                m_min_weight_value_input->SetValue(wxString::Format("%d", static_cast<int>(std::round(m_min_weight_ratio * 100.0))));
+            }
+            
+            set_active_mix(physical_indices, weights);
+        });
+        return tile;
+    };
+
+    if (filament_count >= 2) {
+        wxStaticText* label = new wxStaticText(container, wxID_ANY, _L("2-Way Mixes"));
+        label->SetForegroundColour("#7e7e7e");
+        label->SetFont(::Label::Body_12.Bold());
+        container_sizer->Add(label, 0, wxLEFT | wxTOP | wxRIGHT, FromDIP(8));
+
+        // 50/50 Mixes Row
+        wxWrapSizer* wrap_sizer_50 = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
+        for (int i = 0; i < filament_count; ++i) {
+            for (int j = i + 1; j < filament_count; ++j) {
+                std::vector<double> weights     = {0.5, 0.5};
+                std::vector<int> phys_indices   = {i, j};
+                wxColor mixed_color             = get_mixed_color(phys_indices, weights);
+                wxString tooltip                = format_tooltip(phys_indices, weights, mixed_color);
+
+                wxPanel* tile = create_mix_tile(container, mixed_color, tooltip, phys_indices, weights);
+                wrap_sizer_50->Add(tile, 0, wxALL, FromDIP(4));
+            }
+        }
+        container_sizer->Add(wrap_sizer_50, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+
+        // 66/34 Mixes Row
+        wxWrapSizer* wrap_sizer_66 = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
+        for (int i = 0; i < filament_count; ++i) {
+            for (int j = i + 1; j < filament_count; ++j) {
+                std::vector<double> weights     = {0.66, 0.34};
+                std::vector<int> phys_indices   = {i, j};
+                wxColor mixed_color             = get_mixed_color(phys_indices, weights);
+                wxString tooltip                = format_tooltip(phys_indices, weights, mixed_color);
+
+                wxPanel* tile = create_mix_tile(container, mixed_color, tooltip, phys_indices, weights);
+                wrap_sizer_66->Add(tile, 0, wxALL, FromDIP(4));
+            }
+        }
+        container_sizer->Add(wrap_sizer_66, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    }
+
+    if (filament_count >= 3) {
+        wxStaticText* label = new wxStaticText(container, wxID_ANY, _L("3-Way Mixes"));
+        label->SetForegroundColour("#7e7e7e");
+        label->SetFont(::Label::Body_12.Bold());
+        container_sizer->Add(label, 0, wxLEFT | wxTOP | wxRIGHT, FromDIP(8));
+
+        wxWrapSizer* wrap_sizer = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
+        for (int i = 0; i < filament_count; ++i) {
+            for (int j = i + 1; j < filament_count; ++j) {
+                for (int k = j + 1; k < filament_count; ++k) {
+                    std::vector<double> weights     = {0.33, 0.33, 0.34};
+                    std::vector<int> phys_indices   = {i, j, k};
+                    wxColor mixed_color             = get_mixed_color(phys_indices, weights);
+                    wxString tooltip                = format_tooltip(phys_indices, weights, mixed_color);
+
+                    wxPanel* tile = create_mix_tile(container, mixed_color, tooltip, phys_indices, weights);
+                    wrap_sizer->Add(tile, 0, wxALL, FromDIP(4));
+                }
+            }
+        }
+        container_sizer->Add(wrap_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    }
+
+    m_recommendations_sizer->Add(container, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+}
+
+void MixedFilamentDialog::set_active_mix(const std::vector<int>& physical_filaments, const std::vector<double>& weights)
+{
+    this->Freeze();
+
+    int target_count = physical_filaments.size();
+    int current_count = m_material_comboboxes.size();
+
+    if (current_count < target_count) {
+        for (int i = current_count; i < target_count; ++i) {
+            add_material_combobox(m_material_combobox_panel, m_material_combobox_sizer, physical_filaments[i]);
+        }
+    } else if (current_count > target_count) {
+        while (m_material_comboboxes.size() > target_count) {
+            remove_material_combobox();
+        }
+    }
+
+    for (int i = 0; i < target_count; ++i) {
+        m_selected_filaments[i] = physical_filaments[i];
+        m_material_comboboxes[i]->SetSelection(physical_filaments[i]);
+    }
+
+    m_selected_filaments_weights = weights;
+    m_selected_filaments_colors  = get_selected_filaments_colors(m_selected_filaments);
+
+    update_min_weight_slider_bounds();
+    refresh_material_combobox_items();
+    refresh_material_weight_labels();
+    m_mix_ratio_panel->update_sizing();
+    m_mix_ratio_panel->Refresh();
+
+    m_content_panel->FitInside();
+    update_content_max_height();
+    auto_resize_dialog_to_fit();
+
+    this->Thaw();
+}
 
 } // namespace Slic3r::GUI

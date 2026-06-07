@@ -30,7 +30,7 @@ private:
     Action m_action{Action::Add};
     Tab    m_current_tab{Tab::Mix};
 
-    double m_min_weight_ratio{0.15};
+    double m_min_weight_ratio{0.15}; // 0...1 (e.g. 0.5 for 50%)
 
     int max_filament = 4; // mix 2-4 physical filaments
     const int min_filament = 2;
@@ -69,7 +69,7 @@ private:
     void on_sizing(wxSizeEvent& event);
 
     // content is filled by m_physical_filaments
-    void add_material_combobox(wxPanel* parent, wxBoxSizer* sizer);
+    void add_material_combobox(wxPanel* parent, wxBoxSizer* sizer, int selected_filament_index = -1);
     void remove_material_combobox();
     void on_selected_filaments_changed(int index);
     int  find_first_free_filament() const;
@@ -79,6 +79,9 @@ private:
     void update_content_max_height();
     void auto_resize_dialog_to_fit();
     void apply_min_weight(int new_percentage);
+
+    void fill_recommendations(wxPanel* container, wxBoxSizer* container_sizer);
+    void set_active_mix(const std::vector<int>& physical_filaments, const std::vector<double>& weights);
 
     std::vector<double> get_default_weights(int filament_count);
     std::vector<wxColor> get_selected_filaments_colors(const std::vector<int>& filament_indices) const;
@@ -133,7 +136,10 @@ private:
     wxPanel*      m_recommendations_panel{nullptr};
     wxBoxSizer*   m_recommendations_sizer{nullptr};
     wxPanel*      m_recommendations_title_panel{nullptr};
+    wxBoxSizer*   m_recommendations_title_sizer{nullptr};
     wxStaticText* m_recommendations_title_text{nullptr};
+    wxPanel*      m_recommendations_mix_panel{nullptr};
+    wxBoxSizer*   m_recommendations_mix_sizer{nullptr};
     
     // Footer
     
