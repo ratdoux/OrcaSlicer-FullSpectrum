@@ -313,18 +313,18 @@ void MixedFilamentRatioPanel::paint_2_handle(wxGraphicsContext&          gc,
 
     const double handle_x = start_x + (weights[1] * width);
 
-    // White line behind the handle
-    gc.SetPen(wxPen(*wxWHITE, border_width));
-    gc.StrokeLine(handle_x, start_y, handle_x, start_y + height);
-
     // Calculate handle color
     double   t = weights[1];
     wxColour handle_color(static_cast<unsigned char>(colors[0].Red() * (1.0 - t) + colors[1].Red() * t),
                           static_cast<unsigned char>(colors[0].Green() * (1.0 - t) + colors[1].Green() * t),
                           static_cast<unsigned char>(colors[0].Blue() * (1.0 - t) + colors[1].Blue() * t));
 
+    // Contrast-adaptive line behind the handle
+    gc.SetPen(wxPen(get_contrast_border_color(handle_color), border_width));
+    gc.StrokeLine(handle_x, start_y, handle_x, start_y + height);
+
     gc.SetBrush(wxBrush(handle_color));
-    gc.SetPen(wxPen(*wxWHITE, border_width));
+    gc.SetPen(wxPen(get_contrast_border_color(handle_color), border_width));
 
     gc.DrawEllipse(handle_x - handle_radius, (start_y + height / 2.0) - handle_radius, handle_radius * 2.0, handle_radius * 2.0);
 }
@@ -476,7 +476,7 @@ void MixedFilamentRatioPanel::paint_3_handle(
     );
 
     gc.SetBrush(wxBrush(handle_color));
-    gc.SetPen(wxPen(*wxWHITE, border_width));
+    gc.SetPen(wxPen(get_contrast_border_color(handle_color), border_width));
     gc.DrawEllipse(px - handle_radius, py - handle_radius, handle_radius * 2.0, handle_radius * 2.0);
 }
 
@@ -721,7 +721,7 @@ void MixedFilamentRatioPanel::paint_4_handle(
     );
 
     gc.SetBrush(wxBrush(handle_color));
-    gc.SetPen(wxPen(*wxWHITE, border_width));
+    gc.SetPen(wxPen(get_contrast_border_color(handle_color), border_width));
     gc.DrawEllipse(handle_x - handle_radius, handle_y - handle_radius, handle_radius * 2.0, handle_radius * 2.0);
 }
 
@@ -891,6 +891,20 @@ MixedFilamentRatioPanel::quad_vertices() const
     };
 }
 
-
+wxColour MixedFilamentRatioPanel::get_contrast_border_color(const wxColour& bg_color) const
+{
+    double luma = (0.299 * bg_color.Red() + 0.587 * bg_color.Green() + 0.114 * bg_color.Blue()) / 255.0;
+    if (luma <= 0.75) {
+        return *wxWHITE;
+    } else if (luma >= 0.9) {
+        return wxColour(0x4F, 0x4F, 0x4F);
+    } else {
+        double t = (luma - 0.75) / 0.15;
+        unsigned char r = static_cast<unsigned char>(255 - t * (255 - 0x4F));
+        unsigned char g = static_cast<unsigned char>(255 - t * (255 - 0x4F));
+        unsigned char b = static_cast<unsigned char>(255 - t * (255 - 0x4F));
+        return wxColour(r, g, b);
+    }
+}
 
 } // namespace Slic3r::GUI

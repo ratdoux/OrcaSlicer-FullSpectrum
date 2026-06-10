@@ -56,6 +56,7 @@ private:
     double   get_handle_radius() const { return m_dragging ? FromDIP(10) : FromDIP(6); }
     wxColor  get_border_color() const { return StateColor::darkModeColorFor(wxColour("#BDBDBD")); }
     wxColor  get_background_color() const { return StateColor::darkModeColorFor(*wxWHITE); }
+    wxColour get_contrast_border_color(const wxColour& bg_color) const;
 
     void on_paint(wxPaintEvent&);
     void on_left_down(wxMouseEvent&);

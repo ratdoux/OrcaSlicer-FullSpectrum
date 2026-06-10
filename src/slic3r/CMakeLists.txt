@@ -455,6 +455,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/FilamentCard.hpp
     GUI/Widgets/FilamentCardMixed.cpp
     GUI/Widgets/FilamentCardMixed.hpp
+    GUI/Widgets/HSLColorPicker.cpp
+    GUI/Widgets/HSLColorPicker.hpp
     GUI/Widgets/ImageSwitchButton.cpp
     GUI/Widgets/ImageSwitchButton.hpp
     GUI/Widgets/Label.cpp

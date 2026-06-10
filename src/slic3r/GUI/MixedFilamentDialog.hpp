@@ -2,12 +2,14 @@
 #define slic3r_GUI_MixedFilamentDialog_hpp_
 
 #include <memory> 
+#include <functional>
 #include <wx/wx.h>
 #include <wx/scrolwin.h>
 
 #include "Widgets/Label.hpp"
 #include "Widgets/Button.hpp"
 #include "Widgets/ComboBox.hpp"
+#include "Widgets/HSLColorPicker.hpp"
 #include "Widgets/MixedFilamentRatioPanel.hpp"
 #include "GUI_Utils.hpp"
 
@@ -18,7 +20,8 @@ class MixedFilamentDialog : public DPIDialog
 {
 public:
     enum class Action { Add, Edit };
-    enum class Tab { Mix, Pattern };
+    enum class Tab { Mix, Pattern, Gradient };
+    enum class MixMethod { ManualRatio, ByColor };
  
     MixedFilamentDialog(wxWindow* parent, Action action, std::vector<std::pair<std::string, std::string>>& physical_filaments);
 
@@ -29,6 +32,7 @@ protected:
 private:
     Action m_action{Action::Add};
     Tab    m_current_tab{Tab::Mix};
+    MixMethod m_mix_method{MixMethod::ManualRatio};
 
     double m_min_weight_ratio{0.15}; // 0...1 (e.g. 0.5 for 50%)
 
@@ -38,7 +42,6 @@ private:
     int m_width_fixed;
     int m_height_start;
     int m_height_min;
-    int m_height_max_auto;
     int m_clr_swatch_size;
     std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
 
@@ -47,6 +50,24 @@ private:
     std::vector<wxColor> m_selected_filaments_colors;
 
     void build_ui(wxWindow* parent);
+
+    void build_mix_method_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void build_color_picker_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void build_pattern_selector_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void build_material_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void build_recommendations_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+
+    void update_material_buttons_visibility();
+
+    void setup_collapsible_section(
+        wxPanel* title_panel,
+        wxBoxSizer* title_sizer,
+        wxStaticText* title_text,
+        bool& collapsed_var,
+        const std::vector<wxWindow*>& body_windows,
+        std::function<void()> on_toggle = nullptr
+    );
 
     wxColour getTabBorderColor(bool is_selected, bool is_hovered) const;
     wxColour getTabBackgroundColor(bool is_selected, bool is_hovered) const;
@@ -63,6 +84,7 @@ private:
     void update_tabs();
     bool m_mix_tab_hovered = false;
     bool m_pattern_tab_hovered = false;
+    bool m_gradient_tab_hovered = false;
 
     // fallback, when MinSize/MaxSize constraints are not sufficient, 
     // restrict to only vertical resizing with a minimum height
@@ -86,6 +108,21 @@ private:
     std::vector<double> get_default_weights(int filament_count);
     std::vector<wxColor> get_selected_filaments_colors(const std::vector<int>& filament_indices) const;
 
+    // Decoupled mix presets for color matching (used by both recommendations UI and color picker matching)
+    struct MixPreset {
+        std::vector<int>    filament_indices;
+        std::vector<double> weights;
+        wxColor             mixed_color;
+    };
+    std::vector<MixPreset> m_mix_presets;
+    void generate_mix_presets();
+    static wxColor compute_mixed_color(const std::vector<std::pair<std::string, std::string>>& filaments,
+                                       const std::vector<int>& indices, const std::vector<double>& weights);
+    const MixPreset* find_closest_mix(const wxColour& target) const;
+    void update_color_match(const wxColour& selected_color, bool update_active_mix = false);
+    void sync_color_picker_to_mix();
+    bool m_syncing_from_color_picker{false}; // if current mix is synced from color picker, to prevent circular updates when user changes color or mix
+
 
     // UI 
     wxPanel*          m_title_panel{nullptr};
@@ -100,6 +137,7 @@ private:
     // Title
     wxPanel* m_mix_tab_btn{nullptr};
     wxPanel* m_pattern_tab_btn{nullptr};
+    wxPanel* m_gradient_tab_btn{nullptr};
 
     // Content
     wxPanel*                    m_material_panel{nullptr};
@@ -111,10 +149,12 @@ private:
     std::vector<ComboBox*>      m_material_comboboxes;
     std::vector<wxStaticText*>  m_material_weight_labels;
 
+    // Material
     wxBoxSizer* m_material_sizer{nullptr};
     wxBoxSizer* m_material_title_sizer{nullptr};
     wxBoxSizer* m_material_combobox_sizer{nullptr};
 
+    // Ratio
     wxPanel*    m_ratio_section_panel{nullptr};
     wxBoxSizer* m_ratio_section_sizer{nullptr};
 
@@ -140,6 +180,38 @@ private:
     wxStaticText* m_recommendations_title_text{nullptr};
     wxPanel*      m_recommendations_mix_panel{nullptr};
     wxBoxSizer*   m_recommendations_mix_sizer{nullptr};
+
+    wxPanel*        m_mix_method_panel{nullptr};
+    wxBoxSizer*     m_mix_method_sizer{nullptr};
+    wxRadioButton*  m_method_manual_radio{nullptr};
+    wxRadioButton*  m_method_by_color_radio{nullptr};
+
+    wxPanel*          m_color_picker_panel{nullptr};
+    wxBoxSizer*       m_color_picker_sizer{nullptr};
+    HSLColorPicker*   m_hsl_color_picker{nullptr};
+
+    // Color Picker
+    wxPanel*      m_color_picker_body{nullptr};
+    wxPanel*      m_pattern_selector_body{nullptr};
+
+    wxPanel*      m_match_section_panel{nullptr};
+    wxTextCtrl*   m_matched_hex_display{nullptr};
+    wxPanel*      m_matched_color_preview{nullptr};
+    bool          m_match_section_hovered{false};
+    double        m_current_deviation{-1.0};
+    double        m_warning_deviation_threshold{65.0};
+    double        m_max_deviation{441.673}; // std::sqrt(3 * 255 * 255)
+
+    // Pattern
+    wxPanel*        m_pattern_selector_panel{nullptr};
+    wxBoxSizer*     m_pattern_selector_sizer{nullptr};
+
+
+    bool m_color_picker_collapsed = false;
+    bool m_pattern_selector_collapsed = false;
+    bool m_material_collapsed = false;
+    bool m_ratio_collapsed = false;
+    bool m_recommendations_collapsed = false;
     
     // Footer
     
