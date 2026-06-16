@@ -57,6 +57,18 @@ private:
     void build_material_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
     void build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
     void build_recommendations_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void setup_card_panel(wxPanel* panel);
+    void build_preview_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+    void update_preview();
+    void update_preview(const std::vector<int>& filaments, const std::vector<double>& weights);
+
+    // Layer stack solver for preview visualization (temp — replaceable)
+    struct LayerStackEntry {
+        int    filament_index; // index into m_selected_filaments
+        double scale;          // 0..1 width scaling (1.0 = full width)
+    };
+    static std::vector<LayerStackEntry> compute_layer_stack(
+        const std::vector<double>& weights, int total_layers = 20);
 
     void update_material_buttons_visibility();
 
@@ -181,6 +193,20 @@ private:
     wxPanel*      m_recommendations_mix_panel{nullptr};
     wxBoxSizer*   m_recommendations_mix_sizer{nullptr};
 
+    // Preview
+    wxPanel*      m_preview_panel{nullptr};
+    wxBoxSizer*   m_preview_sizer{nullptr};
+    wxPanel*      m_preview_title_panel{nullptr};
+    wxStaticText* m_preview_title_text{nullptr};
+    wxBoxSizer*   m_preview_title_sizer{nullptr};
+    wxPanel*      m_preview_body{nullptr};
+    wxPanel*      m_preview_layers_panel{nullptr};
+    wxPanel*      m_preview_color_panel{nullptr};
+    wxPanel*      m_preview_title_swatch{nullptr};
+    wxPanel*      m_preview_title_layers{nullptr};
+    std::vector<LayerStackEntry> m_preview_layer_stack;
+    std::vector<wxColor>         m_preview_colors;
+
     wxPanel*        m_mix_method_panel{nullptr};
     wxBoxSizer*     m_mix_method_sizer{nullptr};
     wxRadioButton*  m_method_manual_radio{nullptr};
@@ -212,6 +238,7 @@ private:
     bool m_material_collapsed = false;
     bool m_ratio_collapsed = false;
     bool m_recommendations_collapsed = false;
+    bool m_preview_collapsed = false;
     
     // Footer
     

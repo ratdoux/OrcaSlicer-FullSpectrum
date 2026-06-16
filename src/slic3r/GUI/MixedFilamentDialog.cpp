@@ -141,7 +141,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     // Content (scrollable)
     m_content_panel = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
     m_content_panel->SetScrollRate(0, 20);
-    m_content_panel->SetBackgroundColour(GetBackgroundColour());
+    m_content_panel->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F5F5F5")));
     m_content_sizer = new wxBoxSizer(wxVERTICAL);
     m_content_panel->SetSizer(m_content_sizer);
 
@@ -155,38 +155,52 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_color_picker_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_color_picker_sizer = new wxBoxSizer(wxVERTICAL);
     m_color_picker_panel->SetSizer(m_color_picker_sizer);
+    setup_card_panel(m_color_picker_panel);
     build_color_picker_ui(m_color_picker_panel, m_color_picker_sizer);
 
     // Dummy pattern selector panel
     m_pattern_selector_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_pattern_selector_sizer = new wxBoxSizer(wxVERTICAL);
     m_pattern_selector_panel->SetSizer(m_pattern_selector_sizer);
+    setup_card_panel(m_pattern_selector_panel);
     build_pattern_selector_ui(m_pattern_selector_panel, m_pattern_selector_sizer);
 
     // Material panel
     m_material_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_material_sizer = new wxBoxSizer(wxVERTICAL);
     m_material_panel->SetSizer(m_material_sizer);
+    setup_card_panel(m_material_panel);
     build_material_ui(m_material_panel, m_material_sizer);
 
     // Ratio section panel
     m_ratio_section_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_ratio_section_sizer = new wxBoxSizer(wxVERTICAL);
     m_ratio_section_panel->SetSizer(m_ratio_section_sizer);
+    setup_card_panel(m_ratio_section_panel);
     build_ratio_ui(m_ratio_section_panel, m_ratio_section_sizer);
+
+    // Preview panel
+    m_preview_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_preview_sizer = new wxBoxSizer(wxVERTICAL);
+    m_preview_panel->SetSizer(m_preview_sizer);
+    setup_card_panel(m_preview_panel);
+    build_preview_ui(m_preview_panel, m_preview_sizer);
 
     // Recommendations panel
     m_recommendations_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_recommendations_sizer = new wxBoxSizer(wxVERTICAL);
     m_recommendations_panel->SetSizer(m_recommendations_sizer);
+    setup_card_panel(m_recommendations_panel);
     build_recommendations_ui(m_recommendations_panel, m_recommendations_sizer);
 
     // Add panels in top-to-bottom layout order
-    m_content_sizer->Add(m_color_picker_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
-    m_content_sizer->Add(m_pattern_selector_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
-    m_content_sizer->Add(m_material_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
-    m_content_sizer->Add(m_ratio_section_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
-    m_content_sizer->Add(m_recommendations_panel, 0, wxEXPAND | wxBOTTOM, FromDIP(8));
+    m_content_sizer->AddSpacer(FromDIP(8));
+    m_content_sizer->Add(m_color_picker_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    m_content_sizer->Add(m_pattern_selector_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    m_content_sizer->Add(m_material_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    m_content_sizer->Add(m_ratio_section_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    m_content_sizer->Add(m_preview_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    m_content_sizer->Add(m_recommendations_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
     m_main_sizer->Add(m_content_panel, 1, wxEXPAND);
 
@@ -223,8 +237,8 @@ void MixedFilamentDialog::build_mix_method_ui(wxPanel* parent, wxBoxSizer* paren
     title_panel->SetSizer(title_sizer);
 
     wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Method:"));
-    title_text->SetFont(::Label::Body_14);
-    title_text->SetForegroundColour("#7e7e7e");
+    title_text->SetFont(::Label::Head_14);
+    title_text->SetForegroundColour("#333333");
 
     m_method_manual_radio = new wxRadioButton(title_panel, wxID_ANY, _L("Manual Ratio"), wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
     m_method_manual_radio->SetFont(::Label::Body_14);
@@ -257,8 +271,8 @@ void MixedFilamentDialog::build_color_picker_ui(wxPanel* parent, wxBoxSizer* par
     title_panel->SetSizer(title_sizer);
 
     wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Color Picker"));
-    title_text->SetForegroundColour("#7e7e7e");
-    title_text->SetFont(::Label::Body_14);
+    title_text->SetForegroundColour("#333333");
+    title_text->SetFont(::Label::Head_14);
     title_sizer->Add(title_text, 0, wxALIGN_CENTER_VERTICAL);
 
     m_color_picker_body = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
@@ -400,8 +414,8 @@ void MixedFilamentDialog::build_color_picker_ui(wxPanel* parent, wxBoxSizer* par
         }
     });
 
-    parent_sizer->Add(title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
-    parent_sizer->Add(m_color_picker_body, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+    parent_sizer->Add(title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
+    parent_sizer->Add(m_color_picker_body, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
     setup_collapsible_section(title_panel, title_sizer, title_text, m_color_picker_collapsed, { m_color_picker_body });
 }
@@ -413,12 +427,11 @@ void MixedFilamentDialog::build_pattern_selector_ui(wxPanel* parent, wxBoxSizer*
     title_panel->SetSizer(title_sizer);
 
     wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Pattern Selector"));
-    title_text->SetForegroundColour("#7e7e7e");
-    title_text->SetFont(::Label::Body_14);
+    title_text->SetForegroundColour("#333333");
+    title_text->SetFont(::Label::Head_14);
     title_sizer->Add(title_text, 0, wxALIGN_CENTER_VERTICAL);
 
     m_pattern_selector_body = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(100)), wxBORDER_NONE);
-    m_pattern_selector_body->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F5F5F5")));
     wxBoxSizer* dummy_sizer = new wxBoxSizer(wxVERTICAL);
     m_pattern_selector_body->SetSizer(dummy_sizer);
 
@@ -427,7 +440,7 @@ void MixedFilamentDialog::build_pattern_selector_ui(wxPanel* parent, wxBoxSizer*
     placeholder->SetForegroundColour("#7e7e7e");
     dummy_sizer->Add(placeholder, 1, wxALIGN_CENTER | wxALL, FromDIP(16));
 
-    parent_sizer->Add(title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+    parent_sizer->Add(title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
     parent_sizer->Add(m_pattern_selector_body, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
     setup_collapsible_section(title_panel, title_sizer, title_text, m_pattern_selector_collapsed, { m_pattern_selector_body });
@@ -441,8 +454,8 @@ void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_
     m_material_title_panel->SetSizer(m_material_title_sizer);
 
     m_material_title_text = new wxStaticText(m_material_title_panel, wxID_ANY, _L("Select Mixed Materials"));
-    m_material_title_text->SetForegroundColour("#7e7e7e");
-    m_material_title_text->SetFont(::Label::Body_14);
+    m_material_title_text->SetForegroundColour("#333333");
+    m_material_title_text->SetFont(::Label::Head_14);
 
     m_delete_material_btn = new ScalableButton(m_material_title_panel, wxID_ANY, "delete_filament");
     m_delete_material_btn->SetBackgroundColour(GetBackgroundColour());
@@ -470,7 +483,7 @@ void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_
     m_material_combobox_sizer = new wxBoxSizer(wxVERTICAL);
     m_material_combobox_panel->SetSizer(m_material_combobox_sizer);
 
-    parent_sizer->Add(m_material_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8)); 
+    parent_sizer->Add(m_material_title_panel, 0, wxEXPAND | wxALL, FromDIP(8)); 
     parent_sizer->Add(m_material_combobox_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
     setup_collapsible_section(m_material_title_panel, m_material_title_sizer, m_material_title_text, m_material_collapsed, { m_material_combobox_panel }, [this]() {
@@ -485,11 +498,11 @@ void MixedFilamentDialog::build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_siz
     m_mix_ratio_title_panel->SetSizer(title_sizer);
 
     m_mix_ratio_title_text = new wxStaticText(m_mix_ratio_title_panel, wxID_ANY, _L("Select Ratio"));
-    m_mix_ratio_title_text->SetForegroundColour("#7e7e7e");
-    m_mix_ratio_title_text->SetFont(::Label::Body_14);
+    m_mix_ratio_title_text->SetForegroundColour("#333333");
+    m_mix_ratio_title_text->SetFont(::Label::Head_14);
     title_sizer->Add(m_mix_ratio_title_text, 0, wxALIGN_CENTER_VERTICAL);
 
-    parent_sizer->Add(m_mix_ratio_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+    parent_sizer->Add(m_mix_ratio_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
 
     m_mix_ratio_panel = new MixedFilamentRatioPanel(parent, m_selected_filaments_weights, m_selected_filaments_colors, m_min_weight_ratio,
                                                     [this]() { 
@@ -567,25 +580,46 @@ void MixedFilamentDialog::build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_siz
 void MixedFilamentDialog::build_recommendations_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
 {
     m_recommendations_title_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_recommendations_title_panel->SetBackgroundColour(this->GetBackgroundColour());
     m_recommendations_title_text = new wxStaticText(m_recommendations_title_panel, wxID_ANY, _L("Mixing Recommendations"));
-    m_recommendations_title_text->SetForegroundColour("#7e7e7e");
-    m_recommendations_title_text->SetFont(::Label::Body_14);
+    m_recommendations_title_text->SetForegroundColour("#333333");
+    m_recommendations_title_text->SetFont(::Label::Head_14);
 
     m_recommendations_title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_recommendations_title_panel->SetSizer(m_recommendations_title_sizer);
     m_recommendations_title_sizer->Add(m_recommendations_title_text, 0, wxALIGN_CENTER_VERTICAL);
 
     m_recommendations_mix_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_recommendations_mix_panel->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F5F5F5")));
     m_recommendations_mix_sizer = new wxBoxSizer(wxVERTICAL);
     m_recommendations_mix_panel->SetSizer(m_recommendations_mix_sizer);
 
-    parent_sizer->Add(m_recommendations_title_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
-    parent_sizer->Add(m_recommendations_mix_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM | wxTOP, FromDIP(8));
+    parent_sizer->Add(m_recommendations_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
+    parent_sizer->Add(m_recommendations_mix_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     fill_recommendations(m_recommendations_mix_panel, m_recommendations_mix_sizer);
 
     setup_collapsible_section(m_recommendations_title_panel, m_recommendations_title_sizer, m_recommendations_title_text, m_recommendations_collapsed, { m_recommendations_mix_panel });
+}
+
+void MixedFilamentDialog::setup_card_panel(wxPanel* panel)
+{
+    wxColour card_bg = StateColor::darkModeColorFor(*wxWHITE);
+    panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    panel->SetBackgroundColour(card_bg);
+
+    panel->Bind(wxEVT_PAINT, [this, panel, card_bg](wxPaintEvent&) {
+        wxAutoBufferedPaintDC dc(panel);
+        wxSize size = panel->GetSize();
+
+        // Fill with parent background (gray) for clean rounded corners
+        wxColour parent_bg = panel->GetParent()->GetBackgroundColour();
+        dc.SetBrush(wxBrush(parent_bg));
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, 0, size.x, size.y);
+
+        // Draw white rounded card
+        dc.SetBrush(wxBrush(card_bg));
+        dc.SetPen(wxPen(wxColour("#EBEBEB"), 1));
+        dc.DrawRoundedRectangle(0, 0, size.x, size.y, 4);
+    });
 }
 
 void MixedFilamentDialog::update_material_buttons_visibility()
@@ -635,14 +669,14 @@ void MixedFilamentDialog::setup_collapsible_section(
         if (collapsed_var) {
             chevron_bmp->SetBitmap(rotated_bmp);
             chevron_bmp->Show(true);
-            title_text->SetForegroundColour(wxColour("#4F4F4F"));
+            title_text->SetForegroundColour(wxColour("#1A1A1A"));
         } else {
             chevron_bmp->SetBitmap(normal_bmp);
             chevron_bmp->Show(*is_hovered);
             if (*is_hovered) {
-                title_text->SetForegroundColour(wxColour("#4F4F4F"));
+                title_text->SetForegroundColour(wxColour("#1A1A1A"));
             } else {
-                title_text->SetForegroundColour(wxColour("#7e7e7e"));
+                title_text->SetForegroundColour(wxColour("#333333"));
             }
         }
         title_text->Refresh();
@@ -849,6 +883,8 @@ void MixedFilamentDialog::update_tabs()
     m_pattern_selector_panel->Show(m_current_tab == Tab::Pattern);
     m_material_panel->Show((m_current_tab == Tab::Mix) || (m_current_tab == Tab::Gradient));
     m_ratio_section_panel->Show(m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio);
+    if (m_preview_panel)
+        m_preview_panel->Show(true);
     m_recommendations_panel->Show(m_current_tab == Tab::Mix);
 
     // Toggle add/delete material buttons visibility
@@ -1485,6 +1521,8 @@ void MixedFilamentDialog::update_color_match(const wxColour& selected_color, boo
     // Call set_active_mix to update dialog settings only if update_active_mix is true
     if (update_active_mix) {
         set_active_mix(best->filament_indices, best->weights);
+    } else {
+        update_preview(best->filament_indices, best->weights);
     }
 
     // Get hex representation without '#'
@@ -1538,6 +1576,249 @@ void MixedFilamentDialog::sync_color_picker_to_mix()
     m_hsl_color_picker->SetColor(mixed_color);
     update_color_match(mixed_color, false);
     m_syncing_from_color_picker = false;
+
+    update_preview();
+}
+
+void MixedFilamentDialog::build_preview_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
+{
+    m_preview_title_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_preview_title_text = new wxStaticText(m_preview_title_panel, wxID_ANY, _L("Preview"));
+    m_preview_title_text->SetForegroundColour("#333333");
+    m_preview_title_text->SetFont(::Label::Head_14);
+
+    m_preview_title_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_preview_title_panel->SetSizer(m_preview_title_sizer);
+    m_preview_title_sizer->Add(m_preview_title_text, 0, wxALIGN_CENTER_VERTICAL);
+
+    m_preview_title_sizer->AddStretchSpacer(1);
+    
+    m_preview_title_layers = new wxPanel(m_preview_title_panel, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(144), FromDIP(18)), wxBORDER_NONE);
+    m_preview_title_layers->SetBackgroundColour(parent->GetBackgroundColour());
+    m_preview_title_layers->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    m_preview_title_layers->Show(m_preview_collapsed);
+    m_preview_title_sizer->Add(m_preview_title_layers, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+
+    m_preview_title_swatch = new wxPanel(m_preview_title_panel, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(36), FromDIP(18)), wxBORDER_SIMPLE);
+    m_preview_title_swatch->SetBackgroundColour(*wxLIGHT_GREY);
+    m_preview_title_swatch->Show(m_preview_collapsed);
+    m_preview_title_sizer->Add(m_preview_title_swatch, 0, wxALIGN_CENTER_VERTICAL);
+
+    m_preview_body = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_preview_body->SetBackgroundColour(parent->GetBackgroundColour());
+    wxBoxSizer* body_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_preview_body->SetSizer(body_sizer);
+
+    m_preview_layers_panel = new wxPanel(m_preview_body, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(120)), wxBORDER_NONE);
+    m_preview_layers_panel->SetMinSize(wxSize(-1, FromDIP(120)));
+    m_preview_layers_panel->SetBackgroundColour(parent->GetBackgroundColour());
+    m_preview_layers_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+    m_preview_layers_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+        wxAutoBufferedPaintDC dc(m_preview_layers_panel);
+        wxGCDC gcdc(dc);
+        wxGraphicsContext* gc = gcdc.GetGraphicsContext();
+        if (!gc) return;
+
+        wxSize size = m_preview_layers_panel->GetSize();
+        
+        // Clear background with card white
+        gc->SetBrush(wxBrush(m_preview_layers_panel->GetBackgroundColour()));
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        gc->DrawRectangle(0, 0, size.x, size.y);
+
+        // Draw grey contrasting background (radius 4)
+        wxColour grey_bg("#F0F0F0");
+        gc->SetBrush(wxBrush(grey_bg));
+        gc->SetPen(wxPen(wxColour("#E0E0E0"), 1));
+        gc->DrawRoundedRectangle(0, 0, size.x, size.y, FromDIP(4));
+
+        if (m_preview_layer_stack.empty())
+            return;
+
+        double padding = FromDIP(2);
+        int total_layers = m_preview_layer_stack.size();
+        double layer_h = static_cast<double>(size.y - 2 * padding) / total_layers;
+        double radius = layer_h / 2.0;
+
+        for (int i = 0; i < total_layers; ++i) {
+            const auto& entry = m_preview_layer_stack[i];
+            if (entry.filament_index < 0 || entry.filament_index >= (int)m_preview_colors.size())
+                continue;
+
+            wxColor col = m_preview_colors[entry.filament_index];
+            gc->SetBrush(wxBrush(col));
+            gc->SetPen(*wxTRANSPARENT_PEN);
+
+            double draw_w = (size.x - 2 * padding) * entry.scale;
+            double draw_x = padding + ((size.x - 2 * padding) - draw_w) / 2.0;
+            double draw_y = (size.y - padding) - (i + 1) * layer_h;
+
+            gc->DrawRoundedRectangle(draw_x, draw_y, draw_w, layer_h, radius);
+        }
+    });
+
+    m_preview_title_layers->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+        wxAutoBufferedPaintDC dc(m_preview_title_layers);
+        wxGCDC gcdc(dc);
+        wxGraphicsContext* gc = gcdc.GetGraphicsContext();
+        if (!gc) return;
+
+        wxSize size = m_preview_title_layers->GetSize();
+        
+        // Draw card background first (white)
+        gc->SetBrush(wxBrush(m_preview_title_layers->GetBackgroundColour()));
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        gc->DrawRectangle(0, 0, size.x, size.y);
+
+        // Draw grey contrasting background
+        wxColour grey_bg("#F0F0F0");
+        gc->SetBrush(wxBrush(grey_bg));
+        gc->SetPen(wxPen(wxColour("#E0E0E0"), 1));
+        gc->DrawRoundedRectangle(0, 0, size.x, size.y, FromDIP(2));
+
+        if (m_preview_layer_stack.empty())
+            return;
+
+        double padding = FromDIP(2);
+        int total_layers = m_preview_layer_stack.size();
+        double layer_w = static_cast<double>(size.x - 2 * padding) / total_layers;
+        double radius = FromDIP(1);
+
+        for (int i = 0; i < total_layers; ++i) {
+            const auto& entry = m_preview_layer_stack[i];
+            if (entry.filament_index < 0 || entry.filament_index >= (int)m_preview_colors.size())
+                continue;
+
+            wxColor col = m_preview_colors[entry.filament_index];
+            gc->SetBrush(wxBrush(col));
+            gc->SetPen(*wxTRANSPARENT_PEN);
+
+            double draw_h = (size.y - 2 * padding) * entry.scale;
+            double draw_y = padding + ((size.y - 2 * padding) - draw_h) / 2.0;
+            double draw_x = padding + i * layer_w;
+
+            gc->DrawRoundedRectangle(draw_x, draw_y, layer_w, draw_h, radius);
+        }
+    });
+
+    m_preview_color_panel = new wxPanel(m_preview_body, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(120)), wxBORDER_NONE);
+    m_preview_color_panel->SetMinSize(wxSize(-1, FromDIP(120)));
+    m_preview_color_panel->SetBackgroundColour(parent->GetBackgroundColour());
+    m_preview_color_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+    m_preview_color_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+        wxAutoBufferedPaintDC dc(m_preview_color_panel);
+        wxGCDC gcdc(dc);
+        wxGraphicsContext* gc = gcdc.GetGraphicsContext();
+        if (!gc) return;
+
+        wxSize size = m_preview_color_panel->GetSize();
+
+        // Clear background
+        gc->SetBrush(wxBrush(m_preview_color_panel->GetBackgroundColour()));
+        gc->SetPen(wxPen(wxColour("#EBEBEB"), 1));
+        gc->DrawRectangle(0, 0, size.x, size.y);
+    });
+
+    body_sizer->Add(m_preview_layers_panel, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
+    body_sizer->Add(m_preview_color_panel, 1, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
+
+    parent_sizer->Add(m_preview_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
+    parent_sizer->Add(m_preview_body, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+
+    setup_collapsible_section(m_preview_title_panel, m_preview_title_sizer, m_preview_title_text, m_preview_collapsed, { m_preview_body }, [this]() {
+        if (m_preview_title_swatch) {
+            m_preview_title_swatch->Show(m_preview_collapsed);
+        }
+        if (m_preview_title_layers) {
+            m_preview_title_layers->Show(m_preview_collapsed);
+        }
+        if (m_preview_title_panel) {
+            m_preview_title_panel->Layout();
+        }
+    });
+}
+
+void MixedFilamentDialog::update_preview()
+{
+    update_preview(m_selected_filaments, m_selected_filaments_weights);
+}
+
+void MixedFilamentDialog::update_preview(const std::vector<int>& filaments, const std::vector<double>& weights)
+{
+    m_preview_layer_stack = compute_layer_stack(weights, 20);
+    m_preview_colors = get_selected_filaments_colors(filaments);
+    
+    wxColor mixed_color = compute_mixed_color(m_physical_filaments, filaments, weights);
+    
+    if (m_preview_color_panel) {
+        m_preview_color_panel->SetBackgroundColour(mixed_color);
+        m_preview_color_panel->Refresh();
+    }
+    
+    if (m_preview_title_swatch) {
+        m_preview_title_swatch->SetBackgroundColour(mixed_color);
+        m_preview_title_swatch->Refresh();
+    }
+    
+    if (m_preview_layers_panel) {
+        m_preview_layers_panel->Refresh();
+    }
+
+    if (m_preview_title_layers) {
+        m_preview_title_layers->Refresh();
+    }
+}
+
+// static
+std::vector<MixedFilamentDialog::LayerStackEntry> MixedFilamentDialog::compute_layer_stack(
+    const std::vector<double>& weights, int total_layers)
+{
+    std::vector<LayerStackEntry> stack;
+    if (weights.empty() || total_layers <= 0)
+        return stack;
+
+    struct ActiveWeight {
+        int index;
+        double weight;
+    };
+    std::vector<ActiveWeight> active;
+    double sum = 0.0;
+    for (size_t i = 0; i < weights.size(); ++i) {
+        if (weights[i] > 0.0) {
+            active.push_back({static_cast<int>(i), weights[i]});
+            sum += weights[i];
+        }
+    }
+
+    if (active.empty())
+        return stack;
+
+    for (auto& aw : active) {
+        aw.weight /= sum;
+    }
+
+    std::vector<double> acc(active.size(), 0.0);
+    for (int l = 0; l < total_layers; ++l) {
+        for (size_t i = 0; i < active.size(); ++i) {
+            acc[i] += active[i].weight;
+        }
+
+        size_t best_idx = 0;
+        double max_acc = acc[0];
+        for (size_t i = 1; i < active.size(); ++i) {
+            if (acc[i] > max_acc) {
+                max_acc = acc[i];
+                best_idx = i;
+            }
+        }
+
+        stack.push_back({active[best_idx].index, 1.0});
+        acc[best_idx] -= 1.0;
+    }
+
+    return stack;
 }
 
 } // namespace Slic3r::GUI
