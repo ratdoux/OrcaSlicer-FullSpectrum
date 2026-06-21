@@ -133,6 +133,8 @@ private:
                                        const std::vector<int>& indices, const std::vector<double>& weights);
     const MixPreset* find_closest_mix(const wxColour& target) const;
     void update_color_match(const wxColour& selected_color, bool update_active_mix = false);
+    void paint_matched_color(wxPaintDC& dc, const wxSize& size, const wxColour& bg_color, double deviation, bool is_hovered);
+    void refresh_color_picker_title_preview();
     void sync_color_picker_to_mix();
     bool m_syncing_from_color_picker{false}; // if current mix is synced from color picker, to prevent circular updates when user changes color or mix
 
@@ -219,6 +221,12 @@ private:
 
     wxPanel*          m_color_picker_panel{nullptr};
     wxBoxSizer*       m_color_picker_sizer{nullptr};
+    wxPanel*          m_color_picker_title_panel{nullptr};
+    wxBoxSizer*       m_color_picker_title_sizer{nullptr};
+    wxStaticText*     m_color_picker_title_text{nullptr};
+    wxStaticText*     m_color_picker_title_selected_hex{nullptr};
+    wxPanel*          m_color_picker_title_selected_preview{nullptr};
+    wxStaticText*     m_color_picker_title_warning{nullptr};
     HSLColorPicker*   m_hsl_color_picker{nullptr};
 
     // Color Picker

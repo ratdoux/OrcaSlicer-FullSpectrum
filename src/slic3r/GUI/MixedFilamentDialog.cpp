@@ -266,16 +266,31 @@ void MixedFilamentDialog::build_mix_method_ui(wxPanel* parent, wxBoxSizer* paren
 
 void MixedFilamentDialog::build_color_picker_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
 {
-    wxPanel* title_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    wxBoxSizer* title_sizer = new wxBoxSizer(wxHORIZONTAL);
-    title_panel->SetSizer(title_sizer);
+    m_color_picker_title_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_color_picker_title_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_color_picker_title_panel->SetSizer(m_color_picker_title_sizer);
 
-    wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Color Picker"), wxDefaultPosition, wxDefaultSize,
+    m_color_picker_title_text = new wxStaticText(m_color_picker_title_panel, wxID_ANY, _L("Color Picker"), wxDefaultPosition, wxDefaultSize,
                                                 wxST_ELLIPSIZE_END);
-    title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
-    title_text->SetForegroundColour("#333333");
-    title_text->SetFont(::Label::Head_14);
-    title_sizer->Add(title_text, 0, wxALIGN_CENTER_VERTICAL);
+    m_color_picker_title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
+    m_color_picker_title_text->SetForegroundColour("#333333");
+    m_color_picker_title_text->SetFont(::Label::Head_14);
+    m_color_picker_title_sizer->Add(m_color_picker_title_text, 0, wxALIGN_CENTER_VERTICAL);
+
+    m_color_picker_title_selected_hex = new wxStaticText(m_color_picker_title_panel, wxID_ANY, "#------");
+    m_color_picker_title_selected_hex->SetFont(::Label::Body_14);
+    m_color_picker_title_selected_hex->SetForegroundColour("#333333");
+    m_color_picker_title_sizer->Add(m_color_picker_title_selected_hex, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+
+    m_color_picker_title_selected_preview = new wxPanel(m_color_picker_title_panel, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(36), FromDIP(18)), wxBORDER_SIMPLE);
+    m_color_picker_title_selected_preview->SetBackgroundColour(*wxLIGHT_GREY);
+    m_color_picker_title_sizer->Add(m_color_picker_title_selected_preview, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+
+    m_color_picker_title_warning = new wxStaticText(m_color_picker_title_panel, wxID_ANY, wxString::FromUTF8("\xe2\x9a\xa0"));
+    wxFont warning_font = ::Label::Body_14;
+    warning_font.SetPointSize(warning_font.GetPointSize() + 4);
+    m_color_picker_title_warning->SetFont(warning_font);
+    m_color_picker_title_sizer->Add(m_color_picker_title_warning, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
 
     m_color_picker_body = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     wxBoxSizer* body_sizer = new wxBoxSizer(wxVERTICAL);
@@ -339,87 +354,17 @@ void MixedFilamentDialog::build_color_picker_ui(wxPanel* parent, wxBoxSizer* par
         wxPaintDC dc(m_matched_color_preview);
         wxSize size = m_matched_color_preview->GetSize();
         if (size.x <= 0 || size.y <= 0) return;
-
-        // Draw solid background color
-        wxColour bg_color = m_matched_color_preview->GetBackgroundColour();
-        dc.SetBackground(wxBrush(bg_color));
-        dc.Clear();
-
-        if (m_current_deviation < 0) return;
-
-        std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::Create(dc));
-        if (!gc) return;
-
-        bool is_hovered = m_match_section_hovered;
-        bool is_warning = m_current_deviation > m_warning_deviation_threshold;
-
-        wxString text_to_draw = "";
-        wxColour text_color = *wxWHITE;
-
-        // Contrast adaptation
-        double luma = (0.299 * bg_color.Red() + 0.587 * bg_color.Green() + 0.114 * bg_color.Blue()) / 255.0;
-        if (luma > 0.6) {
-            text_color = wxColour("#2B2B2B");
-        } else {
-            text_color = *wxWHITE;
-        }
-
-        // Fonts
-        wxFont font = m_matched_color_preview->GetFont();
-        font.SetPointSize(font.GetPointSize() + 2); 
-
-        wxFont icon_font = font;
-        icon_font.SetPointSize(font.GetPointSize() + 6); // bigger icon
-        icon_font = icon_font.Bold(); // bold icon for thickness
-
-        if (is_hovered) {
-            int match_percentage = 100 - static_cast<int>(std::round((m_current_deviation / m_max_deviation) * 100.0));
-            match_percentage = std::clamp(match_percentage, 0, 100);
-
-            if (is_warning) {
-                wxString icon_str = wxString::FromUTF8("\xe2\x9a\xa0"); // ⚠
-                wxString pct_str = " " + wxString::Format(_L("%d%% Match"), match_percentage);
-
-                double icon_w, icon_h;
-                gc->SetFont(icon_font, *wxWHITE); // icon is white!
-                gc->GetTextExtent(icon_str, &icon_w, &icon_h);
-
-                double pct_w, pct_h;
-                gc->SetFont(font, text_color);
-                gc->GetTextExtent(pct_str, &pct_w, &pct_h);
-
-                double total_w = icon_w + pct_w;
-                double start_x = (size.x - total_w) / 2.0;
-                double icon_y = (size.y - icon_h) / 2.0;
-                double pct_y = (size.y - pct_h) / 2.0;
-
-                gc->SetFont(icon_font, *wxWHITE);
-                gc->DrawText(icon_str, start_x, icon_y);
-
-                gc->SetFont(font, text_color);
-                gc->DrawText(pct_str, start_x + icon_w, pct_y);
-            } else {
-                wxString pct_str = wxString::Format(_L("%d%% Match"), match_percentage);
-                double pct_w, pct_h;
-                gc->SetFont(font, text_color);
-                gc->GetTextExtent(pct_str, &pct_w, &pct_h);
-                gc->DrawText(pct_str, (size.x - pct_w) / 2.0, (size.y - pct_h) / 2.0);
-            }
-        } else {
-            if (is_warning) {
-                wxString icon_str = wxString::FromUTF8("\xe2\x9a\xa0"); // ⚠
-                double icon_w, icon_h;
-                gc->SetFont(icon_font, *wxWHITE); // icon is white!
-                gc->GetTextExtent(icon_str, &icon_w, &icon_h);
-                gc->DrawText(icon_str, (size.x - icon_w) / 2.0, (size.y - icon_h) / 2.0);
-            }
-        }
+        paint_matched_color(dc, size, m_matched_color_preview->GetBackgroundColour(), m_current_deviation, m_match_section_hovered);
     });
 
-    parent_sizer->Add(title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
+    parent_sizer->Add(m_color_picker_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
     parent_sizer->Add(m_color_picker_body, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
-    setup_collapsible_section(title_panel, title_sizer, title_text, m_color_picker_collapsed, { m_color_picker_body });
+    setup_collapsible_section(m_color_picker_title_panel, m_color_picker_title_sizer, m_color_picker_title_text, m_color_picker_collapsed, { m_color_picker_body }, {}, [this]() {
+        refresh_color_picker_title_preview();
+    });
+
+    refresh_color_picker_title_preview();
 }
 
 void MixedFilamentDialog::build_pattern_selector_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
@@ -646,6 +591,7 @@ void MixedFilamentDialog::update_material_buttons_visibility()
 
     if (m_material_title_text) {
         m_material_title_text->SetLabelText(can_add_or_remove ? _L("Select Mixed Materials") : _L("Resulting Mixed Materials"));
+        m_material_title_text->InvalidateBestSize();
         
         // necessary to reset max size when changing text to prevent it from being constrained by the previous text's width
         m_material_title_text->SetMaxSize(wxDefaultSize);
@@ -755,6 +701,7 @@ void MixedFilamentDialog::update_material_title_preview()
         for (size_t i = 0; i < filament_count; ++i) {
             if (i < m_material_title_percent_texts.size()) {
                 m_material_title_percent_texts[i]->SetLabel(wxString::Format("%d%%", percentages[i]));
+                m_material_title_percent_texts[i]->InvalidateBestSize();
             }
         }
     }
@@ -1667,6 +1614,111 @@ const MixedFilamentDialog::MixPreset* MixedFilamentDialog::find_closest_mix(cons
     return best;
 }
 
+void MixedFilamentDialog::paint_matched_color(
+    wxPaintDC& dc,
+    const wxSize& size,
+    const wxColour& bg_color,
+    double deviation,
+    bool is_hovered
+)
+{
+    // Draw solid background color
+    dc.SetBackground(wxBrush(bg_color));
+    dc.Clear();
+
+    if (deviation < 0) return;
+
+    std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::Create(dc));
+    if (!gc) return;
+
+    bool is_warning = deviation > m_warning_deviation_threshold;
+
+    wxString text_to_draw = "";
+    wxColour text_color = *wxWHITE;
+
+    // Contrast adaptation
+    double luma = (0.299 * bg_color.Red() + 0.587 * bg_color.Green() + 0.114 * bg_color.Blue()) / 255.0;
+    if (luma > 0.6) {
+        text_color = wxColour("#2B2B2B");
+    } else {
+        text_color = *wxWHITE;
+    }
+
+    // Fonts
+    wxFont font = dc.GetFont();
+    if (!font.IsOk()) {
+        font = ::Label::Body_14;
+    }
+    font.SetPointSize(font.GetPointSize() + 2); 
+
+    wxFont icon_font = font;
+    icon_font.SetPointSize(font.GetPointSize() + 6); // bigger icon
+    icon_font = icon_font.Bold(); // bold icon for thickness
+
+    if (is_hovered) {
+        int match_percentage = 100 - static_cast<int>(std::round((deviation / m_max_deviation) * 100.0));
+        match_percentage = std::clamp(match_percentage, 0, 100);
+
+        if (is_warning) {
+            wxString icon_str = wxString::FromUTF8("\xe2\x9a\xa0"); // ⚠
+            wxString pct_str = " " + wxString::Format(_L("%d%% Match"), match_percentage);
+
+            double icon_w, icon_h;
+            gc->SetFont(icon_font, *wxWHITE); // icon is white!
+            gc->GetTextExtent(icon_str, &icon_w, &icon_h);
+
+            double pct_w, pct_h;
+            gc->SetFont(font, text_color);
+            gc->GetTextExtent(pct_str, &pct_w, &pct_h);
+
+            double total_w = icon_w + pct_w;
+            double start_x = (size.x - total_w) / 2.0;
+            double icon_y = (size.y - icon_h) / 2.0;
+            double pct_y = (size.y - pct_h) / 2.0;
+
+            gc->SetFont(icon_font, *wxWHITE);
+            gc->DrawText(icon_str, start_x, icon_y);
+
+            gc->SetFont(font, text_color);
+            gc->DrawText(pct_str, start_x + icon_w, pct_y);
+        } else {
+            wxString pct_str = wxString::Format(_L("%d%% Match"), match_percentage);
+            double pct_w, pct_h;
+            gc->SetFont(font, text_color);
+            gc->GetTextExtent(pct_str, &pct_w, &pct_h);
+            gc->DrawText(pct_str, (size.x - pct_w) / 2.0, (size.y - pct_h) / 2.0);
+        }
+    } else {
+        if (is_warning) {
+            wxString icon_str = wxString::FromUTF8("\xe2\x9a\xa0"); // ⚠
+            double icon_w, icon_h;
+            gc->SetFont(icon_font, *wxWHITE); // icon is white!
+            gc->GetTextExtent(icon_str, &icon_w, &icon_h);
+            gc->DrawText(icon_str, (size.x - icon_w) / 2.0, (size.y - icon_h) / 2.0);
+        }
+    }
+}
+
+void MixedFilamentDialog::refresh_color_picker_title_preview()
+{
+    if (!m_color_picker_title_panel)
+        return;
+
+    bool has_warning = m_current_deviation > m_warning_deviation_threshold;
+
+    if (m_color_picker_title_selected_hex) {
+        m_color_picker_title_selected_hex->Show(m_color_picker_collapsed);
+    }
+    if (m_color_picker_title_selected_preview) {
+        m_color_picker_title_selected_preview->Show(m_color_picker_collapsed);
+    }
+    if (m_color_picker_title_warning) {
+        m_color_picker_title_warning->Show(m_color_picker_collapsed && has_warning);
+    }
+
+    m_color_picker_title_panel->Layout();
+}
+
 void MixedFilamentDialog::update_color_match(const wxColour& selected_color, bool update_active_mix)
 {
     const MixPreset* best = find_closest_mix(selected_color);
@@ -1684,6 +1736,15 @@ void MixedFilamentDialog::update_color_match(const wxColour& selected_color, boo
         if (m_match_section_panel) {
             m_match_section_panel->SetToolTip("");
         }
+        if (m_color_picker_title_selected_hex) {
+            m_color_picker_title_selected_hex->SetLabel("#------");
+            m_color_picker_title_selected_hex->InvalidateBestSize();
+        }
+        if (m_color_picker_title_selected_preview) {
+            m_color_picker_title_selected_preview->SetBackgroundColour(*wxLIGHT_GREY);
+            m_color_picker_title_selected_preview->Refresh();
+        }
+        refresh_color_picker_title_preview();
         return;
     }
 
@@ -1729,6 +1790,17 @@ void MixedFilamentDialog::update_color_match(const wxColour& selected_color, boo
     if (m_match_section_panel) {
         m_match_section_panel->SetToolTip(tooltip_text);
     }
+
+    // Update HSL title preview elements
+    if (m_color_picker_title_selected_hex) {
+        m_color_picker_title_selected_hex->SetLabel(HSLColorPicker::colour_to_hex(selected_color));
+        m_color_picker_title_selected_hex->InvalidateBestSize();
+    }
+    if (m_color_picker_title_selected_preview) {
+        m_color_picker_title_selected_preview->SetBackgroundColour(selected_color);
+        m_color_picker_title_selected_preview->Refresh();
+    }
+    refresh_color_picker_title_preview();
 }
 
 void MixedFilamentDialog::sync_color_picker_to_mix()
