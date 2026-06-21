@@ -78,6 +78,7 @@ private:
         wxStaticText* title_text,
         bool& collapsed_var,
         const std::vector<wxWindow*>& body_windows,
+        const std::vector<wxWindow*>& action_controls = {},
         std::function<void()> on_toggle = nullptr
     );
 
@@ -110,8 +111,6 @@ private:
     void refresh_material_combobox_items();
     void refresh_material_weight_labels();
     void update_min_weight_slider_bounds();
-    void update_content_max_height();
-    void auto_resize_dialog_to_fit();
     void apply_min_weight(int new_percentage);
 
     void fill_recommendations(wxPanel* container, wxBoxSizer* container_sizer);

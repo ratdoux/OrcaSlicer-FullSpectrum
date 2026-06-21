@@ -21,6 +21,7 @@ HSLColorPicker::HSLColorPicker(
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE)
     , m_on_color_changed(std::move(on_color_changed))
 {
+    SetDoubleBuffered(true);
     SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
 
     // Decompose the initial color

@@ -49,6 +49,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     SetMinSize(wxSize(m_width_fixed, m_height_min));
     SetMaxSize(wxSize(m_width_fixed, wxDefaultCoord));
     Bind(wxEVT_SIZING, &MixedFilamentDialog::on_sizing, this);
+    SetDoubleBuffered(true);
        
     m_main_sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -140,6 +141,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
         
     // Content (scrollable)
     m_content_panel = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
+    m_content_panel->SetDoubleBuffered(true);
     m_content_panel->SetScrollRate(0, 20);
     m_content_panel->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F5F5F5")));
     m_content_sizer = new wxBoxSizer(wxVERTICAL);
@@ -224,8 +226,6 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     add_material_combobox(m_material_combobox_panel, m_material_combobox_sizer);
     add_material_combobox(m_material_combobox_panel, m_material_combobox_sizer);
 
-    update_content_max_height();
-
     generate_mix_presets();
     sync_color_picker_to_mix();
 }
@@ -270,7 +270,9 @@ void MixedFilamentDialog::build_color_picker_ui(wxPanel* parent, wxBoxSizer* par
     wxBoxSizer* title_sizer = new wxBoxSizer(wxHORIZONTAL);
     title_panel->SetSizer(title_sizer);
 
-    wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Color Picker"));
+    wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Color Picker"), wxDefaultPosition, wxDefaultSize,
+                                                wxST_ELLIPSIZE_END);
+    title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
     title_text->SetForegroundColour("#333333");
     title_text->SetFont(::Label::Head_14);
     title_sizer->Add(title_text, 0, wxALIGN_CENTER_VERTICAL);
@@ -426,7 +428,9 @@ void MixedFilamentDialog::build_pattern_selector_ui(wxPanel* parent, wxBoxSizer*
     wxBoxSizer* title_sizer = new wxBoxSizer(wxHORIZONTAL);
     title_panel->SetSizer(title_sizer);
 
-    wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Pattern Selector"));
+    wxStaticText* title_text = new wxStaticText(title_panel, wxID_ANY, _L("Pattern Selector"), wxDefaultPosition, wxDefaultSize,
+                                                wxST_ELLIPSIZE_END);
+    title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
     title_text->SetForegroundColour("#333333");
     title_text->SetFont(::Label::Head_14);
     title_sizer->Add(title_text, 0, wxALIGN_CENTER_VERTICAL);
@@ -453,7 +457,9 @@ void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_
     m_material_title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_material_title_panel->SetSizer(m_material_title_sizer);
 
-    m_material_title_text = new wxStaticText(m_material_title_panel, wxID_ANY, _L("Select Mixed Materials"));
+    m_material_title_text = new wxStaticText(m_material_title_panel, wxID_ANY, _L("Select Mixed Materials"), wxDefaultPosition,
+                                             wxDefaultSize, wxST_ELLIPSIZE_END);
+    m_material_title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
     m_material_title_text->SetForegroundColour("#333333");
     m_material_title_text->SetFont(::Label::Head_14);
 
@@ -474,7 +480,6 @@ void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_
     });
 
     m_material_title_sizer->Add(m_material_title_text, 0, wxALIGN_CENTER_VERTICAL);
-    m_material_title_sizer->AddStretchSpacer();
     m_material_title_sizer->Add(m_delete_material_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
     m_material_title_sizer->Add(m_add_material_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
 
@@ -486,10 +491,13 @@ void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_
     parent_sizer->Add(m_material_title_panel, 0, wxEXPAND | wxALL, FromDIP(8)); 
     parent_sizer->Add(m_material_combobox_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
-    setup_collapsible_section(m_material_title_panel, m_material_title_sizer, m_material_title_text, m_material_collapsed, { m_material_combobox_panel }, [this]() {
+    setup_collapsible_section(m_material_title_panel, m_material_title_sizer, m_material_title_text, m_material_collapsed,
+                              {m_material_combobox_panel}, {m_delete_material_btn, m_add_material_btn},
+                              [this]() {
         update_material_buttons_visibility();
     });
 }
+
 void MixedFilamentDialog::build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
 {
     // Mix Gradient Selector
@@ -497,7 +505,9 @@ void MixedFilamentDialog::build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_siz
     wxBoxSizer* title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_mix_ratio_title_panel->SetSizer(title_sizer);
 
-    m_mix_ratio_title_text = new wxStaticText(m_mix_ratio_title_panel, wxID_ANY, _L("Select Ratio"));
+    m_mix_ratio_title_text = new wxStaticText(m_mix_ratio_title_panel, wxID_ANY, _L("Select Ratio"), wxDefaultPosition, wxDefaultSize,
+                                              wxST_ELLIPSIZE_END);
+    m_mix_ratio_title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
     m_mix_ratio_title_text->SetForegroundColour("#333333");
     m_mix_ratio_title_text->SetFont(::Label::Head_14);
     title_sizer->Add(m_mix_ratio_title_text, 0, wxALIGN_CENTER_VERTICAL);
@@ -580,7 +590,9 @@ void MixedFilamentDialog::build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_siz
 void MixedFilamentDialog::build_recommendations_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
 {
     m_recommendations_title_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_recommendations_title_text = new wxStaticText(m_recommendations_title_panel, wxID_ANY, _L("Mixing Recommendations"));
+    m_recommendations_title_text  = new wxStaticText(m_recommendations_title_panel, wxID_ANY, _L("Mixing Recommendations"),
+                                                     wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+    m_recommendations_title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
     m_recommendations_title_text->SetForegroundColour("#333333");
     m_recommendations_title_text->SetFont(::Label::Head_14);
 
@@ -626,7 +638,13 @@ void MixedFilamentDialog::update_material_buttons_visibility()
 {
     bool can_add_or_remove  = ((m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio) || m_current_tab == Tab::Gradient);
 
-    if (m_material_title_text)  m_material_title_text->SetLabelText(can_add_or_remove ? _L("Select Mixed Materials") : _L("Resulting Mixed Materials"));
+    if (m_material_title_text) {
+        m_material_title_text->SetLabelText(can_add_or_remove ? _L("Select Mixed Materials") : _L("Resulting Mixed Materials"));
+        
+        // necessary to reset max size when changing text to prevent it from being constrained by the previous text's width
+        m_material_title_text->SetMaxSize(wxDefaultSize);
+        m_material_title_text->SetMaxSize(wxSize(m_material_title_text->GetBestSize().GetWidth(), -1)); 
+    }
     if (m_add_material_btn)     m_add_material_btn->Show(can_add_or_remove && !m_material_collapsed);
     if (m_delete_material_btn)  m_delete_material_btn->Show(can_add_or_remove && !m_material_collapsed);
     
@@ -639,7 +657,8 @@ void MixedFilamentDialog::setup_collapsible_section(
     wxStaticText* title_text,
     bool& collapsed_var,
     const std::vector<wxWindow*>& body_windows,
-    std::function<void()> on_toggle
+    const std::vector<wxWindow*>& action_controls, // = {}
+    std::function<void()> on_toggle // = nullptr
 )
 {
     wxBitmap normal_bmp = ScalableBitmap(title_panel, "drop_down", 20).bmp();
@@ -657,10 +676,20 @@ void MixedFilamentDialog::setup_collapsible_section(
         }
     }
     if (index != -1) {
-        title_sizer->Insert(index + 1, chevron_bmp, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+        title_sizer->Detach(title_text);
+
+        title_text->SetMinSize(wxSize(1, -1)); // shrink title_text when space is limited
+        title_text->SetMaxSize(wxSize(title_text->GetBestSize().GetWidth(), -1)); // but don't let it grow beyond its best size
+
+        wxBoxSizer* text_and_chevron_sizer = new wxBoxSizer(wxHORIZONTAL);
+        text_and_chevron_sizer->Add(title_text, 1, wxALIGN_CENTER_VERTICAL); // shrink title_text first if space is limited
+        text_and_chevron_sizer->Add(chevron_bmp, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+
+        title_sizer->Insert(index, text_and_chevron_sizer, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     } else {
-        title_sizer->Add(chevron_bmp, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+        title_sizer->Add(chevron_bmp, 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
     }
+
     title_sizer->Layout();
 
     auto is_hovered = std::make_shared<bool>(false);
@@ -685,7 +714,22 @@ void MixedFilamentDialog::setup_collapsible_section(
 
     update_header();
 
-    auto on_click = [this, &collapsed_var, body_windows, update_header, on_toggle](wxMouseEvent&) {
+    auto on_click = [this, &collapsed_var, body_windows, action_controls, update_header, on_toggle](wxMouseEvent&) {
+        // dont count clicks on disabled action controls (e.g. add/remove material buttons) as clicks on the header to prevent accidentally
+        // collapsing/expanding when trying to click those buttons
+        wxPoint screen_pos = wxGetMousePosition();
+        for (wxWindow* action_control : action_controls) {
+            if (action_control && action_control->IsShown()) {
+                wxRect rect = action_control->GetScreenRect();
+                if (rect.Contains(screen_pos)) {
+                    return; // click was on an action control, ignore it for toggling
+                }
+            }
+        }
+
+        // Freeze m_content_panel so it stops repainting until this scope ends
+        wxWindowUpdateLocker no_updates(m_content_panel);
+
         collapsed_var = !collapsed_var;
         for (wxWindow* win : body_windows) {
             if (win) {
@@ -722,17 +766,25 @@ void MixedFilamentDialog::setup_collapsible_section(
     title_panel->Bind(wxEVT_LEAVE_WINDOW, on_leave);
     title_panel->SetCursor(wxCursor(wxCURSOR_HAND));
 
-    // Bind events to title_text
-    title_text->Bind(wxEVT_LEFT_UP, on_click);
-    title_text->Bind(wxEVT_ENTER_WINDOW, on_enter);
-    title_text->Bind(wxEVT_LEAVE_WINDOW, on_leave);
-    title_text->SetCursor(wxCursor(wxCURSOR_HAND));
+    for (wxWindowList::compatibility_iterator node = title_panel->GetChildren().GetFirst(); node; node = node->GetNext()) {
+        wxWindow* child = node->GetData();
 
-    // Bind events to chevron_bmp
-    chevron_bmp->Bind(wxEVT_LEFT_UP, on_click);
-    chevron_bmp->Bind(wxEVT_ENTER_WINDOW, on_enter);
-    chevron_bmp->Bind(wxEVT_LEAVE_WINDOW, on_leave);
-    chevron_bmp->SetCursor(wxCursor(wxCURSOR_HAND));
+        // Ignore actions controls (e.g. add/remove material buttons) to prevent them from triggering collapse when clicked
+        bool is_action_ctrl = false;
+        for (wxWindow* action_ctrl : action_controls) {
+            if (child == action_ctrl) {
+                is_action_ctrl = true;
+                break;
+            }
+        }
+
+        if (!is_action_ctrl) {
+            child->Bind(wxEVT_LEFT_UP, on_click);
+            child->Bind(wxEVT_ENTER_WINDOW, on_enter);
+            child->Bind(wxEVT_LEAVE_WINDOW, on_leave);
+            child->SetCursor(wxCursor(wxCURSOR_HAND));
+        }
+    }
 }
 
 wxColour MixedFilamentDialog::getTabBorderColor(bool is_selected, bool is_hovered) const
@@ -877,27 +929,45 @@ void MixedFilamentDialog::paintTabBtn(wxPanel* panel, bool round_left, bool roun
 
 void MixedFilamentDialog::update_tabs()
 {
-    // Toggle visibility of panels based on m_current_tab and m_mix_method:
-    m_mix_method_panel->Show(m_current_tab == Tab::Mix);
-    m_color_picker_panel->Show(m_current_tab == Tab::Mix && m_mix_method == MixMethod::ByColor);
-    m_pattern_selector_panel->Show(m_current_tab == Tab::Pattern);
-    m_material_panel->Show((m_current_tab == Tab::Mix) || (m_current_tab == Tab::Gradient));
-    m_ratio_section_panel->Show(m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio);
-    if (m_preview_panel)
+    // Freeze the entire dialog to prevent any flickering during the update
+    wxWindowUpdateLocker no_updates(this);
+
+    if (m_mix_method_panel)       m_mix_method_panel->Show(false);
+    if (m_color_picker_panel)     m_color_picker_panel->Show(false);
+    if (m_pattern_selector_panel) m_pattern_selector_panel->Show(false);
+    if (m_material_panel)         m_material_panel->Show(false);
+    if (m_ratio_section_panel)    m_ratio_section_panel->Show(false);
+    if (m_recommendations_panel)  m_recommendations_panel->Show(false);
+
+    switch (m_current_tab) {
+        case Tab::Mix:
+            m_mix_method_panel->Show(true);
+            m_material_panel->Show(true);
+            m_recommendations_panel->Show(true);
+
+            if (m_mix_method == MixMethod::ByColor) {
+                m_color_picker_panel->Show(true);
+            } else if (m_mix_method == MixMethod::ManualRatio) {
+                m_ratio_section_panel->Show(true);
+            }
+            break;
+
+        case Tab::Pattern: m_pattern_selector_panel->Show(true); break;
+
+        case Tab::Gradient: m_material_panel->Show(true); break;
+    }
+
+    // always shown
+    if (m_preview_panel) {
         m_preview_panel->Show(true);
-    m_recommendations_panel->Show(m_current_tab == Tab::Mix);
+    }
 
     // Toggle add/delete material buttons visibility
     update_material_buttons_visibility();
 
-    // redraw tabs
-    m_mix_tab_btn->Refresh();
-    m_pattern_tab_btn->Refresh();
-    if (m_gradient_tab_btn)
-        m_gradient_tab_btn->Refresh();
-
     Layout();
     m_content_panel->FitInside();
+    Refresh();
 }
 
 void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* sizer, int selected_filament_index) {
@@ -909,7 +979,8 @@ void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* siz
     if (new_count > max_filament || selected_filament_index == -1)
         return;
 
-    parent->Freeze();
+    // Freeze parent panel to prevent flickering while adding new combobox
+    wxWindowUpdateLocker no_updates(this);
 
     const wxSize combobox_size  = wxSize(FromDIP(166), FromDIP(30));
 
@@ -982,10 +1053,7 @@ void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* siz
     m_mix_ratio_panel->Refresh();
 
     m_content_panel->FitInside();
-    update_content_max_height();
-    auto_resize_dialog_to_fit();
 
-    parent->Thaw();
 
     sync_color_picker_to_mix();
 }
@@ -1021,8 +1089,6 @@ void MixedFilamentDialog::remove_material_combobox() {
     m_mix_ratio_panel->Refresh();
 
     m_content_panel->FitInside();
-    update_content_max_height();
-    auto_resize_dialog_to_fit();
 
     sync_color_picker_to_mix();
 }
@@ -1228,16 +1294,6 @@ std::vector<double> MixedFilamentDialog::get_default_weights(int filament_count)
     }
 }
 
-void MixedFilamentDialog::update_content_max_height()
-{
-    // No-op to disable automatic dialog height resizing
-}
-
-void MixedFilamentDialog::auto_resize_dialog_to_fit()
-{
-    // No-op to disable automatic dialog height resizing
-}
-
 void MixedFilamentDialog::on_dpi_changed(const wxRect& suggested_rect)
 {
     m_width_fixed     = FromDIP(400);
@@ -1245,8 +1301,6 @@ void MixedFilamentDialog::on_dpi_changed(const wxRect& suggested_rect)
     m_height_min      = FromDIP(400);
 
 	SetMinSize(wxSize(m_width_fixed, m_height_min));
-
-    update_content_max_height();
 
     // TODO: implement DPI change handling if necessary (e.g., adjust layout, fonts, etc.)
 	Refresh();
@@ -1408,8 +1462,6 @@ void MixedFilamentDialog::set_active_mix(const std::vector<int>& physical_filame
     m_mix_ratio_panel->Refresh();
 
     m_content_panel->FitInside();
-    update_content_max_height();
-    auto_resize_dialog_to_fit();
 
     this->Thaw();
 
@@ -1583,15 +1635,15 @@ void MixedFilamentDialog::sync_color_picker_to_mix()
 void MixedFilamentDialog::build_preview_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
 {
     m_preview_title_panel = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_preview_title_text = new wxStaticText(m_preview_title_panel, wxID_ANY, _L("Preview"));
+    m_preview_title_text  = new wxStaticText(m_preview_title_panel, wxID_ANY, _L("Preview"),
+                                             wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+    m_preview_title_text->SetMinSize(wxSize(1, -1)); // necessary to shrink text when space is limited, together with wxST_ELLIPSIZE_END
     m_preview_title_text->SetForegroundColour("#333333");
     m_preview_title_text->SetFont(::Label::Head_14);
 
     m_preview_title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_preview_title_panel->SetSizer(m_preview_title_sizer);
     m_preview_title_sizer->Add(m_preview_title_text, 0, wxALIGN_CENTER_VERTICAL);
-
-    m_preview_title_sizer->AddStretchSpacer(1);
     
     m_preview_title_layers = new wxPanel(m_preview_title_panel, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(144), FromDIP(18)), wxBORDER_NONE);
     m_preview_title_layers->SetBackgroundColour(parent->GetBackgroundColour());
@@ -1727,7 +1779,7 @@ void MixedFilamentDialog::build_preview_ui(wxPanel* parent, wxBoxSizer* parent_s
     parent_sizer->Add(m_preview_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
     parent_sizer->Add(m_preview_body, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
-    setup_collapsible_section(m_preview_title_panel, m_preview_title_sizer, m_preview_title_text, m_preview_collapsed, { m_preview_body }, [this]() {
+    setup_collapsible_section(m_preview_title_panel, m_preview_title_sizer, m_preview_title_text, m_preview_collapsed, { m_preview_body }, {}, [this]() {
         if (m_preview_title_swatch) {
             m_preview_title_swatch->Show(m_preview_collapsed);
         }
