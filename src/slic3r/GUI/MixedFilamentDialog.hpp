@@ -69,6 +69,9 @@ private:
     };
     static std::vector<LayerStackEntry> compute_layer_stack(
         const std::vector<double>& weights, int total_layers = 20);
+    std::vector<LayerStackEntry> compute_pattern_layer_stack(const std::vector<int>& pattern_indices, int total_layers = 20);
+    bool parse_pattern(const wxString& pattern_str, int num_filaments, std::vector<int>& out_indices, wxString& out_error_msg);
+    void refresh_pattern_selector_title_preview();
 
     void update_material_buttons_visibility();
     void update_material_panel();
@@ -244,6 +247,10 @@ private:
     // Pattern
     wxPanel*        m_pattern_selector_panel{nullptr};
     wxBoxSizer*     m_pattern_selector_sizer{nullptr};
+    wxPanel*        m_pattern_filament_row{nullptr};
+    wxTextCtrl*     m_pattern_input{nullptr};
+    wxStaticText*   m_pattern_warning{nullptr};
+    wxStaticText*   m_pattern_title_preview_text{nullptr};
 
 
     bool m_color_picker_collapsed = false;

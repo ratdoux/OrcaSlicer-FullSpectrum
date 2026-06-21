@@ -2,6 +2,8 @@
 
 #include <wx/wx.h>
 #include <wx/wrapsizer.h>
+#include <map>
+#include <algorithm>
 
 #include "I18N.hpp"
 #include "GUI.hpp"
@@ -70,6 +72,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_mix_tab_btn->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent&) {
         m_current_tab = Tab::Mix;
         update_tabs();
+        update_preview();
     });
     m_mix_tab_btn->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent&) {
         m_mix_tab_hovered = true;
@@ -91,6 +94,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_pattern_tab_btn->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent&) {
         m_current_tab = Tab::Pattern;
         update_tabs();
+        update_preview();
     });
     m_pattern_tab_btn->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent&) {
         m_pattern_tab_hovered = true;
@@ -112,6 +116,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_gradient_tab_btn->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent&) {
         m_current_tab = Tab::Gradient;
         update_tabs();
+        update_preview();
     });
     m_gradient_tab_btn->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent&) {
         m_gradient_tab_hovered = true;
@@ -228,6 +233,12 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
 
     generate_mix_presets();
     sync_color_picker_to_mix();
+
+    // Trigger initial pattern validation now that all UI is constructed
+    if (m_pattern_input) {
+        wxCommandEvent init_evt(wxEVT_TEXT);
+        m_pattern_input->ProcessWindowEvent(init_evt);
+    }
 }
 
 void MixedFilamentDialog::build_mix_method_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
@@ -380,19 +391,247 @@ void MixedFilamentDialog::build_pattern_selector_ui(wxPanel* parent, wxBoxSizer*
     title_text->SetFont(::Label::Head_14);
     title_sizer->Add(title_text, 0, wxALIGN_CENTER_VERTICAL);
 
-    m_pattern_selector_body = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(100)), wxBORDER_NONE);
-    wxBoxSizer* dummy_sizer = new wxBoxSizer(wxVERTICAL);
-    m_pattern_selector_body->SetSizer(dummy_sizer);
+    m_pattern_title_preview_text = new wxStaticText(title_panel, wxID_ANY, wxEmptyString);
+    m_pattern_title_preview_text->SetFont(::Label::Body_14);
+    m_pattern_title_preview_text->SetForegroundColour("#333333");
+    title_sizer->Add(m_pattern_title_preview_text, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
 
-    wxStaticText* placeholder = new wxStaticText(m_pattern_selector_body, wxID_ANY, _L("Pattern selector placeholder..."));
-    placeholder->SetFont(::Label::Body_12);
-    placeholder->SetForegroundColour("#7e7e7e");
-    dummy_sizer->Add(placeholder, 1, wxALIGN_CENTER | wxALL, FromDIP(16));
+    m_pattern_selector_body = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_pattern_selector_body->SetBackgroundColour(parent->GetBackgroundColour());
+    wxBoxSizer* body_sizer = new wxBoxSizer(wxVERTICAL);
+    m_pattern_selector_body->SetSizer(body_sizer);
+
+    // 1. A row of all real/physical filaments
+    m_pattern_filament_row = new wxPanel(m_pattern_selector_body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_pattern_filament_row->SetBackgroundColour(m_pattern_selector_body->GetBackgroundColour());
+    wxWrapSizer* filaments_sizer = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
+    m_pattern_filament_row->SetSizer(filaments_sizer);
+
+    for (size_t i = 0; i < m_physical_filaments.size(); ++i) {
+        const auto& [color_hex, name] = m_physical_filaments[i];
+        wxColor color(color_hex);
+        wxString display_index = wxString::Format("%zu", i + 1);
+        wxString tooltip_name = wxString::FromUTF8(name.c_str());
+
+        // Create the wrapper panel of fixed hovered size FromDIP(32)
+        wxPanel* wrapper = new wxPanel(m_pattern_filament_row, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(32), FromDIP(32)), wxBORDER_NONE);
+        wrapper->SetMinSize(wxSize(FromDIP(32), FromDIP(32)));
+        wrapper->SetBackgroundColour(m_pattern_filament_row->GetBackgroundColour());
+
+        // Create the swatch panel inside it, centered at FromDIP(6) with size FromDIP(20)
+        wxPanel* swatch = new wxPanel(wrapper, wxID_ANY, wxPoint(FromDIP(6), FromDIP(6)), wxSize(FromDIP(20), FromDIP(20)), wxBORDER_NONE);
+        swatch->SetBackgroundStyle(wxBG_STYLE_PAINT);
+        swatch->SetToolTip(tooltip_name);
+
+        swatch->Bind(wxEVT_PAINT, [this, swatch, color, display_index](wxPaintEvent&) {
+            wxPaintDC dc(swatch);
+            wxSize size = swatch->GetClientSize();
+            wxColor c = color;
+            wxString idx = display_index;
+            FilamentCardMixed::paint_clr_swatch(dc, size, c, idx, wxGetApp().dark_mode());
+        });
+
+        // Hover events on swatch - zoom to FromDIP(24) centered at FromDIP(4)
+        swatch->Bind(wxEVT_ENTER_WINDOW, [this, swatch](wxMouseEvent& event) {
+            swatch->SetCursor(wxCursor(wxCURSOR_HAND));
+            swatch->SetSize(FromDIP(4), FromDIP(4), FromDIP(24), FromDIP(24));
+            swatch->Refresh();
+            event.Skip();
+        });
+
+        swatch->Bind(wxEVT_LEAVE_WINDOW, [this, swatch](wxMouseEvent& event) {
+            swatch->SetSize(FromDIP(6), FromDIP(6), FromDIP(20), FromDIP(20));
+            swatch->Refresh();
+            event.Skip();
+        });
+
+        // Click event on swatch
+        int one_based_index = i + 1;
+        auto on_click = [this, one_based_index](wxMouseEvent& event) {
+            wxString current_val = m_pattern_input->GetValue();
+            wxString to_add;
+            if (one_based_index <= 9) {
+                to_add = wxString::Format("%d", one_based_index);
+            } else {
+                to_add = wxString::Format("[%d]", one_based_index);
+            }
+            m_pattern_input->SetValue(current_val + to_add);
+            m_pattern_input->SetInsertionPointEnd();
+            
+            // Trigger text change event to validate and update preview
+            wxCommandEvent evt(wxEVT_TEXT);
+            m_pattern_input->ProcessWindowEvent(evt);
+            event.Skip();
+        };
+
+        swatch->Bind(wxEVT_LEFT_UP, on_click);
+
+        filaments_sizer->Add(wrapper, 0, wxALL, 0);
+    }
+
+    body_sizer->Add(m_pattern_filament_row, 0, wxEXPAND | wxBOTTOM, FromDIP(16));
+ 
+    // 2. The text input & Backspace row sizer
+    wxBoxSizer* input_row_sizer = new wxBoxSizer(wxHORIZONTAL);
+
+    m_pattern_input = new wxTextCtrl(m_pattern_selector_body, wxID_ANY, "12", wxDefaultPosition, wxSize(-1, FromDIP(30)), wxTE_PROCESS_ENTER);
+    m_pattern_input->SetFont(::Label::Body_14);
+
+    // backspace button wrapper for bigger hit target
+    wxPanel* backspace_wrapper = new wxPanel(m_pattern_selector_body, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(30 + 8), FromDIP(30)), wxBORDER_NONE);
+    backspace_wrapper->SetMinSize(wxSize(FromDIP(30 + 8), FromDIP(30)));
+    backspace_wrapper->SetBackgroundColour(m_pattern_selector_body->GetBackgroundColour());
+
+    // backspace button
+    wxPanel* backspace_btn = new wxPanel(backspace_wrapper, wxID_ANY, wxPoint(FromDIP(2), FromDIP(2)), wxSize(FromDIP(26 + 8), FromDIP(26)), wxBORDER_NONE);
+    backspace_btn->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    backspace_btn->SetToolTip(_L("Delete last entry"));
+
+    auto paint_backspace_icon = [this](wxGraphicsContext* gc, const wxSize& size, bool is_hovered) {
+        wxColour clr = is_hovered ? *wxWHITE : *wxBLACK;
+        gc->SetPen(wxPen(clr, FromDIP(1.5)));
+        gc->SetBrush(*wxTRANSPARENT_BRUSH);
+
+        double w = FromDIP(16);
+        double h = FromDIP(12);
+        double cx = size.x / 2.0;
+        double cy = size.y / 2.0;
+        double x0 = cx - w / 2.0;
+        double x1 = cx - w / 2.0 + FromDIP(4);
+        double x2 = cx + w / 2.0;
+        double y0 = cy - h / 2.0;
+        double y1 = cy;
+        double y2 = cy + h / 2.0;
+
+        wxGraphicsPath path = gc->CreatePath();
+        path.MoveToPoint(x0, y1);
+        path.AddLineToPoint(x1, y0);
+        path.AddLineToPoint(x2, y0);
+        path.AddLineToPoint(x2, y2);
+        path.AddLineToPoint(x1, y2);
+        path.CloseSubpath();
+        gc->StrokePath(path);
+
+        double ix_w = FromDIP(3);
+        double ix_cx = cx + FromDIP(2);
+        gc->StrokeLine(ix_cx - ix_w, cy - ix_w, ix_cx + ix_w, cy + ix_w);
+        gc->StrokeLine(ix_cx - ix_w, cy + ix_w, ix_cx + ix_w, cy - ix_w);
+    };
+
+    backspace_btn->Bind(wxEVT_PAINT, [this, backspace_btn, paint_backspace_icon](wxPaintEvent&) {
+        wxPaintDC dc(backspace_btn);
+        wxGCDC gcdc(dc);
+        wxGraphicsContext* gc = gcdc.GetGraphicsContext();
+        if (!gc) return;
+
+        wxSize size = backspace_btn->GetClientSize();
+        bool is_hovered = backspace_btn->GetSize().x > FromDIP(26 + 8);
+        
+        if (is_hovered) {
+            gc->SetBrush(wxBrush(wxColour(224, 80, 80)));
+        } else {
+            gc->SetBrush(wxBrush(backspace_btn->GetParent()->GetBackgroundColour()));
+        }
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        gc->DrawRectangle(0, 0, size.x, size.y);
+
+        paint_backspace_icon(gc, size, is_hovered);
+    });
+
+    backspace_btn->Bind(wxEVT_ENTER_WINDOW, [this, backspace_btn](wxMouseEvent& event) {
+        backspace_btn->SetCursor(wxCursor(wxCURSOR_HAND));
+        backspace_btn->SetSize(FromDIP(0), FromDIP(0), FromDIP(30 + 8), FromDIP(30));
+        backspace_btn->Refresh();
+        event.Skip();
+    });
+
+    backspace_btn->Bind(wxEVT_LEAVE_WINDOW, [this, backspace_btn](wxMouseEvent& event) {
+        backspace_btn->SetSize(FromDIP(2), FromDIP(2), FromDIP(26 + 8), FromDIP(26));
+        backspace_btn->Refresh();
+        event.Skip();
+    });
+
+    backspace_btn->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& event) {
+        wxString val = m_pattern_input->GetValue();
+        if (!val.IsEmpty()) {
+            while (!val.IsEmpty() && (val.Last() == ' ' || val.Last() == ',')) {
+                val.RemoveLast();
+            }
+            if (!val.IsEmpty()) {
+                if (val.Last() == ']') {
+                    int open_pos = val.Find('[', true);
+                    if (open_pos != wxNOT_FOUND) {
+                        val = val.Left(open_pos);
+                    } else {
+                        val.RemoveLast();
+                    }
+                } else {
+                    val.RemoveLast();
+                }
+            }
+            while (!val.IsEmpty() && (val.Last() == ' ' || val.Last() == ',')) {
+                val.RemoveLast();
+            }
+            m_pattern_input->SetValue(val);
+            m_pattern_input->SetInsertionPointEnd();
+            
+            wxCommandEvent evt(wxEVT_TEXT);
+            m_pattern_input->ProcessWindowEvent(evt);
+        }
+        event.Skip();
+    });
+
+    input_row_sizer->Add(m_pattern_input, 1, wxEXPAND | wxALIGN_CENTER_VERTICAL);
+    input_row_sizer->AddSpacer(FromDIP(4));
+    input_row_sizer->Add(backspace_wrapper, 0, wxALIGN_CENTER_VERTICAL);
+
+    body_sizer->Add(input_row_sizer, 0, wxEXPAND | wxBOTTOM, FromDIP(4));
+
+    // 3. The warning label (hidden by default)
+    m_pattern_warning = new wxStaticText(m_pattern_selector_body, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxST_NO_AUTORESIZE);
+    m_pattern_warning->SetForegroundColour(*wxRED);
+    m_pattern_warning->SetFont(::Label::Body_12);
+    m_pattern_warning->Hide();
+    body_sizer->Add(m_pattern_warning, 0, wxEXPAND);
+
+    // Bind text control events
+    m_pattern_input->Bind(wxEVT_TEXT, [this](wxCommandEvent&) {
+        refresh_pattern_selector_title_preview();
+        wxString val = m_pattern_input->GetValue();
+        std::vector<int> parsed;
+        wxString error_msg;
+        if (val.Trim().IsEmpty()) {
+            m_pattern_warning->SetLabel(_L("Pattern cannot be empty."));
+            m_pattern_warning->Wrap(FromDIP(350));
+            m_pattern_warning->Show();
+            m_pattern_selector_body->Layout();
+            m_content_panel->FitInside();
+            m_preview_layer_stack.clear();
+            if (m_preview_layers_panel) m_preview_layers_panel->Refresh();
+            if (m_preview_title_layers) m_preview_title_layers->Refresh();
+        }
+        else if (parse_pattern(val, m_physical_filaments.size(), parsed, error_msg)) {
+            m_pattern_warning->Hide();
+            m_pattern_selector_body->Layout();
+            m_content_panel->FitInside();
+            update_preview();
+        } else {
+            m_pattern_warning->SetLabel(error_msg);
+            m_pattern_warning->Wrap(FromDIP(350));
+            m_pattern_warning->Show();
+            m_pattern_selector_body->Layout();
+            m_content_panel->FitInside();
+            // Do not update preview, keep it in the valid state
+        }
+    });
 
     parent_sizer->Add(title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
     parent_sizer->Add(m_pattern_selector_body, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
-
-    setup_collapsible_section(title_panel, title_sizer, title_text, m_pattern_selector_collapsed, { m_pattern_selector_body });
+ 
+    setup_collapsible_section(title_panel, title_sizer, title_text, m_pattern_selector_collapsed, { m_pattern_selector_body }, {}, [this]() {
+        refresh_pattern_selector_title_preview();
+    });
+    refresh_pattern_selector_title_preview();
 }
 
 void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_sizer)
@@ -1983,7 +2222,52 @@ void MixedFilamentDialog::build_preview_ui(wxPanel* parent, wxBoxSizer* parent_s
 
 void MixedFilamentDialog::update_preview()
 {
-    update_preview(m_selected_filaments, m_selected_filaments_weights);
+    if (m_current_tab == Tab::Pattern) {
+        wxString pattern_str = m_pattern_input->GetValue();
+        std::vector<int> pattern_indices;
+        wxString error_msg;
+        if (parse_pattern(pattern_str, m_physical_filaments.size(), pattern_indices, error_msg)) {
+            m_preview_layer_stack = compute_pattern_layer_stack(pattern_indices, 20);
+            
+            std::vector<int> all_filaments(m_physical_filaments.size());
+            for (size_t i = 0; i < all_filaments.size(); ++i) {
+                all_filaments[i] = static_cast<int>(i);
+            }
+            m_preview_colors = get_selected_filaments_colors(all_filaments);
+            
+            std::vector<double> weights(m_physical_filaments.size(), 0.0);
+            for (int idx : pattern_indices) {
+                weights[idx - 1] += 1.0;
+            }
+            double total = pattern_indices.size();
+            for (double& w : weights) {
+                w /= total;
+            }
+            
+            wxColor mixed_color = compute_mixed_color(m_physical_filaments, all_filaments, weights);
+            
+            if (m_preview_color_panel) {
+                m_preview_color_panel->SetBackgroundColour(mixed_color);
+                m_preview_color_panel->Refresh();
+            }
+            if (m_preview_title_swatch) {
+                m_preview_title_swatch->SetBackgroundColour(mixed_color);
+                m_preview_title_swatch->Refresh();
+            }
+            if (m_preview_layers_panel) {
+                m_preview_layers_panel->Refresh();
+            }
+            if (m_preview_title_layers) {
+                m_preview_title_layers->Refresh();
+            }
+        } else {
+            m_preview_layer_stack.clear();
+            if (m_preview_layers_panel) m_preview_layers_panel->Refresh();
+            if (m_preview_title_layers) m_preview_title_layers->Refresh();
+        }
+    } else {
+        update_preview(m_selected_filaments, m_selected_filaments_weights);
+    }
 }
 
 void MixedFilamentDialog::update_preview(const std::vector<int>& filaments, const std::vector<double>& weights)
@@ -2060,6 +2344,88 @@ std::vector<MixedFilamentDialog::LayerStackEntry> MixedFilamentDialog::compute_l
     }
 
     return stack;
+}
+
+std::vector<MixedFilamentDialog::LayerStackEntry> MixedFilamentDialog::compute_pattern_layer_stack(const std::vector<int>& pattern_indices, int total_layers)
+{
+    std::vector<LayerStackEntry> stack;
+    if (pattern_indices.empty() || total_layers <= 0)
+        return stack;
+
+    for (int i = 0; i < total_layers; ++i) {
+        int idx = pattern_indices[i % pattern_indices.size()];
+        stack.push_back({idx - 1, 1.0});
+    }
+    return stack;
+}
+
+bool MixedFilamentDialog::parse_pattern(const wxString& pattern_str, int num_filaments, std::vector<int>& out_indices, wxString& out_error_msg)
+{
+    out_indices.clear();
+    std::string s = pattern_str.ToStdString();
+    size_t i = 0;
+    while (i < s.size()) {
+        char c = s[i];
+        if (std::isspace(static_cast<unsigned char>(c)) || c == ',') {
+            i++;
+            continue;
+        }
+        if (c == '[') {
+            i++;
+            size_t start = i;
+            while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
+                i++;
+            }
+            if (i == start || i >= s.size() || s[i] != ']') {
+                out_error_msg = _L("Invalid bracket syntax. Expected [number]. Only digits are allowed inside brackets.");
+                return false;
+            }
+            std::string num_str = s.substr(start, i - start);
+            i++;
+            int val = std::stoi(num_str);
+            if (val < 1 || val > num_filaments) {
+                out_error_msg = wxString::Format(_L("Filament index %d is out of bounds (1-%d)."), val, num_filaments);
+                return false;
+            }
+            out_indices.push_back(val);
+        } else if (std::isdigit(static_cast<unsigned char>(c))) {
+            int val = c - '0';
+            if (val == 0) {
+                out_error_msg = _L("Filament index cannot be 0.");
+                return false;
+            }
+            if (val > num_filaments) {
+                out_error_msg = wxString::Format(_L("Filament index %d is out of bounds (1-%d)."), val, num_filaments);
+                return false;
+            }
+            out_indices.push_back(val);
+            i++;
+        } else {
+            out_error_msg = wxString::Format(_L("Invalid character '%c' in pattern. Only digits, commas, spaces, and bracketed numbers (e.g. [10]) are allowed."), c);
+            return false;
+        }
+    }
+    if (out_indices.empty()) {
+        out_error_msg = _L("Pattern cannot be empty.");
+        return false;
+    }
+    return true;
+}
+
+void MixedFilamentDialog::refresh_pattern_selector_title_preview()
+{
+    if (!m_pattern_title_preview_text)
+        return;
+
+    m_pattern_title_preview_text->Show(m_pattern_selector_collapsed);
+    if (m_pattern_selector_collapsed) {
+        wxString val = m_pattern_input ? m_pattern_input->GetValue() : wxString();
+        m_pattern_title_preview_text->SetLabel(val);
+        m_pattern_title_preview_text->InvalidateBestSize();
+    }
+    if (m_pattern_selector_panel) {
+        m_pattern_selector_panel->Layout();
+    }
 }
 
 } // namespace Slic3r::GUI
