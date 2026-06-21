@@ -480,6 +480,12 @@ void MixedFilamentDialog::build_material_ui(wxPanel* parent, wxBoxSizer* parent_
     });
 
     m_material_title_sizer->Add(m_material_title_text, 0, wxALIGN_CENTER_VERTICAL);
+
+    m_material_title_preview = new wxPanel(m_material_title_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_material_title_preview->SetBackgroundColour(parent->GetBackgroundColour());
+    m_material_title_preview->Show(m_material_collapsed);
+    m_material_title_sizer->Add(m_material_title_preview, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
+
     m_material_title_sizer->Add(m_delete_material_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
     m_material_title_sizer->Add(m_add_material_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(8));
 
@@ -516,7 +522,7 @@ void MixedFilamentDialog::build_ratio_ui(wxPanel* parent, wxBoxSizer* parent_siz
 
     m_mix_ratio_panel = new MixedFilamentRatioPanel(parent, m_selected_filaments_weights, m_selected_filaments_colors, m_min_weight_ratio,
                                                     [this]() { 
-                                                        refresh_material_weight_labels(); 
+                                                        update_material_panel(); 
                                                         sync_color_picker_to_mix();
                                                     });
     m_mix_ratio_sizer = new wxBoxSizer(wxVERTICAL);
@@ -648,7 +654,124 @@ void MixedFilamentDialog::update_material_buttons_visibility()
     if (m_add_material_btn)     m_add_material_btn->Show(can_add_or_remove && !m_material_collapsed);
     if (m_delete_material_btn)  m_delete_material_btn->Show(can_add_or_remove && !m_material_collapsed);
     
+    if (m_material_title_preview) {
+        m_material_title_preview->Show(m_material_collapsed);
+    }
+
     if (m_material_title_panel) m_material_title_panel->Layout();
+}
+
+void MixedFilamentDialog::update_material_title_preview()
+{
+    if (!m_material_title_preview)
+        return;
+
+    const int filament_count = m_selected_filaments.size();
+    std::vector<int> percentages(filament_count);
+    int total_sum = 0;
+    for (size_t i = 0; i < filament_count; ++i) {
+        double raw_scaled = std::max(0.0 , m_selected_filaments_weights[i] * 100.0);
+        percentages[i]    = static_cast<int>(std::floor(raw_scaled));
+        total_sum += percentages[i];
+    }
+    int diff = 100 - total_sum;
+    if (filament_count > 0) {
+        percentages[filament_count - 1] += diff;
+    }
+
+    // Check if the selected filaments have changed
+    bool filaments_changed = (m_selected_filaments != m_last_preview_filaments) ||
+                             (m_material_title_percent_texts.size() != filament_count);
+
+    if (filaments_changed) {
+        m_material_title_preview->DestroyChildren();
+        m_material_title_swatches.clear();
+        m_material_title_percent_texts.clear();
+
+        wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
+        int quadratic_size = FromDIP(18);
+
+        for (size_t i = 0; i < filament_count; ++i) {
+            int filament_index = m_selected_filaments[i];
+            if (filament_index < 0 || filament_index >= (int)m_physical_filaments.size())
+                continue;
+
+            const auto& [color_hex, name] = m_physical_filaments[filament_index];
+            wxColor color(color_hex);
+            wxString display_index = wxString::Format("%d", filament_index + 1);
+            int percentage = percentages[i];
+            wxString tooltip_name = wxString::FromUTF8(name.c_str());
+
+            wxPanel* swatch = new wxPanel(m_material_title_preview, wxID_ANY, wxDefaultPosition, wxSize(quadratic_size, quadratic_size), wxBORDER_NONE);
+            swatch->SetMinSize(wxSize(quadratic_size, quadratic_size));
+            swatch->SetBackgroundStyle(wxBG_STYLE_PAINT);
+            swatch->SetToolTip(tooltip_name);
+
+            swatch->Bind(wxEVT_PAINT, [swatch, color, display_index](wxPaintEvent&) {
+                wxPaintDC dc(swatch);
+                wxSize size = swatch->GetClientSize();
+                wxColor c = color;
+                wxString idx = display_index;
+                FilamentCardMixed::paint_clr_swatch(
+                    dc,
+                    size,
+                    c,
+                    idx,
+                    wxGetApp().dark_mode()
+                );
+            });
+
+            wxStaticText* percent_text = new wxStaticText(m_material_title_preview, wxID_ANY, wxString::Format("%d%%", percentage));
+            percent_text->SetFont(::Label::Body_14);
+            percent_text->SetForegroundColour("#333333");
+            percent_text->SetToolTip(tooltip_name);
+
+            auto propagate_click = [this](wxMouseEvent& event) {
+                if (m_material_title_preview) {
+                    wxMouseEvent evt(wxEVT_LEFT_UP);
+                    evt.SetEventObject(m_material_title_preview);
+                    m_material_title_preview->GetEventHandler()->ProcessEvent(evt);
+                }
+                event.Skip();
+            };
+            swatch->Bind(wxEVT_LEFT_UP, propagate_click);
+            percent_text->Bind(wxEVT_LEFT_UP, propagate_click);
+
+            sizer->Add(swatch, 0, wxALIGN_CENTER_VERTICAL);
+            sizer->Add(percent_text, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+
+            if (i < filament_count - 1) {
+                sizer->AddSpacer(FromDIP(12));
+            }
+
+            m_material_title_swatches.push_back(swatch);
+            m_material_title_percent_texts.push_back(percent_text);
+        }
+
+        m_material_title_preview->SetSizer(sizer);
+        m_last_preview_filaments = m_selected_filaments;
+    } else {
+        // Just update the percentages on the cached text labels
+        for (size_t i = 0; i < filament_count; ++i) {
+            if (i < m_material_title_percent_texts.size()) {
+                m_material_title_percent_texts[i]->SetLabel(wxString::Format("%d%%", percentages[i]));
+            }
+        }
+    }
+
+    m_material_title_preview->Layout();
+    if (m_material_title_panel) {
+        m_material_title_panel->Layout();
+    }
+}
+
+void MixedFilamentDialog::update_material_panel()
+{
+    update_min_weight_slider_bounds();
+    refresh_material_combobox_items();
+    refresh_material_weight_labels();
+    update_material_title_preview();
+    update_material_buttons_visibility();
 }
 
 void MixedFilamentDialog::setup_collapsible_section(
@@ -1046,9 +1169,7 @@ void MixedFilamentDialog::add_material_combobox(wxPanel* parent, wxBoxSizer* siz
     m_selected_filaments_weights = get_default_weights(m_selected_filaments.size());
     m_selected_filaments_colors  = get_selected_filaments_colors(m_selected_filaments);
     
-    update_min_weight_slider_bounds();
-    refresh_material_combobox_items();
-    refresh_material_weight_labels();
+    update_material_panel();
     m_mix_ratio_panel->update_sizing();
     m_mix_ratio_panel->Refresh();
 
@@ -1082,9 +1203,7 @@ void MixedFilamentDialog::remove_material_combobox() {
     m_selected_filaments_weights = get_default_weights(m_selected_filaments.size());
     m_selected_filaments_colors  = get_selected_filaments_colors(m_selected_filaments);
 
-    update_min_weight_slider_bounds();
-    refresh_material_combobox_items();
-    refresh_material_weight_labels();
+    update_material_panel();
     m_mix_ratio_panel->update_sizing();
     m_mix_ratio_panel->Refresh();
 
@@ -1119,8 +1238,8 @@ void MixedFilamentDialog::on_selected_filaments_changed(int index)
 
     m_selected_filaments[index] = new_filament_index;
 
-    refresh_material_combobox_items();
     m_selected_filaments_colors  = get_selected_filaments_colors(m_selected_filaments);
+    update_material_panel();
     m_mix_ratio_panel->update_sizing();
     m_mix_ratio_panel->Refresh();
 
@@ -1251,7 +1370,7 @@ void MixedFilamentDialog::apply_min_weight(int new_percentage)
         }
     }
 
-    refresh_material_weight_labels();
+    update_material_panel();
     m_mix_ratio_panel->Refresh();
 
     sync_color_picker_to_mix();
@@ -1455,9 +1574,7 @@ void MixedFilamentDialog::set_active_mix(const std::vector<int>& physical_filame
     m_selected_filaments_weights = weights;
     m_selected_filaments_colors  = get_selected_filaments_colors(m_selected_filaments);
 
-    update_min_weight_slider_bounds();
-    refresh_material_combobox_items();
-    refresh_material_weight_labels();
+    update_material_panel();
     m_mix_ratio_panel->update_sizing();
     m_mix_ratio_panel->Refresh();
 

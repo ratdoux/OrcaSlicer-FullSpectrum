@@ -71,6 +71,8 @@ private:
         const std::vector<double>& weights, int total_layers = 20);
 
     void update_material_buttons_visibility();
+    void update_material_panel();
+    void update_material_title_preview();
 
     void setup_collapsible_section(
         wxPanel* title_panel,
@@ -157,6 +159,10 @@ private:
     ScalableButton*             m_add_material_btn{nullptr};
     ScalableButton*             m_delete_material_btn{nullptr};
     wxPanel*                    m_material_combobox_panel{nullptr};
+    wxPanel*                    m_material_title_preview{nullptr};
+    std::vector<wxPanel*>       m_material_title_swatches;
+    std::vector<wxStaticText*>  m_material_title_percent_texts;
+    std::vector<int>            m_last_preview_filaments;
     std::vector<ComboBox*>      m_material_comboboxes;
     std::vector<wxStaticText*>  m_material_weight_labels;
 
