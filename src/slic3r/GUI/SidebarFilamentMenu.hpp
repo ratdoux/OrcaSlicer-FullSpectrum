@@ -93,7 +93,11 @@ private:
     void on_drag(const wxMouseEvent& event, DragState* drag_state, wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel);
     void end_drag(const wxMouseEvent& event, DragState* drag_state, wxPanel* grap_panel);
     void update_grab_panel_visibility(wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel, int max_content_height);
+    void set_grab_panel_line_thickness(wxPanel* grab_panel, int thickness);
     
+    int m_physical_grab_line_thickness = 1;
+    int m_mixed_grab_line_thickness = 1;
+
     DragState* m_physical_drag_state = new DragState();
     DragState* m_mixed_drag_state = new DragState();
 

@@ -335,17 +335,18 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_physical_grab_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
     m_physical_grab_panel->SetCursor(wxCursor(wxCURSOR_SIZENS));
 
-    // grap panel line
-    wxBoxSizer* physical_grap_panel_line_sizer = new wxBoxSizer(wxVERTICAL);
-    wxPanel* physical_grap_panel_line = new wxPanel(m_physical_grab_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, 1), wxBORDER_NONE);
-    physical_grap_panel_line->SetBackgroundColour(wxColour("#CECECE"));
-    physical_grap_panel_line_sizer->AddStretchSpacer();
-    physical_grap_panel_line_sizer->Add(physical_grap_panel_line, 0, wxEXPAND);
-    physical_grap_panel_line_sizer->AddStretchSpacer();
-    m_physical_grab_panel->SetSizer(physical_grap_panel_line_sizer);
-    m_physical_grab_panel->Layout();
+    m_physical_grab_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
+        wxPaintDC dc(m_physical_grab_panel);
+        wxSize size = m_physical_grab_panel->GetClientSize();
+        int thickness = m_physical_grab_line_thickness;
+        int y = (size.y - thickness) / 2;
+        dc.SetBrush(wxBrush(wxColour("#CECECE")));
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, y, size.x, thickness);
+    });
 
     m_physical_grab_panel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
+        set_grab_panel_line_thickness(m_physical_grab_panel, 3);
         start_drag(event, m_physical_drag_state, m_physical_grab_panel, m_physical_panel);
     });
     m_physical_grab_panel->Bind(wxEVT_MOTION, [this](wxMouseEvent& event) {
@@ -353,6 +354,19 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     });
     m_physical_grab_panel->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& event) {
         end_drag(event, m_physical_drag_state, m_physical_grab_panel);
+        int thickness = m_physical_grab_panel->GetScreenRect().Contains(wxGetMousePosition()) ? 3 : 1;
+        set_grab_panel_line_thickness(m_physical_grab_panel, thickness);
+    });
+    m_physical_grab_panel->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent& event) {
+        set_grab_panel_line_thickness(m_physical_grab_panel, 3);
+        event.Skip();
+    });
+    m_physical_grab_panel->Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) {
+        if (!m_physical_drag_state->is_dragging &&
+            !m_physical_grab_panel->GetScreenRect().Contains(wxGetMousePosition())) {
+            set_grab_panel_line_thickness(m_physical_grab_panel, 1);
+        }
+        event.Skip();
     });
 
     m_content_sizer->Add(m_physical_grab_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::TitlebarMargin()));
@@ -463,24 +477,38 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_mixed_grab_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
     m_mixed_grab_panel->SetCursor(wxCursor(wxCURSOR_SIZENS));
 
-    // grap panel line
-    wxBoxSizer* mixed_grap_panel_line_sizer = new wxBoxSizer(wxVERTICAL);
-    wxPanel*    mixed_grap_panel_line       = new wxPanel(m_mixed_grab_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, 1), wxBORDER_NONE);
-    mixed_grap_panel_line->SetBackgroundColour(wxColour("#CECECE"));
-    mixed_grap_panel_line_sizer->AddStretchSpacer();
-    mixed_grap_panel_line_sizer->Add(mixed_grap_panel_line, 0, wxEXPAND);
-    mixed_grap_panel_line_sizer->AddStretchSpacer();
-    m_mixed_grab_panel->SetSizer(mixed_grap_panel_line_sizer);
-    m_mixed_grab_panel->Layout();
+    m_mixed_grab_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
+        wxPaintDC dc(m_mixed_grab_panel);
+        wxSize size = m_mixed_grab_panel->GetClientSize();
+        int thickness = m_mixed_grab_line_thickness;
+        int y = (size.y - thickness) / 2;
+        dc.SetBrush(wxBrush(wxColour("#CECECE")));
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, y, size.x, thickness);
+    });
 
     m_mixed_grab_panel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
+        set_grab_panel_line_thickness(m_mixed_grab_panel, 3);
         start_drag(event, m_mixed_drag_state, m_mixed_grab_panel, m_mixed_panel);
     });
     m_mixed_grab_panel->Bind(wxEVT_MOTION, [this](wxMouseEvent& event) {
         on_drag(event, m_mixed_drag_state, m_mixed_panel, m_content_panel, m_mixed_grab_panel);
     });
     m_mixed_grab_panel->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& event) {
-        end_drag(event, m_mixed_drag_state, m_mixed_grab_panel); 
+        end_drag(event, m_mixed_drag_state, m_mixed_grab_panel);
+        int thickness = m_mixed_grab_panel->GetScreenRect().Contains(wxGetMousePosition()) ? 3 : 1;
+        set_grab_panel_line_thickness(m_mixed_grab_panel, thickness);
+    });
+    m_mixed_grab_panel->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent& event) {
+        set_grab_panel_line_thickness(m_mixed_grab_panel, 3);
+        event.Skip();
+    });
+    m_mixed_grab_panel->Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) {
+        if (!m_mixed_drag_state->is_dragging &&
+            !m_mixed_grab_panel->GetScreenRect().Contains(wxGetMousePosition())) {
+            set_grab_panel_line_thickness(m_mixed_grab_panel, 1);
+        }
+        event.Skip();
     });
 
     m_content_sizer->Add(m_mixed_grab_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::TitlebarMargin()));
@@ -692,6 +720,16 @@ void SidebarFilamentMenu::update_grab_panel_visibility(wxScrolledWindow* panel, 
             this->GetParent()->Layout();
         }
     }
+}
+
+void SidebarFilamentMenu::set_grab_panel_line_thickness(wxPanel* grab_panel, int thickness)
+{
+    if (grab_panel == m_physical_grab_panel) {
+        m_physical_grab_line_thickness = thickness;
+    } else if (grab_panel == m_mixed_grab_panel) {
+        m_mixed_grab_line_thickness = thickness;
+    }
+    grab_panel->Refresh();
 }
 
 } // namespace Slic3r::GUI
