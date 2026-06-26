@@ -178,6 +178,7 @@ private:
     std::vector<double> get_default_weights(int filament_count);
     std::vector<wxColor> get_selected_filaments_colors(
         const std::vector<int>& filament_indices) const;
+    std::vector<wxColor> get_colors_from_indices(const std::vector<int>& indices) const;
 
     // Layer-stack computation for the preview visualization.
     // Struct definition removed, now using MFDPreviewLayerEntry from MFDPreviewAccordion.hpp
@@ -189,12 +190,19 @@ private:
     // Fallback size constraint (prevents horizontal resizing).
     void on_sizing(wxSizeEvent& event);
 
+    void on_ok();
+    void on_cancel();
+
     // -----------------------------------------------------------------------
     // Top-level UI panels
     // -----------------------------------------------------------------------
     wxPanel*          m_title_panel{nullptr};
     wxScrolledWindow* m_content_panel{nullptr};
     wxPanel*          m_footer_panel{nullptr};
+    wxPanel*          m_list_preview_panel{nullptr};
+    Button*           m_btn_ok{nullptr};
+    Button*           m_btn_cancel{nullptr};
+    bool              m_is_list_preview_hovered{false};
 
     wxBoxSizer* m_main_sizer{nullptr};
     wxBoxSizer* m_title_sizer{nullptr};

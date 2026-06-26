@@ -5,6 +5,8 @@
 #include "MFDRatioAccordion.hpp"
 #include "MFDRecommendationsAccordion.hpp"
 #include "MFDPreviewAccordion.hpp"
+#include "Widgets/FilamentCardMixed.hpp"
+
 
 #include <wx/wx.h>
 #include <wx/wrapsizer.h>
@@ -148,6 +150,10 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_main_sizer->Add(m_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
     m_main_sizer->Add(m_mix_method_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
     m_main_sizer->AddSpacer(FromDIP(4));
+
+    wxPanel* title_divider = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
+    title_divider->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#EBEBEB")));
+    m_main_sizer->Add(title_divider, 0, wxEXPAND);
         
     m_content_panel = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
     m_content_panel->SetDoubleBuffered(true);
@@ -181,9 +187,11 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
         
         wxColor mixed_color = compute_mixed_color(m_physical_filaments, all_filaments, weights);
         m_preview_accordion->update_preview(m_preview_layer_stack, m_preview_colors, mixed_color);
+        if (m_list_preview_panel) m_list_preview_panel->Refresh();
     });
     m_pattern_selector_accordion->set_on_pattern_invalid([this]() {
         m_preview_accordion->clear_preview();
+        if (m_list_preview_panel) m_list_preview_panel->Refresh();
     });
 
     m_material_accordion = new MFDMaterialAccordion(m_content_panel, m_physical_filaments, m_clr_swatch_size, min_filament, max_filament);
@@ -221,16 +229,133 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_footer_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_footer_panel->SetSizer(m_footer_sizer);
         
-    Label* footer_placeholder_label = new Label(m_footer_panel, _L("Footer goes here..."));
-    m_footer_sizer->Add(footer_placeholder_label, 0, wxALIGN_CENTER | wxALL, FromDIP(8));
+    // List preview widget taking left 50%
+    m_list_preview_panel = new wxPanel(m_footer_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(30)), wxBORDER_NONE);
+    m_list_preview_panel->SetMinSize(wxSize(-1, FromDIP(30)));
+    m_list_preview_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
 
-    m_main_sizer->Add(m_footer_panel, 0, wxEXPAND);
+    m_list_preview_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
+        wxPaintDC context(m_list_preview_panel);
+        const wxSize size = m_list_preview_panel->GetClientSize();
+        const wxColor background_color = GetBackgroundColour();
+        wxSize swatch_size(FromDIP(20), FromDIP(20));
+        bool is_dark = wxGetApp().dark_mode();
+
+        if (m_current_tab == Tab::Mix) {
+            std::vector<unsigned int> indices;
+            for (int idx : m_selected_filaments) {
+                indices.push_back(idx + 1);
+            }
+            std::vector<int> percentages;
+            for (double w : m_selected_filaments_weights) {
+                percentages.push_back(static_cast<int>(std::round(w * 100)));
+            }
+            std::vector<wxColor> colors = m_selected_filaments_colors;
+
+            FilamentCardMixed::paint_box_mix(
+                context, size, background_color,
+                indices, percentages, colors,
+                is_dark, m_is_list_preview_hovered, swatch_size
+            );
+        } else if (m_current_tab == Tab::Pattern) {
+            wxString pattern_str = m_pattern_selector_accordion->get_pattern_string();
+            std::vector<int> pattern_indices;
+            wxString error_msg;
+            if (MFDPatternSelectorAccordion::parse_pattern(pattern_str, m_physical_filaments.size(), pattern_indices, error_msg)) {
+                std::vector<unsigned int> indices;
+                for (int idx : pattern_indices) {
+                    indices.push_back(idx);
+                }
+                std::vector<wxColor> colors = get_colors_from_indices(pattern_indices);
+
+                FilamentCardMixed::paint_box_pattern(
+                    context, size, background_color,
+                    indices, colors,
+                    is_dark, m_is_list_preview_hovered, swatch_size
+                );
+            } else {
+                context.SetBrush(wxBrush(background_color));
+                context.SetPen(*wxTRANSPARENT_PEN);
+                context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+                const int border_width = 1;
+                const wxColor border_color = m_is_list_preview_hovered
+                    ? wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1)
+                    : wxColor("#CECECE");
+
+                context.SetBrush(*wxTRANSPARENT_BRUSH);
+                context.SetPen(wxPen(border_color, border_width));
+                context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+            }
+        } else if (m_current_tab == Tab::Gradient) {
+            // Draw placeholder/TBD for Gradient (background and border only)
+            context.SetBrush(wxBrush(background_color));
+            context.SetPen(*wxTRANSPARENT_PEN);
+            context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+            const int border_width = 1;
+            const wxColor border_color = m_is_list_preview_hovered
+                ? wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1)
+                : wxColor("#CECECE");
+
+            context.SetBrush(*wxTRANSPARENT_BRUSH);
+            context.SetPen(wxPen(border_color, border_width));
+            context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+        }
+    });
+
+    m_list_preview_panel->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent& event) {
+        m_is_list_preview_hovered = true;
+        m_list_preview_panel->SetCursor(wxCursor(wxCURSOR_HAND));
+        m_list_preview_panel->Refresh();
+        event.Skip();
+    });
+
+    m_list_preview_panel->Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) {
+        m_is_list_preview_hovered = false;
+        m_list_preview_panel->SetCursor(wxCursor(wxNullCursor));
+        m_list_preview_panel->Refresh();
+        event.Skip();
+    });
+
+    // Right half sizer for Cancel and OK buttons
+    wxBoxSizer* right_sizer = new wxBoxSizer(wxHORIZONTAL);
+    
+    m_btn_cancel = new Button(m_footer_panel, _L("Cancel"), "", 0, 0, wxID_CANCEL);
+    m_btn_cancel->SetStyle(ButtonStyle::Regular, ButtonType::Choice);
+    m_btn_cancel->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        on_cancel();
+    });
+
+    m_btn_ok = new Button(m_footer_panel, _L("OK"), "", 0, 0, wxID_OK);
+    m_btn_ok->SetStyle(ButtonStyle::Confirm, ButtonType::Choice);
+    m_btn_ok->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        on_ok();
+    });
+
+    right_sizer->AddStretchSpacer(1);
+    right_sizer->Add(m_btn_cancel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+    right_sizer->Add(m_btn_ok, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+
+    m_footer_sizer->Add(m_list_preview_panel, 1, wxALIGN_CENTER_VERTICAL | wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
+    m_footer_sizer->Add(right_sizer, 1, wxALIGN_CENTER_VERTICAL | wxEXPAND);
+
+    wxPanel* footer_divider = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
+    footer_divider->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#EBEBEB")));
+    m_main_sizer->Add(footer_divider, 0, wxEXPAND);
+
+    m_footer_panel->SetBackgroundColour(GetBackgroundColour());
+    m_main_sizer->Add(m_footer_panel, 0, wxEXPAND | wxTOP | wxBOTTOM, FromDIP(8));
+
 
     SetSizer(m_main_sizer);
     Layout();
     m_content_panel->FitInside();
     SetSize(m_width_fixed, m_height_start);
     CentreOnParent();
+    wxPoint pos = GetPosition();
+    pos.x += m_width_fixed;
+    SetPosition(pos);
 
     m_material_accordion->add_combobox_row(0);
     if (m_physical_filaments.size() > 1) {
@@ -510,6 +635,7 @@ void MixedFilamentDialog::update_preview()
     } else {
         update_preview(m_selected_filaments, m_selected_filaments_weights);
     }
+    if (m_list_preview_panel) m_list_preview_panel->Refresh();
 }
 
 void MixedFilamentDialog::update_preview(const std::vector<int>& filaments, const std::vector<double>& weights)
@@ -518,6 +644,7 @@ void MixedFilamentDialog::update_preview(const std::vector<int>& filaments, cons
     m_preview_colors = get_selected_filaments_colors(filaments);
     wxColor mixed_color = compute_mixed_color(m_physical_filaments, filaments, weights);
     m_preview_accordion->update_preview(m_preview_layer_stack, m_preview_colors, mixed_color);
+    if (m_list_preview_panel) m_list_preview_panel->Refresh();
 }
 
 // static
@@ -843,6 +970,30 @@ void MixedFilamentDialog::paintTabBtn(wxPanel* panel, bool round_left, bool roun
 
     // Draw text
     gc->DrawText(label, start_x + icon_width, text_y);
+}
+
+void MixedFilamentDialog::on_ok()
+{
+    EndModal(wxID_OK);
+}
+
+void MixedFilamentDialog::on_cancel()
+{
+    EndModal(wxID_CANCEL);
+}
+
+std::vector<wxColor> MixedFilamentDialog::get_colors_from_indices(const std::vector<int>& indices) const
+{
+    std::vector<wxColor> colors;
+    colors.reserve(indices.size());
+    for (int idx : indices) {
+        if (idx > 0 && idx <= (int)m_physical_filaments.size()) {
+            colors.push_back(wxColor(m_physical_filaments[idx - 1].first));
+        } else {
+            colors.push_back(*wxBLACK);
+        }
+    }
+    return colors;
 }
 
 } // namespace Slic3r::GUI

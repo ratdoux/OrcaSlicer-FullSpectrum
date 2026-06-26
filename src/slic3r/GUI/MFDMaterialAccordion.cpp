@@ -213,14 +213,15 @@ void MFDMaterialAccordion::set_combobox_selection(size_t slot, int phys_idx)
 void MFDMaterialAccordion::update_button_visibility(bool can_add_or_remove)
 {
     bool collapsed = is_collapsed();
+    m_can_add_or_remove = can_add_or_remove;
 
     // Update the label to reflect whether this is interactive or just showing the result.
-    set_title(can_add_or_remove ? _L("Select Mixed Materials") : _L("Resulting Mixed Materials"));
+    set_title(m_can_add_or_remove ? _L("Select Mixed Materials") : _L("Resulting Mixed Materials"));
 
     if (m_add_btn)
-        m_add_btn->Show(can_add_or_remove && !collapsed);
+        m_add_btn->Show(m_can_add_or_remove && !collapsed);
     if (m_delete_btn)
-        m_delete_btn->Show(can_add_or_remove && !collapsed);
+        m_delete_btn->Show(m_can_add_or_remove && !collapsed);
     if (m_title_preview_panel)
         m_title_preview_panel->Show(collapsed);
 
@@ -324,8 +325,8 @@ void MFDMaterialAccordion::on_collapsed_changed(bool collapsed)
 {
     // When collapsed, hide the add/delete buttons and show the compact preview.
     // When expanded, do the reverse.
-    if (m_add_btn)              m_add_btn->Show(!collapsed);
-    if (m_delete_btn)           m_delete_btn->Show(!collapsed);
+    if (m_add_btn)              m_add_btn->Show(m_can_add_or_remove && !collapsed);
+    if (m_delete_btn)           m_delete_btn->Show(m_can_add_or_remove && !collapsed);
     if (m_title_preview_panel)  m_title_preview_panel->Show(collapsed);
     update_header_layout();
 }

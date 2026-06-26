@@ -104,6 +104,7 @@ private:
     int m_clr_swatch_size_dip;
     int m_min_filament;
     int m_max_filament;
+    bool m_can_add_or_remove{true};
 
     // Material combobox panel (body content)
     wxPanel*    m_combobox_panel{nullptr};
