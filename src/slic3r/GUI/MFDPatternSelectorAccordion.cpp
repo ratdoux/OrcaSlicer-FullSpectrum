@@ -42,16 +42,13 @@ void MFDPatternSelectorAccordion::build_ui()
     m_pattern_input->SetFont(::Label::Body_14);
     m_pattern_input->Bind(wxEVT_TEXT, &MFDPatternSelectorAccordion::on_text_changed, this);
 
-    // Backspace button wrapper - larger hit area for usability.
-    wxPanel* bs_wrapper = new wxPanel(body, wxID_ANY, wxDefaultPosition,
+    wxPanel* bs_btn = new wxPanel(body, wxID_ANY, wxDefaultPosition,
         wxSize(this->FromDIP(38), this->FromDIP(30)), wxBORDER_NONE);
-    bs_wrapper->SetMinSize(wxSize(this->FromDIP(38), this->FromDIP(30)));
-    bs_wrapper->SetBackgroundColour(body->GetBackgroundColour());
-
-    wxPanel* bs_btn = new wxPanel(bs_wrapper, wxID_ANY,
-        wxPoint(this->FromDIP(2), this->FromDIP(2)), wxSize(this->FromDIP(34), this->FromDIP(26)), wxBORDER_NONE);
+    bs_btn->SetMinSize(wxSize(this->FromDIP(38), this->FromDIP(30)));
     bs_btn->SetBackgroundStyle(wxBG_STYLE_PAINT);
     bs_btn->SetToolTip(_L("Delete last entry"));
+
+    auto bs_hovered = std::make_shared<bool>(false);
 
     // Custom-painted backspace icon (chevron/backspace shape with X inside)
     auto paint_backspace = [this](wxGraphicsContext* gc, const wxSize& size, bool hovered) {
@@ -72,13 +69,13 @@ void MFDPatternSelectorAccordion::build_ui()
         gc->StrokeLine(ixcx - ixw, cy + ixw, ixcx + ixw, cy - ixw);
     };
 
-    bs_btn->Bind(wxEVT_PAINT, [this, bs_btn, paint_backspace](wxPaintEvent&) {
+    bs_btn->Bind(wxEVT_PAINT, [this, bs_btn, paint_backspace, bs_hovered](wxPaintEvent&) {
         wxPaintDC dc(bs_btn);
         wxGCDC gcdc(dc);
         wxGraphicsContext* gc = gcdc.GetGraphicsContext();
         if (!gc) return;
         wxSize size = bs_btn->GetClientSize();
-        bool hovered = bs_btn->GetSize().x > this->FromDIP(34);
+        bool hovered = *bs_hovered;
         if (hovered) {
             gc->SetBrush(wxBrush(wxColour(224, 80, 80)));
         } else {
@@ -88,13 +85,13 @@ void MFDPatternSelectorAccordion::build_ui()
         gc->DrawRectangle(0, 0, size.x, size.y);
         paint_backspace(gc, size, hovered);
     });
-    bs_btn->Bind(wxEVT_ENTER_WINDOW, [this, bs_btn](wxMouseEvent& e) {
+    bs_btn->Bind(wxEVT_ENTER_WINDOW, [bs_btn, bs_hovered](wxMouseEvent& e) {
         bs_btn->SetCursor(wxCursor(wxCURSOR_HAND));
-        bs_btn->SetSize(this->FromDIP(0), this->FromDIP(0), this->FromDIP(38), this->FromDIP(30));
+        *bs_hovered = true;
         bs_btn->Refresh(); e.Skip();
     });
-    bs_btn->Bind(wxEVT_LEAVE_WINDOW, [this, bs_btn](wxMouseEvent& e) {
-        bs_btn->SetSize(this->FromDIP(2), this->FromDIP(2), this->FromDIP(34), this->FromDIP(26));
+    bs_btn->Bind(wxEVT_LEAVE_WINDOW, [bs_btn, bs_hovered](wxMouseEvent& e) {
+        *bs_hovered = false;
         bs_btn->Refresh(); e.Skip();
     });
     bs_btn->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& e) {
@@ -103,7 +100,7 @@ void MFDPatternSelectorAccordion::build_ui()
 
     input_row->Add(m_pattern_input, 1, wxEXPAND | wxALIGN_CENTER_VERTICAL);
     input_row->AddSpacer(this->FromDIP(4));
-    input_row->Add(bs_wrapper, 0, wxALIGN_CENTER_VERTICAL);
+    input_row->Add(bs_btn, 0, wxALIGN_CENTER_VERTICAL);
     sizer->Add(input_row, 0, wxEXPAND | wxBOTTOM, this->FromDIP(4));
 
     // --- Warning label (hidden until a parse error occurs) ---
@@ -131,31 +128,33 @@ void MFDPatternSelectorAccordion::build_filament_row(
         wxString  display_index = wxString::Format("%zu", i + 1);
         wxString  tooltip_name  = wxString::FromUTF8(name.c_str());
 
-        // Wrapper provides the larger hover hit-area
-        wxPanel* wrapper = new wxPanel(parent, wxID_ANY, wxDefaultPosition,
-            wxSize(this->FromDIP(32), this->FromDIP(32)), wxBORDER_NONE);
-        wrapper->SetMinSize(wxSize(this->FromDIP(32), this->FromDIP(32)));
-        wrapper->SetBackgroundColour(parent->GetBackgroundColour());
-
-        wxPanel* swatch = new wxPanel(wrapper, wxID_ANY,
-            wxPoint(this->FromDIP(6), this->FromDIP(6)), wxSize(this->FromDIP(20), this->FromDIP(20)), wxBORDER_NONE);
+        wxPanel* swatch = new wxPanel(parent, wxID_ANY, wxDefaultPosition,
+            wxSize(this->FromDIP(28), this->FromDIP(28)), wxBORDER_NONE);
+        swatch->SetMinSize(wxSize(this->FromDIP(28), this->FromDIP(28)));
         swatch->SetBackgroundStyle(wxBG_STYLE_PAINT);
         swatch->SetToolTip(tooltip_name);
 
-        swatch->Bind(wxEVT_PAINT, [swatch, color, display_index](wxPaintEvent&) {
+        auto is_hovered = std::make_shared<bool>(false);
+
+        swatch->Bind(wxEVT_PAINT, [swatch, color, display_index, is_hovered](wxPaintEvent&) {
             wxPaintDC dc(swatch);
             wxSize s = swatch->GetClientSize();
             wxColor c = color;
             wxString idx = display_index;
-            FilamentCardMixed::paint_clr_swatch(dc, s, c, idx, wxGetApp().dark_mode());
+            int padding = *is_hovered ? 0 : swatch->FromDIP(2);
+
+            dc.SetBackground(wxBrush(swatch->GetParent()->GetBackgroundColour()));
+            dc.Clear();
+
+            FilamentCardMixed::paint_clr_swatch(dc, s, c, idx, wxGetApp().dark_mode(), padding);
         });
-        swatch->Bind(wxEVT_ENTER_WINDOW, [this, swatch](wxMouseEvent& e) {
+        swatch->Bind(wxEVT_ENTER_WINDOW, [swatch, is_hovered](wxMouseEvent& e) {
             swatch->SetCursor(wxCursor(wxCURSOR_HAND));
-            swatch->SetSize(this->FromDIP(4), this->FromDIP(4), this->FromDIP(24), this->FromDIP(24));
+            *is_hovered = true;
             swatch->Refresh(); e.Skip();
         });
-        swatch->Bind(wxEVT_LEAVE_WINDOW, [this, swatch](wxMouseEvent& e) {
-            swatch->SetSize(this->FromDIP(6), this->FromDIP(6), this->FromDIP(20), this->FromDIP(20));
+        swatch->Bind(wxEVT_LEAVE_WINDOW, [swatch, is_hovered](wxMouseEvent& e) {
+            *is_hovered = false;
             swatch->Refresh(); e.Skip();
         });
 
@@ -172,7 +171,7 @@ void MFDPatternSelectorAccordion::build_filament_row(
             e.Skip();
         });
 
-        parent->GetSizer()->Add(wrapper, 0, wxALL, 0);
+        parent->GetSizer()->Add(swatch, 0, wxALL, this->FromDIP(2));
     }
 }
 

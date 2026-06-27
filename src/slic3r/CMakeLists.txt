@@ -281,6 +281,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/MixedFilamentDialog.hpp
     GUI/MFDColorPickerAccordion.cpp
     GUI/MFDColorPickerAccordion.hpp
+    GUI/MFDGradientAccordion.cpp
+    GUI/MFDGradientAccordion.hpp
     GUI/MFDMaterialAccordion.cpp
     GUI/MFDMaterialAccordion.hpp
     GUI/MFDPatternSelectorAccordion.cpp

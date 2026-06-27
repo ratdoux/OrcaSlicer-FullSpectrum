@@ -32,7 +32,8 @@ public:
         const wxSize&   size, 
         wxColor&        color, 
         wxString&       index_text, 
-        bool            is_dark
+        bool            is_dark,
+        int             padding = 0
     );
 
     static void paint_box_mix(
@@ -53,6 +54,17 @@ public:
         const wxColor&              background_color,
         std::vector<unsigned int>   indices,
         std::vector<wxColor>&       colors,
+        bool                        is_dark,
+        bool                        is_hovered,
+        wxSize&                     swatch_size);
+
+    static void paint_box_gradient(
+        wxDC&                       context,
+        const wxSize&               size,
+        const wxColor&              background_color,
+        const std::vector<wxColor>& colors,
+        const std::vector<double>&  positions,
+        const std::vector<unsigned int>& indices,
         bool                        is_dark,
         bool                        is_hovered,
         wxSize&                     swatch_size);

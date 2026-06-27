@@ -200,24 +200,33 @@ std::vector<wxColor> FilamentCardMixed::get_physical_filaments_colors(const std:
 
 // static
 // paint background, text and optional border of color swatch
-void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxColor& color, wxString& text, bool is_dark)
+void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxColor& color, wxString& text, bool is_dark, int padding)
 {
-    // background
-    context.SetBackground(wxBrush(color));
-    context.Clear();
+    // Draw the swatch box (optionally inset by padding)
+    int x = padding;
+    int y = padding;
+    int w = size.x - 2 * padding;
+    int h = size.y - 2 * padding;
+
+    if (w <= 0 || h <= 0) return;
+
+    // Draw the swatch background
+    context.SetPen(*wxTRANSPARENT_PEN);
+    context.SetBrush(wxBrush(color));
+    context.DrawRectangle(x, y, w, h);
 
     // optional border
     if (is_dark && color.Red() < 45 && color.Green() < 45 && color.Blue() < 45)
     {
         context.SetPen(wxPen(wxColour(130, 130, 128), 1)); // grey border for very dark colors
         context.SetBrush(*wxTRANSPARENT_BRUSH);
-        context.DrawRectangle(0, 0, size.x, size.y);
+        context.DrawRectangle(x, y, w, h);
     } 
     else if (!is_dark && color.Red() > 224 && color.Green() > 224 && color.Blue() > 224)
     {
         context.SetPen(wxPen(wxColour(207, 207, 207), 1)); // light grey border for very light colors
         context.SetBrush(*wxTRANSPARENT_BRUSH);
-        context.DrawRectangle(0, 0, size.x, size.y);
+        context.DrawRectangle(x, y, w, h);
     }
 
     // text
@@ -225,7 +234,7 @@ void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxCo
     context.SetTextForeground(color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
 
     const wxSize text_size = context.GetTextExtent(text);
-    const wxPoint text_baseline_start_pos((size.x - text_size.x) / 2, (size.y - text_size.y) / 2);
+    const wxPoint text_baseline_start_pos(x + (w - text_size.x) / 2, y + (h - text_size.y) / 2);
     context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
 }
 
@@ -478,6 +487,155 @@ void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool r
     if (refresh)
         Refresh();
 
+}
+
+void FilamentCardMixed::paint_box_gradient(
+    wxDC&                       context,
+    const wxSize&               size,
+    const wxColor&              background_color,
+    const std::vector<wxColor>& colors,
+    const std::vector<double>&  positions,
+    const std::vector<unsigned int>& indices,
+    bool                        is_dark,
+    bool                        is_hovered,
+    wxSize&                     swatch_size)
+{
+    // background
+    context.SetBrush(wxBrush(background_color));
+    context.SetPen(*wxTRANSPARENT_PEN);
+    context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+    if (colors.empty() || positions.empty() || colors.size() != indices.size() || positions.size() != (2 * colors.size() - 1)) {
+        return;
+    }
+
+    const int count = static_cast<int>(colors.size());
+    const int padding = (size.y - swatch_size.y) / 2;
+    const double w = std::max(1.0, (double)size.x - 2.0 * padding);
+    const double h = swatch_size.y;
+    const double sx = padding;
+    const double sy = padding;
+
+    // Use wxGraphicsContext for smooth gradient drawing
+    std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::CreateFromUnknownDC(context));
+    if (!gc) return;
+
+    // Draw the gradient bar
+    for (int i = 0; i < count - 1; ++i) {
+        double p_start = positions[2 * i];
+        double p_mid   = positions[2 * i + 1];
+        double p_end   = positions[2 * i + 2];
+
+        double x_start = sx + p_start * w;
+        double x_mid   = sx + p_mid * w;
+        double x_end   = sx + p_end * w;
+
+        wxColor c_start = colors[i];
+        wxColor c_end   = colors[i + 1];
+        wxColor c_mid(
+            (c_start.Red() + c_end.Red()) / 2,
+            (c_start.Green() + c_end.Green()) / 2,
+            (c_start.Blue() + c_end.Blue()) / 2
+        );
+
+        if (x_mid > x_start) {
+            wxGraphicsBrush gb1 = gc->CreateLinearGradientBrush(x_start, sy, x_mid, sy, c_start, c_mid);
+            gc->SetBrush(gb1);
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRectangle(x_start, sy, x_mid - x_start + 0.5, h);
+        }
+        if (x_end > x_mid) {
+            wxGraphicsBrush gb2 = gc->CreateLinearGradientBrush(x_mid, sy, x_end, sy, c_mid, c_end);
+            gc->SetBrush(gb2);
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRectangle(x_mid, sy, x_end - x_mid, h);
+        }
+    }
+
+    // Now draw the filament numbers over their positions.
+    std::vector<double> x_pos(count);
+    std::vector<wxString> labels(count);
+    std::vector<double> text_widths(count);
+    double min_gap = wxWindow::FromDIP(4, context.GetWindow()); // minimal gap between text labels
+    double side_padding = wxWindow::FromDIP(4, context.GetWindow());
+
+    context.SetFont(::Label::Body_14);
+
+    for (int i = 0; i < count; ++i) {
+        x_pos[i] = sx + positions[2 * i] * w;
+        labels[i] = wxString::Format("%u", indices[i]);
+        wxSize text_size = context.GetTextExtent(labels[i]);
+        text_widths[i] = text_size.x;
+    }
+
+    std::vector<double> left_bounds(count);
+    std::vector<double> right_bounds(count);
+
+    // Initial positioning: center each label at its filament's X coordinate
+    for (int i = 0; i < count; ++i) {
+        left_bounds[i] = x_pos[i] - text_widths[i] / 2.0;
+        right_bounds[i] = left_bounds[i] + text_widths[i];
+    }
+
+    // Clamp to boundaries first (including side padding)
+    left_bounds[0] = std::max(sx + side_padding, left_bounds[0]);
+    right_bounds[0] = left_bounds[0] + text_widths[0];
+
+    right_bounds[count - 1] = std::min(sx + w - side_padding, right_bounds[count - 1]);
+    left_bounds[count - 1] = right_bounds[count - 1] - text_widths[count - 1];
+
+    // Forward pass: push overlapping labels rightwards
+    for (int i = 1; i < count; ++i) {
+        if (left_bounds[i] < right_bounds[i - 1] + min_gap) {
+            left_bounds[i] = right_bounds[i - 1] + min_gap;
+            right_bounds[i] = left_bounds[i] + text_widths[i];
+        }
+    }
+
+    // Backward pass: push overlapping labels leftwards
+    if (right_bounds[count - 1] > sx + w - side_padding) {
+        right_bounds[count - 1] = sx + w - side_padding;
+        left_bounds[count - 1] = right_bounds[count - 1] - text_widths[count - 1];
+    }
+    for (int i = count - 2; i >= 0; --i) {
+        if (right_bounds[i] > left_bounds[i + 1] - min_gap) {
+            right_bounds[i] = left_bounds[i + 1] - min_gap;
+            left_bounds[i] = right_bounds[i] - text_widths[i];
+        }
+    }
+
+    // Double check boundary violation after backward pass
+    if (left_bounds[0] < sx + side_padding) {
+        left_bounds[0] = sx + side_padding;
+        right_bounds[0] = left_bounds[0] + text_widths[0];
+        for (int i = 1; i < count; ++i) {
+            if (left_bounds[i] < right_bounds[i - 1] + min_gap) {
+                left_bounds[i] = right_bounds[i - 1] + min_gap;
+                right_bounds[i] = left_bounds[i] + text_widths[i];
+            }
+        }
+    }
+
+    // Draw the text
+    for (int i = 0; i < count; ++i) {
+        wxColor fill_color = colors[i];
+        wxColor text_color = fill_color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE;
+        
+        context.SetTextForeground(text_color);
+        wxSize text_size = context.GetTextExtent(labels[i]);
+        int text_y = sy + (h - text_size.y) / 2;
+        context.DrawText(labels[i], (int)left_bounds[i], text_y);
+    }
+
+    // border (draw last, so its on top)
+    const int border_width = 1;
+    const wxColor border_color = is_hovered
+        ? wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1) 
+        : wxColor("#CECECE");
+
+    context.SetBrush(*wxTRANSPARENT_BRUSH);
+    context.SetPen(wxPen(border_color, border_width));
+    context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 }
 
 } // namespace Slic3r::GUI

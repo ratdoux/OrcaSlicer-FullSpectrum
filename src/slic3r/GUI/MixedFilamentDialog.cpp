@@ -5,6 +5,7 @@
 #include "MFDRatioAccordion.hpp"
 #include "MFDRecommendationsAccordion.hpp"
 #include "MFDPreviewAccordion.hpp"
+#include "MFDGradientAccordion.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 
 
@@ -208,6 +209,21 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
         sync_color_picker_to_mix();
     });
 
+    m_gradient_accordion = new MFDGradientAccordion(
+        m_content_panel,
+        m_selected_filaments,
+        m_selected_filaments_colors,
+        m_gradient_positions,
+        m_gradient_min_ratio,
+        m_physical_filaments
+    );
+    m_gradient_accordion->set_on_changed([this]() {
+        if (m_list_preview_panel) m_list_preview_panel->Refresh();
+    });
+    m_gradient_accordion->set_on_filament_changed([this](size_t slot, int new_phys_idx) {
+        on_filament_selection_changed(slot, new_phys_idx);
+    });
+
     m_recommendations_accordion = new MFDRecommendationsAccordion(m_content_panel, m_physical_filaments);
     m_recommendations_accordion->set_on_preset_selected([this](const std::vector<int>& phys, const std::vector<double>& w) {
         set_active_mix(phys, w);
@@ -220,6 +236,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_content_sizer->Add(m_pattern_selector_accordion, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     m_content_sizer->Add(m_material_accordion, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     m_content_sizer->Add(m_ratio_accordion, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    m_content_sizer->Add(m_gradient_accordion, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     m_content_sizer->Add(m_preview_accordion, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     m_content_sizer->Add(m_recommendations_accordion, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
 
@@ -233,6 +250,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_list_preview_panel = new wxPanel(m_footer_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(30)), wxBORDER_NONE);
     m_list_preview_panel->SetMinSize(wxSize(-1, FromDIP(30)));
     m_list_preview_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    m_list_preview_panel->SetDoubleBuffered(true);
 
     m_list_preview_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
         wxPaintDC context(m_list_preview_panel);
@@ -288,19 +306,17 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
                 context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
             }
         } else if (m_current_tab == Tab::Gradient) {
-            // Draw placeholder/TBD for Gradient (background and border only)
-            context.SetBrush(wxBrush(background_color));
-            context.SetPen(*wxTRANSPARENT_PEN);
-            context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
-
-            const int border_width = 1;
-            const wxColor border_color = m_is_list_preview_hovered
-                ? wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1)
-                : wxColor("#CECECE");
-
-            context.SetBrush(*wxTRANSPARENT_BRUSH);
-            context.SetPen(wxPen(border_color, border_width));
-            context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+            std::vector<unsigned int> indices;
+            for (int idx : m_selected_filaments) {
+                indices.push_back(idx + 1);
+            }
+            FilamentCardMixed::paint_box_gradient(
+                context, size, background_color,
+                m_selected_filaments_colors,
+                m_gradient_positions,
+                indices,
+                is_dark, m_is_list_preview_hovered, swatch_size
+            );
         }
     });
 
@@ -418,8 +434,10 @@ void MixedFilamentDialog::update_tabs()
     m_material_accordion->Show(m_current_tab != Tab::Pattern);
     bool can_edit_materials = (m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio) || (m_current_tab == Tab::Gradient);
     m_material_accordion->update_button_visibility(can_edit_materials);
+    m_material_accordion->show_percentages(m_current_tab != Tab::Gradient);
 
     m_ratio_accordion->Show(m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio);
+    m_gradient_accordion->Show(m_current_tab == Tab::Gradient);
     m_recommendations_accordion->Show(m_current_tab == Tab::Mix);
     m_preview_accordion->Show(m_current_tab != Tab::Gradient);
 
@@ -432,9 +450,8 @@ void MixedFilamentDialog::update_tabs()
     if (m_current_tab == Tab::Pattern) {
         m_preview_accordion->expand();
     }
-
     if (m_current_tab == Tab::Gradient) {
-        // Gradient not implemented yet
+        m_gradient_accordion->expand();
     }
 
     m_content_panel->Layout();
@@ -474,6 +491,7 @@ void MixedFilamentDialog::on_filament_selection_changed(size_t slot, int new_phy
             m_material_accordion->set_combobox_selection(old_slot, m_selected_filaments[old_slot]);
         }
         m_selected_filaments[slot] = new_phys_idx;
+        m_material_accordion->set_combobox_selection(slot, new_phys_idx);
         update_material_state();
     }
 }
@@ -503,6 +521,11 @@ void MixedFilamentDialog::update_material_state()
     
     m_ratio_accordion->update_sizing();
     m_ratio_accordion->Refresh();
+
+    if (m_gradient_accordion) {
+        m_gradient_accordion->update_sizing();
+        m_gradient_accordion->sync_data();
+    }
 
     m_recommendations_accordion->update_recommendations(m_physical_filaments, m_min_weight_ratio);
 

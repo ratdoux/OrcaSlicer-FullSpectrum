@@ -93,6 +93,9 @@ public:
     // Returns current number of combobox rows.
     int get_combobox_count() const { return static_cast<int>(m_comboboxes.size()); }
 
+    // Show/hide percentages inside dropdown rows and collapsed headers
+    void show_percentages(bool show);
+
 protected:
     void on_collapsed_changed(bool collapsed) override;
 
@@ -124,6 +127,8 @@ private:
     std::vector<wxPanel*> m_title_swatches;
     std::vector<wxStaticText*> m_title_percent_texts;
     std::vector<int>      m_last_preview_filaments;
+
+    bool m_show_percentages{true};
 
     std::function<void()>                       m_on_add_filament;
     std::function<void()>                       m_on_remove_filament;

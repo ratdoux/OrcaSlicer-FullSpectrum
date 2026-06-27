@@ -137,7 +137,7 @@ void MFDRatioAccordion::build_min_weight_row()
     wxStaticText* pct_label = new wxStaticText(m_min_weight_panel, wxID_ANY, "%");
     pct_label->SetFont(::Label::Body_14);
 
-    row_sizer->Add(label,                  0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, FromDIP(8));
+    row_sizer->Add(label,                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     row_sizer->Add(m_min_weight_slider,    1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     row_sizer->Add(m_min_weight_value_input, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     row_sizer->Add(pct_label,              0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
@@ -178,7 +178,7 @@ void MFDRatioAccordion::build_min_weight_row()
     m_min_weight_value_input->Bind(wxEVT_KILL_FOCUS, format_input);
     m_min_weight_value_input->Bind(wxEVT_TEXT_ENTER, format_input);
 
-    sizer->Add(m_min_weight_panel, 0, wxEXPAND | wxALL, FromDIP(8));
+    sizer->Add(m_min_weight_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
     update_sizing();
 }
 

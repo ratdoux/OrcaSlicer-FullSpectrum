@@ -47,6 +47,7 @@ class MFDMaterialAccordion;
 class MFDRatioAccordion;
 class MFDRecommendationsAccordion;
 class MFDPreviewAccordion;
+class MFDGradientAccordion;
 
 class MixedFilamentDialog : public DPIDialog
 {
@@ -89,6 +90,10 @@ private:
     std::vector<int>     m_selected_filaments;
     std::vector<double>  m_selected_filaments_weights;
     std::vector<wxColor> m_selected_filaments_colors;
+
+    // Gradient state
+    std::vector<double>  m_gradient_positions;
+    double               m_gradient_min_ratio{0.10};
 
     // -----------------------------------------------------------------------
     // UI construction
@@ -230,6 +235,7 @@ private:
     MFDRatioAccordion*            m_ratio_accordion{nullptr};
     MFDRecommendationsAccordion*  m_recommendations_accordion{nullptr};
     MFDPreviewAccordion*          m_preview_accordion{nullptr};
+    MFDGradientAccordion*         m_gradient_accordion{nullptr};
 
     // Layer-stack data cached between preview updates
     std::vector<MFDPreviewLayerEntry> m_preview_layer_stack;

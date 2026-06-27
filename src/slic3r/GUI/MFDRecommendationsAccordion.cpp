@@ -7,6 +7,8 @@
 
 #include "I18N.hpp"
 #include "Widgets/Label.hpp"
+#include "Widgets/FilamentCardMixed.hpp"
+#include "GUI_App.hpp"
 
 namespace Slic3r::GUI {
 
@@ -48,7 +50,7 @@ void MFDRecommendationsAccordion::fill_recommendations(
                 std::vector<int>    pi = {i, j};
                 wxColor mc = get_mixed_color(pi, w);
                 wrap_50->Add(create_mix_tile(container, mc, format_tooltip(pi, w, mc), pi, w),
-                             0, wxALL, FromDIP(4));
+                             0, wxALL, FromDIP(2));
             }
         }
         container_sizer->Add(wrap_50, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
@@ -61,7 +63,7 @@ void MFDRecommendationsAccordion::fill_recommendations(
                 std::vector<int>    pi = {i, j};
                 wxColor mc = get_mixed_color(pi, w);
                 wrap_66->Add(create_mix_tile(container, mc, format_tooltip(pi, w, mc), pi, w),
-                             0, wxALL, FromDIP(4));
+                             0, wxALL, FromDIP(2));
             }
         }
         container_sizer->Add(wrap_66, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
@@ -81,7 +83,7 @@ void MFDRecommendationsAccordion::fill_recommendations(
                     std::vector<int>    pi = {i, j, k};
                     wxColor mc = get_mixed_color(pi, w);
                     wrap_3->Add(create_mix_tile(container, mc, format_tooltip(pi, w, mc), pi, w),
-                                0, wxALL, FromDIP(4));
+                                0, wxALL, FromDIP(2));
                 }
             }
         }
@@ -97,10 +99,36 @@ wxPanel* MFDRecommendationsAccordion::create_mix_tile(
     const std::vector<double>&  weights)
 {
     wxPanel* tile = new wxPanel(parent, wxID_ANY, wxDefaultPosition,
-                                wxSize(FromDIP(24), FromDIP(24)), wxBORDER_NONE);
-    tile->SetBackgroundColour(color);
+                                wxSize(FromDIP(28), FromDIP(28)), wxBORDER_NONE);
+    tile->SetMinSize(wxSize(FromDIP(28), FromDIP(28)));
+    tile->SetBackgroundStyle(wxBG_STYLE_PAINT);
     tile->SetCursor(wxCursor(wxCURSOR_HAND));
     tile->SetToolTip(tooltip);
+
+    auto is_hovered = std::make_shared<bool>(false);
+
+    tile->Bind(wxEVT_PAINT, [tile, color, is_hovered](wxPaintEvent&) {
+        wxPaintDC dc(tile);
+        wxSize s = tile->GetClientSize();
+        wxColor c = color;
+        wxString idx = "";
+        int padding = *is_hovered ? 0 : tile->FromDIP(2);
+
+        dc.SetBackground(wxBrush(tile->GetParent()->GetBackgroundColour()));
+        dc.Clear();
+
+        FilamentCardMixed::paint_clr_swatch(dc, s, c, idx, wxGetApp().dark_mode(), padding);
+    });
+
+    tile->Bind(wxEVT_ENTER_WINDOW, [tile, is_hovered](wxMouseEvent& e) {
+        *is_hovered = true;
+        tile->Refresh(); e.Skip();
+    });
+
+    tile->Bind(wxEVT_LEAVE_WINDOW, [tile, is_hovered](wxMouseEvent& e) {
+        *is_hovered = false;
+        tile->Refresh(); e.Skip();
+    });
 
     // Clicking a tile fires the callback so the dialog can apply the preset
     // to its state and propagate the change to other sections.

@@ -91,6 +91,7 @@ bool MFDMaterialAccordion::add_combobox_row(int selected_filament_index)
     wxStaticText* weight_label = new wxStaticText(row_panel, wxID_ANY, "--%");
     weight_label->SetMinSize(wxSize(FromDIP(30), -1));
     weight_label->SetFont(::Label::Body_12);
+    weight_label->Show(m_show_percentages);
 
     row_sizer->Add(label,        0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     row_sizer->Add(combobox,     1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
@@ -291,7 +292,11 @@ void MFDMaterialAccordion::update_title_preview(
             pct_text->SetToolTip(wxString::FromUTF8(name.c_str()));
 
             sizer->Add(swatch,   0, wxALIGN_CENTER_VERTICAL);
-            sizer->Add(pct_text, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+            if (m_show_percentages) {
+                sizer->Add(pct_text, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+            } else {
+                pct_text->Show(false);
+            }
             if (i < count - 1)
                 sizer->AddSpacer(FromDIP(12));
 
@@ -305,7 +310,12 @@ void MFDMaterialAccordion::update_title_preview(
         // Just update the percentages on cached labels to avoid rebuilding
         for (int i = 0; i < count; ++i) {
             if (i < static_cast<int>(m_title_percent_texts.size())) {
-                m_title_percent_texts[i]->SetLabel(wxString::Format("%d%%", percentages[i]));
+                if (m_show_percentages) {
+                    m_title_percent_texts[i]->SetLabel(wxString::Format("%d%%", percentages[i]));
+                    m_title_percent_texts[i]->Show(true);
+                } else {
+                    m_title_percent_texts[i]->Show(false);
+                }
                 m_title_percent_texts[i]->InvalidateBestSize();
             }
         }
@@ -328,6 +338,28 @@ void MFDMaterialAccordion::on_collapsed_changed(bool collapsed)
     if (m_add_btn)              m_add_btn->Show(m_can_add_or_remove && !collapsed);
     if (m_delete_btn)           m_delete_btn->Show(m_can_add_or_remove && !collapsed);
     if (m_title_preview_panel)  m_title_preview_panel->Show(collapsed);
+    update_header_layout();
+}
+
+void MFDMaterialAccordion::show_percentages(bool show)
+{
+    if (m_show_percentages == show) return;
+    m_show_percentages = show;
+
+    for (wxStaticText* weight_label : m_weight_labels) {
+        if (weight_label) weight_label->Show(show);
+    }
+
+    for (wxStaticText* pct_text : m_title_percent_texts) {
+        if (pct_text) pct_text->Show(show);
+    }
+
+    m_last_preview_filaments.clear(); // invalidate cache to force reconstruction
+    if (m_title_preview_panel) {
+        m_title_preview_panel->Layout();
+    }
+    m_combobox_panel->Layout();
+    Layout();
     update_header_layout();
 }
 
