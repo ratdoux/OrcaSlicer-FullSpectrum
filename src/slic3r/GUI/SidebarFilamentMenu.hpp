@@ -136,6 +136,7 @@ private:
     // Mixed Title panel elements
     wxStaticText*   m_lbl_mixed_title{nullptr};
     wxPanel*        m_mixed_divider{nullptr};
+    Button*         m_btn_mixed_manage{nullptr};
     ScalableButton* m_btn_mixed_del{nullptr};
     ScalableButton* m_btn_mixed_add{nullptr};
 };

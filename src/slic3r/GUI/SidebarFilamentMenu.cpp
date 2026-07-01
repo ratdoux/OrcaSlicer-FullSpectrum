@@ -4,6 +4,7 @@
 #include "GUI_App.hpp"
 #include "Plater.hpp"
 #include "MixedFilamentDialog.hpp"
+#include "MixedFilamentBatchDialog.hpp"
 #include "Widgets/FilamentCard.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 #include "libslic3r/MixedFilament.hpp"
@@ -431,6 +432,17 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     m_mixed_title_sizer->Add(mixed_title_and_divider_sizer, 1, wxEXPAND);
 
+    // Manage button
+    m_btn_mixed_manage = new Button(m_mixed_title_panel, _L("Manage"));
+    m_btn_mixed_manage->SetStyle(ButtonStyle::Confirm, ButtonType::Compact);
+    m_btn_mixed_manage->Bind(wxEVT_BUTTON, [this](auto&) {
+        MixedFilamentBatchDialog dlg(this, m_physical_filaments);
+        if (dlg.ShowModal() == wxID_OK) {
+            dlg.apply_batch_changes();
+        }
+    });
+    m_mixed_title_sizer->Add(m_btn_mixed_manage, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
+
     // Delete button
     m_btn_mixed_del = new ScalableButton(m_mixed_title_panel, wxID_ANY, "delete_filament");
     m_btn_mixed_del->SetToolTip(_L("Remove last mixed filament"));
@@ -586,6 +598,8 @@ void SidebarFilamentMenu::msw_rescale()
     m_btn_ams->msw_rescale();
     m_btn_settings->msw_rescale();
     m_btn_flushing->Rescale();
+    if (m_btn_mixed_manage)
+        m_btn_mixed_manage->Rescale();
 
     for (auto* card : m_physical_cards) {
         card->m_filament_combo_box->msw_rescale();
@@ -600,6 +614,8 @@ void SidebarFilamentMenu::sys_color_changed()
     m_btn_ams->msw_rescale();
     m_btn_settings->msw_rescale();
     m_btn_flushing->Rescale();
+    if (m_btn_mixed_manage)
+        m_btn_mixed_manage->Rescale();
 
     for (auto* card : m_physical_cards) {
         card->m_filament_combo_box->sys_color_changed();

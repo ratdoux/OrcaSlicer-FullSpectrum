@@ -279,6 +279,12 @@ set(SLIC3R_GUI_SOURCES
     GUI/MeshUtils.hpp
     GUI/MixedFilamentDialog.cpp
     GUI/MixedFilamentDialog.hpp
+    GUI/MixedFilamentBatchDialog.cpp
+    GUI/MixedFilamentBatchDialog.hpp
+    GUI/MFDBatchActiveAccordion.cpp
+    GUI/MFDBatchActiveAccordion.hpp
+    GUI/MFDBatchRecommendedAccordion.cpp
+    GUI/MFDBatchRecommendedAccordion.hpp
     GUI/MFDColorPickerAccordion.cpp
     GUI/MFDColorPickerAccordion.hpp
     GUI/MFDGradientAccordion.cpp
