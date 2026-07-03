@@ -22,7 +22,7 @@ MFDGradientAccordion::MFDGradientAccordion(
     double& min_ratio,
     const std::vector<std::pair<std::string, std::string>>& physical_filaments
 )
-    : Accordion(parent, _L("Linear Gradient"))
+    : Accordion(parent, _L("Select Gradient"))
     , m_selected_filaments(selected_filaments)
     , m_filament_colors(filament_colors)
     , m_gradient_positions(gradient_positions)

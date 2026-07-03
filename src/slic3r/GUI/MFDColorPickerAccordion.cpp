@@ -13,7 +13,7 @@
 namespace Slic3r::GUI {
 
 MFDColorPickerAccordion::MFDColorPickerAccordion(wxWindow* parent)
-    : Accordion(parent, _L("Color Picker"))
+    : Accordion(parent, _L("Select Color"))
 {
     build_ui();
 }

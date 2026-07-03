@@ -15,7 +15,7 @@ namespace Slic3r::GUI {
 MFDPatternSelectorAccordion::MFDPatternSelectorAccordion(
     wxWindow*                                                   parent,
     const std::vector<std::pair<std::string, std::string>>&     physical_filaments)
-    : Accordion(parent, _L("Pattern Selector"))
+    : Accordion(parent, _L("Select Pattern"))
     , m_physical_filaments(physical_filaments)
 {
     build_ui();
