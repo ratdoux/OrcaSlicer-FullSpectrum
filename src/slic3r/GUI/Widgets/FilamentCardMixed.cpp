@@ -7,6 +7,7 @@
 #include "libslic3r/MixedFilament.hpp"
 
 #include <wx/wx.h>
+#include <wx/graphics.h>
 #include <string>
 #include <cctype> 
 
@@ -236,6 +237,72 @@ void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxCo
     const wxSize text_size = context.GetTextExtent(text);
     const wxPoint text_baseline_start_pos(x + (w - text_size.x) / 2, y + (h - text_size.y) / 2);
     context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
+}
+
+void FilamentCardMixed::paint_clr_swatch_gradient(
+    wxDC&                       context,
+    const wxSize&               size,
+    const std::vector<wxColor>& colors,
+    wxString&                   text,
+    bool                        is_dark,
+    int                         padding)
+{
+    int x = padding;
+    int y = padding;
+    int w = size.x - 2 * padding;
+    int h = size.y - 2 * padding;
+
+    if (w <= 0 || h <= 0 || colors.empty()) return;
+
+    std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::CreateFromUnknownDC(context));
+    if (!gc) return;
+
+    if (colors.size() == 1) {
+        gc->SetBrush(wxBrush(colors[0]));
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        gc->DrawRectangle(x, y, w, h);
+    } else {
+        int segments = static_cast<int>(colors.size()) - 1;
+        double segment_h = static_cast<double>(h) / segments;
+        for (int i = 0; i < segments; ++i) {
+            double start_y = y + h - i * segment_h;
+            double end_y = y + h - (i + 1) * segment_h;
+            wxGraphicsBrush gb = gc->CreateLinearGradientBrush(x, start_y, x, end_y, colors[i], colors[i + 1]);
+            gc->SetBrush(gb);
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRectangle(x, end_y - 0.5, w, start_y - end_y + 0.5);
+        }
+    }
+
+    double avg_r = 0, avg_g = 0, avg_b = 0;
+    for (const auto& col : colors) {
+        avg_r += col.Red();
+        avg_g += col.Green();
+        avg_b += col.Blue();
+    }
+    avg_r /= colors.size();
+    avg_g /= colors.size();
+    avg_b /= colors.size();
+    wxColor avg_color(static_cast<int>(avg_r), static_cast<int>(avg_g), static_cast<int>(avg_b));
+
+    if (is_dark && avg_color.Red() < 45 && avg_color.Green() < 45 && avg_color.Blue() < 45) {
+        context.SetPen(wxPen(wxColour(130, 130, 128), 1));
+        context.SetBrush(*wxTRANSPARENT_BRUSH);
+        context.DrawRectangle(x, y, w, h);
+    } else if (!is_dark && avg_color.Red() > 224 && avg_color.Green() > 224 && avg_color.Blue() > 224) {
+        context.SetPen(wxPen(wxColour(207, 207, 207), 1));
+        context.SetBrush(*wxTRANSPARENT_BRUSH);
+        context.DrawRectangle(x, y, w, h);
+    }
+
+    if (!text.IsEmpty()) {
+        context.SetFont(::Label::Body_14);
+        context.SetTextForeground(avg_color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
+
+        const wxSize text_size = context.GetTextExtent(text);
+        const wxPoint text_baseline_start_pos(x + (w - text_size.x) / 2, y + (h - text_size.y) / 2);
+        context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
+    }
 }
 
 // static

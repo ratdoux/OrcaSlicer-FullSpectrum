@@ -232,6 +232,16 @@ void MFDGradientAccordion::sync_data()
     m_canvas->Refresh();
 }
 
+void MFDGradientAccordion::reset_to_defaults()
+{
+    reset_points_to_defaults(m_filament_colors.size());
+    m_selected_stop_index = 0;
+    m_last_count = m_filament_colors.size();
+    clamp_all_stops();
+    sync_edit_panel();
+    m_canvas->Refresh();
+}
+
 void MFDGradientAccordion::reset_points_to_defaults(int count)
 {
     m_gradient_positions.clear();

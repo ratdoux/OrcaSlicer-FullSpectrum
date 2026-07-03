@@ -29,10 +29,14 @@ namespace Slic3r::GUI {
 class MFDRecommendationsAccordion : public Accordion
 {
 public:
+    enum class Mode { Mix, Gradient };
+
     MFDRecommendationsAccordion(
         wxWindow*                                                    parent,
         const std::vector<std::pair<std::string, std::string>>&      physical_filaments);
     ~MFDRecommendationsAccordion() override = default;
+
+    void set_mode(Mode mode);
 
     // Called when the user clicks a recommendation tile.
     // Provides the physical filament indices and weights for the chosen preset.
@@ -57,18 +61,30 @@ private:
         const std::vector<int>&     physical_indices,
         const std::vector<double>&  weights);
 
+    wxPanel* create_gradient_tile(
+        wxPanel*                    parent,
+        const std::vector<int>&     physical_indices);
+
     wxString format_tooltip(
         const std::vector<int>&    phys_indices,
         const std::vector<double>& weights,
         const wxColor&             mixed_color) const;
 
+    wxString format_gradient_tooltip(const std::vector<int>& phys_indices) const;
+
     wxColor get_mixed_color(
         const std::vector<int>&    phys_indices,
         const std::vector<double>& weights) const;
 
+    static bool is_color_in_between(const wxColor& c1, const wxColor& c2, const wxColor& c3, double max_dev = 60.0);
+
     const std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
 
     std::function<void(const std::vector<int>&, const std::vector<double>&)> m_on_preset_selected;
+
+    Mode     m_mode{Mode::Mix};
+    wxPanel* m_mix_panel{nullptr};
+    wxPanel* m_gradient_panel{nullptr};
 };
 
 } // namespace Slic3r::GUI

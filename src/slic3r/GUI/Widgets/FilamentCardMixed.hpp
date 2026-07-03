@@ -36,6 +36,15 @@ public:
         int             padding = 0
     );
 
+    static void paint_clr_swatch_gradient(
+        wxDC&                       context,
+        const wxSize&               size,
+        const std::vector<wxColor>& colors,
+        wxString&                   text,
+        bool                        is_dark,
+        int                         padding = 0
+    );
+
     static void paint_box_mix(
         wxDC&                       context, 
         const wxSize&               size, 

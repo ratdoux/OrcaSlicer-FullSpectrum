@@ -28,6 +28,7 @@ public:
 
     void update_sizing();
     void sync_data();
+    void reset_to_defaults();
 
 private:
     void build_ui();

@@ -431,7 +431,13 @@ void MixedFilamentDialog::update_tabs()
 
     m_ratio_accordion->Show(m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio);
     m_gradient_accordion->Show(m_current_tab == Tab::Gradient);
-    m_recommendations_accordion->Show(m_current_tab == Tab::Mix);
+    
+    bool show_recs = (m_current_tab == Tab::Mix || m_current_tab == Tab::Gradient);
+    m_recommendations_accordion->Show(show_recs);
+    if (show_recs) {
+        m_recommendations_accordion->set_mode(m_current_tab == Tab::Gradient ? MFDRecommendationsAccordion::Mode::Gradient : MFDRecommendationsAccordion::Mode::Mix);
+    }
+    
     m_preview_accordion->Show(true);
 
     if (m_current_tab == Tab::Mix && m_mix_method == MixMethod::ByColor) {
@@ -603,7 +609,11 @@ void MixedFilamentDialog::set_active_mix(const std::vector<int>& physical_filame
         m_material_accordion->set_combobox_selection(i, physical_filaments[i]);
     }
 
-    m_selected_filaments_weights = weights;
+    if (!weights.empty()) {
+        m_selected_filaments_weights = weights;
+    } else {
+        m_selected_filaments_weights = get_default_weights(target_count);
+    }
     m_selected_filaments_colors  = get_selected_filaments_colors(m_selected_filaments);
 
     m_material_accordion->refresh_combobox_items(m_selected_filaments);
@@ -612,6 +622,15 @@ void MixedFilamentDialog::set_active_mix(const std::vector<int>& physical_filame
     
     m_ratio_accordion->update_sizing();
     m_ratio_accordion->Refresh();
+
+    if (m_gradient_accordion) {
+        m_gradient_accordion->update_sizing();
+        m_gradient_accordion->sync_data();
+    }
+
+    if (m_current_tab == Tab::Gradient && m_gradient_accordion) {
+        m_gradient_accordion->reset_to_defaults();
+    }
 
     m_content_panel->FitInside();
 
