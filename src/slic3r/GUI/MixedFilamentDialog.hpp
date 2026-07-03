@@ -185,12 +185,7 @@ private:
         const std::vector<int>& filament_indices) const;
     std::vector<wxColor> get_colors_from_indices(const std::vector<int>& indices) const;
 
-    // Layer-stack computation for the preview visualization.
-    // Struct definition removed, now using MFDPreviewLayerEntry from MFDPreviewAccordion.hpp
-    static std::vector<MFDPreviewLayerEntry> compute_layer_stack(
-        const std::vector<double>& weights, int total_layers = 20);
-    std::vector<MFDPreviewLayerEntry> compute_pattern_layer_stack(
-        const std::vector<int>& pattern_indices, int total_layers = 20);
+
 
     // Fallback size constraint (prevents horizontal resizing).
     void on_sizing(wxSizeEvent& event);
@@ -237,9 +232,7 @@ private:
     MFDPreviewAccordion*          m_preview_accordion{nullptr};
     MFDGradientAccordion*         m_gradient_accordion{nullptr};
 
-    // Layer-stack data cached between preview updates
-    std::vector<MFDPreviewLayerEntry> m_preview_layer_stack;
-    std::vector<wxColor>         m_preview_colors;
+
 
     // Color-match deviation (kept on the dialog for use by the color picker accordion)
     double m_current_deviation{-1.0};

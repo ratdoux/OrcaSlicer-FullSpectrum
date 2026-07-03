@@ -357,6 +357,7 @@ void MFDGradientAccordion::apply_text_input_change()
                 m_gradient_positions[stop_idx - 1] = p_left_fil + r_left * (m_gradient_positions[stop_idx] - p_left_fil);
                 m_gradient_positions[stop_idx + 1] = m_gradient_positions[stop_idx] + r_right * (p_right_fil - m_gradient_positions[stop_idx]);
 
+                clamp_all_stops();
                 if (m_on_changed) m_on_changed();
                 m_canvas->Refresh();
             }
@@ -369,6 +370,7 @@ void MFDGradientAccordion::apply_text_input_change()
             double min_bound = p_left + L;
             double max_bound = p_right - L;
             m_gradient_positions[stop_idx] = std::clamp(global_pos, min_bound, max_bound);
+            clamp_all_stops();
             if (m_on_changed) m_on_changed();
             m_canvas->Refresh();
         }
@@ -614,6 +616,8 @@ void MFDGradientAccordion::update_positions_from_mouse(int x)
         double max_bound = m_gradient_positions[idx + 1] - L;
         m_gradient_positions[idx] = std::clamp(p_new, min_bound, max_bound);
     }
+
+    clamp_all_stops();
 
     if (m_on_changed) m_on_changed();
     m_canvas->Refresh();

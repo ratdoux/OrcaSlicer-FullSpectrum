@@ -12,6 +12,7 @@
 #include <wx/wx.h>
 #include <wx/wrapsizer.h>
 #include <wx/dcgraph.h>
+#include <wx/dcbuffer.h>
 #include <algorithm>
 #include <cmath>
 
@@ -175,20 +176,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
 
     m_pattern_selector_accordion = new MFDPatternSelectorAccordion(m_content_panel, m_physical_filaments);
     m_pattern_selector_accordion->set_on_pattern_changed([this](const std::vector<int>& indices) {
-        m_preview_layer_stack = compute_pattern_layer_stack(indices, 20);
-        
-        std::vector<int> all_filaments(m_physical_filaments.size());
-        for (size_t i = 0; i < all_filaments.size(); ++i) all_filaments[i] = static_cast<int>(i);
-        m_preview_colors = get_selected_filaments_colors(all_filaments);
-        
-        std::vector<double> weights(m_physical_filaments.size(), 0.0);
-        for (int idx : indices) weights[idx - 1] += 1.0;
-        double total = indices.size();
-        for (double& w : weights) w /= total;
-        
-        wxColor mixed_color = compute_mixed_color(m_physical_filaments, all_filaments, weights);
-        m_preview_accordion->update_preview(m_preview_layer_stack, m_preview_colors, mixed_color);
-        if (m_list_preview_panel) m_list_preview_panel->Refresh();
+        update_preview();
     });
     m_pattern_selector_accordion->set_on_pattern_invalid([this]() {
         m_preview_accordion->clear_preview();
@@ -218,6 +206,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
         m_physical_filaments
     );
     m_gradient_accordion->set_on_changed([this]() {
+        update_preview();
         if (m_list_preview_panel) m_list_preview_panel->Refresh();
     });
     m_gradient_accordion->set_on_filament_changed([this](size_t slot, int new_phys_idx) {
@@ -252,8 +241,12 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_list_preview_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_list_preview_panel->SetDoubleBuffered(true);
 
+    m_list_preview_panel->Bind(wxEVT_ERASE_BACKGROUND, [](wxEraseEvent&) {
+        // Do nothing to prevent OS background erasure flickers
+    });
+
     m_list_preview_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
-        wxPaintDC context(m_list_preview_panel);
+        wxAutoBufferedPaintDC context(m_list_preview_panel);
         const wxSize size = m_list_preview_panel->GetClientSize();
         const wxColor background_color = GetBackgroundColour();
         wxSize swatch_size(FromDIP(20), FromDIP(20));
@@ -439,7 +432,7 @@ void MixedFilamentDialog::update_tabs()
     m_ratio_accordion->Show(m_current_tab == Tab::Mix && m_mix_method == MixMethod::ManualRatio);
     m_gradient_accordion->Show(m_current_tab == Tab::Gradient);
     m_recommendations_accordion->Show(m_current_tab == Tab::Mix);
-    m_preview_accordion->Show(m_current_tab != Tab::Gradient);
+    m_preview_accordion->Show(true);
 
     if (m_current_tab == Tab::Mix && m_mix_method == MixMethod::ByColor) {
         m_color_picker_accordion->expand();
@@ -448,7 +441,7 @@ void MixedFilamentDialog::update_tabs()
         m_ratio_accordion->expand();
     }
     if (m_current_tab == Tab::Pattern) {
-        m_preview_accordion->expand();
+        m_pattern_selector_accordion->expand();
     }
     if (m_current_tab == Tab::Gradient) {
         m_gradient_accordion->expand();
@@ -576,7 +569,8 @@ void MixedFilamentDialog::update_color_match(const wxColour& selected_color, boo
     if (update_active_mix) {
         set_active_mix(best->filament_indices, best->weights);
     } else {
-        update_preview(best->filament_indices, best->weights);
+        m_preview_accordion->update_preview_mix(best->weights, get_selected_filaments_colors(best->filament_indices), best->mixed_color);
+        if (m_list_preview_panel) m_list_preview_panel->Refresh();
     }
 
     double dr = selected_color.Red()   - best->mixed_color.Red();
@@ -628,18 +622,19 @@ void MixedFilamentDialog::set_active_mix(const std::vector<int>& physical_filame
 }
 void MixedFilamentDialog::update_preview()
 {
-    if (m_current_tab == Tab::Pattern) {
+    if (m_current_tab == Tab::Mix) {
+        wxColor mixed_color = compute_mixed_color(m_physical_filaments, m_selected_filaments, m_selected_filaments_weights);
+        m_preview_accordion->update_preview_mix(m_selected_filaments_weights, m_selected_filaments_colors, mixed_color);
+    } else if (m_current_tab == Tab::Pattern) {
         wxString pattern_str = m_pattern_selector_accordion->get_pattern_string();
         std::vector<int> pattern_indices;
         wxString error_msg;
         if (MFDPatternSelectorAccordion::parse_pattern(pattern_str, m_physical_filaments.size(), pattern_indices, error_msg)) {
-            m_preview_layer_stack = compute_pattern_layer_stack(pattern_indices, 20);
-            
             std::vector<int> all_filaments(m_physical_filaments.size());
             for (size_t i = 0; i < all_filaments.size(); ++i) {
                 all_filaments[i] = static_cast<int>(i);
             }
-            m_preview_colors = get_selected_filaments_colors(all_filaments);
+            std::vector<wxColor> colors = get_selected_filaments_colors(all_filaments);
             
             std::vector<double> weights(m_physical_filaments.size(), 0.0);
             for (int idx : pattern_indices) {
@@ -651,22 +646,13 @@ void MixedFilamentDialog::update_preview()
             }
             
             wxColor mixed_color = compute_mixed_color(m_physical_filaments, all_filaments, weights);
-            m_preview_accordion->update_preview(m_preview_layer_stack, m_preview_colors, mixed_color);
+            m_preview_accordion->update_preview_pattern(pattern_indices, colors, mixed_color);
         } else {
             m_preview_accordion->clear_preview();
         }
-    } else {
-        update_preview(m_selected_filaments, m_selected_filaments_weights);
+    } else if (m_current_tab == Tab::Gradient) {
+        m_preview_accordion->update_preview_gradient(m_selected_filaments_colors, m_gradient_positions);
     }
-    if (m_list_preview_panel) m_list_preview_panel->Refresh();
-}
-
-void MixedFilamentDialog::update_preview(const std::vector<int>& filaments, const std::vector<double>& weights)
-{
-    m_preview_layer_stack = compute_layer_stack(weights, 20);
-    m_preview_colors = get_selected_filaments_colors(filaments);
-    wxColor mixed_color = compute_mixed_color(m_physical_filaments, filaments, weights);
-    m_preview_accordion->update_preview(m_preview_layer_stack, m_preview_colors, mixed_color);
     if (m_list_preview_panel) m_list_preview_panel->Refresh();
 }
 
@@ -778,85 +764,7 @@ std::vector<double> MixedFilamentDialog::get_default_weights(int filament_count)
     }
 }
 
-std::vector<MFDPreviewLayerEntry> MixedFilamentDialog::compute_layer_stack(const std::vector<double>& weights, int total_layers)
-{
-    std::vector<MFDPreviewLayerEntry> stack;
-    int n_filaments = weights.size();
-    if (n_filaments == 0) return stack;
-    if (n_filaments == 1) {
-        for (int i = 0; i < total_layers; ++i) stack.push_back({0, 1.0});
-        return stack;
-    }
 
-    std::vector<int> counts(n_filaments, 0);
-    int total_assigned = 0;
-    std::vector<double> remainders(n_filaments, 0.0);
-
-    for (int i = 0; i < n_filaments; ++i) {
-        double exact = weights[i] * total_layers;
-        counts[i] = static_cast<int>(std::floor(exact));
-        remainders[i] = exact - counts[i];
-        total_assigned += counts[i];
-    }
-
-    while (total_assigned < total_layers) {
-        int best_idx = 0;
-        double max_rem = -1.0;
-        for (int i = 0; i < n_filaments; ++i) {
-            if (remainders[i] > max_rem) {
-                max_rem = remainders[i];
-                best_idx = i;
-            }
-        }
-        counts[best_idx]++;
-        remainders[best_idx] -= 1.0;
-        total_assigned++;
-    }
-
-    auto generate_pattern = [&]() {
-        std::vector<int> current_counts = counts;
-        std::vector<int> pattern;
-        pattern.reserve(total_layers);
-        for (int step = 0; step < total_layers; ++step) {
-            int best_idx = -1;
-            double max_score = -1e9;
-            for (int i = 0; i < n_filaments; ++i) {
-                if (current_counts[i] > 0) {
-                    double score = static_cast<double>(current_counts[i]) / counts[i];
-                    if (score > max_score) {
-                        max_score = score;
-                        best_idx = i;
-                    }
-                }
-            }
-            if (best_idx != -1) {
-                pattern.push_back(best_idx);
-                current_counts[best_idx]--;
-            }
-        }
-        return pattern;
-    };
-
-    std::vector<int> pattern = generate_pattern();
-    for (int idx : pattern) {
-        stack.push_back({idx, 1.0});
-    }
-
-    return stack;
-}
-
-std::vector<MFDPreviewLayerEntry> MixedFilamentDialog::compute_pattern_layer_stack(const std::vector<int>& pattern_indices, int total_layers)
-{
-    std::vector<MFDPreviewLayerEntry> stack;
-    if (pattern_indices.empty()) return stack;
-    
-    int num_indices = pattern_indices.size();
-    for (int i = 0; i < total_layers; ++i) {
-        int idx = pattern_indices[i % num_indices] - 1;
-        stack.push_back({idx, 1.0});
-    }
-    return stack;
-}
 
 void MixedFilamentDialog::on_dpi_changed(const wxRect& suggested_rect)
 {
