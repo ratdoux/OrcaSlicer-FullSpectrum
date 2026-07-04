@@ -263,6 +263,13 @@ wxString MFDPatternSelectorAccordion::get_pattern_string() const
     return m_pattern_input ? m_pattern_input->GetValue() : wxString();
 }
 
+void MFDPatternSelectorAccordion::set_pattern_string(const wxString& pattern_str)
+{
+    if (m_pattern_input) {
+        m_pattern_input->SetValue(pattern_str);
+    }
+}
+
 void MFDPatternSelectorAccordion::trigger_initial_validation()
 {
     if (m_pattern_input) {

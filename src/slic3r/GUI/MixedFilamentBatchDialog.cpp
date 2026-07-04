@@ -422,8 +422,11 @@ void MixedFilamentBatchDialog::apply_batch_changes()
     }
 
     // 3. Persist and Sync
+    const std::string serialized = mgr.serialize_custom_entries();
     if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
-        opt->value = mgr.serialize_custom_entries();
+        opt->value = serialized;
+    else
+        preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
 
     wxGetApp().plater()->sidebar().update_mixed_filament_panel(false);
     preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);

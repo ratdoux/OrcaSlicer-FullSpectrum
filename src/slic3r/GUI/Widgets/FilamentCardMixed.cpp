@@ -21,7 +21,7 @@ FilamentCardMixed::FilamentCardMixed(wxWindow* parent, MixedFilamentDefinition* 
     , m_definition{definition}
     , m_physical_filaments{physical_filaments}
 {
-    SetBackgroundColour(*wxWHITE);
+    SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
     update_state(definition, false);
 
     build_ui();
@@ -79,11 +79,10 @@ void FilamentCardMixed::build_ui()
         wxPaintDC    context(m_clr_swatch_panel);
         const wxSize size = m_clr_swatch_panel->GetClientSize();
 
-        //TODO get color and text from data
         paint_clr_swatch(
             context,
             size, 
-            HexStringToWxColor("AABBCC"), // m_definition->presentation.display_color), 
+            HexStringToWxColor(m_definition->presentation.display_color), 
             wxString(std::to_string(m_definition->identity.stable_id)),
             wxGetApp().dark_mode()
         );
@@ -188,7 +187,7 @@ std::vector<wxColor> FilamentCardMixed::get_physical_filaments_colors(const std:
     colors.reserve(filament_indices.size());
 
     for (auto physical_filament_index : filament_indices) {
-        if (physical_filament_index < 0 || physical_filament_index >= (int) m_physical_filaments.size()) {
+        if (physical_filament_index < 1 || physical_filament_index > m_physical_filaments.size()) {
             colors.push_back(wxColor(*wxBLACK));
         } else {
             const auto& [color_hex, name] = m_physical_filaments[physical_filament_index - 1];
@@ -535,7 +534,7 @@ void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool r
     // TODO update color swatch and content panel based on data
 
     if (definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) {
-        m_physical_filaments_indices     = definition->recipe.blend.component_ids(definition->recipe.blend.components.size());
+        m_physical_filaments_indices     = definition->recipe.blend.component_ids();
         m_physical_filaments_colors      = get_physical_filaments_colors(m_physical_filaments_indices);
         m_physical_filaments_percentages = definition->recipe.blend.component_percents();
     } else {

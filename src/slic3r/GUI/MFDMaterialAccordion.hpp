@@ -72,6 +72,9 @@ public:
     // Returns false if already at minimum count.
     bool remove_last_combobox_row();
 
+    // Clear all combobox rows.
+    void clear_combobox_rows();
+
     // Refresh combobox item text to reflect which filaments are "already selected" (swap labels).
     void refresh_combobox_items(const std::vector<int>& selected_filaments);
 

@@ -156,6 +156,17 @@ bool MFDMaterialAccordion::remove_last_combobox_row()
     return true;
 }
 
+void MFDMaterialAccordion::clear_combobox_rows()
+{
+    for (ComboBox* combobox : m_comboboxes) {
+        m_combobox_sizer->Detach(combobox->GetParent());
+        combobox->GetParent()->Destroy();
+    }
+    m_comboboxes.clear();
+    m_weight_labels.clear();
+    m_combobox_panel->Layout();
+}
+
 void MFDMaterialAccordion::refresh_combobox_items(const std::vector<int>& selected_filaments)
 {
     // Mark already-selected filaments so the user understands they would be swapped, not duplicated.

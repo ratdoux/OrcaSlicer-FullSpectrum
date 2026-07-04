@@ -54,6 +54,7 @@ public:
     }
 
     wxString get_pattern_string() const;
+    void set_pattern_string(const wxString& pattern_str);
 
     // Parse 'pattern_str' against 'num_filaments' available filaments.
     // Returns true and populates out_indices on success.

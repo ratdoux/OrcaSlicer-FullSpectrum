@@ -28,7 +28,8 @@ namespace Slic3r::GUI {
 MixedFilamentDialog::MixedFilamentDialog(
     wxWindow*                   parent,
     MixedFilamentDialog::Action dialog_action,
-    std::vector<std::pair<std::string, std::string>>& physical_filaments
+    std::vector<std::pair<std::string, std::string>>& physical_filaments,
+    int                         mixed_idx
 ) : DPIDialog(
         parent, 
         wxID_ANY, 
@@ -50,16 +51,140 @@ MixedFilamentDialog::MixedFilamentDialog(
 
     SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
 
-    m_selected_filaments.push_back(0);
-    if (m_physical_filaments.size() > 1) {
-        m_selected_filaments.push_back(1);
-    } else {
-        m_selected_filaments.push_back(0);
+    bool loaded_preset = false;
+    auto* preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle && mixed_idx >= 0 && dialog_action == Action::Edit) {
+        auto definitions = preset_bundle->mixed_filaments.mixed_filament_definitions(physical_filaments.size());
+        if (mixed_idx < (int)definitions.size()) {
+            const auto& def = definitions[mixed_idx];
+            
+            if (def.recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
+                m_current_tab = Tab::Pattern;
+
+                std::vector<unsigned int> pattern_indices;
+                if (def.recipe.manual_pattern) {
+                    for (const auto& group : def.recipe.manual_pattern->groups) {
+                        for (const auto& ref : group) {
+                            pattern_indices.push_back(ref.id);
+                        }
+                    }
+                }
+
+                struct FilamentUsage {
+                    int index;
+                    int count;
+                    int first_pos;
+                };
+
+                std::vector<FilamentUsage> usages;
+                for (size_t i = 0; i < physical_filaments.size(); ++i) {
+                    usages.push_back({static_cast<int>(i), 0, 999999});
+                }
+                for (int pos = 0; pos < (int)pattern_indices.size(); ++pos) {
+                    int idx = pattern_indices[pos] - 1;
+                    if (idx >= 0 && idx < (int)usages.size()) {
+                        usages[idx].count++;
+                        if (usages[idx].first_pos == 999999) {
+                            usages[idx].first_pos = pos;
+                        }
+                    }
+                }
+
+                std::vector<FilamentUsage> used_filaments;
+                for (const auto& u : usages) {
+                    if (u.count > 0) {
+                        used_filaments.push_back(u);
+                    }
+                }
+
+                std::sort(used_filaments.begin(), used_filaments.end(), [](const FilamentUsage& a, const FilamentUsage& b) {
+                    if (a.count != b.count) {
+                        return a.count > b.count;
+                    }
+                    return a.first_pos < b.first_pos;
+                });
+
+                int limit = max_filament;
+                if ((int)used_filaments.size() > limit) {
+                    used_filaments.resize(limit);
+                }
+
+                m_selected_filaments.clear();
+                m_selected_filaments_weights.clear();
+
+                if (!used_filaments.empty()) {
+                    double total_count = 0;
+                    for (const auto& u : used_filaments) {
+                        total_count += u.count;
+                    }
+                    for (const auto& u : used_filaments) {
+                        m_selected_filaments.push_back(u.index);
+                        m_selected_filaments_weights.push_back(u.count / total_count);
+                    }
+                }
+
+                if (m_selected_filaments.size() < 2) {
+                    int free_idx = find_first_free_filament();
+                    if (free_idx < 0) free_idx = 0;
+                    m_selected_filaments.push_back(free_idx);
+                    m_selected_filaments_weights = { 1.0, 0.0 };
+                }
+            } else {
+                m_current_tab = Tab::Mix;
+
+                m_selected_filaments.clear();
+                m_selected_filaments_weights.clear();
+                for (size_t i = 0; i < def.recipe.blend.components.size() && i < (size_t)max_filament; ++i) {
+                    const auto& comp = def.recipe.blend.components[i];
+                    m_selected_filaments.push_back(static_cast<int>(comp.filament.id - 1));
+                    m_selected_filaments_weights.push_back(comp.percent / 100.0);
+                }
+            }
+
+            loaded_preset = true;
+        }
     }
-    m_selected_filaments_weights = get_default_weights(2);
+
+    if (!loaded_preset) {
+        m_selected_filaments.push_back(0);
+        if (m_physical_filaments.size() > 1) {
+            m_selected_filaments.push_back(1);
+        } else {
+            m_selected_filaments.push_back(0);
+        }
+        m_selected_filaments_weights = get_default_weights(2);
+    }
     m_selected_filaments_colors = get_selected_filaments_colors(m_selected_filaments);
 
     build_ui(parent);
+
+    if (loaded_preset && m_current_tab == Tab::Pattern) {
+        auto definitions = preset_bundle->mixed_filaments.mixed_filament_definitions(physical_filaments.size());
+        if (mixed_idx < (int)definitions.size()) {
+            const auto& def = definitions[mixed_idx];
+            if (m_pattern_selector_accordion) {
+                std::string pat_str;
+                if (def.recipe.manual_pattern) {
+                    std::ostringstream oss;
+                    for (size_t g_idx = 0; g_idx < def.recipe.manual_pattern->groups.size(); ++g_idx) {
+                        if (g_idx != 0)
+                            oss << ',';
+                        for (const auto& ref : def.recipe.manual_pattern->groups[g_idx]) {
+                            if (ref.id >= 10) {
+                                oss << '[' << ref.id << ']';
+                            } else {
+                                oss << ref.id;
+                            }
+                        }
+                    }
+                    pat_str = oss.str();
+                }
+                m_pattern_selector_accordion->set_pattern_string(wxString(pat_str));
+            }
+        }
+    }
+
+    update_tabs();
 }
 
 void MixedFilamentDialog::build_ui(wxWindow* parent)
@@ -366,11 +491,8 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     pos.x += m_width_fixed;
     SetPosition(pos);
 
-    m_material_accordion->add_combobox_row(0);
-    if (m_physical_filaments.size() > 1) {
-        m_material_accordion->add_combobox_row(1);
-    } else {
-        m_material_accordion->add_combobox_row(0);
+    for (int idx : m_selected_filaments) {
+        m_material_accordion->add_combobox_row(idx);
     }
     m_material_accordion->refresh_combobox_items(m_selected_filaments);
 
@@ -455,6 +577,9 @@ void MixedFilamentDialog::update_tabs()
 
     m_content_panel->Layout();
     m_content_panel->FitInside();
+    if (m_btn_ok) {
+        m_btn_ok->Enable(m_current_tab != Tab::Gradient);
+    }
     Layout();
     Refresh();
 }
@@ -944,6 +1069,66 @@ std::vector<wxColor> MixedFilamentDialog::get_colors_from_indices(const std::vec
         }
     }
     return colors;
+}
+
+MixedFilamentDefinition MixedFilamentDialog::get_result() const
+{
+    MixedFilamentDefinition def;
+    def.source.kind = MixedFilamentSourceKind::Custom;
+    def.source.origin_auto = false;
+    def.visibility.tombstoned = false;
+
+    if (m_current_tab == Tab::Mix) {
+        def.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+        def.behavior.distribution = MixedFilamentDistributionMode::Simple;
+        for (size_t i = 0; i < m_selected_filaments.size(); ++i) {
+            unsigned int phys_id = static_cast<unsigned int>(m_selected_filaments[i] + 1);
+            int percent = std::clamp(static_cast<int>(std::round(m_selected_filaments_weights[i] * 100.0)), 0, 100);
+            def.recipe.blend.components.push_back({{phys_id}, percent});
+        }
+    } else if (m_current_tab == Tab::Pattern) {
+        def.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
+        def.behavior.distribution = MixedFilamentDistributionMode::Simple;
+
+        wxString pattern_str = m_pattern_selector_accordion->get_pattern_string();
+        std::vector<int> pattern_indices;
+        wxString error_msg;
+        if (MFDPatternSelectorAccordion::parse_pattern(pattern_str, m_physical_filaments.size(), pattern_indices, error_msg)) {
+            std::vector<MixedFilamentPhysicalRef> refs;
+            for (int idx : pattern_indices) {
+                refs.push_back({static_cast<unsigned int>(idx)});
+            }
+            def.recipe.manual_pattern = MixedFilamentManualPattern{{refs}};
+
+            // Rebuild blend components from pattern
+            std::vector<double> weights(m_physical_filaments.size(), 0.0);
+            for (int idx : pattern_indices) {
+                if (idx > 0 && idx <= (int)m_physical_filaments.size()) {
+                    weights[idx - 1] += 1.0;
+                }
+            }
+            double total = pattern_indices.size();
+            for (size_t i = 0; i < weights.size(); ++i) {
+                if (weights[i] > 0.0) {
+                    unsigned int phys_id = static_cast<unsigned int>(i + 1);
+                    int percent = std::clamp(static_cast<int>(std::round((weights[i] / total) * 100.0)), 0, 100);
+                    def.recipe.blend.components.push_back({{phys_id}, percent});
+                }
+            }
+        }
+    } else if (m_current_tab == Tab::Gradient) {
+        // Gradient tab cannot be saved for now (OK button is disabled),
+        // but compile a default mix definition just in case.
+        def.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+        def.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;
+        for (size_t i = 0; i < m_selected_filaments.size(); ++i) {
+            unsigned int phys_id = static_cast<unsigned int>(m_selected_filaments[i] + 1);
+            int percent = std::clamp(static_cast<int>(std::round(m_selected_filaments_weights[i] * 100.0)), 0, 100);
+            def.recipe.blend.components.push_back({{phys_id}, percent});
+        }
+    }
+
+    return def;
 }
 
 } // namespace Slic3r::GUI

@@ -3,6 +3,8 @@
 #include "wxExtensions.hpp"
 #include "GUI_App.hpp"
 #include "Plater.hpp"
+#include "Tab.hpp"
+#include "MainFrame.hpp"
 #include "MixedFilamentDialog.hpp"
 #include "MixedFilamentBatchDialog.hpp"
 #include "Widgets/FilamentCard.hpp"
@@ -107,10 +109,48 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     // ADD new cards if mixed_count increased
     for (int i = current_count; i < new_count; i++) {
         auto* card = new FilamentCardMixed(m_mixed_panel, &mixed_filaments[i], m_physical_filaments);
-        card->set_on_box_edit_callback([this]() 
+        card->set_on_box_edit_callback([this, i]() 
         { 
-            auto dlg = MixedFilamentDialog(this, MixedFilamentDialog::Action::Edit, m_physical_filaments);
-            dlg.ShowModal();
+            MixedFilamentDialog dlg(this, MixedFilamentDialog::Action::Edit, m_physical_filaments, i);
+            if (dlg.ShowModal() == wxID_OK) {
+                MixedFilamentDefinition updated_def = dlg.get_result();
+                auto* preset_bundle = wxGetApp().preset_bundle;
+                if (preset_bundle) {
+                    auto &mgr = preset_bundle->mixed_filaments;
+                    const size_t num_physical = m_physical_filaments.size();
+                    std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(num_physical);
+                    std::vector<MixedFilamentDefinition> old_mixed = definitions;
+
+                    if (i < (int)definitions.size()) {
+                        updated_def.identity = definitions[i].identity;
+                        updated_def.source = definitions[i].source;
+                        updated_def.visibility = definitions[i].visibility;
+
+                        std::vector<std::string> physical_colors;
+                        for (const auto& p : m_physical_filaments) {
+                            physical_colors.push_back(p.first);
+                        }
+
+                        mgr.set_mixed_filament_definition(i, updated_def, physical_colors);
+
+                        const std::string serialized = mgr.serialize_custom_entries();
+                        if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                            opt->value = serialized;
+                        else
+                            preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
+
+                        preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
+
+                        if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
+                            print_tab->update_dirty();
+                        if (wxGetApp().mainframe)
+                            wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
+
+                        wxGetApp().plater()->update_project_dirty_from_presets();
+                        wxGetApp().plater()->on_filaments_change(num_physical);
+                    }
+                }
+            }
         });
 
         m_mixed_cards.push_back(card);
@@ -447,8 +487,96 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_btn_mixed_del = new ScalableButton(m_mixed_title_panel, wxID_ANY, "delete_filament");
     m_btn_mixed_del->SetToolTip(_L("Remove last mixed filament"));
     m_btn_mixed_del->Bind(wxEVT_BUTTON, [this](auto&) {
+        auto* preset_bundle = wxGetApp().preset_bundle;
+        if (preset_bundle) {
+            auto &mgr = preset_bundle->mixed_filaments;
+            const size_t num_physical = m_physical_filaments.size();
+            std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(num_physical);
+            std::vector<MixedFilamentDefinition> old_mixed = definitions;
 
-        // TODO handle delete mixed filament
+            int last_visible_idx = -1;
+            for (int i = static_cast<int>(definitions.size()) - 1; i >= 0; --i) {
+                if (!definitions[i].visibility.tombstoned) {
+                    last_visible_idx = i;
+                    break;
+                }
+            }
+
+            if (last_visible_idx >= 0) {
+                auto &target = definitions[last_visible_idx];
+                auto canonical_pair = [](unsigned int a, unsigned int b) {
+                    return std::make_pair(std::min(a, b), std::max(a, b));
+                };
+                const MixedFilamentPrimaryPairView target_pair_view = target.recipe.blend.primary_pair_or();
+                const std::pair<unsigned int, unsigned int> target_pair = canonical_pair(target_pair_view.component_a.id, target_pair_view.component_b.id);
+                const bool valid_auto_pair = target_pair.first >= 1 &&
+                                             target_pair.second >= 1 &&
+                                             target_pair.first <= num_physical &&
+                                             target_pair.second <= num_physical &&
+                                             target_pair.first != target_pair.second;
+
+                if (target.source.kind == MixedFilamentSourceKind::Custom && target.source.origin_auto && valid_auto_pair) {
+                    bool tombstoned_existing_auto = false;
+                    for (size_t idx = 0; idx < definitions.size(); ++idx) {
+                        if (idx == static_cast<size_t>(last_visible_idx))
+                            continue;
+                        MixedFilamentDefinition &candidate = definitions[idx];
+                        if (candidate.source.kind == MixedFilamentSourceKind::Custom)
+                            continue;
+                        const MixedFilamentPrimaryPairView candidate_pair = candidate.recipe.blend.primary_pair_or();
+                        if (canonical_pair(candidate_pair.component_a.id, candidate_pair.component_b.id) != target_pair)
+                            continue;
+                        candidate.visibility.tombstoned = true;
+                        tombstoned_existing_auto = true;
+                        break;
+                    }
+
+                    if (tombstoned_existing_auto) {
+                        definitions.erase(definitions.begin() + last_visible_idx);
+                    } else {
+                        target.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+                        target.recipe.blend.components = {
+                            {MixedFilamentPhysicalRef{target_pair.first}, 50},
+                            {MixedFilamentPhysicalRef{target_pair.second}, 50}
+                        };
+                        target.recipe.manual_pattern.reset();
+                        target.behavior.layer_cadence.component_a_layers = 1;
+                        target.behavior.layer_cadence.component_b_layers = 1;
+                        target.behavior.distribution = MixedFilamentDistributionMode::Simple;
+                        target.source.kind = MixedFilamentSourceKind::AutoGenerated;
+                        target.source.origin_auto = true;
+                        target.visibility.tombstoned = true;
+                    }
+                } else if (target.source.kind == MixedFilamentSourceKind::Custom) {
+                    definitions.erase(definitions.begin() + last_visible_idx);
+                } else {
+                    target.visibility.tombstoned = true;
+                }
+
+                std::vector<std::string> physical_colors;
+                for (const auto& p : m_physical_filaments) {
+                    physical_colors.push_back(p.first);
+                }
+
+                mgr.set_mixed_filament_definitions(definitions, physical_colors);
+
+                const std::string serialized = mgr.serialize_custom_entries();
+                if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                    opt->value = serialized;
+                else
+                    preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
+
+                preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
+
+                if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
+                    print_tab->update_dirty();
+                if (wxGetApp().mainframe)
+                    wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
+
+                wxGetApp().plater()->update_project_dirty_from_presets();
+                wxGetApp().plater()->on_filaments_change(num_physical);
+            }
+        }
     });
 
     // ORCA Moved add button after delete button to prevent add button position change when remove icon automatically hidden
@@ -458,8 +586,39 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_btn_mixed_add = new ScalableButton(m_mixed_title_panel, wxID_ANY, "add_filament");
     m_btn_mixed_add->SetToolTip(_L("Add one mixed filament"));
     m_btn_mixed_add->Bind(wxEVT_BUTTON, [this](auto&) {
-        
-        // TODO handle add mixed filament
+        MixedFilamentDialog dlg(this, MixedFilamentDialog::Action::Add, m_physical_filaments);
+        if (dlg.ShowModal() == wxID_OK) {
+            MixedFilamentDefinition new_def = dlg.get_result();
+            auto* preset_bundle = wxGetApp().preset_bundle;
+            if (preset_bundle) {
+                auto &mgr = preset_bundle->mixed_filaments;
+                const size_t num_physical = m_physical_filaments.size();
+                std::vector<MixedFilamentDefinition> old_mixed = mgr.mixed_filament_definitions(num_physical);
+
+                std::vector<std::string> physical_colors;
+                for (const auto& p : m_physical_filaments) {
+                    physical_colors.push_back(p.first);
+                }
+
+                mgr.add_custom_filament_definition(new_def, physical_colors);
+
+                const std::string serialized = mgr.serialize_custom_entries();
+                if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                    opt->value = serialized;
+                else
+                    preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
+
+                preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
+
+                if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
+                    print_tab->update_dirty();
+                if (wxGetApp().mainframe)
+                    wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
+
+                wxGetApp().plater()->update_project_dirty_from_presets();
+                wxGetApp().plater()->on_filaments_change(num_physical);
+            }
+        }
     });
 
     m_mixed_title_sizer->Add(m_btn_mixed_add, 0, wxALIGN_CENTER | wxLEFT, FromDIP(SidebarProps::IconSpacing()));

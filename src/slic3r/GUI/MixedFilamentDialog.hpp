@@ -34,6 +34,7 @@
 #include <wx/wx.h>
 #include <wx/scrolwin.h>
 
+#include "libslic3r/MixedFilament.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/Button.hpp"
 #include "GUI_Utils.hpp"
@@ -59,7 +60,10 @@ public:
     MixedFilamentDialog(
         wxWindow* parent,
         Action    action,
-        std::vector<std::pair<std::string, std::string>>& physical_filaments);
+        std::vector<std::pair<std::string, std::string>>& physical_filaments,
+        int       mixed_idx = -1);
+
+    MixedFilamentDefinition get_result() const;
 
 protected:
     void on_dpi_changed(const wxRect& suggested_rect) override;
