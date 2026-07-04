@@ -1,11 +1,16 @@
 #include <catch2/catch.hpp>
 
 #include "libslic3r/ExtrusionEntity.hpp"
+#include "libslic3r/MixedFilamentPreview.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Print.hpp"
+#include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/GCode/ToolOrdering.hpp"
 
+#include <algorithm>
+#include <cstdlib>
 #include <sstream>
+#include <string>
 #include <vector>
 
 using namespace Slic3r;
@@ -64,6 +69,24 @@ struct MixedAutoGenerateGuard
     bool previous = true;
 };
 
+struct TestRGB
+{
+    int r = 0;
+    int g = 0;
+    int b = 0;
+};
+
+static TestRGB parse_test_hex(const std::string &hex)
+{
+    TestRGB c;
+    REQUIRE(hex.size() >= 7);
+    REQUIRE(hex[0] == '#');
+    c.r = std::stoi(hex.substr(1, 2), nullptr, 16);
+    c.g = std::stoi(hex.substr(3, 2), nullptr, 16);
+    c.b = std::stoi(hex.substr(5, 2), nullptr, 16);
+    return c;
+}
+
 // Enable auto_generate by default for all tests (matches production behavior where
 // AppConfig sets this to true during GUI startup).
 static const int _auto_generate_enabler = []() {
@@ -72,6 +95,307 @@ static const int _auto_generate_enabler = []() {
 }();
 
 } // namespace
+
+TEST_CASE("Mixed filament TD99 transmittance follows the 99 percent definition", "[MixedFilament][Preview]")
+{
+    CHECK(mixed_filament_td99_transmittance(1.0, 1.0) == Approx(0.01).epsilon(0.001));
+    CHECK(mixed_filament_td99_transmittance(0.5, 1.0) == Approx(0.10).epsilon(0.001));
+    CHECK(mixed_filament_td99_opacity(1.0, 1.0) == Approx(0.99).epsilon(0.001));
+    CHECK(mixed_filament_td99_transmittance(0.2, 0.0) == Approx(1.0));
+}
+
+TEST_CASE("Mixed filament TD sidewall prediction requires explicit TD values", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> sequence { 1, 2 };
+    CHECK(mixed_filament_sidewall_prediction_available(sequence, { 0.8, 1.2 }, MixedFilamentSidewallBlendModel::TdFilamentMixer));
+    CHECK_FALSE(mixed_filament_sidewall_prediction_available(sequence, { 0.8, 0.0 }, MixedFilamentSidewallBlendModel::TdFilamentMixer));
+    CHECK_FALSE(mixed_filament_sidewall_prediction_available(sequence, { 0.8, 1.2 }, MixedFilamentSidewallBlendModel::Legacy));
+}
+
+TEST_CASE("Mixed filament TD sidewall prediction isolates separate XY regions", "[MixedFilament][Preview]")
+{
+    const std::vector<MixedFilamentOpticalMaterial> materials {
+        { "#FFFF00", 0.6 },
+        { "#0000FF", 0.6 },
+        { "#FF00FF", 0.6 }
+    };
+    const std::vector<MixedFilamentSidewallSample> samples {
+        { 0, 0, 1, 0.0, 0.2 },
+        { 0, 1, 1, 0.0, 0.2 },
+        { 1, 0, 2, 0.2, 0.2 },
+        { 1, 1, 3, 0.2, 0.2 }
+    };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdFilamentMixer;
+
+    const std::vector<std::string> apparent = predict_mixed_filament_sidewall_sample_colors(samples, materials, settings);
+    REQUIRE(apparent.size() == samples.size());
+    CHECK(apparent[0] != apparent[1]);
+
+    const TestRGB yellow_under_blue    = parse_test_hex(apparent[0]);
+    const TestRGB yellow_under_magenta = parse_test_hex(apparent[1]);
+    CHECK(yellow_under_blue.r < yellow_under_magenta.r);
+}
+
+TEST_CASE("Mixed filament TD sidewall prediction exposes Yule-Nielsen as a distinct option", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> sequence { 1, 2, 3, 1, 2 };
+    const std::vector<std::string> colors { "#F4D000", "#2040E0", "#C020C0" };
+    const std::vector<double> td99 { 0.7, 1.1, 0.5 };
+
+    MixedFilamentSidewallPredictionSettings mixer_settings;
+    mixer_settings.blend_model = MixedFilamentSidewallBlendModel::TdFilamentMixer;
+    const std::string mixer_color = predict_mixed_filament_sequence_aggregate_color(
+        sequence, colors, td99, 0.2, mixer_settings, "#000000");
+
+    MixedFilamentSidewallPredictionSettings yule_nielsen_settings;
+    yule_nielsen_settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+    const std::string yule_nielsen_color = predict_mixed_filament_sequence_aggregate_color(
+        sequence, colors, td99, 0.2, yule_nielsen_settings, "#000000");
+    const std::vector<std::string> yule_nielsen_layers = predict_mixed_filament_sequence_apparent_colors(
+        sequence, colors, td99, 0.2, yule_nielsen_settings);
+    REQUIRE(yule_nielsen_layers.size() == sequence.size());
+    CHECK(predict_mixed_filament_sequence_apparent_color_at(sequence, 2, colors, td99, 0.2, yule_nielsen_settings, "#000000") ==
+          yule_nielsen_layers[2]);
+
+    CHECK(mixed_filament_sidewall_blend_model_from_string("td_yule_nielsen") == MixedFilamentSidewallBlendModel::TdYuleNielsen);
+    CHECK(mixed_filament_sidewall_blend_model_from_string("TD + Yule-Nielsen") == MixedFilamentSidewallBlendModel::TdYuleNielsen);
+    CHECK(mixed_filament_sidewall_blend_model_from_string("TD + FilamentMixer") == MixedFilamentSidewallBlendModel::TdFilamentMixer);
+    CHECK(mixed_filament_sidewall_blend_model_to_string(MixedFilamentSidewallBlendModel::TdFilamentMixer) == "td_filament_mixer");
+    CHECK(mixer_color != "#000000");
+    CHECK(yule_nielsen_color != "#000000");
+    CHECK(mixer_color != yule_nielsen_color);
+}
+
+TEST_CASE("Mixed filament Yule-Nielsen uses linear reflectance before returning sRGB", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> sequence { 1, 2 };
+    const std::vector<std::string> colors { "#00FFFF", "#FF00FF" };
+    const std::vector<double> td99 { 0.5, 0.5 };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+
+    const TestRGB rgb = parse_test_hex(predict_mixed_filament_sequence_aggregate_color(
+        sequence, colors, td99, 0.2, settings, "#000000"));
+
+    CHECK(rgb.r > 100);
+    CHECK(rgb.g > 100);
+    CHECK(rgb.b > 220);
+}
+
+TEST_CASE("Mixed filament surface predictor attenuates distant different-color layers", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> repeated { 1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2 };
+    const std::vector<std::string> colors { "#FFFF00", "#00FFFF" };
+    const std::vector<double> td99 { 1.0, 1.0 };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+
+    const TestRGB cyan_adjacent_to_yellow = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 5, colors, td99, 0.08, settings, "#000000"));
+    const TestRGB cyan_between_cyan = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 6, colors, td99, 0.08, settings, "#000000"));
+
+    CHECK(cyan_adjacent_to_yellow.b < cyan_between_cyan.b);
+    CHECK(cyan_between_cyan.b - cyan_adjacent_to_yellow.b >= 4);
+    CHECK(cyan_adjacent_to_yellow.r > cyan_between_cyan.r);
+    CHECK(cyan_adjacent_to_yellow.g > cyan_adjacent_to_yellow.r);
+    CHECK(cyan_adjacent_to_yellow.g > cyan_adjacent_to_yellow.b);
+}
+
+TEST_CASE("Mixed filament surface predictor adds neighbor channels for saturated carriers", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> repeated { 1, 2, 1, 2, 1, 2 };
+    const std::vector<std::string> colors { "#FF00FF", "#FFFF00" };
+    const std::vector<double> td99 { 1.0, 1.0 };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+
+    const TestRGB magenta_tinted_by_yellow = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 2, colors, td99, 0.08, settings, "#000000"));
+    const TestRGB yellow_tinted_by_magenta = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 3, colors, td99, 0.08, settings, "#000000"));
+
+    CHECK(magenta_tinted_by_yellow.g > 120);
+    CHECK(magenta_tinted_by_yellow.b < 255);
+    CHECK(magenta_tinted_by_yellow.r >= magenta_tinted_by_yellow.b);
+    CHECK(yellow_tinted_by_magenta.b > 120);
+    CHECK(std::abs(magenta_tinted_by_yellow.g - yellow_tinted_by_magenta.g) < 32);
+    CHECK(std::abs(magenta_tinted_by_yellow.b - yellow_tinted_by_magenta.b) < 32);
+}
+
+TEST_CASE("Mixed filament surface predictor mixes thinner alternating layers more strongly", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> repeated { 1, 2, 1, 2, 1, 2 };
+    const std::vector<std::string> colors { "#FF00FF", "#FFFF00" };
+    const std::vector<double> td99 { 1.0, 1.0 };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+
+    const TestRGB thin_magenta = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 2, colors, td99, 0.08, settings, "#000000"));
+    const TestRGB thin_yellow = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 3, colors, td99, 0.08, settings, "#000000"));
+    const TestRGB thick_magenta = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 2, colors, td99, 0.32, settings, "#000000"));
+    const TestRGB thick_yellow = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 3, colors, td99, 0.32, settings, "#000000"));
+
+    CHECK(thin_magenta.g > thick_magenta.g);
+    CHECK(thin_yellow.b > thick_yellow.b);
+    const int thin_pair_delta = std::abs(thin_magenta.g - thin_yellow.g) + std::abs(thin_magenta.b - thin_yellow.b);
+    const int thick_pair_delta = std::abs(thick_magenta.g - thick_yellow.g) + std::abs(thick_magenta.b - thick_yellow.b);
+    CHECK(thin_pair_delta < thick_pair_delta);
+}
+
+TEST_CASE("Mixed filament surface predictor weakens tint as TD99 increases", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> repeated { 1, 2, 2, 2, 1, 2, 2, 2, 1 };
+    const std::vector<std::string> colors { "#FFFF00", "#00FFFF" };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+
+    const TestRGB low_td_cyan = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 5, colors, { 0.5, 0.5 }, 0.08, settings, "#000000"));
+    const TestRGB high_td_cyan = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 5, colors, { 3.0, 3.0 }, 0.08, settings, "#000000"));
+
+    CHECK(low_td_cyan.b < high_td_cyan.b);
+    CHECK(high_td_cyan.g >= low_td_cyan.g);
+}
+
+TEST_CASE("Mixed filament surface predictor keeps model options visually distinct", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> repeated { 1, 2, 2, 2, 1, 2, 2, 2, 1 };
+    const std::vector<std::string> colors { "#FFFF00", "#00FFFF" };
+    const std::vector<double> td99 { 1.0, 1.0 };
+
+    MixedFilamentSidewallPredictionSettings yule_nielsen_settings;
+    yule_nielsen_settings.blend_model = MixedFilamentSidewallBlendModel::TdYuleNielsen;
+
+    MixedFilamentSidewallPredictionSettings mixer_settings;
+    mixer_settings.blend_model = MixedFilamentSidewallBlendModel::TdFilamentMixer;
+
+    const std::string yule_nielsen_hex = predict_mixed_filament_sequence_surface_color_at(
+        repeated, 5, colors, td99, 0.08, yule_nielsen_settings, "#000000");
+    const std::string mixer_hex = predict_mixed_filament_sequence_surface_color_at(
+        repeated, 5, colors, td99, 0.08, mixer_settings, "#000000");
+    const TestRGB yule_nielsen_cyan = parse_test_hex(yule_nielsen_hex);
+    const TestRGB mixer_cyan = parse_test_hex(mixer_hex);
+
+    CHECK(mixer_hex != yule_nielsen_hex);
+    CHECK(mixer_cyan.b < yule_nielsen_cyan.b);
+}
+
+TEST_CASE("Mixed filament surface predictor keeps yellow-magenta tint orange, not green", "[MixedFilament][Preview]")
+{
+    const std::vector<unsigned int> repeated { 1, 2, 1, 2, 1, 2, 1, 2 };
+    const std::vector<std::string> colors { "#FFFF00", "#FF00FF" };
+    const std::vector<double> td99 { 1.0, 1.0 };
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = MixedFilamentSidewallBlendModel::TdFilamentMixer;
+
+    const TestRGB yellow_tinted_by_magenta = parse_test_hex(predict_mixed_filament_sequence_surface_color_at(
+        repeated, 4, colors, td99, 0.08, settings, "#000000"));
+
+    CHECK(yellow_tinted_by_magenta.r >= yellow_tinted_by_magenta.g);
+    CHECK(yellow_tinted_by_magenta.g > yellow_tinted_by_magenta.b);
+}
+
+TEST_CASE("Mixed filament local-Z preview pass heights fit inside the nominal layer", "[MixedFilament][Preview]")
+{
+    MixedFilamentPreviewSettings settings;
+    settings.nominal_layer_height = 0.2;
+    settings.mixed_lower_bound = 0.04;
+    settings.mixed_upper_bound = 0.16;
+
+    const std::vector<double> passes = mixed_filament_local_z_preview_pass_heights(settings, 75, 0);
+    REQUIRE(passes.size() >= 2);
+
+    double total = 0.0;
+    for (const double h : passes) {
+        CHECK(h >= settings.mixed_lower_bound - 1e-6);
+        CHECK(h <= settings.mixed_upper_bound + 1e-6);
+        total += h;
+    }
+    CHECK(total == Approx(settings.nominal_layer_height).epsilon(0.0001));
+}
+
+TEST_CASE("Mixed filament display color changes only when TD sidewall model is enabled and TD is known", "[MixedFilament][Preview]")
+{
+    MixedFilament mf;
+    mf.component_a = 1;
+    mf.component_b = 2;
+    mf.ratio_a = 1;
+    mf.ratio_b = 1;
+    mf.distribution_mode = int(MixedFilament::Simple);
+    mf.display_color = "#26A69A";
+
+    MixedFilamentDisplayContext context;
+    context.num_physical = 2;
+    context.physical_colors = { "#FFFF00", "#0000FF" };
+    context.preview_settings.nominal_layer_height = 0.2;
+
+    context.sidewall_blend_model = MixedFilamentSidewallBlendModel::Legacy;
+    context.physical_td99_mm = { 0.5, 0.5 };
+    const std::string legacy = compute_mixed_filament_display_color(mf, context);
+
+    context.sidewall_blend_model = MixedFilamentSidewallBlendModel::TdFilamentMixer;
+    context.physical_td99_mm = { 0.0, 0.5 };
+    CHECK(compute_mixed_filament_display_color(mf, context) == legacy);
+
+    context.physical_td99_mm = { 0.5, 0.5 };
+    const std::string td = compute_mixed_filament_display_color(mf, context);
+    CHECK(td != legacy);
+}
+
+TEST_CASE("Mixed filament TD and sidewall options are registered for profile and project persistence", "[MixedFilament][Preview]")
+{
+    const auto& filament_keys = print_config_def.filament_option_keys();
+    CHECK(std::find(filament_keys.begin(), filament_keys.end(), "filament_transmission_distance") != filament_keys.end());
+
+    const auto& filament_preset_keys = Preset::filament_options();
+    CHECK(std::find(filament_preset_keys.begin(), filament_preset_keys.end(), "filament_transmission_distance") !=
+          filament_preset_keys.end());
+
+    const auto& print_preset_keys = Preset::print_options();
+    CHECK(std::find(print_preset_keys.begin(), print_preset_keys.end(), "mixed_filament_sidewall_color_model") != print_preset_keys.end());
+}
+
+TEST_CASE("G-code processor preserves FullSpectrum sidewall region markers", "[MixedFilament][Preview]")
+{
+    GCodeProcessor processor;
+    processor.initialize("sidewall-region-test.gcode");
+    processor.process_buffer(
+        "G90\n"
+        "M82\n"
+        "; FEATURE: Outer wall\n"
+        ";_FS_SIDEWALL_REGION_ID:7\n"
+        "G1 X0 Y0 Z0.2 F1200\n"
+        "G1 X1 Y0 E0.10\n"
+        ";_FS_SIDEWALL_REGION_ID:3\n"
+        "G1 X2 Y0 E0.20\n");
+    processor.finalize(false);
+
+    std::vector<unsigned int> extrude_region_ids;
+    for (const GCodeProcessorResult::MoveVertex& move : processor.get_result().moves) {
+        if (move.type == EMoveType::Extrude && move.delta_extruder > 0.f) {
+            CHECK(move.extrusion_role == erExternalPerimeter);
+            extrude_region_ids.push_back(move.sidewall_region_id);
+        }
+    }
+
+    REQUIRE(extrude_region_ids.size() == 2);
+    CHECK(extrude_region_ids[0] == 7);
+    CHECK(extrude_region_ids[1] == 3);
+}
 
 TEST_CASE("Mixed filament remap follows stable row ids when same-pair rows reorder", "[MixedFilament]")
 {

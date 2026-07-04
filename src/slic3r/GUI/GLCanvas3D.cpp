@@ -31,6 +31,7 @@
 #include "NotificationManager.hpp"
 #include "format.hpp"
 #include "DailyTips.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 #include "slic3r/GUI/Gizmos/GLGizmoPainterBase.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
@@ -68,6 +69,10 @@
 #include <float.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <map>
+#include <sstream>
+#include <unordered_map>
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -136,6 +141,446 @@ static std::vector<unsigned int> get_ui_ordered_filament_ids(Plater *plater, siz
 
     return sanitized_ids;
 }
+
+namespace {
+
+struct PrepareSidewallStackBuild
+{
+    unsigned int texture_id{ 0 };
+    Vec2f origin{ Vec2f::Zero() };
+    Vec2f cell_size{ Vec2f::Ones() };
+    int grid_width{ 0 };
+    int grid_height{ 0 };
+    int layer_count{ 0 };
+    float z_min{ 0.f };
+    size_t perimeter_moves{ 0 };
+    size_t samples{ 0 };
+    size_t occupied_cells{ 0 };
+    size_t occupied_cell_layers{ 0 };
+    size_t multi_region_cell_layers{ 0 };
+    size_t fallback_region_moves{ 0 };
+    size_t apparent_color_cache_entries{ 0 };
+    size_t skipped_single_filament_cell_layers{ 0 };
+};
+
+struct PrepareSidewallRegionAccum
+{
+    std::vector<unsigned int> filament_counts;
+    size_t sample_count{ 0 };
+};
+
+struct PrepareSidewallLayerAccum
+{
+    std::unordered_map<unsigned int, PrepareSidewallRegionAccum> regions;
+};
+
+static uint64_t prepare_sidewall_cell_layer_key(size_t cell_count, int layer_idx, size_t cell_idx)
+{
+    return uint64_t(layer_idx) * uint64_t(cell_count) + uint64_t(cell_idx);
+}
+
+static uint64_t prepare_sidewall_cell_region_key(size_t cell_idx, unsigned int region_id)
+{
+    return (uint64_t(region_id) << 32) ^ uint64_t(cell_idx);
+}
+
+static unsigned int prepare_sidewall_region_id(const GCodeProcessorResult::MoveVertex& move)
+{
+    return move.sidewall_region_id != 0 ? move.sidewall_region_id : unsigned(move.cp_color_id) + 1;
+}
+
+static unsigned int prepare_sidewall_majority_filament(const std::vector<unsigned int>& counts, unsigned int fallback)
+{
+    unsigned int best_id = fallback;
+    unsigned int best_count = 0;
+    for (unsigned int filament_id = 1; filament_id < counts.size(); ++filament_id) {
+        if (counts[filament_id] > best_count) {
+            best_count = counts[filament_id];
+            best_id = filament_id;
+        }
+    }
+    return best_id;
+}
+
+static unsigned char prepare_sidewall_color_byte(float value)
+{
+    return static_cast<unsigned char>(std::lround(std::clamp(value, 0.f, 1.f) * 255.f));
+}
+
+static std::string prepare_sidewall_stack_context_key(const GCodeProcessorResult& result, const MixedFilamentDisplayContext& context)
+{
+    std::ostringstream key;
+    key << "model=" << mixed_filament_sidewall_blend_model_to_string(context.sidewall_blend_model)
+        << "|layer_height=" << context.preview_settings.nominal_layer_height
+        << "|physical=" << context.num_physical
+        << "|moves=" << result.moves.size()
+        << "|result=" << result.id;
+    for (size_t i = 0; i < context.num_physical && i < context.physical_colors.size(); ++i)
+        key << "|c" << i << '=' << context.physical_colors[i];
+    for (size_t i = 0; i < context.num_physical && i < context.physical_td99_mm.size(); ++i)
+        key << "|td" << i << '=' << context.physical_td99_mm[i];
+    return key.str();
+}
+
+static bool prepare_sidewall_stack_available(const MixedFilamentDisplayContext& context)
+{
+    if (context.sidewall_blend_model == MixedFilamentSidewallBlendModel::Legacy || context.num_physical == 0 ||
+        context.physical_colors.size() < context.num_physical || context.physical_td99_mm.size() < context.num_physical)
+        return false;
+
+    const auto max_td_it = std::max_element(context.physical_td99_mm.begin(), context.physical_td99_mm.begin() + context.num_physical);
+    return max_td_it != context.physical_td99_mm.begin() + context.num_physical && *max_td_it > EPSILON;
+}
+
+static PrepareSidewallStackBuild build_prepare_sidewall_stack_texture(const GCodeProcessorResult& result,
+                                                                      const MixedFilamentDisplayContext& context)
+{
+    PrepareSidewallStackBuild build;
+    if (!prepare_sidewall_stack_available(context) || result.moves.size() < 2)
+        return build;
+
+    float min_x = std::numeric_limits<float>::max();
+    float min_y = std::numeric_limits<float>::max();
+    float min_z = std::numeric_limits<float>::max();
+    float max_x = -std::numeric_limits<float>::max();
+    float max_y = -std::numeric_limits<float>::max();
+    float max_z = -std::numeric_limits<float>::max();
+
+    auto include_position = [&](const Vec3f& p) {
+        min_x = std::min(min_x, p.x());
+        min_y = std::min(min_y, p.y());
+        min_z = std::min(min_z, p.z());
+        max_x = std::max(max_x, p.x());
+        max_y = std::max(max_y, p.y());
+        max_z = std::max(max_z, p.z());
+    };
+
+    for (size_t move_idx = 1; move_idx < result.moves.size(); ++move_idx) {
+        const GCodeProcessorResult::MoveVertex& curr = result.moves[move_idx];
+        if (curr.type != EMoveType::Extrude || !is_perimeter(curr.extrusion_role))
+            continue;
+
+        const unsigned int filament_id = unsigned(curr.extruder_id) + 1;
+        if (filament_id == 0 || filament_id > context.num_physical)
+            continue;
+
+        ++build.perimeter_moves;
+        if (curr.sidewall_region_id == 0)
+            ++build.fallback_region_moves;
+
+        include_position(result.moves[move_idx - 1].position);
+        for (const Vec3f& point : curr.interpolation_points)
+            include_position(point);
+        include_position(curr.position);
+    }
+
+    if (build.perimeter_moves == 0 || min_x > max_x || min_y > max_y || min_z > max_z)
+        return build;
+
+    double nozzle_sum = 0.0;
+    size_t nozzle_count = 0;
+    for (size_t i = 0; i < std::min(context.nozzle_diameters.size(), context.num_physical); ++i) {
+        if (context.nozzle_diameters[i] > EPSILON) {
+            nozzle_sum += context.nozzle_diameters[i];
+            ++nozzle_count;
+        }
+    }
+
+    const double nozzle_diameter = nozzle_count > 0 ? nozzle_sum / double(nozzle_count) : 0.4;
+    double cell_mm = std::clamp(nozzle_diameter * 0.5, 0.12, 0.5);
+    const double layer_height = std::max(0.01, context.preview_settings.nominal_layer_height);
+    const double z_min = std::floor(double(min_z) / layer_height) * layer_height;
+    const int layer_count = std::max(1, int(std::floor((double(max_z) - z_min) / layer_height + 0.5)) + 1);
+
+    GLint max_texture_size = 4096;
+    glsafe(::glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size));
+    max_texture_size = std::max<GLint>(256, max_texture_size);
+
+    constexpr size_t max_stack_texels = 2500000;
+    int grid_width = 0;
+    int grid_height = 0;
+    int atlas_height = 0;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const double origin_x = std::floor(double(min_x) / cell_mm) * cell_mm - cell_mm;
+        const double origin_y = std::floor(double(min_y) / cell_mm) * cell_mm - cell_mm;
+        grid_width = std::max(1, int(std::ceil((double(max_x) - origin_x) / cell_mm)) + 2);
+        grid_height = std::max(1, int(std::ceil((double(max_y) - origin_y) / cell_mm)) + 2);
+        atlas_height = grid_height * layer_count;
+
+        const size_t texels = size_t(grid_width) * size_t(atlas_height);
+        if (grid_width <= max_texture_size && atlas_height <= max_texture_size && texels <= max_stack_texels)
+            break;
+
+        double factor = 1.2;
+        if (grid_width > max_texture_size)
+            factor = std::max(factor, double(grid_width) / double(max_texture_size));
+        if (atlas_height > max_texture_size)
+            factor = std::max(factor, double(atlas_height) / double(max_texture_size));
+        if (texels > max_stack_texels)
+            factor = std::max(factor, std::sqrt(double(texels) / double(max_stack_texels)));
+        cell_mm *= factor * 1.05;
+    }
+
+    if (grid_width <= 0 || grid_height <= 0 || layer_count <= 0 || grid_width > max_texture_size ||
+        grid_height * layer_count > max_texture_size) {
+        BOOST_LOG_TRIVIAL(warning) << "FullSpectrum prepare sidewall stack skipped: texture would exceed GL limits"
+                                   << " grid=" << grid_width << "x" << grid_height
+                                   << " layers=" << layer_count
+                                   << " max_texture_size=" << max_texture_size;
+        return build;
+    }
+
+    const float origin_x = float(std::floor(double(min_x) / cell_mm) * cell_mm - cell_mm);
+    const float origin_y = float(std::floor(double(min_y) / cell_mm) * cell_mm - cell_mm);
+    const size_t cell_count = size_t(grid_width) * size_t(grid_height);
+    const size_t atlas_texels = cell_count * size_t(layer_count);
+    if (atlas_texels == 0 || atlas_texels > max_stack_texels * 2)
+        return build;
+
+    std::unordered_map<uint64_t, PrepareSidewallLayerAccum> layer_accums;
+    layer_accums.reserve(std::min<size_t>(atlas_texels, result.moves.size()));
+
+    auto add_sample = [&](const GCodeProcessorResult::MoveVertex& move, const Vec3f& position) {
+        const unsigned int filament_id = unsigned(move.extruder_id) + 1;
+        if (filament_id == 0 || filament_id > context.num_physical)
+            return;
+
+        const int cell_x = int(std::floor((double(position.x()) - double(origin_x)) / cell_mm));
+        const int cell_y = int(std::floor((double(position.y()) - double(origin_y)) / cell_mm));
+        const int layer_idx = int(std::floor((double(position.z()) - z_min) / layer_height + 0.5));
+        if (cell_x < 0 || cell_y < 0 || cell_x >= grid_width || cell_y >= grid_height || layer_idx < 0 || layer_idx >= layer_count)
+            return;
+
+        const size_t cell_idx = size_t(cell_y) * size_t(grid_width) + size_t(cell_x);
+        const uint64_t key = prepare_sidewall_cell_layer_key(cell_count, layer_idx, cell_idx);
+        PrepareSidewallLayerAccum& layer_accum = layer_accums[key];
+        PrepareSidewallRegionAccum& region_accum = layer_accum.regions[prepare_sidewall_region_id(move)];
+        if (region_accum.filament_counts.empty())
+            region_accum.filament_counts.assign(context.num_physical + 1, 0);
+        ++region_accum.filament_counts[filament_id];
+        ++region_accum.sample_count;
+        ++build.samples;
+    };
+
+    const double sample_step = std::max(0.05, cell_mm * 0.75);
+    auto add_segment_samples = [&](const GCodeProcessorResult::MoveVertex& move, const Vec3f& a, const Vec3f& b) {
+        const double length = double((b - a).norm());
+        const int steps = std::clamp(int(std::ceil(length / sample_step)), 1, 96);
+        for (int step = 0; step <= steps; ++step) {
+            const float t = float(step) / float(steps);
+            add_sample(move, a + (b - a) * t);
+        }
+    };
+
+    for (size_t move_idx = 1; move_idx < result.moves.size(); ++move_idx) {
+        const GCodeProcessorResult::MoveVertex& curr = result.moves[move_idx];
+        if (curr.type != EMoveType::Extrude || !is_perimeter(curr.extrusion_role))
+            continue;
+
+        const unsigned int filament_id = unsigned(curr.extruder_id) + 1;
+        if (filament_id == 0 || filament_id > context.num_physical)
+            continue;
+
+        Vec3f previous = result.moves[move_idx - 1].position;
+        for (const Vec3f& point : curr.interpolation_points) {
+            add_segment_samples(curr, previous, point);
+            previous = point;
+        }
+        add_segment_samples(curr, previous, curr.position);
+    }
+
+    if (layer_accums.empty())
+        return build;
+
+    struct DominantRegionLayer
+    {
+        unsigned int region_id{ 0 };
+        unsigned int filament_id{ 0 };
+    };
+
+    std::vector<DominantRegionLayer> dominant_layers(atlas_texels);
+    std::unordered_map<uint64_t, std::map<int, unsigned int>> region_stacks;
+    region_stacks.reserve(layer_accums.size());
+
+    for (const auto& item : layer_accums) {
+        const uint64_t key = item.first;
+        const int layer_idx = int(key / uint64_t(cell_count));
+        const size_t cell_idx = size_t(key % uint64_t(cell_count));
+
+        const PrepareSidewallLayerAccum& layer_accum = item.second;
+        if (layer_accum.regions.size() > 1)
+            ++build.multi_region_cell_layers;
+
+        unsigned int dominant_region_id = 0;
+        unsigned int dominant_filament_id = 0;
+        size_t dominant_count = 0;
+
+        for (const auto& region_item : layer_accum.regions) {
+            const unsigned int region_id = region_item.first;
+            const PrepareSidewallRegionAccum& region_accum = region_item.second;
+            if (region_accum.sample_count == 0 || region_accum.filament_counts.empty())
+                continue;
+
+            const unsigned int region_filament_id = prepare_sidewall_majority_filament(region_accum.filament_counts, 1);
+            region_stacks[prepare_sidewall_cell_region_key(cell_idx, region_id)][layer_idx] = region_filament_id;
+            if (region_accum.sample_count > dominant_count) {
+                dominant_count = region_accum.sample_count;
+                dominant_region_id = region_id;
+                dominant_filament_id = region_filament_id;
+            }
+        }
+
+        if (dominant_region_id != 0 && dominant_filament_id != 0) {
+            dominant_layers[size_t(layer_idx) * cell_count + cell_idx] = { dominant_region_id, dominant_filament_id };
+            ++build.occupied_cell_layers;
+        }
+    }
+
+    std::vector<unsigned char> pixels(size_t(grid_width) * size_t(grid_height) * size_t(layer_count) * 4, 0);
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = context.sidewall_blend_model;
+    const auto max_td_it = std::max_element(context.physical_td99_mm.begin(), context.physical_td99_mm.begin() + context.num_physical);
+    const int max_layer_window = std::clamp(int(std::ceil((2.0 * *max_td_it) / layer_height)) + 1, 2, 40);
+
+    struct CachedSidewallColor
+    {
+        bool ok{ false };
+        ColorRGBA color;
+    };
+    std::unordered_map<std::string, CachedSidewallColor> apparent_color_cache;
+
+    for (const auto& stack_item : region_stacks) {
+        const uint64_t stack_key = stack_item.first;
+        const size_t cell_idx = size_t(stack_key & 0xffffffffu);
+        const unsigned int region_id = unsigned(stack_key >> 32);
+        const std::map<int, unsigned int>& layers = stack_item.second;
+        if (layers.empty() || cell_idx >= cell_count || region_id == 0)
+            continue;
+
+        std::vector<int> layer_keys;
+        std::vector<unsigned int> layer_filaments;
+        layer_keys.reserve(layers.size());
+        layer_filaments.reserve(layers.size());
+        for (const auto& layer : layers) {
+            layer_keys.push_back(layer.first);
+            layer_filaments.push_back(layer.second);
+        }
+
+        for (size_t layer_pos = 0; layer_pos < layer_keys.size(); ++layer_pos) {
+            const int layer_idx = layer_keys[layer_pos];
+            if (layer_idx < 0 || layer_idx >= layer_count)
+                continue;
+
+            const DominantRegionLayer& dominant = dominant_layers[size_t(layer_idx) * cell_count + cell_idx];
+            if (dominant.region_id != region_id || dominant.filament_id == 0 || dominant.filament_id > context.num_physical)
+                continue;
+
+            const int lo = std::max<int>(0, int(layer_pos) - max_layer_window);
+            const int hi = std::min<int>(int(layer_keys.size()) - 1, int(layer_pos) + max_layer_window);
+            std::vector<unsigned int> sequence;
+            sequence.reserve(size_t(hi - lo + 1));
+            size_t target_idx = 0;
+            for (int idx = lo; idx <= hi; ++idx) {
+                if (idx == int(layer_pos))
+                    target_idx = sequence.size();
+                sequence.push_back(layer_filaments[size_t(idx)]);
+            }
+
+            const unsigned int fallback_id = dominant.filament_id;
+            const bool has_optical_neighbor = std::any_of(sequence.begin(), sequence.end(), [fallback_id](unsigned int filament_id) {
+                return filament_id != fallback_id;
+            });
+            if (!has_optical_neighbor) {
+                ++build.skipped_single_filament_cell_layers;
+                continue;
+            }
+
+            std::string cache_key = std::to_string(target_idx) + "|" + std::to_string(fallback_id);
+            cache_key.reserve(cache_key.size() + sequence.size() * 4);
+            for (const unsigned int id : sequence) {
+                cache_key += ",";
+                cache_key += std::to_string(id);
+            }
+
+            auto cached_color = apparent_color_cache.find(cache_key);
+            if (cached_color == apparent_color_cache.end()) {
+                const std::string fallback = fallback_id >= 1 && fallback_id <= context.physical_colors.size() ?
+                    context.physical_colors[fallback_id - 1] : std::string("#FFFFFF");
+                const std::string apparent = predict_mixed_filament_sequence_apparent_color_at(sequence,
+                                                                                              target_idx,
+                                                                                              context.physical_colors,
+                                                                                              context.physical_td99_mm,
+                                                                                              layer_height,
+                                                                                              settings,
+                                                                                              fallback);
+
+                CachedSidewallColor computed;
+                computed.ok = decode_color(apparent, computed.color);
+                if (computed.ok)
+                    computed.color = adjust_color_for_rendering(computed.color);
+                cached_color = apparent_color_cache.emplace(cache_key, computed).first;
+            }
+
+            if (!cached_color->second.ok)
+                continue;
+
+            const int cell_y = int(cell_idx / size_t(grid_width));
+            const int cell_x = int(cell_idx % size_t(grid_width));
+            const size_t pixel_idx = (size_t(layer_idx) * size_t(grid_height) * size_t(grid_width) +
+                                      size_t(cell_y) * size_t(grid_width) + size_t(cell_x)) * 4;
+            pixels[pixel_idx + 0] = prepare_sidewall_color_byte(cached_color->second.color.r());
+            pixels[pixel_idx + 1] = prepare_sidewall_color_byte(cached_color->second.color.g());
+            pixels[pixel_idx + 2] = prepare_sidewall_color_byte(cached_color->second.color.b());
+            pixels[pixel_idx + 3] = 255;
+        }
+    }
+
+    build.occupied_cells = 0;
+    for (size_t cell_idx = 0; cell_idx < cell_count; ++cell_idx) {
+        for (int layer_idx = 0; layer_idx < layer_count; ++layer_idx) {
+            const size_t pixel_idx = (size_t(layer_idx) * size_t(grid_height) * size_t(grid_width) + cell_idx) * 4;
+            if (pixels[pixel_idx + 3] != 0) {
+                ++build.occupied_cells;
+                break;
+            }
+        }
+    }
+
+    if (build.occupied_cells == 0)
+        return build;
+
+    build.apparent_color_cache_entries = apparent_color_cache.size();
+
+    GLuint texture_id = 0;
+    glsafe(::glGenTextures(1, &texture_id));
+    glsafe(::glBindTexture(GL_TEXTURE_2D, texture_id));
+    glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    glsafe(::glTexImage2D(GL_TEXTURE_2D,
+                          0,
+                          GL_RGBA,
+                          grid_width,
+                          grid_height * layer_count,
+                          0,
+                          GL_RGBA,
+                          GL_UNSIGNED_BYTE,
+                          pixels.data()));
+    glsafe(::glBindTexture(GL_TEXTURE_2D, 0));
+
+    build.texture_id = texture_id;
+    build.origin = Vec2f(origin_x, origin_y);
+    build.cell_size = Vec2f(float(cell_mm), float(cell_mm));
+    build.grid_width = grid_width;
+    build.grid_height = grid_height;
+    build.layer_count = layer_count;
+    build.z_min = float(z_min);
+    return build;
+}
+
+} // namespace
 
 GLCanvas3D::LayersEditing::~LayersEditing()
 {
@@ -1203,6 +1648,7 @@ GLCanvas3D::GLCanvas3D(wxGLCanvas* canvas, Bed3D &bed)
 
 GLCanvas3D::~GLCanvas3D()
 {
+    _reset_sidewall_color_stack_texture();
     reset_volumes();
 
     m_sel_plate_toolbar.del_all_item();
@@ -1342,6 +1788,8 @@ unsigned int GLCanvas3D::get_volumes_count() const
 
 void GLCanvas3D::reset_volumes()
 {
+    _reset_sidewall_color_stack_texture();
+
     if (!m_initialized)
         return;
 
@@ -1824,8 +2272,142 @@ void GLCanvas3D::select_plate()
 
 void GLCanvas3D::update_volumes_colors_by_extruder()
 {
-    if (m_config != nullptr)
+    if (m_config != nullptr) {
+        _reset_sidewall_color_stack_texture();
         m_volumes.update_colors_by_extruder(m_config);
+    }
+}
+
+void GLCanvas3D::set_sidewall_layer_simulation_enabled(bool enabled)
+{
+    if (m_sidewall_layer_simulation_enabled == enabled)
+        return;
+
+    m_sidewall_layer_simulation_enabled = enabled;
+    if (GLToolbarItem* item = m_main_toolbar.get_item("fs_sidewall_layer_simulation")) {
+        const bool on = m_sidewall_layer_simulation_enabled;
+        item->set_icon_filename(m_is_dark ?
+            (on ? "toolbar_sidewall_layer_simulation_on_dark.svg" : "toolbar_sidewall_layer_simulation_dark.svg") :
+            (on ? "toolbar_sidewall_layer_simulation_on.svg" : "toolbar_sidewall_layer_simulation.svg"));
+        item->set_tooltip(on ?
+            _utf8(L("Disable sidewall layer simulation")) :
+            _utf8(L("Enable sidewall layer simulation")));
+        m_main_toolbar.set_icon_dirty();
+    }
+    if (!m_sidewall_layer_simulation_enabled)
+        _reset_sidewall_color_stack_texture();
+    set_as_dirty();
+}
+
+void GLCanvas3D::_reset_sidewall_color_stack_texture()
+{
+    if (m_sidewall_color_stack.texture_id != 0 && m_initialized && _set_current()) {
+        GLuint texture_id = m_sidewall_color_stack.texture_id;
+        glsafe(::glDeleteTextures(1, &texture_id));
+    }
+
+    m_sidewall_color_stack = SidewallColorStackTexture();
+    m_volumes.set_sidewall_layer_stack(0, { 0.f, 0.f }, { 1.f, 1.f }, 0, 0, 0, 0.f);
+}
+
+void GLCanvas3D::_update_sidewall_color_stack_texture()
+{
+    if (m_canvas_type != ECanvasType::CanvasView3D || !m_sidewall_layer_simulation_enabled || wxGetApp().preset_bundle == nullptr ||
+        wxGetApp().plater() == nullptr) {
+        m_volumes.set_sidewall_layer_stack(0, { 0.f, 0.f }, { 1.f, 1.f }, 0, 0, 0, 0.f);
+        return;
+    }
+
+    PartPlate* current_plate = wxGetApp().plater()->get_partplate_list().get_curr_plate();
+    GCodeProcessorResult* result = wxGetApp().plater()->get_partplate_list().get_current_slice_result();
+    if (current_plate == nullptr || result == nullptr || !current_plate->is_slice_result_valid()) {
+        m_volumes.set_sidewall_layer_stack(0, { 0.f, 0.f }, { 1.f, 1.f }, 0, 0, 0, 0.f);
+        return;
+    }
+
+    const std::vector<std::string> physical_colors =
+        wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
+    MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    if (!prepare_sidewall_stack_available(context)) {
+        m_volumes.set_sidewall_layer_stack(0, { 0.f, 0.f }, { 1.f, 1.f }, 0, 0, 0, 0.f);
+        return;
+    }
+
+    result->lock();
+    Slic3r::ScopeGuard unlock_result([result]() { result->unlock(); });
+    (void)unlock_result;
+
+    if (result->moves.empty()) {
+        m_volumes.set_sidewall_layer_stack(0, { 0.f, 0.f }, { 1.f, 1.f }, 0, 0, 0, 0.f);
+        return;
+    }
+
+    const std::string context_key = prepare_sidewall_stack_context_key(*result, context);
+    if (m_sidewall_color_stack.valid && m_sidewall_color_stack.texture_id != 0 &&
+        m_sidewall_color_stack.source_result == result &&
+        m_sidewall_color_stack.source_moves_count == result->moves.size() &&
+        m_sidewall_color_stack.source_result_id == result->id &&
+        m_sidewall_color_stack.context_key == context_key) {
+        m_volumes.set_sidewall_layer_stack(m_sidewall_color_stack.texture_id,
+                                           { m_sidewall_color_stack.origin.x(), m_sidewall_color_stack.origin.y() },
+                                           { m_sidewall_color_stack.cell_size.x(), m_sidewall_color_stack.cell_size.y() },
+                                           m_sidewall_color_stack.grid_width,
+                                           m_sidewall_color_stack.grid_height,
+                                           m_sidewall_color_stack.layer_count,
+                                           m_sidewall_color_stack.z_min);
+        return;
+    }
+
+    _reset_sidewall_color_stack_texture();
+
+    PrepareSidewallStackBuild build = build_prepare_sidewall_stack_texture(*result, context);
+    if (build.texture_id == 0) {
+        BOOST_LOG_TRIVIAL(info) << "FullSpectrum prepare sidewall stack unavailable"
+                                << " model=" << mixed_filament_sidewall_blend_model_to_string(context.sidewall_blend_model)
+                                << " moves=" << result->moves.size()
+                                << " perimeter_moves=" << build.perimeter_moves
+                                << " samples=" << build.samples
+                                << " occupied_cell_layers=" << build.occupied_cell_layers
+                                << " skipped_single_filament_cell_layers=" << build.skipped_single_filament_cell_layers;
+        return;
+    }
+
+    m_sidewall_color_stack.texture_id = build.texture_id;
+    m_sidewall_color_stack.source_result = result;
+    m_sidewall_color_stack.source_moves_count = result->moves.size();
+    m_sidewall_color_stack.source_result_id = result->id;
+    m_sidewall_color_stack.context_key = context_key;
+    m_sidewall_color_stack.origin = build.origin;
+    m_sidewall_color_stack.cell_size = build.cell_size;
+    m_sidewall_color_stack.grid_width = build.grid_width;
+    m_sidewall_color_stack.grid_height = build.grid_height;
+    m_sidewall_color_stack.layer_count = build.layer_count;
+    m_sidewall_color_stack.z_min = build.z_min;
+    m_sidewall_color_stack.valid = true;
+
+    m_volumes.set_sidewall_layer_stack(m_sidewall_color_stack.texture_id,
+                                       { m_sidewall_color_stack.origin.x(), m_sidewall_color_stack.origin.y() },
+                                       { m_sidewall_color_stack.cell_size.x(), m_sidewall_color_stack.cell_size.y() },
+                                       m_sidewall_color_stack.grid_width,
+                                       m_sidewall_color_stack.grid_height,
+                                       m_sidewall_color_stack.layer_count,
+                                       m_sidewall_color_stack.z_min);
+
+    BOOST_LOG_TRIVIAL(info) << "FullSpectrum prepare sidewall stack built"
+                            << " model=" << mixed_filament_sidewall_blend_model_to_string(context.sidewall_blend_model)
+                            << " texture=" << m_sidewall_color_stack.grid_width << "x"
+                            << (m_sidewall_color_stack.grid_height * m_sidewall_color_stack.layer_count)
+                            << " grid=" << m_sidewall_color_stack.grid_width << "x" << m_sidewall_color_stack.grid_height
+                            << " layers=" << m_sidewall_color_stack.layer_count
+                            << " cell_mm=" << m_sidewall_color_stack.cell_size.x()
+                            << " perimeter_moves=" << build.perimeter_moves
+                            << " fallback_region_moves=" << build.fallback_region_moves
+                            << " samples=" << build.samples
+                            << " occupied_cells=" << build.occupied_cells
+                            << " occupied_cell_layers=" << build.occupied_cell_layers
+                            << " multi_region_cell_layers=" << build.multi_region_cell_layers
+                            << " skipped_single_filament_cell_layers=" << build.skipped_single_filament_cell_layers
+                            << " apparent_cache_entries=" << build.apparent_color_cache_entries;
 }
 
 bool GLCanvas3D::is_collapse_toolbar_on_left() const
@@ -2922,6 +3504,8 @@ void GLCanvas3D::set_shell_transparence(float alpha){
 //BBS: add only gcode mode
 void GLCanvas3D::load_gcode_preview(const GCodeProcessorResult& gcode_result, const std::vector<std::string>& str_tool_colors, bool only_gcode)
 {
+    _reset_sidewall_color_stack_texture();
+
     PartPlateList& partplate_list = wxGetApp().plater()->get_partplate_list();
     PartPlate* plate = partplate_list.get_curr_plate();
     const std::vector<BoundingBoxf3>& exclude_bounding_box = plate->get_exclude_areas();
@@ -6419,6 +7003,14 @@ void GLCanvas3D::_switch_toolbars_icon_filename()
 
         item = m_main_toolbar.get_item("layersediting");
         item->set_icon_filename(m_is_dark ? "toolbar_variable_layer_height_dark.svg" : "toolbar_variable_layer_height.svg");
+
+        item = m_main_toolbar.get_item("fs_sidewall_layer_simulation");
+        if (item != nullptr) {
+            const bool on = m_sidewall_layer_simulation_enabled;
+            item->set_icon_filename(m_is_dark ?
+                (on ? "toolbar_sidewall_layer_simulation_on_dark.svg" : "toolbar_sidewall_layer_simulation_dark.svg") :
+                (on ? "toolbar_sidewall_layer_simulation_on.svg" : "toolbar_sidewall_layer_simulation.svg"));
+        }
     }
 
     // assemble view toolbar
@@ -6597,6 +7189,27 @@ bool GLCanvas3D::_init_main_toolbar()
         return res;
     };
     item.enabling_callback = []()->bool { return wxGetApp().plater()->can_layers_editing(); };
+    if (!m_main_toolbar.add_item(item))
+        return false;
+
+    item.name = "fs_sidewall_layer_simulation";
+    const bool sidewall_layer_simulation_on = m_sidewall_layer_simulation_enabled;
+    item.icon_filename = m_is_dark ?
+        (sidewall_layer_simulation_on ? "toolbar_sidewall_layer_simulation_on_dark.svg" : "toolbar_sidewall_layer_simulation_dark.svg") :
+        (sidewall_layer_simulation_on ? "toolbar_sidewall_layer_simulation_on.svg" : "toolbar_sidewall_layer_simulation.svg");
+    item.tooltip = sidewall_layer_simulation_on ?
+        _utf8(L("Disable sidewall layer simulation")) :
+        _utf8(L("Enable sidewall layer simulation"));
+    item.sprite_id++;
+    item.left.toggable = false;
+    item.left.render_callback = nullptr;
+    item.left.action_callback = [this]() {
+        set_sidewall_layer_simulation_enabled(!m_sidewall_layer_simulation_enabled);
+    };
+    item.visibility_callback = [this]()->bool {
+        return current_printer_technology() == ptFFF && m_canvas_type == ECanvasType::CanvasView3D;
+    };
+    item.enabling_callback = GLToolbarItem::Default_Enabling_Callback;
     if (!m_main_toolbar.add_item(item))
         return false;
 
@@ -7332,6 +7945,20 @@ void GLCanvas3D::_render_objects(GLVolumeCollection::ERenderType type, bool with
 {
     if (m_volumes.empty())
         return;
+
+    float sidewall_layer_height = 0.2f;
+    if (m_config != nullptr && m_config->has("layer_height"))
+        sidewall_layer_height = std::max(0.01f, static_cast<float>(m_config->opt_float("layer_height")));
+    m_volumes.set_sidewall_layer_simulation(
+        m_canvas_type == ECanvasType::CanvasView3D && m_sidewall_layer_simulation_enabled,
+        sidewall_layer_height);
+    // Prepare view uses a per-volume mixed-filament cadence in the Gouraud shader.
+    // The sliced XY stack is intentionally disabled here: it depends on preview
+    // G-code, is expensive to rebuild, and produces coarse/blocky Prepare colors.
+    if (m_sidewall_color_stack.texture_id != 0)
+        _reset_sidewall_color_stack_texture();
+    else
+        m_volumes.set_sidewall_layer_stack(0, { 0.f, 0.f }, { 1.f, 1.f }, 0, 0, 0, 0.f);
 
     glsafe(::glEnable(GL_DEPTH_TEST));
 

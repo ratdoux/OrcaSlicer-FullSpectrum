@@ -156,6 +156,7 @@ class Print;
             ExtrusionRole extrusion_role{ erNone };
             unsigned char extruder_id{ 0 };
             unsigned char cp_color_id{ 0 };
+            unsigned int sidewall_region_id{ 0 };
             Vec3f position{ Vec3f::Zero() }; // mm
             float delta_extruder{ 0.0f }; // mm
             float feedrate{ 0.0f }; // mm/s
@@ -309,6 +310,7 @@ class Print;
 
         static const float Wipe_Width;
         static const float Wipe_Height;
+        static const std::string Sidewall_Region_Id_Tag;
 
         static bool s_IsBBLPrinter;
 
@@ -711,6 +713,7 @@ class Print;
         ExtrusionRole m_extrusion_role;
         unsigned char m_extruder_id;
         unsigned char m_last_extruder_id;
+        unsigned int m_sidewall_region_id;
         ExtruderColors m_extruder_colors;
         ExtruderTemps m_extruder_temps;
         ExtruderTemps m_extruder_temps_config;

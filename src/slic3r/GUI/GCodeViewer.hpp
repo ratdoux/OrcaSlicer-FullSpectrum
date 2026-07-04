@@ -210,7 +210,6 @@ class GCodeViewer
                 return first.s_id <= s_id && s_id <= last.s_id;
             }
         };
-
         EMoveType type{ EMoveType::Noop };
         ExtrusionRole role{ erNone };
         float delta_extruder{ 0.0f };
@@ -223,7 +222,10 @@ class GCodeViewer
         float layer_time{ 0.0f };
         unsigned char extruder_id{ 0 };
         unsigned char cp_color_id{ 0 };
+        unsigned int sidewall_region_id{ 0 };
         std::vector<Sub_Path> sub_paths;
+        ColorRGBA apparent_sidewall_color{ ColorRGBA::WHITE() };
+        bool has_apparent_sidewall_color{ false };
 
         bool matches(const GCodeProcessorResult::MoveVertex& move) const;
         size_t vertices_count() const {
@@ -890,6 +892,7 @@ public:
 
 private:
     void load_toolpaths(const GCodeProcessorResult& gcode_result, const BuildVolume& build_volume, const std::vector<BoundingBoxf3>& exclude_bounding_box);
+    void update_sidewall_path_colors(const GCodeProcessorResult& gcode_result);
     //BBS: always load shell at preview
     //void load_shells(const Print& print);
     void refresh_render_paths(bool keep_sequential_current_first, bool keep_sequential_current_last) const;

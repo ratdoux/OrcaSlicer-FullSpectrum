@@ -565,6 +565,23 @@ private:
     //BBS: add flag to controll rendering
     bool m_render_preview{ true };
     bool m_enable_render { true };
+    bool m_sidewall_layer_simulation_enabled{ false };
+    struct SidewallColorStackTexture
+    {
+        unsigned int texture_id{ 0 };
+        const GCodeProcessorResult* source_result{ nullptr };
+        size_t source_moves_count{ 0 };
+        unsigned int source_result_id{ 0 };
+        std::string context_key;
+        Vec2f origin{ Vec2f::Zero() };
+        Vec2f cell_size{ Vec2f::Ones() };
+        int grid_width{ 0 };
+        int grid_height{ 0 };
+        int layer_count{ 0 };
+        float z_min{ 0.f };
+        bool valid{ false };
+    };
+    SidewallColorStackTexture m_sidewall_color_stack;
     bool m_apply_zoom_to_volumes_filter;
     bool m_picking_enabled;
     bool m_moving_enabled;
@@ -868,6 +885,8 @@ public:
     float get_collapse_toolbar_height() const;
 
     void update_volumes_colors_by_extruder();
+    void set_sidewall_layer_simulation_enabled(bool enabled);
+    bool is_sidewall_layer_simulation_enabled() const { return m_sidewall_layer_simulation_enabled; }
 
     bool is_dragging() const { return m_gizmos.is_dragging() || m_moving; }
 
@@ -1168,6 +1187,8 @@ private:
     void _render_platelist(const Transform3d& view_matrix, const Transform3d& projection_matrix, bool bottom, bool only_current, bool only_body = false, int hover_id = -1, bool render_cali = false, bool show_grid = true);
     //BBS: add outline drawing logic
     void _render_objects(GLVolumeCollection::ERenderType type, bool with_outline = true);
+    void _reset_sidewall_color_stack_texture();
+    void _update_sidewall_color_stack_texture();
     //BBS: GUI refactor: add canvas size as parameters
     void _render_gcode(int canvas_width, int canvas_height);
     //BBS: render a plane for assemble

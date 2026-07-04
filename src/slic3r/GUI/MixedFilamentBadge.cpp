@@ -48,9 +48,14 @@ MixedFilamentBadge::MixedFilamentBadge(wxWindow* parent, wxWindowID id, int virt
 
     SetFont(badge_size >= 20 ? Label::Body_12 : Label::Body_8);
 
-    m_solid_color = parse_mixed_color(mf.display_color);
+    const bool use_apparent_sidewall_color =
+        display_context.sidewall_blend_model != MixedFilamentSidewallBlendModel::Legacy;
+    const std::string display_color = use_apparent_sidewall_color ?
+        compute_mixed_filament_display_color(mf, display_context) :
+        (mf.display_color.empty() ? std::string("#808080") : mf.display_color);
+    m_solid_color = parse_mixed_color(display_color);
 
-    m_is_gradient = is_simple_gradient(mf);
+    m_is_gradient = !use_apparent_sidewall_color && is_simple_gradient(mf);
 
     if (m_is_gradient) {
         auto get_color = [&](unsigned fid) -> wxColour {
@@ -247,7 +252,9 @@ wxBitmap* create_mixed_filament_menu_bitmap(const MixedFilament&               m
     params.height = height;
     params.label  = label;
 
-    const bool is_gradient = is_simple_gradient(mf);
+    const bool use_apparent_sidewall_color =
+        ctx.sidewall_blend_model != MixedFilamentSidewallBlendModel::Legacy;
+    const bool is_gradient = !use_apparent_sidewall_color && is_simple_gradient(mf);
 
     if (is_gradient) {
         auto get_c = [&](unsigned fid) -> wxColour {
@@ -264,7 +271,10 @@ wxBitmap* create_mixed_filament_menu_bitmap(const MixedFilament&               m
         params.gradient_colors.push_back(a_to_b ? cb : ca);
     } else {
         params.mode = ColorBlockParams::Solid;
-        params.solid_color = parse_mixed_color(mf.display_color.empty() ? "#808080" : mf.display_color);
+        const std::string display_color = use_apparent_sidewall_color ?
+            compute_mixed_filament_display_color(mf, ctx) :
+            (mf.display_color.empty() ? std::string("#808080") : mf.display_color);
+        params.solid_color = parse_mixed_color(display_color);
     }
 
     return get_color_block_bitmap_cached(params);

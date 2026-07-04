@@ -103,6 +103,7 @@ const std::string GCodeProcessor::External_Purge_Tag = " EXTERNAL_PURGE";
 
 const float GCodeProcessor::Wipe_Width = 0.05f;
 const float GCodeProcessor::Wipe_Height = 0.05f;
+const std::string GCodeProcessor::Sidewall_Region_Id_Tag = "_FS_SIDEWALL_REGION_ID:";
 
 bool GCodeProcessor::s_IsBBLPrinter = true;
 
@@ -1161,6 +1162,7 @@ void GCodeProcessor::reset()
     m_extrusion_role = erNone;
     m_extruder_id = 0;
     m_last_extruder_id = 0;
+    m_sidewall_region_id = 0;
     m_extruder_colors.resize(MIN_EXTRUDERS_COUNT);
     for (size_t i = 0; i < MIN_EXTRUDERS_COUNT; ++i) {
         m_extruder_colors[i] = static_cast<unsigned char>(i);
@@ -1267,6 +1269,7 @@ void GCodeProcessor::process_file(const std::string& filename, std::function<voi
     // process gcode
     m_result.filename = filename;
     m_result.id = ++s_result_id;
+    m_sidewall_region_id = 0;
     // 1st move must be a dummy move
     m_result.moves.emplace_back(GCodeProcessorResult::MoveVertex());
     size_t parse_line_callback_cntr = 10000;
@@ -1295,6 +1298,7 @@ void GCodeProcessor::initialize(const std::string& filename)
     // process gcode
     m_result.filename = filename;
     m_result.id = ++s_result_id;
+    m_sidewall_region_id = 0;
     // 1st move must be a dummy move
     m_result.moves.emplace_back(GCodeProcessorResult::MoveVertex());
 }
@@ -1908,6 +1912,17 @@ void GCodeProcessor::process_tags(const std::string_view comment, bool producers
         if (m_extrusion_role == erExternalPerimeter)
             m_seams_detector.activate(true);
         m_processing_start_custom_gcode = (m_extrusion_role == erCustom && m_g1_line_id == 0);
+        return;
+    }
+
+    // FullSpectrum preview-only region marker. This separates configured mixed/painted
+    // regions from the physical extruder that actually prints the current path.
+    if (boost::starts_with(comment, Sidewall_Region_Id_Tag)) {
+        int region_id = 0;
+        if (!parse_number(comment.substr(Sidewall_Region_Id_Tag.size()), region_id) || region_id < 0)
+            BOOST_LOG_TRIVIAL(error) << "GCodeProcessor encountered an invalid value for sidewall region (" << comment << ").";
+        else
+            m_sidewall_region_id = unsigned(region_id);
         return;
     }
 
@@ -4789,6 +4804,7 @@ void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type)
         m_extrusion_role,
         m_extruder_id,
         m_cp_color.current,
+        m_sidewall_region_id,
         //BBS: add plate's offset to the rendering vertices
         Vec3f(m_end_position[X] + m_x_offset, m_end_position[Y] + m_y_offset, m_processing_start_custom_gcode ? m_first_layer_height : m_end_position[Z]- m_z_offset) + m_extruder_offsets[m_extruder_id],
         static_cast<float>(m_end_position[E] - m_start_position[E]),

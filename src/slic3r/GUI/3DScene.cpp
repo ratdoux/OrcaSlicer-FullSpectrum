@@ -7,6 +7,7 @@
 #include "Plater.hpp"
 #include "BitmapCache.hpp"
 #include "Camera.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/ExtrusionEntity.hpp"
@@ -18,6 +19,7 @@
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/AppConfig.hpp"
+#include "libslic3r/Color.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Tesselate.hpp"
@@ -27,6 +29,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <numeric>
+#include <sstream>
+#include <unordered_map>
+#include <unordered_set>
+#include <cstdio>
 
 #include <boost/log/trivial.hpp>
 
@@ -105,6 +112,386 @@ Slic3r::ColorRGBA adjust_color_for_rendering(const Slic3r::ColorRGBA& colors)
 namespace Slic3r {
 
 const float GLVolume::SinkingContours::HalfWidth = 0.25f;
+
+namespace {
+
+constexpr int k_prepare_sidewall_max_cadence_colors = 32;
+
+struct PrepareSidewallCadenceUniforms
+{
+    bool active{ false };
+    int count{ 0 };
+    std::array<float, k_prepare_sidewall_max_cadence_colors * 4> colors{};
+};
+
+struct PrepareSidewallCadenceStep
+{
+    unsigned int filament_id{ 0 };
+    double       height_mm{ 0.2 };
+};
+
+struct PrepareSidewallCadenceCache
+{
+    std::string context_key;
+    std::unordered_map<unsigned int, PrepareSidewallCadenceUniforms> by_filament;
+};
+
+struct PrepareSidewallRenderContext
+{
+    bool active{ false };
+    float layer_height{ 0.2f };
+};
+
+PrepareSidewallCadenceCache g_prepare_sidewall_cadence_cache;
+PrepareSidewallRenderContext g_prepare_sidewall_render_context;
+std::unordered_set<std::string> g_prepare_sidewall_cadence_skip_log;
+std::unordered_set<int> g_prepare_sidewall_render_extruder_log;
+std::unordered_set<int> g_prepare_sidewall_render_submodel_log;
+
+static std::string prepare_sidewall_color_to_hex(const ColorRGBA& color)
+{
+    char buf[8];
+    std::snprintf(buf,
+                  sizeof(buf),
+                  "#%02X%02X%02X",
+                  std::clamp(int(std::lround(color.r() * 255.f)), 0, 255),
+                  std::clamp(int(std::lround(color.g() * 255.f)), 0, 255),
+                  std::clamp(int(std::lround(color.b() * 255.f)), 0, 255));
+    return std::string(buf);
+}
+
+static void log_prepare_sidewall_cadence_skip(unsigned int                         filament_id,
+                                              const char*                          reason,
+                                              const MixedFilamentDisplayContext*   context = nullptr)
+{
+    std::ostringstream key;
+    key << filament_id << '|' << reason;
+    if (context != nullptr)
+        key << '|' << mixed_filament_sidewall_blend_model_to_string(context->sidewall_blend_model)
+            << '|' << context->num_physical;
+    if (!g_prepare_sidewall_cadence_skip_log.insert(key.str()).second)
+        return;
+
+    BOOST_LOG_TRIVIAL(info) << "FullSpectrum prepare sidewall cadence skipped"
+                            << " filament_id=" << filament_id
+                            << " reason=" << reason
+                            << (context != nullptr ? " model=" : "")
+                            << (context != nullptr ? mixed_filament_sidewall_blend_model_to_string(context->sidewall_blend_model) : "")
+                            << (context != nullptr ? " physical_count=" : "")
+                            << (context != nullptr ? std::to_string(context->num_physical) : "");
+}
+
+static bool prepare_sidewall_valid_physical_filament(unsigned int filament_id, size_t num_physical)
+{
+    return filament_id >= 1 && filament_id <= num_physical;
+}
+
+static bool prepare_sidewall_same_step(const PrepareSidewallCadenceStep& lhs, const PrepareSidewallCadenceStep& rhs)
+{
+    return lhs.filament_id == rhs.filament_id && std::abs(lhs.height_mm - rhs.height_mm) <= 1e-6;
+}
+
+static void minimize_prepare_sidewall_cadence_steps(std::vector<PrepareSidewallCadenceStep>& steps)
+{
+    if (steps.size() <= 1)
+        return;
+
+    for (size_t period = 1; period < steps.size(); ++period) {
+        bool repeats = true;
+        for (size_t idx = period; idx < steps.size(); ++idx) {
+            if (!prepare_sidewall_same_step(steps[idx], steps[idx % period])) {
+                repeats = false;
+                break;
+            }
+        }
+        if (repeats) {
+            steps.resize(period);
+            return;
+        }
+    }
+}
+
+static bool prepare_sidewall_local_z_starts_with_component_a(const MixedFilament&                      mf,
+                                                             const MixedFilamentPreviewSettings&       settings,
+                                                             const std::vector<double>&                pass_heights)
+{
+    double expected_h_a = settings.preferred_a_height;
+    double expected_h_b = settings.preferred_b_height;
+    if (expected_h_a <= EPSILON && expected_h_b <= EPSILON) {
+        const int mix_b = std::clamp(mf.mix_b_percent, 0, 100);
+        const double pct_b = double(mix_b) / 100.0;
+        const double pct_a = 1.0 - pct_b;
+        const double lo = std::max<double>(0.01, settings.mixed_lower_bound);
+        const double hi = std::max<double>(lo, settings.mixed_upper_bound);
+        expected_h_a = lo + pct_a * (hi - lo);
+        expected_h_b = lo + pct_b * (hi - lo);
+    }
+
+    double err_ab = 0.0;
+    double err_ba = 0.0;
+    for (size_t pass_i = 0; pass_i < pass_heights.size(); ++pass_i) {
+        const double expected_ab = (pass_i % 2) == 0 ? expected_h_a : expected_h_b;
+        const double expected_ba = (pass_i % 2) == 0 ? expected_h_b : expected_h_a;
+        err_ab += std::abs(pass_heights[pass_i] - expected_ab);
+        err_ba += std::abs(pass_heights[pass_i] - expected_ba);
+    }
+    if (err_ab + 1e-6 < err_ba)
+        return true;
+    if (err_ba + 1e-6 < err_ab)
+        return false;
+    return expected_h_a >= expected_h_b;
+}
+
+static std::vector<PrepareSidewallCadenceStep> build_prepare_sidewall_cadence_steps(unsigned int filament_id,
+                                                                                    const MixedFilament&               mf,
+                                                                                    const MixedFilamentDisplayContext& context,
+                                                                                    const MixedFilamentManager&        mixed_mgr,
+                                                                                    double                             layer_height)
+{
+    const size_t num_physical = context.num_physical;
+    if (num_physical == 0)
+        return {};
+
+    if (mf.distribution_mode == int(MixedFilament::SameLayerPointillisme))
+        return {};
+
+    const std::string normalized_pattern = MixedFilamentManager::normalize_manual_pattern(mf.manual_pattern);
+    const std::vector<unsigned int> gradient_ids =
+        MixedFilamentManager::decode_gradient_component_ids(mf.gradient_component_ids, num_physical);
+
+    if (context.preview_settings.local_z_mode && normalized_pattern.empty() && gradient_ids.size() < 3 &&
+        prepare_sidewall_valid_physical_filament(mf.component_a, num_physical) &&
+        prepare_sidewall_valid_physical_filament(mf.component_b, num_physical) &&
+        mf.component_a != mf.component_b) {
+        const std::vector<double> pass_heights =
+            mixed_filament_local_z_preview_pass_heights(context.preview_settings, mf.mix_b_percent, mf.local_z_max_sublayers);
+        if (pass_heights.size() >= 2) {
+            const bool start_with_a = prepare_sidewall_local_z_starts_with_component_a(mf, context.preview_settings, pass_heights);
+            std::vector<PrepareSidewallCadenceStep> steps;
+            steps.reserve(std::min(pass_heights.size(), size_t(k_prepare_sidewall_max_cadence_colors)));
+            for (size_t pass_i = 0; pass_i < pass_heights.size() && steps.size() < size_t(k_prepare_sidewall_max_cadence_colors); ++pass_i) {
+                const bool even_pass = (pass_i % 2) == 0;
+                const bool pass_is_a = even_pass ? start_with_a : !start_with_a;
+                steps.push_back({ pass_is_a ? mf.component_a : mf.component_b, std::max(0.001, pass_heights[pass_i]) });
+            }
+            minimize_prepare_sidewall_cadence_steps(steps);
+            return steps;
+        }
+    }
+
+    const double safe_layer_height = std::max(0.001, layer_height);
+    std::vector<PrepareSidewallCadenceStep> steps;
+    steps.reserve(size_t(k_prepare_sidewall_max_cadence_colors));
+    for (int layer_idx = 0; layer_idx < k_prepare_sidewall_max_cadence_colors; ++layer_idx) {
+        const float z = float((double(layer_idx) + 0.5) * safe_layer_height);
+        const unsigned int physical = mixed_mgr.resolve(filament_id,
+                                                        num_physical,
+                                                        layer_idx,
+                                                        z,
+                                                        float(safe_layer_height),
+                                                        false);
+        if (!prepare_sidewall_valid_physical_filament(physical, num_physical))
+            return {};
+        steps.push_back({ physical, safe_layer_height });
+    }
+    minimize_prepare_sidewall_cadence_steps(steps);
+    return steps;
+}
+
+static std::string prepare_sidewall_cadence_context_key(const MixedFilamentDisplayContext& context,
+                                                        const MixedFilamentManager&        mixed_mgr)
+{
+    std::ostringstream key;
+    key << "model=" << mixed_filament_sidewall_blend_model_to_string(context.sidewall_blend_model)
+        << "|lh=" << context.preview_settings.nominal_layer_height
+        << "|lower=" << context.preview_settings.mixed_lower_bound
+        << "|upper=" << context.preview_settings.mixed_upper_bound
+        << "|ha=" << context.preview_settings.preferred_a_height
+        << "|hb=" << context.preview_settings.preferred_b_height
+        << "|lz=" << context.preview_settings.local_z_mode
+        << "|direct=" << context.preview_settings.local_z_direct_multicolor
+        << "|bias=" << context.component_bias_enabled
+        << "|n=" << context.num_physical;
+
+    for (size_t idx = 0; idx < context.num_physical && idx < context.physical_colors.size(); ++idx)
+        key << "|c" << idx << '=' << context.physical_colors[idx];
+    for (size_t idx = 0; idx < context.num_physical && idx < context.physical_td99_mm.size(); ++idx)
+        key << "|td" << idx << '=' << context.physical_td99_mm[idx];
+
+    for (const MixedFilament& mf : mixed_mgr.mixed_filaments()) {
+        key << "|mf=" << mf.stable_id
+            << ',' << mf.enabled
+            << ',' << mf.deleted
+            << ',' << mf.component_a
+            << ',' << mf.component_b
+            << ',' << mf.ratio_a
+            << ',' << mf.ratio_b
+            << ',' << mf.mix_b_percent
+            << ',' << mf.manual_pattern
+            << ',' << mf.gradient_component_ids
+            << ',' << mf.gradient_component_weights
+            << ',' << mf.distribution_mode
+            << ',' << mf.local_z_max_sublayers
+            << ',' << mf.gradient_enabled
+            << ',' << mf.gradient_start
+            << ',' << mf.gradient_end;
+    }
+
+    return key.str();
+}
+
+static PrepareSidewallCadenceUniforms prepare_sidewall_cadence_for_filament(unsigned int filament_id, float layer_height)
+{
+    PrepareSidewallCadenceUniforms out;
+    if (GUI::wxGetApp().plater() == nullptr || GUI::wxGetApp().preset_bundle == nullptr)
+        return out;
+
+    auto& mixed_mgr = GUI::wxGetApp().preset_bundle->mixed_filaments;
+    std::vector<std::string> physical_colors =
+        GUI::wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
+    const size_t app_physical_count = size_t(std::max(GUI::wxGetApp().filaments_cnt(), 0));
+    if (app_physical_count > 0)
+        physical_colors.resize(app_physical_count, "#26A69A");
+    MixedFilamentDisplayContext context = GUI::build_mixed_filament_display_context(physical_colors);
+    context.preview_settings.nominal_layer_height = std::max(0.01, double(layer_height));
+
+    if (context.sidewall_blend_model == MixedFilamentSidewallBlendModel::Legacy) {
+        if (filament_id > context.num_physical)
+            log_prepare_sidewall_cadence_skip(filament_id, "legacy_model", &context);
+        return out;
+    }
+    if (filament_id <= context.num_physical)
+        return out;
+    if (context.physical_colors.size() < context.num_physical) {
+        log_prepare_sidewall_cadence_skip(filament_id, "missing_physical_colors", &context);
+        return out;
+    }
+
+    const std::string context_key = prepare_sidewall_cadence_context_key(context, mixed_mgr);
+    if (g_prepare_sidewall_cadence_cache.context_key != context_key) {
+        g_prepare_sidewall_cadence_cache.context_key = context_key;
+        g_prepare_sidewall_cadence_cache.by_filament.clear();
+    }
+
+    auto cached = g_prepare_sidewall_cadence_cache.by_filament.find(filament_id);
+    if (cached != g_prepare_sidewall_cadence_cache.by_filament.end())
+        return cached->second;
+
+    const MixedFilament* mf = mixed_mgr.mixed_filament_from_id(filament_id, context.num_physical);
+    if (mf == nullptr) {
+        log_prepare_sidewall_cadence_skip(filament_id, "missing_mixed_row", &context);
+        return out;
+    }
+    if (!mf->enabled || mf->deleted) {
+        log_prepare_sidewall_cadence_skip(filament_id, "mixed_row_disabled", &context);
+        return out;
+    }
+
+    const double safe_layer_height = std::max(0.01, double(layer_height));
+    const std::vector<PrepareSidewallCadenceStep> cadence_steps =
+        build_prepare_sidewall_cadence_steps(filament_id, *mf, context, mixed_mgr, safe_layer_height);
+    if (cadence_steps.empty()) {
+        log_prepare_sidewall_cadence_skip(filament_id, "empty_cadence", &context);
+        return out;
+    }
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = context.sidewall_blend_model;
+
+    double max_td = 0.0;
+    for (size_t idx = 0; idx < context.num_physical && idx < context.physical_td99_mm.size(); ++idx)
+        max_td = std::max(max_td, context.physical_td99_mm[idx]);
+    double min_step_height = safe_layer_height;
+    for (const PrepareSidewallCadenceStep& step : cadence_steps)
+        min_step_height = std::min(min_step_height, std::max(0.001, step.height_mm));
+    const int max_layer_window = max_td > 0.0 ? std::clamp(int(std::ceil((2.0 * max_td) / min_step_height)) + 1, 2, 80) : 2;
+    const int period = std::max(1, int(cadence_steps.size()));
+    const int repeats_before = std::max(1, max_layer_window / period + 1);
+    const int repeat_count = repeats_before * 2 + 1;
+
+    std::vector<unsigned int> repeated;
+    std::vector<double> repeated_heights;
+    repeated.reserve(size_t(repeat_count * period));
+    repeated_heights.reserve(size_t(repeat_count * period));
+    for (int repeat = 0; repeat < repeat_count; ++repeat) {
+        for (const PrepareSidewallCadenceStep& step : cadence_steps) {
+            repeated.emplace_back(step.filament_id);
+            repeated_heights.emplace_back(std::max(0.001, step.height_mm));
+        }
+    }
+
+    out.active = true;
+    out.count  = std::min<int>(int(cadence_steps.size()), k_prepare_sidewall_max_cadence_colors);
+    std::vector<std::string> final_log_colors;
+    final_log_colors.reserve(size_t(out.count));
+    for (int idx = 0; idx < out.count; ++idx) {
+        const PrepareSidewallCadenceStep& step = cadence_steps[size_t(idx)];
+        const unsigned int fallback_id = step.filament_id;
+        const std::string fallback =
+            fallback_id >= 1 && fallback_id <= context.physical_colors.size() ? context.physical_colors[fallback_id - 1] : "#FFFFFF";
+        const std::string apparent = predict_mixed_filament_sequence_surface_color_at(repeated,
+                                                                                      repeated_heights,
+                                                                                      size_t(repeats_before * period + idx),
+                                                                                      context.physical_colors,
+                                                                                      context.physical_td99_mm,
+                                                                                      safe_layer_height,
+                                                                                      settings,
+                                                                                      fallback);
+        ColorRGBA color = ColorRGBA::WHITE();
+        if (!decode_color(apparent, color))
+            (void)decode_color(fallback, color);
+        color = ::adjust_color_for_rendering(color);
+        out.colors[size_t(idx) * 4 + 0] = color.r();
+        out.colors[size_t(idx) * 4 + 1] = color.g();
+        out.colors[size_t(idx) * 4 + 2] = color.b();
+        out.colors[size_t(idx) * 4 + 3] = float(std::max(0.001, step.height_mm));
+        final_log_colors.emplace_back(prepare_sidewall_color_to_hex(color));
+    }
+
+    std::ostringstream sequence_log;
+    for (size_t idx = 0; idx < cadence_steps.size(); ++idx) {
+        if (idx > 0)
+            sequence_log << ',';
+        sequence_log << cadence_steps[idx].filament_id << '@' << cadence_steps[idx].height_mm;
+    }
+    std::ostringstream color_log;
+    for (size_t idx = 0; idx < final_log_colors.size(); ++idx) {
+        if (idx > 0)
+            color_log << ',';
+        color_log << final_log_colors[idx];
+    }
+    BOOST_LOG_TRIVIAL(info) << "FullSpectrum prepare sidewall cadence built"
+                            << " filament_id=" << filament_id
+                            << " model=" << mixed_filament_sidewall_blend_model_to_string(context.sidewall_blend_model)
+                            << " layer_height=" << safe_layer_height
+                            << " td_max=" << max_td
+                            << " count=" << out.count
+                            << " sequence=" << sequence_log.str()
+                            << " colors=" << color_log.str();
+
+    return g_prepare_sidewall_cadence_cache.by_filament.emplace(filament_id, out).first->second;
+}
+
+static void set_prepare_sidewall_cadence_uniforms(GLShaderProgram* shader, unsigned int filament_id)
+{
+    if (shader == nullptr)
+        return;
+
+    if (!g_prepare_sidewall_render_context.active || filament_id == 0) {
+        shader->set_uniform("fs_sidewall_layers.cadence_active", false);
+        shader->set_uniform("fs_sidewall_layers.cadence_count", 0);
+        return;
+    }
+
+    const PrepareSidewallCadenceUniforms sidewall_cadence =
+        prepare_sidewall_cadence_for_filament(filament_id, g_prepare_sidewall_render_context.layer_height);
+    shader->set_uniform("fs_sidewall_layers.cadence_active", sidewall_cadence.active);
+    shader->set_uniform("fs_sidewall_layers.cadence_count", sidewall_cadence.count);
+    if (sidewall_cadence.active && sidewall_cadence.count > 0)
+        shader->set_uniform_vec4_array("fs_sidewall_cadence_colors[0]", sidewall_cadence.colors.data(), size_t(sidewall_cadence.count));
+}
+
+} // namespace
 
 void GLVolume::SinkingContours::render()
 {
@@ -555,11 +942,13 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
             if (!m.is_initialized())
                 continue;
 
+            unsigned int sidewall_filament_id = 0;
             if (shader) {
                 if (idx == 0) {
                     int extruder_id = model_volume->extruder_id();
                     if (extruder_id <= 0)
                         extruder_id = 1;
+                    sidewall_filament_id = unsigned(extruder_id);
                     // to make black not too hard too see
                     ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[extruder_id - 1]);
                     if (ban_light) {
@@ -568,7 +957,8 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
                     m.set_color(new_color);
                     // shader->set_uniform("uniform_color", new_color);
                 } else {
-                    if (idx <= extruder_colors.size()) {
+                    sidewall_filament_id = unsigned(idx);
+                    if (idx > 0 && size_t(idx) <= extruder_colors.size()) {
                         // to make black not too hard too see
                         ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[idx - 1]);
                         if (ban_light) {
@@ -586,6 +976,14 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
                         // shader->set_uniform("uniform_color", new_color);
                     }
                 }
+                if (g_prepare_sidewall_render_context.active &&
+                    g_prepare_sidewall_render_submodel_log.insert(int(sidewall_filament_id)).second) {
+                    BOOST_LOG_TRIVIAL(info) << "FullSpectrum prepare sidewall render submodel"
+                                            << " filament_id=" << sidewall_filament_id
+                                            << " idx=" << idx
+                                            << " color=" << prepare_sidewall_color_to_hex(m.get_color());
+                }
+                set_prepare_sidewall_cadence_uniforms(shader, sidewall_filament_id);
             }
             if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
                 m.render();
@@ -965,12 +1363,41 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
 
         float normal_z = -::cos(Geometry::deg2rad((float) support_threshold_angle));
 
+        const bool simulate_sidewall_layers =
+            m_sidewall_layer_simulation.active && type == ERenderType::Opaque &&
+            !volume.first->is_modifier && !volume.first->is_wipe_tower && volume.first->printable;
+        if (simulate_sidewall_layers && g_prepare_sidewall_render_extruder_log.insert(volume.first->extruder_id).second) {
+            BOOST_LOG_TRIVIAL(info) << "FullSpectrum prepare sidewall render volume"
+                                    << " extruder_id=" << volume.first->extruder_id
+                                    << " render_color=" << prepare_sidewall_color_to_hex(volume.first->render_color);
+        }
+        g_prepare_sidewall_render_context.active = simulate_sidewall_layers;
+        g_prepare_sidewall_render_context.layer_height = m_sidewall_layer_simulation.layer_height;
         shader->set_uniform("volume_world_matrix", volume.first->world_matrix());
         shader->set_uniform("slope.actived", m_slope.isGlobalActive && !volume.first->is_modifier && !volume.first->is_wipe_tower);
+        shader->set_uniform("fs_sidewall_normal_active", simulate_sidewall_layers);
         shader->set_uniform("slope.volume_world_normal_matrix",
                             static_cast<Matrix3f>(
                                 volume.first->world_matrix().matrix().block(0, 0, 3, 3).inverse().transpose().cast<float>()));
         shader->set_uniform("slope.normal_z", normal_z);
+        shader->set_uniform("fs_sidewall_layers.enabled", simulate_sidewall_layers);
+        shader->set_uniform("fs_sidewall_layers.layer_height", m_sidewall_layer_simulation.layer_height);
+        shader->set_uniform("fs_sidewall_layers.line_width", m_sidewall_layer_simulation.line_width);
+        shader->set_uniform("fs_sidewall_layers.line_strength", m_sidewall_layer_simulation.line_strength);
+        set_prepare_sidewall_cadence_uniforms(shader, volume.first->extruder_id > 0 ? unsigned(volume.first->extruder_id) : 0);
+        const bool stack_active = simulate_sidewall_layers && m_sidewall_layer_simulation.stack_active;
+        shader->set_uniform("fs_sidewall_layers.stack_active", stack_active);
+        shader->set_uniform("fs_sidewall_layers.stack_origin", m_sidewall_layer_simulation.stack_origin);
+        shader->set_uniform("fs_sidewall_layers.stack_cell_size", m_sidewall_layer_simulation.stack_cell_size);
+        shader->set_uniform("fs_sidewall_layers.stack_grid_size", m_sidewall_layer_simulation.stack_grid_size);
+        shader->set_uniform("fs_sidewall_layers.stack_z_min", m_sidewall_layer_simulation.stack_z_min);
+        shader->set_uniform("fs_sidewall_layers.stack_layer_count", m_sidewall_layer_simulation.stack_layer_count);
+        shader->set_uniform("fs_sidewall_stack_tex", 1);
+        if (stack_active) {
+            glsafe(::glActiveTexture(GL_TEXTURE1));
+            glsafe(::glBindTexture(GL_TEXTURE_2D, m_sidewall_layer_simulation.stack_texture_id));
+            glsafe(::glActiveTexture(GL_TEXTURE0));
+        }
 
 #if ENABLE_ENVIRONMENT_MAP
         unsigned int environment_texture_id  = GUI::wxGetApp().plater()->get_environment_texture_id();
@@ -1001,6 +1428,18 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
 
         glsafe(::glBindBuffer(GL_ARRAY_BUFFER, 0));
         glsafe(::glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+    }
+
+    shader->set_uniform("fs_sidewall_layers.enabled", false);
+    shader->set_uniform("fs_sidewall_layers.cadence_active", false);
+    shader->set_uniform("fs_sidewall_layers.cadence_count", 0);
+    shader->set_uniform("fs_sidewall_layers.stack_active", false);
+    shader->set_uniform("fs_sidewall_normal_active", false);
+    g_prepare_sidewall_render_context.active = false;
+    if (m_sidewall_layer_simulation.stack_texture_id != 0) {
+        glsafe(::glActiveTexture(GL_TEXTURE1));
+        glsafe(::glBindTexture(GL_TEXTURE_2D, 0));
+        glsafe(::glActiveTexture(GL_TEXTURE0));
     }
 
     if (m_show_sinking_contours) {
@@ -1226,7 +1665,9 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
         // Include enabled mixed (virtual) filament colors so volume extruder IDs
         // assigned to mixed rows render correctly in Prepare view.
         if (GUI::wxGetApp().preset_bundle != nullptr) {
-            const auto mixed_colors = GUI::wxGetApp().preset_bundle->mixed_filaments.display_colors();
+            auto &mixed_mgr = GUI::wxGetApp().preset_bundle->mixed_filaments;
+            mixed_mgr.set_display_context(GUI::build_mixed_filament_display_context(filament_colors));
+            const auto mixed_colors = mixed_mgr.display_colors();
             filament_colors.insert(filament_colors.end(), mixed_colors.begin(), mixed_colors.end());
         }
 

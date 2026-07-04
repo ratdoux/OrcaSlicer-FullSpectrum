@@ -1,5 +1,7 @@
 #include "MixedGradientSelector.hpp"
 
+#include <cmath>
+
 namespace Slic3r { namespace GUI {
 
 wxColour blend_pair_filament_mixer(const wxColour &left, const wxColour &right, float t)
@@ -20,6 +22,25 @@ wxColour blend_pair_filament_mixer(const wxColour &left, const wxColour &right, 
         std::clamp(t, 0.f, 1.f),
         &out_r, &out_g, &out_b);
     return wxColour(out_r, out_g, out_b);
+}
+
+static wxColour interpolate_selector_color(const std::vector<wxColour> &colors, float t)
+{
+    if (colors.empty())
+        return wxColour("#26A69A");
+    if (colors.size() == 1)
+        return colors.front();
+
+    const float clamped = std::clamp(t, 0.f, 1.f);
+    const float scaled  = clamped * float(colors.size() - 1);
+    const size_t idx    = std::min<size_t>(size_t(std::floor(scaled)), colors.size() - 2);
+    const float local   = scaled - float(idx);
+
+    const wxColour &a = colors[idx];
+    const wxColour &b = colors[idx + 1];
+    return wxColour(int(float(a.Red())   * (1.f - local) + float(b.Red())   * local + 0.5f),
+                    int(float(a.Green()) * (1.f - local) + float(b.Green()) * local + 0.5f),
+                    int(float(a.Blue())  * (1.f - local) + float(b.Blue())  * local + 0.5f));
 }
 
 wxRect MixedGradientSelector::gradient_rect() const
@@ -109,7 +130,9 @@ void MixedGradientSelector::on_paint(wxPaintEvent &)
         if (data != nullptr) {
             for (int x = 0; x < w; ++x) {
                 const float t   = (w > 1) ? float(x) / float(w - 1) : 0.5f;
-                const wxColour col = blend_pair_filament_mixer(m_left, m_right, t);
+                const wxColour col = m_effect_colors.size() >= 2 ?
+                    interpolate_selector_color(m_effect_colors, t) :
+                    blend_pair_filament_mixer(m_left, m_right, t);
                 const unsigned char r = static_cast<unsigned char>(col.Red());
                 const unsigned char g = static_cast<unsigned char>(col.Green());
                 const unsigned char b = static_cast<unsigned char>(col.Blue());

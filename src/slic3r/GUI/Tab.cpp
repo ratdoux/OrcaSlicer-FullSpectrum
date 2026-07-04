@@ -2588,6 +2588,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("mixed_filament_pointillism_pixel_size");
         optgroup->append_single_option_line("mixed_filament_pointillism_line_gap");
         optgroup->append_single_option_line("mixed_filament_component_bias_enabled");
+        optgroup->append_single_option_line("mixed_filament_sidewall_color_model");
         optgroup->append_single_option_line("mixed_filament_surface_indentation");
         optgroup->append_single_option_line("mixed_filament_region_collapse");
         optgroup->append_single_option_line("dithering_z_step_size");
@@ -3675,6 +3676,7 @@ void TabFilament::build()
         optgroup->append_single_option_line("filament_diameter");
 
         optgroup->append_single_option_line("filament_density");
+        optgroup->append_single_option_line("filament_transmission_distance");
         optgroup->append_single_option_line("filament_shrink");
         optgroup->append_single_option_line("filament_shrinkage_compensation_z");
         optgroup->append_single_option_line("filament_cost");

@@ -10,6 +10,7 @@
 #include "slic3r/GUI/GUI_ObjectList.hpp"
 #include "slic3r/GUI/NotificationManager.hpp"
 #include "slic3r/GUI/GUI.hpp"
+#include "slic3r/GUI/MixedColorMatchHelpers.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Model.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
@@ -168,10 +169,9 @@ void GLGizmoMmuSegmentation::init_extruders_data(const std::vector<ColorRGBA> &e
     for (size_t i = 0; i < m_extruder_remap.size(); ++i)
         m_extruder_remap[i] = i;
 
-    // Build minimal display context for gradient rendering
+    // Build display context for gradient rendering and TD-aware sidewall swatches.
     std::vector<std::string> physical_hex = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
-    // Only physical_colors is used for gradient rendering; other fields intentionally at defaults
-    m_mixed_display_context = MixedFilamentDisplayContext{physical_hex.size(), std::move(physical_hex), {}, {}, false};
+    m_mixed_display_context = build_mixed_filament_display_context(physical_hex);
 }
 
 void GLGizmoMmuSegmentation::init_extruders_data()

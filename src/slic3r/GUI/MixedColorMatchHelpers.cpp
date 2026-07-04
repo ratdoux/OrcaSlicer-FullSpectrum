@@ -583,6 +583,7 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
     context.num_physical    = physical_colors.size();
     context.physical_colors = physical_colors;
     context.nozzle_diameters.assign(context.num_physical, 0.4);
+    context.physical_td99_mm.assign(context.num_physical, 0.0);
 
     auto* preset_bundle = wxGetApp().preset_bundle;
     if (preset_bundle == nullptr)
@@ -594,6 +595,15 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
         if (opt_count > 0) {
             for (size_t i = 0; i < context.num_physical; ++i)
                 context.nozzle_diameters[i] = std::max(0.05, opt->get_at(unsigned(std::min(i, opt_count - 1))));
+        }
+    }
+
+    const DynamicPrintConfig full_cfg = preset_bundle->full_config();
+    if (const ConfigOptionFloats* opt = full_cfg.option<ConfigOptionFloats>("filament_transmission_distance")) {
+        const size_t opt_count = opt->values.size();
+        if (opt_count > 0) {
+            for (size_t i = 0; i < context.num_physical; ++i)
+                context.physical_td99_mm[i] = std::max(0.0, opt->get_at(unsigned(std::min(i, opt_count - 1))));
         }
     }
 
@@ -633,6 +643,12 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
                                                          context.preview_settings.preferred_a_height <= EPSILON &&
                                                          context.preview_settings.preferred_b_height <= EPSILON;
     context.component_bias_enabled = get_mixed_bool("mixed_filament_component_bias_enabled", false);
+    if (print_cfg != nullptr && print_cfg->has("mixed_filament_sidewall_color_model"))
+        context.sidewall_blend_model = mixed_filament_sidewall_blend_model_from_string(
+            print_cfg->opt_string("mixed_filament_sidewall_color_model"));
+    else if (preset_bundle->project_config.has("mixed_filament_sidewall_color_model"))
+        context.sidewall_blend_model = mixed_filament_sidewall_blend_model_from_string(
+            preset_bundle->project_config.opt_string("mixed_filament_sidewall_color_model"));
 
     return context;
 }

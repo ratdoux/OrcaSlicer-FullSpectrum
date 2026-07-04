@@ -493,6 +493,7 @@ PrintConfigDef::PrintConfigDef()
     assign_printer_technology_to_unknown(this->options, ptAny);
     this->init_fff_params();
     this->init_extruder_option_keys();
+    this->init_filament_option_keys();
     assign_printer_technology_to_unknown(this->options, ptFFF);
     this->init_sla_params();
     assign_printer_technology_to_unknown(this->options, ptSLA);
@@ -2327,6 +2328,15 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Density");
     def->tooltip = L("Filament density. For statistics only.");
     def->sidetext = u8"g/cm³";	// grams per cubic milimeter, don't need translation
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloats { 0. });
+
+    def = this->add("filament_transmission_distance", coFloats);
+    def->label = L("Transmission distance");
+    def->tooltip = L("TD99 value in millimeters: the material thickness that absorbs 99% of transmitted light. "
+                     "Zero means unknown and keeps legacy color preview behavior.");
+    def->sidetext = "mm";
     def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloats { 0. });
@@ -4299,6 +4309,22 @@ void PrintConfigDef::init_fff_params()
                      "Bias is ignored for grouped wall patterns, same-layer pointillisme, and Local Z dithering.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("mixed_filament_sidewall_color_model", coString);
+    def->label = L("Sidewall color model");
+    def->category = L("Others");
+    def->tooltip = L("Color preview model for Full Spectrum sidewall translucency. Legacy keeps the current behavior. "
+                     "TD + FilamentMixer uses filament TD99 values with the existing pigment-style mixer. "
+                     "TD + Yule-Nielsen uses a reflectance-style experimental predictor.");
+    def->gui_type = ConfigOptionDef::GUIType::select_open;
+    def->enum_values.push_back("legacy");
+    def->enum_values.push_back("td_filament_mixer");
+    def->enum_values.push_back("td_yule_nielsen");
+    def->enum_labels.push_back(L("Legacy"));
+    def->enum_labels.push_back(L("TD + FilamentMixer"));
+    def->enum_labels.push_back(L("TD + Yule-Nielsen"));
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionString("legacy"));
 
     def = this->add("mixed_filament_surface_indentation", coFloat);
     def->label = L("Selective Expansion contraction");
@@ -6457,7 +6483,7 @@ void PrintConfigDef::init_filament_option_keys()
         "filament_diameter", "min_layer_height", "max_layer_height",
         "retraction_length", "z_hop", "z_hop_types", "retract_lift_above", "retract_lift_below", "retract_lift_enforce", "retraction_speed", "deretraction_speed",
         "retract_before_wipe", "retract_restart_extra", "retraction_minimum_travel", "wipe", "wipe_distance",
-        "retract_when_changing_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "filament_colour",
+        "retract_when_changing_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "filament_colour", "filament_transmission_distance",
         "default_filament_profile","retraction_distances_when_cut","long_retractions_when_cut"/*,"filament_seam_gap"*/
     };
 

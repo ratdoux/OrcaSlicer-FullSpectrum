@@ -59,6 +59,13 @@ public:
         m_multi_mode = false;
         m_multi_colors.clear();
         m_multi_weights.clear();
+        m_effect_colors.clear();
+        Refresh();
+    }
+
+    void set_effect_preview(const std::vector<wxColour> &colors)
+    {
+        m_effect_colors = colors;
         Refresh();
     }
 
@@ -67,6 +74,7 @@ public:
         m_multi_mode    = corner_colors.size() >= 3;
         m_multi_colors  = corner_colors;
         m_multi_weights = weights;
+        m_effect_colors.clear();
         Refresh();
     }
 
@@ -94,6 +102,7 @@ private:
     bool                  m_multi_mode    {false};
     std::vector<wxColour> m_multi_colors;
     std::vector<int>      m_multi_weights;
+    std::vector<wxColour> m_effect_colors;
     int                   m_value         {50};
     bool                  m_dragging      {false};
     int                   m_min_percent   {MIN_RATIO_PERCENT};

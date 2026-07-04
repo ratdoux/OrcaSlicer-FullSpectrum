@@ -28,11 +28,30 @@ struct SlopeDetection
     mat3 volume_world_normal_matrix;
 };
 
+struct SidewallLayerSimulation
+{
+    bool enabled;
+    bool cadence_active;
+    bool stack_active;
+    int cadence_count;
+    float layer_height;
+    float line_width;
+    float line_strength;
+    vec2 stack_origin;
+    vec2 stack_cell_size;
+    vec2 stack_grid_size;
+    float stack_z_min;
+    float stack_layer_count;
+};
+
 uniform vec4 uniform_color;
 uniform bool use_color_clip_plane;
 uniform vec4 uniform_color_clip_plane_1;
 uniform vec4 uniform_color_clip_plane_2;
 uniform SlopeDetection slope;
+uniform SidewallLayerSimulation fs_sidewall_layers;
+uniform vec4 fs_sidewall_cadence_colors[32];
+uniform sampler2D fs_sidewall_stack_tex;
 
 //BBS: add outline_color
 uniform bool is_outline;
@@ -63,6 +82,72 @@ varying vec3 eye_normal;
 vec3 getBackfaceColor(vec3 fill) {
     float brightness = 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b;
     return (brightness > 0.75) ? vec3(0.11, 0.165, 0.208) : vec3(0.988, 0.988, 0.988);
+}
+
+vec3 applySidewallLayerSimulation(vec3 fill)
+{
+    if (!fs_sidewall_layers.enabled || fs_sidewall_layers.layer_height <= EPSILON)
+        return fill;
+
+    float sidewall = 1.0 - smoothstep(0.18, 0.55, abs(world_normal_z));
+    if (sidewall <= EPSILON)
+        return fill;
+
+    float layer_pos = fract(max(world_pos.z, 0.0) / fs_sidewall_layers.layer_height);
+    float boundary_distance = min(layer_pos, 1.0 - layer_pos) * fs_sidewall_layers.layer_height;
+
+    if (fs_sidewall_layers.cadence_active && fs_sidewall_layers.cadence_count > 0) {
+        float cycle_height = 0.0;
+        for (int i = 0; i < 32; ++i) {
+            if (i < fs_sidewall_layers.cadence_count)
+                cycle_height += max(fs_sidewall_cadence_colors[i].a, EPSILON);
+        }
+
+        if (cycle_height > EPSILON) {
+            float phase = mod(max(world_pos.z, 0.0), cycle_height);
+            float cursor = 0.0;
+            vec3 cadence_fill = fill;
+            for (int i = 0; i < 32; ++i) {
+                if (i < fs_sidewall_layers.cadence_count) {
+                    float h = max(fs_sidewall_cadence_colors[i].a, EPSILON);
+                    bool selected = phase >= cursor && phase < cursor + h;
+                    if (selected || (i == fs_sidewall_layers.cadence_count - 1 && phase >= cursor)) {
+                        float local_z = clamp(phase - cursor, 0.0, h);
+                        cadence_fill = fs_sidewall_cadence_colors[i].rgb;
+                        layer_pos = clamp(local_z / h, 0.0, 1.0);
+                        boundary_distance = min(local_z, h - local_z);
+                    }
+                    cursor += h;
+                }
+            }
+            fill = cadence_fill;
+        }
+    }
+
+    if (fs_sidewall_layers.stack_active &&
+        fs_sidewall_layers.stack_grid_size.x > 0.5 &&
+        fs_sidewall_layers.stack_grid_size.y > 0.5 &&
+        fs_sidewall_layers.stack_layer_count > 0.5) {
+        vec2 cell = floor((world_pos.xy - fs_sidewall_layers.stack_origin) / fs_sidewall_layers.stack_cell_size);
+        float layer = floor((world_pos.z - fs_sidewall_layers.stack_z_min) / fs_sidewall_layers.layer_height + 0.5);
+        if (cell.x >= 0.0 && cell.y >= 0.0 &&
+            cell.x < fs_sidewall_layers.stack_grid_size.x &&
+            cell.y < fs_sidewall_layers.stack_grid_size.y &&
+            layer >= 0.0 && layer < fs_sidewall_layers.stack_layer_count) {
+            float atlas_y = layer * fs_sidewall_layers.stack_grid_size.y + cell.y;
+            vec2 uv = vec2((cell.x + 0.5) / fs_sidewall_layers.stack_grid_size.x,
+                           (atlas_y + 0.5) / (fs_sidewall_layers.stack_grid_size.y * fs_sidewall_layers.stack_layer_count));
+            vec4 stack_color = texture2D(fs_sidewall_stack_tex, uv);
+            if (stack_color.a > 0.01)
+                fill = mix(fill, stack_color.rgb, stack_color.a);
+        }
+    }
+
+    float boundary_line = 1.0 - smoothstep(fs_sidewall_layers.line_width, fs_sidewall_layers.line_width * 2.0, boundary_distance);
+    float rounded_ridge = 0.5 + 0.5 * cos(6.28318530718 * layer_pos);
+    float shade = sidewall * clamp(boundary_line * fs_sidewall_layers.line_strength + rounded_ridge * 0.035, 0.0, 0.42);
+
+    return mix(fill, fill * 0.62, shade);
 }
 
 // Silhouette edge detection & rendering algorithem by leoneruggiero
@@ -150,6 +235,8 @@ void main()
                 color.a = 0.8;
          }
     }
+    color.rgb = applySidewallLayerSimulation(color.rgb);
+
     // if the fragment is outside the print volume -> use darker color
 	vec3 pv_check_min = ZERO;
 	vec3 pv_check_max = ZERO;

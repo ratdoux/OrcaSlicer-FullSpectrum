@@ -567,6 +567,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "default_filament_colour",
         "filament_diameter",
         "filament_density",
+        "filament_transmission_distance",
         "filament_cost",
         "filament_notes",
         "outer_wall_acceleration",
@@ -660,7 +661,9 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "filament_retraction_distances_when_cut"
     };
 
-    static std::unordered_set<std::string> steps_ignore;
+    static std::unordered_set<std::string> steps_ignore = {
+        "mixed_filament_sidewall_color_model"
+    };
 
     std::vector<PrintStep> steps;
     std::vector<PrintObjectStep> osteps;

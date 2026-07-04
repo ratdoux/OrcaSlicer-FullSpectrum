@@ -1796,6 +1796,7 @@ void GCode::do_export(Print* print, const char* path, GCodeProcessorResult* resu
     std::string path_tmp(path);
     path_tmp += ".tmp";
 
+    m_current_sidewall_region_id = 0;
     m_processor.initialize(path_tmp);
     m_processor.set_print(print);
     GCodeOutputStream file(boost::nowide::fopen(path_tmp.c_str(), "wb"), m_processor);
@@ -5482,6 +5483,8 @@ LayerResult GCode::process_layer(const Print& print,
                             continue;
 
                         const ExtrusionEntityCollection* filtered_extrusions = extrusions;
+                        const unsigned int configured_sidewall_region_id =
+                            configured_filament_id_1based(entity_type, *extrusions, region);
                         const bool local_z_entity_enabled =
                             entity_type == ObjectByExtruder::Island::Region::PERIMETERS ||
                             (local_z_infill_enabled && entity_type == ObjectByExtruder::Island::Region::INFILL);
@@ -5530,7 +5533,8 @@ LayerResult GCode::process_layer(const Print& print,
                                         if (last || entity_matches_surface(island_idx, *clipped_ptr)) {
                                             if (islands[island_idx].by_region.empty())
                                                 islands[island_idx].by_region.assign(print.num_print_regions(), ObjectByExtruder::Island::Region());
-                                            islands[island_idx].by_region[region.print_region_id()].append(entity_type, clipped_ptr, nullptr);
+                                            islands[island_idx].by_region[region.print_region_id()].append(entity_type, clipped_ptr, nullptr,
+                                                                                                           configured_sidewall_region_id);
                                             break;
                                         }
                                     }
@@ -5577,7 +5581,7 @@ LayerResult GCode::process_layer(const Print& print,
                             local_z_clipped_collections.emplace_back(std::move(clipped_base));
                         }
 
-                        const unsigned int configured_filament_id = configured_filament_id_1based(entity_type, *filtered_extrusions, region);
+                        const unsigned int configured_filament_id = configured_sidewall_region_id;
                         const std::vector<unsigned int>* pointillism_sequence =
                             is_anything_overridden ? nullptr : pointillism_sequence_for_filament(configured_filament_id);
                         if (pointillism_sequence != nullptr) {
@@ -5610,7 +5614,8 @@ LayerResult GCode::process_layer(const Print& print,
                                         if (last || entity_matches_surface(island_idx, *split_ptr)) {
                                             if (islands[island_idx].by_region.empty())
                                                 islands[island_idx].by_region.assign(print.num_print_regions(), ObjectByExtruder::Island::Region());
-                                            islands[island_idx].by_region[region.print_region_id()].append(entity_type, split_ptr, nullptr);
+                                            islands[island_idx].by_region[region.print_region_id()].append(entity_type, split_ptr, nullptr,
+                                                                                                           configured_sidewall_region_id);
                                             break;
                                         }
                                     }
@@ -5657,7 +5662,8 @@ LayerResult GCode::process_layer(const Print& print,
                                                 if (last || entity_matches_surface(island_idx, *split_ptr)) {
                                                     if (islands[island_idx].by_region.empty())
                                                         islands[island_idx].by_region.assign(print.num_print_regions(), ObjectByExtruder::Island::Region());
-                                                    islands[island_idx].by_region[region.print_region_id()].append(entity_type, split_ptr, nullptr);
+                                                    islands[island_idx].by_region[region.print_region_id()].append(entity_type, split_ptr, nullptr,
+                                                                                                                   mixed_filament_id);
                                                     break;
                                                 }
                                             }
@@ -5722,7 +5728,8 @@ LayerResult GCode::process_layer(const Print& print,
                                     if (islands[island_idx].by_region.empty())
                                         islands[island_idx].by_region.assign(print.num_print_regions(), ObjectByExtruder::Island::Region());
                                     islands[island_idx].by_region[region.print_region_id()].append(entity_type, filtered_extrusions,
-                                                                                                   entity_overrides);
+                                                                                                   entity_overrides,
+                                                                                                   configured_sidewall_region_id);
                                     break;
                                 }
                             }
@@ -7082,6 +7089,14 @@ std::string GCode::extrude_path(ExtrusionPath path, std::string description, dou
     return gcode;
 }
 
+std::string GCode::set_sidewall_region_id(unsigned int region_id)
+{
+    if (m_current_sidewall_region_id == region_id)
+        return {};
+    m_current_sidewall_region_id = region_id;
+    return ";" + GCodeProcessor::Sidewall_Region_Id_Tag + std::to_string(region_id) + "\n";
+}
+
 // Extrude perimeters: Decide where to put seams (hide or align seams).
 std::string GCode::extrude_perimeters(const Print&                                         print,
                                       const std::vector<ObjectByExtruder::Island::Region>& by_region,
@@ -7098,8 +7113,12 @@ std::string GCode::extrude_perimeters(const Print&                              
             if (!should_print)
                 continue;
 
-            for (const ExtrusionEntity* ee : region.perimeters)
-                gcode += this->extrude_entity(*ee, "perimeter", -1., region.perimeters);
+            for (size_t perimeter_idx = 0; perimeter_idx < region.perimeters.size(); ++perimeter_idx) {
+                const unsigned int sidewall_region_id =
+                    perimeter_idx < region.perimeters_sidewall_region_ids.size() ? region.perimeters_sidewall_region_ids[perimeter_idx] : 0;
+                gcode += this->set_sidewall_region_id(sidewall_region_id);
+                gcode += this->extrude_entity(*region.perimeters[perimeter_idx], "perimeter", -1., region.perimeters);
+            }
         }
     return gcode;
 }
@@ -7119,6 +7138,9 @@ std::string GCode::extrude_infill(const Print& print, const std::vector<ObjectBy
                     extrusions.emplace_back(ee);
             if (!extrusions.empty()) {
                 m_config.apply(print.get_print_region(&region - &by_region.front()).config());
+                const unsigned int sidewall_region_id =
+                    !region.infills_sidewall_region_ids.empty() ? region.infills_sidewall_region_ids.front() : 0;
+                gcode += this->set_sidewall_region_id(sidewall_region_id);
                 chain_and_reorder_extrusion_entities(extrusions, &m_last_pos);
                 for (const ExtrusionEntity* fill : extrusions) {
                     auto* eec = dynamic_cast<const ExtrusionEntityCollection*>(fill);
@@ -7140,7 +7162,7 @@ std::string GCode::extrude_support(const ExtrusionEntityCollection& support_fill
     static constexpr const char* support_transition_label = "support transition";
     static constexpr const char* support_ironing_label    = "support ironing";
 
-    std::string gcode;
+    std::string gcode = this->set_sidewall_region_id(0);
     if (!support_fills.entities.empty()) {
         ExtrusionEntitiesPtr extrusions;
         extrusions.reserve(support_fills.entities.size());
@@ -8783,16 +8805,24 @@ const std::vector<GCode::ObjectByExtruder::Island::Region>& GCode::ObjectByExtru
             ExtrusionEntitiesPtr& target_eec = (iter ? by_region_per_copy_cache.back().infills : by_region_per_copy_cache.back().perimeters);
             const std::vector<const WipingExtrusions::ExtruderPerCopy*>& overrides = (iter ? reg.infills_overrides :
                                                                                              reg.perimeters_overrides);
+            const std::vector<unsigned int>& sidewall_ids = (iter ? reg.infills_sidewall_region_ids :
+                                                                    reg.perimeters_sidewall_region_ids);
+            std::vector<unsigned int>& target_sidewall_ids = (iter ? by_region_per_copy_cache.back().infills_sidewall_region_ids :
+                                                                     by_region_per_copy_cache.back().perimeters_sidewall_region_ids);
 
             // Now the most important thing - which extrusion should we print.
             // See function ToolOrdering::get_extruder_overrides for details about the negative numbers hack.
+            auto append_entity = [&](unsigned int i) {
+                target_eec.emplace_back(entities[i]);
+                target_sidewall_ids.emplace_back(i < sidewall_ids.size() ? sidewall_ids[i] : 0);
+            };
             if (wiping_entities) {
                 // Apply overrides for this region.
                 for (unsigned int i = 0; i < overrides.size(); ++i) {
                     const WipingExtrusions::ExtruderPerCopy* this_override = overrides[i];
                     // This copy (aka object instance) should be printed with this extruder, which overrides the default one.
                     if (this_override != nullptr && (*this_override)[copy] == int(extruder))
-                        target_eec.emplace_back(entities[i]);
+                        append_entity(i);
                 }
             } else {
                 // Apply normal extrusions (non-overrides) for this region.
@@ -8801,10 +8831,10 @@ const std::vector<GCode::ObjectByExtruder::Island::Region>& GCode::ObjectByExtru
                     const WipingExtrusions::ExtruderPerCopy* this_override = overrides[i];
                     // This copy (aka object instance) should be printed with this extruder, which shall be equal to the default one.
                     if (this_override == nullptr || (*this_override)[copy] == -int(extruder) - 1)
-                        target_eec.emplace_back(entities[i]);
+                        append_entity(i);
                 }
                 for (; i < entities.size(); ++i)
-                    target_eec.emplace_back(entities[i]);
+                    append_entity(i);
             }
         }
     }
@@ -8815,21 +8845,25 @@ const std::vector<GCode::ObjectByExtruder::Island::Region>& GCode::ObjectByExtru
 // It also saves pointer to ExtruderPerCopy struct (for each entity), that holds information about which extruders should be used for which copy.
 void GCode::ObjectByExtruder::Island::Region::append(const Type                               type,
                                                      const ExtrusionEntityCollection*         eec,
-                                                     const WipingExtrusions::ExtruderPerCopy* copies_extruder)
+                                                     const WipingExtrusions::ExtruderPerCopy* copies_extruder,
+                                                     unsigned int                             sidewall_region_id)
 {
     // We are going to manipulate either perimeters or infills, exactly in the same way. Let's create pointers to the proper structure to
     // not repeat ourselves:
     ExtrusionEntitiesPtr*                                  perimeters_or_infills;
     std::vector<const WipingExtrusions::ExtruderPerCopy*>* perimeters_or_infills_overrides;
+    std::vector<unsigned int>*                             perimeters_or_infills_sidewall_ids;
 
     switch (type) {
     case PERIMETERS:
         perimeters_or_infills           = &perimeters;
         perimeters_or_infills_overrides = &perimeters_overrides;
+        perimeters_or_infills_sidewall_ids = &perimeters_sidewall_region_ids;
         break;
     case INFILL:
         perimeters_or_infills           = &infills;
         perimeters_or_infills_overrides = &infills_overrides;
+        perimeters_or_infills_sidewall_ids = &infills_sidewall_region_ids;
         break;
     default: throw Slic3r::InvalidArgument("Unknown parameter!");
     }
@@ -8843,6 +8877,8 @@ void GCode::ObjectByExtruder::Island::Region::append(const Type                 
             perimeters_or_infills->emplace_back(ee);
     } else
         perimeters_or_infills->emplace_back(const_cast<ExtrusionEntityCollection*>(eec));
+    perimeters_or_infills_sidewall_ids->reserve(new_size);
+    perimeters_or_infills_sidewall_ids->resize(new_size, sidewall_region_id);
 
     if (copies_extruder != nullptr) {
         // Don't reallocate overrides if not needed.

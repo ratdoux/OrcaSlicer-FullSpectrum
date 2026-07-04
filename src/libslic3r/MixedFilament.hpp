@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "MixedFilamentPreview.hpp"
+
 namespace Slic3r {
 
 class PrintObject;
@@ -152,12 +154,17 @@ struct MixedFilamentDisplayContext
     size_t                       num_physical { 0 };
     std::vector<std::string>     physical_colors;
     std::vector<double>          nozzle_diameters;
+    std::vector<double>          physical_td99_mm;
     MixedFilamentPreviewSettings preview_settings;
     bool                         component_bias_enabled { false };
+    MixedFilamentSidewallBlendModel sidewall_blend_model { MixedFilamentSidewallBlendModel::Legacy };
 };
 
 int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilament               &mf,
                                                            const MixedFilamentPreviewSettings &preview_settings);
+std::vector<double> mixed_filament_local_z_preview_pass_heights(const MixedFilamentPreviewSettings &preview_settings,
+                                                                int                                mix_b_percent,
+                                                                int                                max_sublayers_limit = 0);
 bool mixed_filament_supports_bias_apparent_color(const MixedFilament               &mf,
                                                  const MixedFilamentPreviewSettings &preview_settings,
                                                  bool                                bias_mode_enabled);

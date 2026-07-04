@@ -284,6 +284,17 @@ void GLShaderProgram::set_uniform(int id, const float* value, size_t size) const
     }
 }
 
+void GLShaderProgram::set_uniform_vec4_array(const char* name, const float* value, size_t count) const
+{
+    set_uniform_vec4_array(get_uniform_location(name), value, count);
+}
+
+void GLShaderProgram::set_uniform_vec4_array(int id, const float* value, size_t count) const
+{
+    if (id >= 0 && value != nullptr && count > 0)
+        glsafe(::glUniform4fv(id, GLsizei(count), static_cast<const GLfloat*>(value)));
+}
+
 void GLShaderProgram::set_uniform(int id, const Transform3f& value) const
 {
     if (id >= 0)

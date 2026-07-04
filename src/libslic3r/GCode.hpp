@@ -426,6 +426,8 @@ private:
 
                 std::vector<const WipingExtrusions::ExtruderPerCopy*> infills_overrides;
                 std::vector<const WipingExtrusions::ExtruderPerCopy*> perimeters_overrides;
+                std::vector<unsigned int> infills_sidewall_region_ids;
+                std::vector<unsigned int> perimeters_sidewall_region_ids;
 
 	            enum Type {
 	            	PERIMETERS,
@@ -433,7 +435,8 @@ private:
 	            };
 
                 // Appends perimeter/infill entities and writes don't indices of those that are not to be extruder as part of perimeter/infill wiping
-                void append(const Type type, const ExtrusionEntityCollection* eec, const WipingExtrusions::ExtruderPerCopy* copy_extruders);
+                void append(const Type type, const ExtrusionEntityCollection* eec, const WipingExtrusions::ExtruderPerCopy* copy_extruders,
+                            unsigned int sidewall_region_id = 0);
             };
 
 
@@ -624,12 +627,14 @@ private:
     coordf_t m_nominal_z;
     bool m_need_change_layer_lift_z = false;
     int m_start_gcode_filament = -1;
+    unsigned int m_current_sidewall_region_id = 0;
 
     std::set<unsigned int>                  m_initial_layer_extruders;
     // BBS
     int get_bed_temperature(const int extruder_id, const bool is_first_layer, const BedType bed_type) const;
 
     std::string _extrude(const ExtrusionPath &path, std::string description = "", double speed = -1);
+    std::string set_sidewall_region_id(unsigned int region_id);
     bool _needSAFC(const ExtrusionPath &path);
     void print_machine_envelope(GCodeOutputStream &file, Print &print);
     void _print_first_layer_bed_temperature(GCodeOutputStream &file, Print &print, const std::string &gcode, unsigned int first_printing_extruder_id, bool wait);

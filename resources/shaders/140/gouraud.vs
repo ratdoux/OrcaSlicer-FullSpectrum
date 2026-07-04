@@ -30,6 +30,7 @@ uniform mat4 projection_matrix;
 uniform mat3 view_normal_matrix;
 uniform mat4 volume_world_matrix;
 uniform SlopeDetection slope;
+uniform bool fs_sidewall_normal_active;
 
 // Clipping plane, x = min z, y = max z. Used by the FFF and SLA previews to clip with a top / bottom plane.
 uniform vec2 z_range;
@@ -71,8 +72,8 @@ void main()
     // Point in homogenous coordinates.
     world_pos = volume_world_matrix * vec4(v_position, 1.0);
 
-    // z component of normal vector in world coordinate used for slope shading
-    world_normal_z = slope.actived ? (normalize(slope.volume_world_normal_matrix * v_normal)).z : 0.0;
+    // z component of normal vector in world coordinate used for slope and sidewall layer shading
+    world_normal_z = (slope.actived || fs_sidewall_normal_active) ? (normalize(slope.volume_world_normal_matrix * v_normal)).z : 0.0;
 
     gl_Position = projection_matrix * position;
     // Fill in the scalars for fragment shader clipping. Fragments with any of these components lower than zero are discarded.

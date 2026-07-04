@@ -51,6 +51,9 @@ private:
     wxString get_ratio_warning_msg();
     void display_warning(const wxString& msg);
     void set_error(const wxString& msg);
+    MixedFilamentDisplayContext current_display_context() const;
+    Slic3r::MixedFilament build_preview_entry_from_ui(int override_mix_b_percent = -1) const;
+    void update_selector_effect_previews();
     std::string compute_preview_color();
     wxBitmap make_color_bitmap(const wxColour& c, int size);
     int max_filaments_for_mode(int mode_index) const;

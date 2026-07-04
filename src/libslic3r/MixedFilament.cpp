@@ -1,4 +1,5 @@
 #include "MixedFilament.hpp"
+#include "MixedFilamentPreview.hpp"
 #include "filament_mixer.h"
 #include "libslic3r.h"
 
@@ -1208,6 +1209,26 @@ static std::string blend_display_color_from_sequence(const std::vector<std::stri
     return MixedFilamentManager::blend_color_multi(color_percents);
 }
 
+static std::string preview_display_color_from_sequence(const MixedFilamentDisplayContext &context,
+                                                       const std::vector<unsigned int>   &sequence,
+                                                       const std::string                 &fallback)
+{
+    if (context.sidewall_blend_model != MixedFilamentSidewallBlendModel::Legacy &&
+        !sequence.empty() &&
+        mixed_filament_sidewall_prediction_available(sequence, context.physical_td99_mm, context.sidewall_blend_model)) {
+        MixedFilamentSidewallPredictionSettings settings;
+        settings.blend_model = context.sidewall_blend_model;
+        return predict_mixed_filament_sequence_aggregate_color(sequence,
+                                                               context.physical_colors,
+                                                               context.physical_td99_mm,
+                                                               context.preview_settings.nominal_layer_height,
+                                                               settings,
+                                                               fallback);
+    }
+
+    return blend_display_color_from_sequence(context.physical_colors, context.num_physical, sequence, fallback);
+}
+
 static std::vector<double> build_local_z_preview_pass_heights(double nominal_layer_height,
                                                               double lower_bound,
                                                               double upper_bound,
@@ -1451,6 +1472,19 @@ static std::vector<double> build_local_z_preview_pass_heights(double nominal_lay
     return build_alternating(gradient_h_a, gradient_h_b);
 }
 
+std::vector<double> mixed_filament_local_z_preview_pass_heights(const MixedFilamentPreviewSettings &preview_settings,
+                                                                int                                mix_b_percent,
+                                                                int                                max_sublayers_limit)
+{
+    return build_local_z_preview_pass_heights(preview_settings.nominal_layer_height,
+                                              preview_settings.mixed_lower_bound,
+                                              preview_settings.mixed_upper_bound,
+                                              preview_settings.preferred_a_height,
+                                              preview_settings.preferred_b_height,
+                                              mix_b_percent,
+                                              max_sublayers_limit);
+}
+
 double MixedFilamentManager::mixed_filament_reference_nozzle_mm(unsigned int               component_a,
                                                  unsigned int               component_b,
                                                  const std::vector<double> &nozzle_diameters)
@@ -1599,7 +1633,7 @@ std::string compute_mixed_filament_display_color(const MixedFilament &entry, con
         const std::vector<unsigned int> sequence = build_grouped_manual_pattern_preview_sequence(
             normalized_pattern, entry.component_a, entry.component_b, context.num_physical, context.preview_settings.wall_loops);
         if (!sequence.empty())
-            return blend_display_color_from_sequence(context.physical_colors, context.num_physical, sequence, fallback);
+            return preview_display_color_from_sequence(context, sequence, fallback);
     }
 
     if (entry.distribution_mode != int(MixedFilament::Simple)) {
@@ -1610,7 +1644,7 @@ std::string compute_mixed_filament_display_color(const MixedFilament &entry, con
             const std::vector<unsigned int> sequence = build_weighted_gradient_sequence(
                 gradient_ids, gradient_weights.empty() ? std::vector<int>(gradient_ids.size(), 1) : gradient_weights);
             if (!sequence.empty())
-                return blend_display_color_from_sequence(context.physical_colors, context.num_physical, sequence, fallback);
+                return preview_display_color_from_sequence(context, sequence, fallback);
         }
     }
 
@@ -1619,7 +1653,8 @@ std::string compute_mixed_filament_display_color(const MixedFilament &entry, con
     const std::vector<unsigned int> pair_sequence =
         build_effective_pair_preview_sequence(entry.component_a, entry.component_b, effective_mix_b, same_layer_mode);
     if (!pair_sequence.empty())
-        return blend_display_color_from_sequence(context.physical_colors, context.num_physical, pair_sequence, fallback);
+        return same_layer_mode ? blend_display_color_from_sequence(context.physical_colors, context.num_physical, pair_sequence, fallback)
+                               : preview_display_color_from_sequence(context, pair_sequence, fallback);
 
     if (entry.component_a == 0 || entry.component_b == 0 ||
         entry.component_a > context.num_physical || entry.component_b > context.num_physical ||
@@ -2674,6 +2709,8 @@ void MixedFilamentManager::refresh_display_colors(const std::vector<std::string>
         context.preview_settings.wall_loops = 1;
     if (context.nozzle_diameters.size() < context.num_physical)
         context.nozzle_diameters.resize(context.num_physical, 0.4);
+    if (context.physical_td99_mm.size() < context.num_physical)
+        context.physical_td99_mm.resize(context.num_physical, 0.0);
 
     for (MixedFilament &mf : m_mixed)
         mf.display_color = compute_mixed_filament_display_color(mf, context);
@@ -2706,6 +2743,8 @@ void MixedFilamentManager::set_display_context(const MixedFilamentDisplayContext
         m_display_context.preview_settings.wall_loops = 1;
     if (m_display_context.nozzle_diameters.size() < m_display_context.num_physical)
         m_display_context.nozzle_diameters.resize(m_display_context.num_physical, 0.4);
+    if (m_display_context.physical_td99_mm.size() < m_display_context.num_physical)
+        m_display_context.physical_td99_mm.resize(m_display_context.num_physical, 0.0);
     if (!m_display_context.physical_colors.empty())
         refresh_display_colors(m_display_context.physical_colors);
 }

@@ -15,6 +15,7 @@
 #include "GLShader.hpp"
 #include "MeshUtils.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 
@@ -422,7 +423,23 @@ private:
         float normal_z;
     };
 
+    struct SidewallLayerSimulation
+    {
+        bool  active{ false };
+        bool  stack_active{ false };
+        unsigned int stack_texture_id{ 0 };
+        float layer_height{ 0.2f };
+        float line_width{ 0.025f };
+        float line_strength{ 0.45f };
+        std::array<float, 2> stack_origin{ 0.f, 0.f };
+        std::array<float, 2> stack_cell_size{ 1.f, 1.f };
+        std::array<float, 2> stack_grid_size{ 0.f, 0.f };
+        float stack_z_min{ 0.f };
+        float stack_layer_count{ 0.f };
+    };
+
     Slope m_slope;
+    SidewallLayerSimulation m_sidewall_layer_simulation;
     bool m_show_sinking_contours = false;
 
 public:
@@ -512,6 +529,27 @@ public:
     float get_slope_normal_z() const { return m_slope.normal_z; }
     void set_slope_normal_z(float normal_z) { m_slope.normal_z = normal_z; }
     void set_default_slope_normal_z() { m_slope.normal_z = -::cos(Geometry::deg2rad(90.0f - 45.0f)); }
+    void set_sidewall_layer_simulation(bool active, float layer_height) {
+        m_sidewall_layer_simulation.active       = active;
+        m_sidewall_layer_simulation.layer_height = std::max(layer_height, 0.01f);
+        m_sidewall_layer_simulation.line_width   = std::min(0.028f, std::max(0.006f, 0.07f * m_sidewall_layer_simulation.layer_height));
+        m_sidewall_layer_simulation.line_strength = 0.24f;
+    }
+    void set_sidewall_layer_stack(unsigned int texture_id,
+                                  const std::array<float, 2>& origin,
+                                  const std::array<float, 2>& cell_size,
+                                  int grid_width,
+                                  int grid_height,
+                                  int layer_count,
+                                  float z_min) {
+        m_sidewall_layer_simulation.stack_texture_id = texture_id;
+        m_sidewall_layer_simulation.stack_active     = texture_id != 0 && grid_width > 0 && grid_height > 0 && layer_count > 0;
+        m_sidewall_layer_simulation.stack_origin     = origin;
+        m_sidewall_layer_simulation.stack_cell_size  = cell_size;
+        m_sidewall_layer_simulation.stack_grid_size  = { float(grid_width), float(grid_height) };
+        m_sidewall_layer_simulation.stack_layer_count = float(layer_count);
+        m_sidewall_layer_simulation.stack_z_min      = z_min;
+    }
     void set_show_sinking_contours(bool show) { m_show_sinking_contours = show; }
 
     // returns true if all the volumes are completely contained in the print volume

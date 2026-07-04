@@ -22,6 +22,7 @@
 #include "GLCanvas3D.hpp"
 #include "GLToolbar.hpp"
 #include "GUI_Preview.hpp"
+#include "MixedColorMatchHelpers.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/Layer.hpp"
 #include "Widgets/ProgressDialog.hpp"
@@ -39,6 +40,10 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <cmath>
+#include <map>
+#include <unordered_map>
 
 namespace Slic3r {
 namespace GUI {
@@ -188,13 +193,15 @@ bool GCodeViewer::Path::matches(const GCodeProcessorResult::MoveVertex& move) co
     case EMoveType::Seam:
     case EMoveType::Extrude: {
         // use rounding to reduce the number of generated paths
-        return type == move.type && extruder_id == move.extruder_id && cp_color_id == move.cp_color_id && role == move.extrusion_role &&
+        return type == move.type && extruder_id == move.extruder_id && cp_color_id == move.cp_color_id &&
+            sidewall_region_id == move.sidewall_region_id && role == move.extrusion_role &&
             move.position.z() <= sub_paths.front().first.position.z() && feedrate == move.feedrate && fan_speed == move.fan_speed &&
             height == round_to_bin(move.height) && width == round_to_bin(move.width) &&
             matches_percent(volumetric_rate, move.volumetric_rate(), 0.05f) && layer_time == move.layer_duration;
     }
     case EMoveType::Travel: {
-        return type == move.type && feedrate == move.feedrate && extruder_id == move.extruder_id && cp_color_id == move.cp_color_id;
+        return type == move.type && feedrate == move.feedrate && extruder_id == move.extruder_id && cp_color_id == move.cp_color_id &&
+            sidewall_region_id == move.sidewall_region_id;
     }
     default: { return false; }
     }
@@ -225,7 +232,7 @@ void GCodeViewer::TBuffer::add_path(const GCodeProcessorResult::MoveVertex& move
     paths.push_back({ move.type, move.extrusion_role, move.delta_extruder,
         round_to_bin(move.height), round_to_bin(move.width),
         move.feedrate, move.fan_speed, move.temperature,
-        move.volumetric_rate(), move.layer_duration, move.extruder_id, move.cp_color_id, { { endpoint, endpoint } } });
+        move.volumetric_rate(), move.layer_duration, move.extruder_id, move.cp_color_id, move.sidewall_region_id, { { endpoint, endpoint } } });
 }
 
 ColorRGBA GCodeViewer::Extrusions::Range::get_color_at(float value) const
@@ -1100,7 +1107,6 @@ void GCodeViewer::refresh(const GCodeProcessorResult& gcode_result, const std::v
         gcode_result.unlock();
         return;
     }
-
     wxBusyCursor busy;
 
     if (m_view_type == EViewType::Tool && !gcode_result.extruder_colors.empty()) {
@@ -1171,6 +1177,7 @@ m_extrusions.ranges.layer_duration_log.update_from(curr.layer_duration);
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
 
     //BBS: add mutex for protection of gcode result
+    update_sidewall_path_colors(gcode_result);
     gcode_result.unlock();
 
     // update buffers' render paths
@@ -1181,6 +1188,262 @@ m_extrusions.ranges.layer_duration_log.update_from(curr.layer_duration);
 void GCodeViewer::refresh_render_paths()
 {
     refresh_render_paths(false, false);
+}
+
+void GCodeViewer::update_sidewall_path_colors(const GCodeProcessorResult& gcode_result)
+{
+    TBuffer& extrude_buffer = m_buffers[buffer_id(EMoveType::Extrude)];
+    for (Path& path : extrude_buffer.paths) {
+        path.has_apparent_sidewall_color = false;
+    }
+
+    if (extrude_buffer.paths.empty() || wxGetApp().preset_bundle == nullptr || wxGetApp().plater() == nullptr)
+        return;
+
+    const std::vector<std::string> physical_colors =
+        wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
+    MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    if (context.sidewall_blend_model == MixedFilamentSidewallBlendModel::Legacy || context.num_physical == 0 ||
+        context.physical_colors.size() < context.num_physical || context.physical_td99_mm.size() < context.num_physical)
+        return;
+
+    const auto max_td_it = std::max_element(context.physical_td99_mm.begin(), context.physical_td99_mm.begin() + context.num_physical);
+    if (max_td_it == context.physical_td99_mm.begin() + context.num_physical || *max_td_it <= EPSILON)
+        return;
+
+    const double layer_height = std::max(0.01, context.preview_settings.nominal_layer_height);
+    double nozzle_sum = 0.0;
+    size_t nozzle_count = 0;
+    for (size_t i = 0; i < std::min(context.nozzle_diameters.size(), context.num_physical); ++i) {
+        if (context.nozzle_diameters[i] > EPSILON) {
+            nozzle_sum += context.nozzle_diameters[i];
+            ++nozzle_count;
+        }
+    }
+    const double xy_cell_mm = std::clamp(nozzle_count > 0 ? nozzle_sum / double(nozzle_count) : 0.4, 0.2, 1.0);
+    const int max_layer_window = std::clamp(int(std::ceil((2.0 * *max_td_it) / layer_height)) + 1, 2, 40);
+
+    struct Sample {
+        size_t       path_idx { 0 };
+        unsigned int filament_id { 0 };
+        unsigned int region_id { 0 };
+        int          layer_key { 0 };
+    };
+    struct Accum {
+        double r { 0.0 };
+        double g { 0.0 };
+        double b { 0.0 };
+        size_t count { 0 };
+    };
+    struct CachedSidewallColor {
+        bool      ok { false };
+        ColorRGBA color;
+    };
+
+    auto bucket_key = [](int x, int y, unsigned int region_id) {
+        const uint64_t xy_key = (uint64_t(uint32_t(x)) << 32) ^ uint64_t(uint32_t(y));
+        const uint64_t region_key = uint64_t(region_id) * uint64_t(0x9E3779B185EBCA87ull);
+        return int64_t(xy_key ^ region_key);
+    };
+
+    std::vector<Sample> samples;
+    std::unordered_map<int64_t, std::vector<size_t>> buckets;
+    std::unordered_map<int64_t, std::vector<unsigned int>> xy_cell_regions;
+    std::vector<Accum> path_accum(extrude_buffer.paths.size());
+    std::unordered_map<unsigned int, size_t> region_path_counts;
+    std::unordered_map<unsigned int, size_t> region_sample_counts;
+    size_t skipped_non_perimeter_paths = 0;
+    size_t fallback_region_paths = 0;
+
+    auto add_sample = [&](size_t path_idx, unsigned int filament_id, unsigned int region_id, const Vec3f& position) {
+        if (filament_id == 0 || filament_id > context.num_physical)
+            return;
+        const int bx = int(std::floor(double(position.x()) / xy_cell_mm));
+        const int by = int(std::floor(double(position.y()) / xy_cell_mm));
+        const int layer_key = int(std::lround(double(position.z()) / layer_height));
+        const size_t sample_idx = samples.size();
+        samples.push_back({ path_idx, filament_id, region_id, layer_key });
+        buckets[bucket_key(bx, by, region_id)].push_back(sample_idx);
+        xy_cell_regions[bucket_key(bx, by, 0)].push_back(region_id);
+    };
+
+    for (size_t path_idx = 0; path_idx < extrude_buffer.paths.size(); ++path_idx) {
+        const Path& path = extrude_buffer.paths[path_idx];
+        if (!is_perimeter(path.role)) {
+            ++skipped_non_perimeter_paths;
+            continue;
+        }
+        const unsigned int filament_id = unsigned(path.extruder_id) + 1;
+        const unsigned int region_id = path.sidewall_region_id != 0 ? path.sidewall_region_id : unsigned(path.cp_color_id) + 1;
+        if (filament_id == 0 || filament_id > context.num_physical || path.sub_paths.empty())
+            continue;
+        ++region_path_counts[region_id];
+        if (path.sidewall_region_id == 0)
+            ++fallback_region_paths;
+
+        const size_t max_samples_per_path = 32;
+        const size_t stride = std::max<size_t>(1, path.vertices_count() / max_samples_per_path);
+        size_t path_samples = 0;
+
+        for (const Path::Sub_Path& sub_path : path.sub_paths) {
+            if (path_samples >= max_samples_per_path)
+                break;
+
+            const size_t first = sub_path.first.s_id;
+            const size_t last = std::max(first, sub_path.last.s_id);
+            for (size_t sid = first; sid <= last && path_samples < max_samples_per_path; sid += stride) {
+                Vec3f position = sub_path.first.position;
+                if (sid < m_ssid_to_moveid_map.size()) {
+                    const size_t move_id = m_ssid_to_moveid_map[sid];
+                    if (move_id < gcode_result.moves.size())
+                        position = gcode_result.moves[move_id].position;
+                }
+                add_sample(path_idx, filament_id, region_id, position);
+                ++region_sample_counts[region_id];
+                ++path_samples;
+                if (last - sid < stride)
+                    break;
+            }
+
+            if (path_samples < max_samples_per_path) {
+                add_sample(path_idx, filament_id, region_id, sub_path.last.position);
+                ++region_sample_counts[region_id];
+                ++path_samples;
+            }
+        }
+    }
+
+    BOOST_LOG_TRIVIAL(info) << "FullSpectrum sidewall preview scan"
+                            << " model=" << mixed_filament_sidewall_blend_model_to_string(context.sidewall_blend_model)
+                            << " physical_filaments=" << context.num_physical
+                            << " paths=" << extrude_buffer.paths.size()
+                            << " perimeter_paths=" << (extrude_buffer.paths.size() - skipped_non_perimeter_paths)
+                            << " skipped_non_perimeter_paths=" << skipped_non_perimeter_paths
+                            << " fallback_region_paths=" << fallback_region_paths
+                            << " samples=" << samples.size()
+                            << " buckets=" << buckets.size()
+                            << " regions=" << region_path_counts.size()
+                            << " xy_cell_mm=" << xy_cell_mm
+                            << " layer_window=" << max_layer_window;
+    size_t multi_region_buckets = 0;
+    for (auto& xy_cell : xy_cell_regions) {
+        Slic3r::sort_remove_duplicates(xy_cell.second);
+        if (xy_cell.second.size() > 1)
+            ++multi_region_buckets;
+    }
+    BOOST_LOG_TRIVIAL(info) << "FullSpectrum sidewall preview XY/region buckets"
+                            << " total=" << buckets.size()
+                            << " xy_cells=" << xy_cell_regions.size()
+                            << " multi_region_xy_cells=" << multi_region_buckets;
+    size_t logged_regions = 0;
+    for (const auto& item : region_path_counts) {
+        if (logged_regions++ >= 8)
+            break;
+        const auto sample_it = region_sample_counts.find(item.first);
+        BOOST_LOG_TRIVIAL(debug) << "FullSpectrum sidewall preview region"
+                                 << " region_id=" << item.first
+                                 << " path_count=" << item.second
+                                 << " sample_count=" << (sample_it == region_sample_counts.end() ? 0 : sample_it->second);
+    }
+
+    MixedFilamentSidewallPredictionSettings settings;
+    settings.blend_model = context.sidewall_blend_model;
+    auto majority_filament = [&](const std::vector<size_t>& layer_samples, unsigned int fallback) {
+        std::vector<size_t> counts(context.num_physical + 1, 0);
+        for (const size_t sample_idx : layer_samples) {
+            const unsigned int filament_id = samples[sample_idx].filament_id;
+            if (filament_id >= 1 && filament_id <= context.num_physical)
+                ++counts[filament_id];
+        }
+        unsigned int best_id = fallback;
+        size_t best_count = 0;
+        for (unsigned int filament_id = 1; filament_id <= context.num_physical; ++filament_id) {
+            if (counts[filament_id] > best_count) {
+                best_count = counts[filament_id];
+                best_id = filament_id;
+            }
+        }
+        return best_id;
+    };
+
+    for (const auto& bucket : buckets) {
+        std::map<int, std::vector<size_t>> layer_samples;
+        for (const size_t sample_idx : bucket.second)
+            layer_samples[samples[sample_idx].layer_key].push_back(sample_idx);
+        if (layer_samples.empty())
+            continue;
+
+        std::vector<int> layer_keys;
+        layer_keys.reserve(layer_samples.size());
+        for (const auto& layer : layer_samples)
+            layer_keys.push_back(layer.first);
+
+        std::vector<unsigned int> layer_majority_ids;
+        layer_majority_ids.reserve(layer_keys.size());
+        for (const int layer_key : layer_keys)
+            layer_majority_ids.push_back(majority_filament(layer_samples[layer_key], 1));
+
+        for (size_t layer_idx = 0; layer_idx < layer_keys.size(); ++layer_idx) {
+            const int lo = std::max<int>(0, int(layer_idx) - max_layer_window);
+            const int hi = std::min<int>(int(layer_keys.size()) - 1, int(layer_idx) + max_layer_window);
+            std::unordered_map<unsigned int, CachedSidewallColor> color_cache;
+            for (const size_t target_sample_idx : layer_samples[layer_keys[layer_idx]]) {
+                const Sample& target_sample = samples[target_sample_idx];
+
+                auto cached_color = color_cache.find(target_sample.filament_id);
+                if (cached_color == color_cache.end()) {
+                    std::vector<unsigned int> sequence;
+                    sequence.reserve(size_t(hi - lo + 1));
+                    size_t target_sequence_idx = 0;
+                    for (int idx = lo; idx <= hi; ++idx) {
+                        if (idx == int(layer_idx)) {
+                            target_sequence_idx = sequence.size();
+                            sequence.push_back(target_sample.filament_id);
+                        } else {
+                            sequence.push_back(layer_majority_ids[size_t(idx)]);
+                        }
+                    }
+
+                    CachedSidewallColor computed;
+                    const std::string apparent_color = predict_mixed_filament_sequence_apparent_color_at(sequence,
+                                                                                                        target_sequence_idx,
+                                                                                                        context.physical_colors,
+                                                                                                        context.physical_td99_mm,
+                                                                                                        layer_height,
+                                                                                                        settings,
+                                                                                                        std::string());
+                    computed.ok = decode_color(apparent_color, computed.color);
+                    cached_color = color_cache.emplace(target_sample.filament_id, computed).first;
+                }
+
+                if (!cached_color->second.ok)
+                    continue;
+
+                Accum& accum = path_accum[target_sample.path_idx];
+                accum.r += cached_color->second.color.r();
+                accum.g += cached_color->second.color.g();
+                accum.b += cached_color->second.color.b();
+                ++accum.count;
+            }
+        }
+    }
+
+    size_t applied_paths = 0;
+    for (size_t path_idx = 0; path_idx < extrude_buffer.paths.size(); ++path_idx) {
+        const Accum& accum = path_accum[path_idx];
+        if (accum.count == 0)
+            continue;
+        ColorRGBA color(float(accum.r / double(accum.count)),
+                        float(accum.g / double(accum.count)),
+                        float(accum.b / double(accum.count)),
+                        1.0f);
+        extrude_buffer.paths[path_idx].apparent_sidewall_color = adjust_color_for_rendering(color);
+        extrude_buffer.paths[path_idx].has_apparent_sidewall_color = true;
+        ++applied_paths;
+    }
+    BOOST_LOG_TRIVIAL(info) << "FullSpectrum sidewall preview applied"
+                            << " paths=" << applied_paths
+                            << " of_perimeter_paths=" << (extrude_buffer.paths.size() - skipped_non_perimeter_paths);
 }
 
 void GCodeViewer::update_shells_color_by_extruder(const DynamicPrintConfig *config)
@@ -3195,6 +3458,8 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
 #if ENABLE_GCODE_VIEWER_STATISTICS
     auto start_time = std::chrono::high_resolution_clock::now();
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
+    if (m_gcode_result == nullptr)
+        return;
 
     BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << boost::format(": enter, m_buffers size %1%!")%m_buffers.size();
     auto extrusion_color = [this](const Path& path) {
@@ -3212,7 +3477,9 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
         case EViewType::VolumetricRate: { color = m_extrusions.ranges.volumetric_rate.get_color_at(path.volumetric_rate); break; }
         case EViewType::Tool:           { color = m_tools.m_tool_colors[path.extruder_id]; break; }
         case EViewType::ColorPrint:     {
-            if (path.cp_color_id >= static_cast<unsigned char>(m_tools.m_tool_colors.size()))
+            if (path.has_apparent_sidewall_color)
+                color = path.apparent_sidewall_color;
+            else if (path.cp_color_id >= static_cast<unsigned char>(m_tools.m_tool_colors.size()))
                 color = ColorRGBA::GRAY();
             else {
                 color = m_tools.m_tool_colors[path.cp_color_id];
@@ -3452,6 +3719,78 @@ m_no_render_path = false;
 
     // second pass: filter paths by sequential data and collect them by color
     RenderPath* render_path = nullptr;
+    auto append_render_range = [&](unsigned char tbuffer_id,
+                                   unsigned int ibuffer_id,
+                                   unsigned int path_id,
+                                   unsigned int sub_path_id,
+                                   size_t first_s_id,
+                                   size_t last_s_id,
+                                   const ColorRGBA& color) {
+        TBuffer& buffer = const_cast<TBuffer&>(m_buffers[tbuffer_id]);
+        const Path& path = buffer.paths[path_id];
+        const Path::Sub_Path& sub_path = path.sub_paths[sub_path_id];
+
+        first_s_id = std::max(first_s_id, sub_path.first.s_id);
+        last_s_id = std::min(last_s_id, sub_path.last.s_id);
+        first_s_id = std::max(first_s_id, m_sequential_view.current.first);
+        last_s_id = std::min(last_s_id, m_sequential_view.current.last);
+        if (last_s_id <= first_s_id)
+            return;
+
+        unsigned int size_in_indices = 0;
+        switch (buffer.render_primitive_type)
+        {
+        case TBuffer::ERenderPrimitiveType::Line:
+        case TBuffer::ERenderPrimitiveType::Triangle: {
+            size_t segments_count = last_s_id - first_s_id;
+            for (size_t i = first_s_id + 1; i < last_s_id + 1; ++i) {
+                if (i >= m_ssid_to_moveid_map.size())
+                    continue;
+                size_t move_id = m_ssid_to_moveid_map[i];
+                if (move_id >= m_gcode_result->moves.size())
+                    continue;
+                const GCodeProcessorResult::MoveVertex& curr = m_gcode_result->moves[move_id];
+                if (curr.is_arc_move())
+                    segments_count += curr.interpolation_points.size();
+            }
+            size_in_indices = buffer.indices_per_segment() * unsigned(segments_count);
+            break;
+        }
+        default: { break; }
+        }
+
+        if (size_in_indices == 0)
+            return;
+
+        unsigned int delta_1st = static_cast<unsigned int>(first_s_id - sub_path.first.s_id);
+        if (buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::Triangle) {
+            if (sub_path_id == 0 && delta_1st == 0)
+                size_in_indices += 6; // add 2 triangles for starting cap
+            if (sub_path_id == path.sub_paths.size() - 1 && path.sub_paths.back().last.s_id <= last_s_id)
+                size_in_indices += 6; // add 2 triangles for ending cap
+            if (delta_1st > 0)
+                size_in_indices -= 6; // remove 2 triangles for corner cap
+        }
+
+        RenderPath key{ tbuffer_id, color, ibuffer_id, path_id };
+        if (render_path == nullptr || !RenderPathPropertyEqual()(*render_path, key)) {
+            buffer.render_paths.emplace_back(key);
+            render_path = const_cast<RenderPath*>(&buffer.render_paths.back());
+        }
+
+        if (buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::Triangle) {
+            delta_1st *= buffer.indices_per_segment();
+            if (delta_1st > 0) {
+                delta_1st += 6; // skip 2 triangles for corner cap
+                if (sub_path_id == 0)
+                    delta_1st += 6; // skip 2 triangles for starting cap
+            }
+        }
+
+        render_path->sizes.push_back(size_in_indices);
+        render_path->offsets.push_back(static_cast<size_t>((sub_path.first.i_id + delta_1st) * sizeof(IBufferType)));
+    };
+
     for (const auto& [tbuffer_id, ibuffer_id, path_id, sub_path_id] : paths) {
         TBuffer& buffer = const_cast<TBuffer&>(m_buffers[tbuffer_id]);
         const Path& path = buffer.paths[path_id];
@@ -3491,62 +3830,7 @@ m_no_render_path = false;
         default: { color = { 0.0f, 0.0f, 0.0f, 1.0f }; break; }
         }
 
-        RenderPath key{ tbuffer_id, color, static_cast<unsigned int>(ibuffer_id), path_id };
-        if (render_path == nullptr || !RenderPathPropertyEqual()(*render_path, key)) {
-            buffer.render_paths.emplace_back(key);
-            render_path = const_cast<RenderPath*>(&buffer.render_paths.back());
-        }
-
-        unsigned int delta_1st = 0;
-        if (sub_path.first.s_id < m_sequential_view.current.first && m_sequential_view.current.first <= sub_path.last.s_id)
-            delta_1st = static_cast<unsigned int>(m_sequential_view.current.first - sub_path.first.s_id);
-
-        unsigned int size_in_indices = 0;
-        switch (buffer.render_primitive_type)
-        {
-        case TBuffer::ERenderPrimitiveType::Line:
-        case TBuffer::ERenderPrimitiveType::Triangle: {
-            // BBS: modify to support moves which has internal point
-            size_t max_s_id = std::min(m_sequential_view.current.last, sub_path.last.s_id);
-            size_t min_s_id = std::max(m_sequential_view.current.first, sub_path.first.s_id);
-            unsigned int segments_count = max_s_id - min_s_id;
-            for (size_t i = min_s_id + 1; i < max_s_id + 1; i++) {
-                size_t move_id = m_ssid_to_moveid_map[i];
-                const GCodeProcessorResult::MoveVertex& curr = m_gcode_result->moves[move_id];
-                if (curr.is_arc_move()) {
-                    segments_count += curr.interpolation_points.size();
-                }
-            }
-            size_in_indices = buffer.indices_per_segment() * segments_count;
-            break;
-        }
-        default: { break; }
-        }
-
-        if (size_in_indices == 0)
-            continue;
-
-        if (buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::Triangle) {
-            if (sub_path_id == 0 && delta_1st == 0)
-                size_in_indices += 6; // add 2 triangles for starting cap
-            if (sub_path_id == path.sub_paths.size() - 1 && path.sub_paths.back().last.s_id <= m_sequential_view.current.last)
-                size_in_indices += 6; // add 2 triangles for ending cap
-            if (delta_1st > 0)
-                size_in_indices -= 6; // remove 2 triangles for corner cap
-        }
-
-        render_path->sizes.push_back(size_in_indices);
-
-        if (buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::Triangle) {
-            delta_1st *= buffer.indices_per_segment();
-            if (delta_1st > 0) {
-                delta_1st += 6; // skip 2 triangles for corner cap
-                if (sub_path_id == 0)
-                    delta_1st += 6; // skip 2 triangles for starting cap
-            }
-        }
-
-        render_path->offsets.push_back(static_cast<size_t>((sub_path.first.i_id + delta_1st) * sizeof(IBufferType)));
+        append_render_range(tbuffer_id, ibuffer_id, path_id, sub_path_id, sub_path.first.s_id, sub_path.last.s_id, color);
 
 #if 0
         // check sizes and offsets against index buffer size on gpu
