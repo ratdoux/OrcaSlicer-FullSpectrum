@@ -41,6 +41,10 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
             if (m_on_edit_physical)
                 m_on_edit_physical(index);
         });
+        card->set_on_right_click_callback([this](int index, const wxPoint& screen_pos) {
+            if (m_on_right_click_physical)
+                m_on_right_click_physical(index, screen_pos);
+        });
         int last_selected_preset = m_physical_cards.empty() ? 0 : m_physical_cards.back()->m_filament_combo_box->GetSelection();
 
         m_physical_cards.push_back(card);
@@ -74,6 +78,17 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
     else
         m_physical_sizer->SetCols(2);
 
+    // Counter logic
+    if (m_lbl_physical_counter) {
+        if (physical_count > 6) {
+            m_lbl_physical_counter->SetLabel(wxString::Format(" (%d)", (int)physical_count));
+            m_lbl_physical_counter->Show(true);
+        } else {
+            m_lbl_physical_counter->Show(false);
+        }
+        m_physical_title_panel->Layout();
+    }
+
     // Update layout
     const int max_content_height = m_physical_panel->GetSizer()->GetMinSize().y;
     const int current_height     = m_physical_panel->GetSize().y;
@@ -94,6 +109,10 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
 
     update_grab_panel_visibility(m_physical_panel, m_content_panel, m_physical_grab_panel, max_content_height);
 
+    if (physical_count != static_cast<size_t>(current_count)) {
+        m_physical_panel->Scroll(0, m_physical_panel->GetScrollRange(wxVERTICAL));
+    }
+
     this->InvalidateBestSize();
     Layout();
     if (this->GetParent())
@@ -109,48 +128,15 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     // ADD new cards if mixed_count increased
     for (int i = current_count; i < new_count; i++) {
         auto* card = new FilamentCardMixed(m_mixed_panel, &mixed_filaments[i], m_physical_filaments);
-        card->set_on_box_edit_callback([this, i]() 
+        card->set_on_box_edit_callback([this, i](bool edit_by_color) 
         { 
-            MixedFilamentDialog dlg(this, MixedFilamentDialog::Action::Edit, m_physical_filaments, i);
-            if (dlg.ShowModal() == wxID_OK) {
-                MixedFilamentDefinition updated_def = dlg.get_result();
-                auto* preset_bundle = wxGetApp().preset_bundle;
-                if (preset_bundle) {
-                    auto &mgr = preset_bundle->mixed_filaments;
-                    const size_t num_physical = m_physical_filaments.size();
-                    std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(num_physical);
-                    std::vector<MixedFilamentDefinition> old_mixed = definitions;
-
-                    if (i < (int)definitions.size()) {
-                        updated_def.identity = definitions[i].identity;
-                        updated_def.source = definitions[i].source;
-                        updated_def.visibility = definitions[i].visibility;
-
-                        std::vector<std::string> physical_colors;
-                        for (const auto& p : m_physical_filaments) {
-                            physical_colors.push_back(p.first);
-                        }
-
-                        mgr.set_mixed_filament_definition(i, updated_def, physical_colors);
-
-                        const std::string serialized = mgr.serialize_custom_entries();
-                        if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
-                            opt->value = serialized;
-                        else
-                            preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
-
-                        preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
-
-                        if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
-                            print_tab->update_dirty();
-                        if (wxGetApp().mainframe)
-                            wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
-
-                        wxGetApp().plater()->update_project_dirty_from_presets();
-                        wxGetApp().plater()->on_filaments_change(num_physical);
-                    }
-                }
-            }
+            edit_mixed_filament(i, edit_by_color);
+        });
+        card->set_on_edit_btn_callback([this, i, card](wxWindow* anchor) {
+            show_mixed_filament_menu(i, wxDefaultPosition, anchor);
+        });
+        card->set_on_right_click_callback([this, i](const wxPoint& screen_pos) {
+            show_mixed_filament_menu(i, screen_pos, nullptr);
         });
 
         m_mixed_cards.push_back(card);
@@ -174,8 +160,24 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     else
         m_mixed_sizer->SetCols(2);
 
+    // Counter logic
+    if (m_lbl_mixed_counter) {
+        if (new_count > 6) {
+            m_lbl_mixed_counter->SetLabel(wxString::Format(" (%d)", new_count));
+            m_lbl_mixed_counter->Show(true);
+        } else {
+            m_lbl_mixed_counter->Show(false);
+        }
+        m_mixed_title_panel->Layout();
+    }
+
+    // Bottom padding grabber-dependent visibility
+    if (m_mixed_list_bottom_spacer) {
+        m_mixed_list_bottom_spacer->Show(false);
+    }
+
     // Update layout
-    const int max_content_height = m_mixed_panel->GetSizer()->GetMinSize().y;
+    int max_content_height = m_mixed_panel->GetSizer()->GetMinSize().y;
     const int current_height     = m_mixed_panel->GetSize().y;
     const int target_height      = std::min(max_content_height, m_scrollbar_threshold);
 
@@ -189,15 +191,70 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
         m_mixed_panel->SetMaxSize(wxSize(-1, target_height));
     }
 
+    if (m_mixed_list_bottom_spacer) {
+        const bool scrollable = max_content_height >= m_scrollbar_threshold;
+        m_mixed_list_bottom_spacer->Show(!scrollable);
+    }
+
     m_mixed_panel->Layout();
     m_mixed_panel->FitInside();
+    max_content_height = m_mixed_panel->GetSizer()->GetMinSize().y;
     update_grab_panel_visibility(m_mixed_panel, m_content_panel, m_mixed_grab_panel, max_content_height);
+
+    if (new_count != current_count) {
+        m_mixed_panel->Scroll(0, m_mixed_panel->GetScrollRange(wxVERTICAL));
+    }
 
     this->InvalidateBestSize();
     Layout();
     if (this->GetParent())
         this->GetParent()->Layout();
     m_title_panel->Refresh();
+}
+
+void SidebarFilamentMenu::edit_mixed_filament(int index, bool edit_by_color)
+{
+    if (index < 0 || index >= m_mixed_count()) return;
+
+    auto* card = m_mixed_cards[index];
+    card->set_dialog_open(true);
+
+    if (m_on_edit_mixed)
+        m_on_edit_mixed(index, edit_by_color);
+
+    card->set_dialog_open(false);
+}
+
+void SidebarFilamentMenu::delete_mixed_filament(int index)
+{
+    if (m_on_delete_mixed)
+        m_on_delete_mixed(index);
+}
+
+void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& screen_pos, wxWindow* anchor)
+{
+    wxMenu menu;
+    
+    // Edit item
+    append_menu_item(&menu, wxID_ANY, _L("Edit"), "", [this, index](wxCommandEvent&) {
+        edit_mixed_filament(index, false);
+    });
+    
+    // Delete item
+    append_menu_item(&menu, wxID_ANY, _L("Delete"), _L("Delete this mixed filament"), [this, index](wxCommandEvent&) {
+        delete_mixed_filament(index);
+    }, "", nullptr, [this]() { return m_mixed_cards.size() > 0; });
+    
+    // Show popup
+    if (anchor) {
+        wxPoint pt{0, anchor->GetSize().GetHeight() + 10};
+        pt = anchor->ClientToScreen(pt);
+        pt = this->ScreenToClient(pt);
+        PopupMenu(&menu, pt);
+    } else {
+        wxPoint client_pos = this->ScreenToClient(screen_pos);
+        PopupMenu(&menu, client_pos);
+    }
 }
 
 void SidebarFilamentMenu::update_physical_filaments() 
@@ -299,11 +356,16 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     wxBoxSizer* physical_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
     // Physical title
-    m_lbl_physical_title = new wxStaticText(m_physical_title_panel, wxID_ANY, _L("Filaments"), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+    m_lbl_physical_title = new wxStaticText(m_physical_title_panel, wxID_ANY, _L("Filament"), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
     m_lbl_physical_title->SetForegroundColour("#7e7e7e");
     m_lbl_physical_title->SetFont(::Label::Body_14);
 
+    m_lbl_physical_counter = new wxStaticText(m_physical_title_panel, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
+    m_lbl_physical_counter->SetForegroundColour("#7e7e7e");
+    m_lbl_physical_counter->SetFont(::Label::Body_14);
+
     physical_title_and_divider_sizer->Add(m_lbl_physical_title, 0, wxALIGN_CENTER, FromDIP(SidebarProps::TitlebarMargin()));
+    physical_title_and_divider_sizer->Add(m_lbl_physical_counter, 0, wxALIGN_CENTER);
     physical_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Physical title divider
@@ -419,6 +481,10 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
         if (m_on_edit_physical)
             m_on_edit_physical(index);
     });
+    m_physical_cards[0]->set_on_right_click_callback([this](int index, const wxPoint& screen_pos) {
+        if (m_on_right_click_physical)
+            m_on_right_click_physical(index, screen_pos);
+    });
     m_physical_cards[0]->SetMinSize({FromDIP(20), -1});
     m_physical_sizer->Add(m_physical_cards[0], 0, wxEXPAND);
 
@@ -453,12 +519,17 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     wxBoxSizer* mixed_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
     // Mixed title
-    m_lbl_mixed_title = new wxStaticText(m_mixed_title_panel, wxID_ANY, _L("Mixed Filaments"), wxDefaultPosition, wxDefaultSize,
+    m_lbl_mixed_title = new wxStaticText(m_mixed_title_panel, wxID_ANY, _L("Mixed Filament"), wxDefaultPosition, wxDefaultSize,
                                             wxST_ELLIPSIZE_END);
     m_lbl_mixed_title->SetForegroundColour("#7e7e7e");
     m_lbl_mixed_title->SetFont(::Label::Body_14);
 
+    m_lbl_mixed_counter = new wxStaticText(m_mixed_title_panel, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
+    m_lbl_mixed_counter->SetForegroundColour("#7e7e7e");
+    m_lbl_mixed_counter->SetFont(::Label::Body_14);
+
     mixed_title_and_divider_sizer->Add(m_lbl_mixed_title, 0, wxALIGN_CENTER, FromDIP(SidebarProps::TitlebarMargin()));
+    mixed_title_and_divider_sizer->Add(m_lbl_mixed_counter, 0, wxALIGN_CENTER);
     mixed_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Mixed title divider
@@ -683,6 +754,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     });
 
     m_content_sizer->Add(m_mixed_grab_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::TitlebarMargin()));
+    m_mixed_list_bottom_spacer = m_content_sizer->AddSpacer(FromDIP(4));
     
     // ####################################
     // 0. General Layout
@@ -706,7 +778,13 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
 void SidebarFilamentMenu::update_title(const wxString& label, const std::string& icon_name)
 {
-    m_lbl_physical_title->SetLabel(label);
+    wxString singular_label = label;
+    if (label == _L("Filaments")) {
+        singular_label = _L("Filament");
+    } else if (label == _L("Pellets")) {
+        singular_label = _L("Pellet");
+    }
+    m_lbl_physical_title->SetLabel(singular_label);
     m_btn_icon->SetBitmap_(icon_name);
 }
 

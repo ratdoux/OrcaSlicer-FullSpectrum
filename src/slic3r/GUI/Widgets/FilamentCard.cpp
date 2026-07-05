@@ -60,6 +60,21 @@ void FilamentCardPhysical::build_ui()
 
     m_filament_combo_box->update();
 
+    auto right_click_handler = [this](wxMouseEvent& event) {
+        if (m_on_right_click) {
+            wxPoint screen_pos = event.GetEventObject() ? ((wxWindow*)event.GetEventObject())->ClientToScreen(event.GetPosition()) : wxGetMousePosition();
+            m_on_right_click(m_index, screen_pos);
+        }
+        event.Skip();
+    };
+
+    Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_filament_combo_box->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_filament_edit_btn->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    if (m_filament_combo_box->clr_picker != nullptr) {
+        m_filament_combo_box->clr_picker->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    }
+
     SetSizer(m_sizer);
     Layout();
 }

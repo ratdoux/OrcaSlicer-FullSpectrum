@@ -19,9 +19,26 @@ class FilamentCardMixed : public wxPanel
 public:
     FilamentCardMixed(wxWindow* parent, MixedFilamentDefinition* definition, std::vector<std::pair<std::string, std::string>>& physical_filaments);
 
-    void set_on_box_edit_callback(std::function<void()> callback) 
+    void set_on_box_edit_callback(std::function<void(bool edit_by_color)> callback) 
     { 
         m_on_box_edit = std::move(callback); 
+    }
+
+    void set_on_right_click_callback(std::function<void(const wxPoint& screen_pos)> callback)
+    {
+        m_on_right_click = std::move(callback);
+    }
+
+    void set_on_edit_btn_callback(std::function<void(wxWindow* anchor)> callback)
+    {
+        m_on_edit_btn = std::move(callback);
+    }
+
+    void set_dialog_open(bool open)
+    {
+        m_is_dialog_open = open;
+        if (m_box_panel)
+            m_box_panel->Refresh();
     }
 
     void update_state(MixedFilamentDefinition* definition, bool refresh);
@@ -30,8 +47,8 @@ public:
     static void paint_clr_swatch(
         wxDC&           context, 
         const wxSize&   size, 
-        wxColor&        color, 
-        wxString&       index_text, 
+        const wxColor&  color, 
+        const wxString& index_text, 
         bool            is_dark,
         int             padding = 0
     );
@@ -40,7 +57,7 @@ public:
         wxDC&                       context,
         const wxSize&               size,
         const std::vector<wxColor>& colors,
-        wxString&                   text,
+        const wxString&             text,
         bool                        is_dark,
         int                         padding = 0
     );
@@ -54,7 +71,7 @@ public:
         std::vector<wxColor>&       colors,
         bool                        is_dark,
         bool                        is_hovered,
-        wxSize&                     swatch_size
+        const wxSize&               swatch_size
     );
 
     static void paint_box_pattern(
@@ -65,7 +82,7 @@ public:
         std::vector<wxColor>&       colors,
         bool                        is_dark,
         bool                        is_hovered,
-        wxSize&                     swatch_size);
+        const wxSize&               swatch_size);
 
     static void paint_box_gradient(
         wxDC&                       context,
@@ -76,7 +93,7 @@ public:
         const std::vector<unsigned int>& indices,
         bool                        is_dark,
         bool                        is_hovered,
-        wxSize&                     swatch_size);
+        const wxSize&               swatch_size);
 
 private:
     MixedFilamentDefinition* m_definition;
@@ -87,7 +104,10 @@ private:
     std::vector<wxColor>        m_physical_filaments_colors;      // calculated in update_state() using get_physical_filaments_colors()
     std::vector<int>            m_physical_filaments_percentages; // calculated in update_state() 
 
-    std::function<void()> m_on_box_edit;
+    std::function<void(bool edit_by_color)> m_on_box_edit;
+    std::function<void(const wxPoint& screen_pos)> m_on_right_click;
+    std::function<void(wxWindow* anchor)> m_on_edit_btn;
+    bool m_is_dialog_open = false;
 
     void build_ui();
     std::vector<wxColor> get_physical_filaments_colors(const std::vector<unsigned int>& filament_indices) const;

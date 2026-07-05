@@ -46,14 +46,30 @@ public:
     {
         m_on_edit_physical = std::move(cb);
     }
+    void set_on_right_click_physical(std::function<void(int, const wxPoint&)> cb)
+    {
+        m_on_right_click_physical = std::move(cb);
+    }
+    void set_on_edit_mixed(std::function<void(int, bool)> cb)
+    {
+        m_on_edit_mixed = std::move(cb);
+    }
+    void set_on_delete_mixed(std::function<void(int)> cb)
+    {
+        m_on_delete_mixed = std::move(cb);
+    }
     void set_get_physical_filaments(std::function<std::vector<std::pair<std::string, std::string>>()> cb)
     {
         m_get_physical_filaments = std::move(cb);
     }
+    const std::vector<std::pair<std::string, std::string>>& get_physical_filaments() const { return m_physical_filaments; }
 
     // Mixed specific
     int m_mixed_count() const { return static_cast<int>(m_mixed_cards.size()); }
     void update_mixed_states(std::vector<MixedFilamentDefinition>& mixed_filaments);
+    void edit_mixed_filament(int index, bool edit_by_color);
+    void delete_mixed_filament(int index);
+    void show_mixed_filament_menu(int index, const wxPoint& screen_pos, wxWindow* anchor);
 
     // UI 
     void msw_rescale();
@@ -78,6 +94,9 @@ private:
 
     std::map<ActionType, std::function<void()>> m_callbacks;
     std::function<void(int)>                    m_on_edit_physical; // Callback for edit button in physical filament card
+    std::function<void(int, const wxPoint&)>    m_on_right_click_physical; // Callback for right-click in physical filament card
+    std::function<void(int, bool)>              m_on_edit_mixed;
+    std::function<void(int)>                    m_on_delete_mixed;
 
     // Drag handling for physical and mixed panels
     struct DragState
@@ -128,6 +147,7 @@ private:
 
     // Physical Title panel elements
     wxStaticText*   m_lbl_physical_title{nullptr};
+    wxStaticText*   m_lbl_physical_counter{nullptr};
     wxPanel*        m_physical_divider{nullptr};
     ScalableButton* m_btn_physical_del{nullptr};
     ScalableButton* m_btn_physical_add{nullptr};
@@ -135,10 +155,13 @@ private:
 
     // Mixed Title panel elements
     wxStaticText*   m_lbl_mixed_title{nullptr};
+    wxStaticText*   m_lbl_mixed_counter{nullptr};
     wxPanel*        m_mixed_divider{nullptr};
     Button*         m_btn_mixed_manage{nullptr};
     ScalableButton* m_btn_mixed_del{nullptr};
     ScalableButton* m_btn_mixed_add{nullptr};
+
+    wxSizerItem*    m_mixed_list_bottom_spacer{nullptr};
 };
 
 } // namespace Slic3r::GUI

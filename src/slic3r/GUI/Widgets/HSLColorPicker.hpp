@@ -5,9 +5,9 @@
 #include <wx/wx.h>
 
 #include "Label.hpp"
-#include "Slic3r/GUI/GUI.hpp"
-#include "Slic3r/GUI/GUI_App.hpp"
-#include "Slic3r/GUI/GUI_Utils.hpp"
+#include "../GUI/GUI.hpp"
+#include "../GUI/GUI_App.hpp"
+#include "../GUI/GUI_Utils.hpp"
 
 namespace Slic3r::GUI {
 

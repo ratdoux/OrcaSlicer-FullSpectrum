@@ -61,7 +61,8 @@ public:
         wxWindow* parent,
         Action    action,
         std::vector<std::pair<std::string, std::string>>& physical_filaments,
-        int       mixed_idx = -1);
+        int       mixed_idx = -1,
+        bool      start_by_color = false);
 
     MixedFilamentDefinition get_result() const;
 

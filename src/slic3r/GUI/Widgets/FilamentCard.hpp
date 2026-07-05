@@ -19,6 +19,10 @@ public:
     {
         m_on_edit_btn = std::move(callback);
     }
+    void set_on_right_click_callback(std::function<void(int index, const wxPoint& screen_pos)> callback)
+    {
+        m_on_right_click = std::move(callback);
+    }
     wxPoint get_edit_btn_client_position();
     void    update_state();
 
@@ -31,6 +35,7 @@ private:
     ScalableButton*                     m_filament_edit_btn {nullptr};
 
     std::function<void(int, wxWindow*)> m_on_edit_btn;
+    std::function<void(int, const wxPoint&)> m_on_right_click;
 
     void build_ui();
 };

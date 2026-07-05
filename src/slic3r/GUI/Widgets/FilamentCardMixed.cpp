@@ -89,13 +89,30 @@ void FilamentCardMixed::build_ui()
     });
     
 
+    // click
+    m_clr_swatch_panel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
+        if (m_on_box_edit) 
+            m_on_box_edit(true); // true means edit on Mix by color tab
+        event.Skip();
+    });
+
+    // hover
+    m_clr_swatch_panel->Bind(wxEVT_ENTER_WINDOW, [this](wxMouseEvent& event) {
+        SetCursor(wxCursor(wxCURSOR_HAND));
+        event.Skip();
+    });
+    m_clr_swatch_panel->Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) {
+        SetCursor(wxCursor(wxNullCursor));
+        event.Skip();
+    });
+
     m_box_panel = new wxPanel(this);
     m_box_panel->SetMinSize(wxSize(-1, content_heigth));
 
     // click
     m_box_panel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
         if (m_on_box_edit) 
-            m_on_box_edit();
+            m_on_box_edit(false); // false means edit on default tab
         
         event.Skip();
     });
@@ -121,30 +138,13 @@ void FilamentCardMixed::build_ui()
             wxPaintDC context(m_box_panel);
             return;
         }
-        /*
 
-        // TODO get colors from data
-        std::vector<wxColor> colors;
-        for (int i = 0; i < m_data.definition->recipe.blend.components.size(); i++) {
-            switch (i) {
-                case 0: colors.push_back(wxColor("RED")); break;
-                case 1: colors.push_back(wxColor("GREEN")); break;
-                case 2: colors.push_back(wxColor("BLUE")); break;
-                default: colors.push_back(wxColor("GRAY")); break; // fallback color for more than 3 components
-            }
-        }
-
-        // TODO get actual index texts
-        std::vector<wxString> index_texts;
-        for (int i = 0; i < m_data.definition->recipe.blend.components.size(); i++) {
-            index_texts.push_back(wxString(std::to_string(i + 1)));
-        }*/
-
-        // TODO actual logic
         wxPaintDC context(m_box_panel);
 
         const wxSize size               = m_box_panel->GetClientSize();
         const wxColor background_color  = GetBackgroundColour();
+
+        const bool highlight = m_is_box_panel_hovered || m_is_dialog_open;
 
         if (m_definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) 
         {
@@ -153,7 +153,7 @@ void FilamentCardMixed::build_ui()
                 m_physical_filaments_indices,
                 m_physical_filaments_percentages,
                 m_physical_filaments_colors,    
-                wxGetApp().dark_mode(), m_is_box_panel_hovered, wxSize(swatch_size, swatch_size)
+                wxGetApp().dark_mode(), highlight, wxSize(swatch_size, swatch_size)
             );
         } 
         else if (m_definition->recipe.kind == MixedFilamentRecipeKind::ManualPattern) 
@@ -162,16 +162,31 @@ void FilamentCardMixed::build_ui()
                 context, size, background_color,
                 m_physical_filaments_indices, 
                 m_physical_filaments_colors,
-                wxGetApp().dark_mode(), m_is_box_panel_hovered, wxSize(swatch_size, swatch_size)
+                wxGetApp().dark_mode(), highlight, wxSize(swatch_size, swatch_size)
             );
         }
-
-
     });
 
     m_filament_edit_btn = new ScalableButton(this, wxID_ANY, "menu_filament");
     m_filament_edit_btn->SetToolTip(_L("Click to edit preset"));
-    // bind edit event
+    m_filament_edit_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        if (m_on_edit_btn)
+            m_on_edit_btn(m_filament_edit_btn);
+    });
+
+    // right click handlers
+    auto right_click_handler = [this](wxMouseEvent& event) {
+        if (m_on_right_click) {
+            wxPoint screen_pos = event.GetEventObject() ? ((wxWindow*)event.GetEventObject())->ClientToScreen(event.GetPosition()) : wxGetMousePosition();
+            m_on_right_click(screen_pos);
+        }
+        event.Skip();
+    };
+
+    Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_clr_swatch_panel->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_box_panel->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_filament_edit_btn->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
 
     // Sizing
 
@@ -200,7 +215,7 @@ std::vector<wxColor> FilamentCardMixed::get_physical_filaments_colors(const std:
 
 // static
 // paint background, text and optional border of color swatch
-void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, wxColor& color, wxString& text, bool is_dark, int padding)
+void FilamentCardMixed::paint_clr_swatch(wxDC& context, const wxSize& size, const wxColor& color, const wxString& text, bool is_dark, int padding)
 {
     // Draw the swatch box (optionally inset by padding)
     int x = padding;
@@ -242,7 +257,7 @@ void FilamentCardMixed::paint_clr_swatch_gradient(
     wxDC&                       context,
     const wxSize&               size,
     const std::vector<wxColor>& colors,
-    wxString&                   text,
+    const wxString&             text,
     bool                        is_dark,
     int                         padding)
 {
@@ -314,7 +329,7 @@ void FilamentCardMixed::paint_box_mix(
     std::vector<wxColor>&  colors, 
     bool is_dark, 
     bool is_hovered,
-    wxSize& swatch_size)
+    const wxSize& swatch_size)
 {
     // background
     context.SetBrush(wxBrush(background_color));
@@ -427,7 +442,7 @@ void FilamentCardMixed::paint_box_pattern(
     std::vector<wxColor>&   colors,
     bool                    is_dark,
     bool                    is_hovered,
-    wxSize&                 swatch_size)
+    const wxSize&           swatch_size)
 {
     // background
     context.SetBrush(wxBrush(background_color));
@@ -564,7 +579,7 @@ void FilamentCardMixed::paint_box_gradient(
     const std::vector<unsigned int>& indices,
     bool                        is_dark,
     bool                        is_hovered,
-    wxSize&                     swatch_size)
+    const wxSize&               swatch_size)
 {
     // background
     context.SetBrush(wxBrush(background_color));

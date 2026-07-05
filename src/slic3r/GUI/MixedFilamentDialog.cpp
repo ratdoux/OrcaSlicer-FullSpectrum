@@ -29,7 +29,8 @@ MixedFilamentDialog::MixedFilamentDialog(
     wxWindow*                   parent,
     MixedFilamentDialog::Action dialog_action,
     std::vector<std::pair<std::string, std::string>>& physical_filaments,
-    int                         mixed_idx
+    int                         mixed_idx,
+    bool                        start_by_color
 ) : DPIDialog(
         parent, 
         wxID_ANY, 
@@ -58,7 +59,18 @@ MixedFilamentDialog::MixedFilamentDialog(
         if (mixed_idx < (int)definitions.size()) {
             const auto& def = definitions[mixed_idx];
             
-            if (def.recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
+            if (start_by_color) {
+                m_current_tab = Tab::Mix;
+                m_mix_method = MixMethod::ByColor;
+
+                m_selected_filaments.clear();
+                m_selected_filaments_weights.clear();
+                for (size_t i = 0; i < def.recipe.blend.components.size() && i < (size_t)max_filament; ++i) {
+                    const auto& comp = def.recipe.blend.components[i];
+                    m_selected_filaments.push_back(static_cast<int>(comp.filament.id - 1));
+                    m_selected_filaments_weights.push_back(comp.percent / 100.0);
+                }
+            } else if (def.recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
                 m_current_tab = Tab::Pattern;
 
                 std::vector<unsigned int> pattern_indices;
