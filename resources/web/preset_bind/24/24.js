@@ -89,26 +89,17 @@ function HandleModelList( pVal )
 		if( !ModelHtml.hasOwnProperty(strVendor))
 			ModelHtml[strVendor]='';
 			
-		let NozzleArray=OneModel['nozzle_diameter'].split(';');
-		let HtmlNozzel='';
-		for(let m=0;m<NozzleArray.length;m++)
-		{
-			let nNozzel=NozzleArray[m];
-			HtmlNozzel += '<div class="pNozzel TextS2">' +
-				'<input type="radio" ' +
-				'name="nozzle_selection" ' +
-				'model="' + OneModel['model'] + '" ' +
-				'nozzel="' + nNozzel + '" ' +
-				'vendor="' + strVendor + '" ' +
-				'onclick="CheckBoxOnclick(this)" />' +
-				'<span>' + nNozzel + '</span>' +
-				'<span class="trans" tid="t13">mm nozzle</span></div>';
-		}
+		let HtmlNozzel = '<div class="pNozzel TextS2">' +
+			'<input type="checkbox" ' +
+			'model="' + OneModel['model'] + '" ' +
+			'vendor="' + strVendor + '" ' +
+			'nozzle_all="' + OneModel['nozzle_diameter'] + '" ' +
+			'onclick="CheckBoxOnclick(this)" /></div>';
 		
 		let CoverImage=OneModel['cover'];
 		ModelHtml[strVendor]+='<div class="PrinterBlock">'+
 '	<div class="PImg"><img src="'+CoverImage+'"  /></div>'+
-'    <div class="PName">'+OneModel['model']+'</div>'+ HtmlNozzel +'</div>';
+'    <div class="PNameRow">'+ HtmlNozzel +'<div class="PName">'+OneModel['model']+'</div></div></div>';
 	}
 	
 	//Update Nozzel Html Append
@@ -125,22 +116,13 @@ function HandleModelList( pVal )
 		let OneModel=pModel[m];
 
 		let SelectList=OneModel['nozzle_selected'];
-		if(SelectList!='')
-		{
-			SelectList=OneModel['nozzle_selected'].split(';');
-    		let nLen=SelectList.length;
-
-		    for(let a=0;a<nLen;a++)
-			{
-			    let nNozzel=SelectList[a];
-				$("input[vendor='" + OneModel['vendor'] + "'][model='" + OneModel['model'] + "'][nozzel='" + nNozzel + "']").prop("checked", true);
-
-				SetModelSelect(OneModel['vendor'], OneModel['model'], nNozzel, true);
-			}
-		}
-		else
-		{
-			$("input[vendor='"+OneModel['vendor']+"'][model='"+OneModel['model']+"']").prop("checked", false);
+		let checked = SelectList != '';
+		$("input[vendor='" + OneModel['vendor'] + "'][model='" + OneModel['model'] + "']").prop("checked", checked);
+		let allNozzles = OneModel['nozzle_diameter'].split(';');
+		for (let a = 0; a < allNozzles.length; a++) {
+			let nNozzel = allNozzles[a];
+			if (nNozzel != '')
+				SetModelSelect(OneModel['vendor'], OneModel['model'], nNozzel, checked);
 		}
 	}	
 
@@ -155,21 +137,19 @@ function HandleModelList( pVal )
 }
 
 function CheckBoxOnclick(obj) {
-    // 清除所有已选状态
-    ModelNozzleSelected = {};
-    
-    // 只记录当前选中的选项
-    if(obj.checked) {
-        let strModel = obj.getAttribute("model");
-        let strVendor = obj.getAttribute("vendor");
-        let strNozzel = obj.getAttribute("nozzel");
-        
-        if(!ModelNozzleSelected.hasOwnProperty(strVendor))
-            ModelNozzleSelected[strVendor] = {};
-        if(!ModelNozzleSelected[strVendor].hasOwnProperty(strModel))
-            ModelNozzleSelected[strVendor][strModel] = {};
-            
-        ModelNozzleSelected[strVendor][strModel][strNozzel] = true;
+    // 多选页面：按机型勾选，内部映射到该机型全部喷嘴。
+    let strModel = obj.getAttribute("model");
+    let strVendor = obj.getAttribute("vendor");
+    let nozzles = (obj.getAttribute("nozzle_all") || "").split(";");
+
+    if (!ModelNozzleSelected.hasOwnProperty(strVendor))
+        ModelNozzleSelected[strVendor] = {};
+    if (!ModelNozzleSelected[strVendor].hasOwnProperty(strModel))
+        ModelNozzleSelected[strVendor][strModel] = {};
+
+    for (let i = 0; i < nozzles.length; i++) {
+        if (nozzles[i] != '')
+            ModelNozzleSelected[strVendor][strModel][nozzles[i]] = obj.checked;
     }
 }
 
@@ -261,25 +241,17 @@ function FilterModelList(keyword) {
         if (!ModelHtml.hasOwnProperty(strVendor))
             ModelHtml[strVendor] = '';
 
-        let NozzleArray = OneModel['nozzle_diameter'].split(';');
-        let HtmlNozzel = '';
-        for (let m = 0; m < NozzleArray.length; m++) {
-            let nNozzel = NozzleArray[m];
-            HtmlNozzel += '<div class="pNozzel TextS2">' +
-                '<input type="radio" ' +
-                'name="nozzle_selection" ' +
-                'model="' + OneModel['model'] + '" ' +
-                'nozzel="' + nNozzel + '" ' +
-                'vendor="' + strVendor + '" ' +
-                'onclick="CheckBoxOnclick(this)" />' +
-                '<span>' + nNozzel + '</span>' +
-                '<span class="trans" tid="t13">mm nozzle</span></div>';
-        }
+        let HtmlNozzel = '<div class="pNozzel TextS2">' +
+            '<input type="checkbox" ' +
+            'model="' + OneModel['model'] + '" ' +
+            'vendor="' + strVendor + '" ' +
+            'nozzle_all="' + OneModel['nozzle_diameter'] + '" ' +
+            'onclick="CheckBoxOnclick(this)" /></div>';
 
         let CoverImage = OneModel['cover'];
         ModelHtml[strVendor] += '<div class="PrinterBlock">' +
             '	<div class="PImg"><img src="' + CoverImage + '"  /></div>' +
-            '    <div class="PName">' + OneModel['model'] + '</div>' + HtmlNozzel + '</div>';
+            '    <div class="PNameRow">' + HtmlNozzel + '<div class="PName">' + OneModel['model'] + '</div></div></div>';
     }
 
     //Update Nozzel Html Append
@@ -290,16 +262,21 @@ function FilterModelList(keyword) {
     }
 
     // 更新radio选中状态
-    $('input[type="radio"]').each(function() {
+    $('input[type="checkbox"]').each(function() {
         let strModel = $(this).attr("model");
         let strVendor = $(this).attr("vendor");
-        let strNozzel = $(this).attr("nozzel");
-        
-        if(ModelNozzleSelected[strVendor] && 
-           ModelNozzleSelected[strVendor][strModel] && 
-           ModelNozzleSelected[strVendor][strModel][strNozzel]) {
-            $(this).prop("checked", true);
+        let nozzles = (($(this).attr("nozzle_all")) || "").split(';');
+        let checked = false;
+        for (let i = 0; i < nozzles.length; i++) {
+            let strNozzel = nozzles[i];
+            if (strNozzel != '' && ModelNozzleSelected[strVendor] &&
+                ModelNozzleSelected[strVendor][strModel] &&
+                ModelNozzleSelected[strVendor][strModel][strNozzel]) {
+                checked = true;
+                break;
+            }
         }
+        if (checked) $(this).prop("checked", true);
     });
 
     TranslatePage();
@@ -311,25 +288,27 @@ function OnExitFilter() {
 	let ModelAll = {};
 	for (vendor in ModelNozzleSelected) {
 		for (model in ModelNozzleSelected[vendor]) {
+			let anyChecked = false;
 			for (nozzel in ModelNozzleSelected[vendor][model]) {
-				if (!ModelNozzleSelected[vendor][model][nozzel])
-					continue;
-
-				if (!ModelAll.hasOwnProperty(model)) {
-					//alert("ADD: "+strModel);
-
-					ModelAll[model] = {};
-
-					ModelAll[model]["model"] = model;
-					ModelAll[model]["nozzle_diameter"] = '';
-					ModelAll[model]["vendor"] = vendor;
+				if (ModelNozzleSelected[vendor][model][nozzel]) {
+					anyChecked = true;
+					break;
 				}
-
-				ModelAll[model]["nozzle_diameter"] += ModelAll[model]["nozzle_diameter"] == '' ? nozzel : ';' + nozzel;
-
-				nTotal++;
 			}
+			if (!anyChecked)
+				continue;
 
+			for (let i = 0; i < pModel.length; i++) {
+				let pm = pModel[i];
+				if (pm['vendor'] == vendor && pm['model'] == model) {
+					ModelAll[model] = {};
+					ModelAll[model]["model"] = model;
+					ModelAll[model]["nozzle_diameter"] = pm["nozzle_diameter"];
+					ModelAll[model]["vendor"] = vendor;
+					nTotal++;
+					break;
+				}
+			}
 		}
 	}
 
@@ -365,7 +344,7 @@ function OnExit()
 		
 		let strModel=OneItem.getAttribute("model");
 		let strVendor=OneItem.getAttribute("vendor");
-		let strNozzel=OneItem.getAttribute("nozzel");
+		let strNozzelAll=OneItem.getAttribute("nozzle_all");
 			
 		//alert(strModel+strVendor+strNozzel);
 		
@@ -380,7 +359,7 @@ function OnExit()
 			ModelAll[strModel]["vendor"]=strVendor;
 		}
 		
-		ModelAll[strModel]["nozzle_diameter"]+=ModelAll[strModel]["nozzle_diameter"]==''?strNozzel:';'+strNozzel;
+		ModelAll[strModel]["nozzle_diameter"]=strNozzelAll;
 	}
 		
 	var tSend={};

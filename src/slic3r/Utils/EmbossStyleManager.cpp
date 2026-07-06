@@ -6,6 +6,7 @@
 #include <libslic3r/Utils.hpp> // ScopeGuard
 
 #include "WxFontUtils.hpp"
+#include "stb_dxt/stb_dxt.h"
 #include "slic3r/GUI/3DScene.hpp" // ::glsafe
 #include "slic3r/GUI/Jobs/CreateFontStyleImagesJob.hpp"
 #include "slic3r/GUI/ImGuiWrapper.hpp" // check of font ranges
@@ -495,9 +496,18 @@ ImFont *StyleManager::create_imgui_font(const std::string &text, double scale)
     glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
     glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
     glsafe(::glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
-    if (OpenGLManager::are_compressed_textures_supported())
-        glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
-    else
+    if (OpenGLManager::are_compressed_textures_supported()) {
+        constexpr size_t kDxt5BlockPixels = 4u;
+        constexpr size_t kDxt5BlockBytes  = 16u;
+        size_t dxt5_blocks = ((static_cast<size_t>(width)  + kDxt5BlockPixels - 1u) / kDxt5BlockPixels)
+                           * ((static_cast<size_t>(height) + kDxt5BlockPixels - 1u) / kDxt5BlockPixels);
+        std::vector<unsigned char> compressed(dxt5_blocks * kDxt5BlockBytes, 0);
+        int compressed_size = 0;
+        rygCompress(compressed.data(), pixels, width, height, 1, compressed_size);
+        compressed.resize(compressed_size);
+        glsafe(::glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+            width, height, 0, compressed_size, compressed.data()));
+    } else
         glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
 
     // Store our identifier

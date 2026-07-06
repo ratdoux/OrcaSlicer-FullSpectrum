@@ -48,8 +48,12 @@ public:
 
     void SetRadioTooltip(int i, wxString tooltip);
 
+    /** Enable or disable a single item. By default all items are enabled. */
+    void SetItemEnabled(int index, bool enable);
+
 private:
     std::vector<wxString>        m_labels;
+    std::vector<bool>            m_item_enabled;
     std::vector<wxStaticBitmap*> m_radioButtons;
     std::vector<Button*>         m_labelButtons;
 

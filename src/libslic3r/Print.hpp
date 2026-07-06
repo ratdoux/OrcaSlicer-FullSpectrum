@@ -24,6 +24,7 @@
 
 #include <functional>
 #include <set>
+#include <vector>
 
 #include "calib.hpp"
 
@@ -38,6 +39,10 @@ class SupportLayer;
 // BBS
 class TreeSupportData;
 class TreeSupport;
+class PresetCollection;
+class PresetBundle;
+struct NozzleFilamentRuleMismatch;
+struct ExtrusionLayers;
 
 #define MAX_OUTER_NOZZLE_DIAMETER   4
 // BBS: move from PrintObjectSlice.cpp
@@ -636,6 +641,7 @@ struct FakeWipeTower
     float rotation_angle;
     float cone_angle;
     Vec2d plate_origin;
+    std::map<float, Polylines> outer_wall;
 
     void set_fake_extrusion_data(Vec2f p, float w, float h, float lh, float d, float bd, Vec2d o)
     {
@@ -763,6 +769,8 @@ struct FakeWipeTower
 
         return paths;
     }
+
+    ExtrusionLayers getTrueExtrusionLayersFromWipeTower() const;
 };
 
 struct WipeTowerData
@@ -939,6 +947,13 @@ public:
     std::vector<unsigned int> object_extruders() const;
     std::vector<unsigned int> support_material_extruders() const;
     std::vector<unsigned int> extruders(bool conside_custom_gcode = false) const;
+    // On-demand evaluation vs filament_hot_bed_nozzles.json (calls extruders(true) once internally).
+    void                filament_rule_mismatch_flags(NozzleFilamentRuleMismatch& out_nozzle_mismatch,
+                                                     bool& out_gesp,
+                                                     bool& out_pei_not_pla,
+                                                     bool& out_pei_tpu,
+                                                     const PresetBundle* preset_bundle = nullptr) const;
+    
     double              max_allowed_layer_height() const;
     bool                has_support_material() const;
     // Make sure the background processing has no access to this model_object during this call!
@@ -997,6 +1012,7 @@ public:
     size_t                      num_print_regions() const throw() { return m_print_regions.size(); }
     const PrintRegion&          get_print_region(size_t idx) const  { return *m_print_regions[idx]; }
     const ToolOrdering&         get_tool_ordering() const { return m_wipe_tower_data.tool_ordering; }
+    const FakeWipeTower& get_fake_wipe_tower() const { return m_fake_wipe_tower; }
 
     //BBS: plate's origin related functions
     void set_plate_origin(Vec3d origin) { m_origin = origin; }

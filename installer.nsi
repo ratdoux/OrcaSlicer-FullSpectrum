@@ -11,7 +11,7 @@
 !define PRODUCT_INSTALL_KEY "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}"
 
 !ifndef VERSION
-    !define VERSION "2.2.3"
+    !define VERSION "2.3.5"
 !endif
 
 !ifndef SOURCE_DIR
@@ -92,7 +92,9 @@ OutFile "${OUTPUT_FILE}"
 
 Section "Main program" SecMain
     SectionIn RO
-    
+
+    Call EnsureSnapmakerNotRunning
+
     SetOutPath "$INSTDIR"
     
     DetailPrint "Installing ${PRODUCT_NAME}..."
@@ -122,7 +124,18 @@ Section "Main program" SecMain
 
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_INSTALL_KEY}" "Version" "${VERSION}"
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_INSTALL_KEY}" "InstallPath" "$INSTDIR"
-    
+
+    ; URL protocols (same as macOS CFBundleURLSchemes): snapmaker-orca:// and Snapmaker_Orca://
+    DetailPrint "Registering URL protocols (snapmaker-orca, Snapmaker_Orca)..."
+    SetRegView 64
+    WriteRegStr HKLM "Software\Classes\snapmaker-orca" "" "URL:Snapmaker Orca"
+    WriteRegStr HKLM "Software\Classes\snapmaker-orca" "URL Protocol" ""
+    WriteRegStr HKLM "Software\Classes\snapmaker-orca\shell\open\command" "" '"$INSTDIR\snapmaker-orca.exe" "%1"'
+    WriteRegStr HKLM "Software\Classes\Snapmaker_Orca" "" "URL:Snapmaker Orca"
+    WriteRegStr HKLM "Software\Classes\Snapmaker_Orca" "URL Protocol" ""
+    WriteRegStr HKLM "Software\Classes\Snapmaker_Orca\shell\open\command" "" '"$INSTDIR\snapmaker-orca.exe" "%1"'
+    SetRegView 32
+
     DetailPrint "Installation complete!"
     Goto end_section
     
@@ -135,7 +148,9 @@ SectionEnd
 
 Section "Desktop shortcut" SecDesktop
     DetailPrint "Creating desktop shortcut..."
+    SetShellVarContext current
     CreateShortcut "$DESKTOP\Snapmaker Orca.lnk" "$INSTDIR\snapmaker-orca.exe" "" "$INSTDIR\snapmaker-orca.exe" 0
+    SetShellVarContext all
 SectionEnd
 
 Section "Start menu shortcut" SecStartMenu
@@ -172,6 +187,10 @@ Section "Uninstall"
     RMDir "$INSTDIR"
     
     DetailPrint "Removing registry entries..."
+    SetRegView 64
+    DeleteRegKey HKLM "Software\Classes\snapmaker-orca"
+    DeleteRegKey HKLM "Software\Classes\Snapmaker_Orca"
+    SetRegView 32
     DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}"
     DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_INSTALL_KEY}"
     DeleteRegKey HKCU "${PRODUCT_INSTALL_KEY}"
@@ -183,7 +202,28 @@ Function LaunchApp
     ExecShell "open" "$INSTDIR\snapmaker-orca.exe"
 FunctionEnd
 
+; Prevent overwriting locked DLLs when snapmaker-orca (or legacy Snapmaker_Orca.exe) is still running.
+Function EnsureSnapmakerNotRunning
+    snapmaker_check_loop:
+        ExecWait 'cmd.exe /c tasklist /FI "IMAGENAME eq snapmaker-orca.exe" 2>nul | find /i "snapmaker-orca.exe" >nul' $0
+        IntCmp $0 0 snapmaker_in_use snapmaker_try_legacy snapmaker_try_legacy
+    snapmaker_try_legacy:
+        ExecWait 'cmd.exe /c tasklist /FI "IMAGENAME eq Snapmaker_Orca.exe" 2>nul | find /i "Snapmaker_Orca.exe" >nul' $0
+        IntCmp $0 0 snapmaker_in_use snapmaker_idle snapmaker_idle
+    snapmaker_in_use:
+        IfSilent snapmaker_silent snapmaker_prompt
+    snapmaker_silent:
+        SetErrorLevel 7
+        Quit
+    snapmaker_prompt:
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Snapmaker Orca is still running (snapmaker-orca.exe).$\r$\nClose the program, then click Retry, or Cancel to exit the installer." IDRETRY snapmaker_check_loop
+        Abort
+    snapmaker_idle:
+FunctionEnd
+
 Function .onInit
+
+    Call EnsureSnapmakerNotRunning
 
     ReadRegStr $R0 ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "UninstallString"
     StrCmp $R0 "" done

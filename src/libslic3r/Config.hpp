@@ -1931,6 +1931,10 @@ public:
     // Mostly used for enums (when type == coEnum), but may be used for ints resp. floats, if gui_type is set to "i_enum_open" resp. "f_enum_open".
     std::vector<std::string>            enum_values;
     std::vector<std::string>            enum_labels;
+    std::vector<std::string>            enum_values_u1;
+    std::vector<std::string>            enum_labels_u1;
+    std::vector<std::string>            enum_values_ex;
+    std::vector<std::string>            enum_labels_ex;
     // For enums (when type == coEnum). Maps enum_values to enums.
     // Initialized by ConfigOptionEnum<xxx>::get_enum_values()
     const t_config_enum_values         *enum_keys_map   = nullptr;

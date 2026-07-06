@@ -2,6 +2,7 @@
 #define slic3r_GLGizmoMmuSegmentation_hpp_
 
 #include "GLGizmoPainterBase.hpp"
+#include "libslic3r/MixedFilament.hpp"
 
 namespace Slic3r::GUI {
 
@@ -118,6 +119,9 @@ protected:
     // Filament remap feature
     std::vector<size_t>               m_extruder_remap;      // index → target extruder index
     bool                              m_show_filament_remap_ui = false;
+
+    // Minimal context for gradient rendering; only physical_colors is used
+    MixedFilamentDisplayContext       m_mixed_display_context;
 
     static const constexpr float      CursorRadiusMin = 0.1f; // cannot be zero
 

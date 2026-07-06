@@ -17,10 +17,10 @@ END_EVENT_TABLE()
 WebPreprintDialog::WebPreprintDialog()
     : wxDialog((wxWindow*)(wxGetApp().mainframe), wxID_ANY, _L("Print preset"))
 {
-    m_prePrint_url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) +
+    m_prePrint_url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(wxGetApp().get_page_http_port()) +
                      "/web/flutter_web/index.html?path=4");
 
-    m_preSend_url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) +
+    m_preSend_url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(wxGetApp().get_page_http_port()) +
                      "/web/flutter_web/index.html?path=5");
     SetBackgroundColour(*wxWHITE);
 
@@ -196,10 +196,10 @@ void WebPreprintDialog::OnError(wxWebViewEvent &event)
 
 void WebPreprintDialog::OnScriptMessage(wxWebViewEvent &evt)
 {
-    BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
+    // BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
 
-    if (wxGetApp().get_mode() == comDevelop)
-        wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
+    // if (wxGetApp().get_mode() == comDevelop)
+    //     wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);

@@ -1,0 +1,45 @@
+{
+    "type": "filament",
+    "name": "Generic TPU @U1 0.8 nozzle",
+    "inherits": "Generic TPU @base2",
+    "from": "system",
+    "setting_id": "GFSR99",
+    "instantiation": "true",
+    "compatible_printers": [
+        "Snapmaker U1 (0.8 nozzle)"
+    ],
+
+
+
+
+    "filament_deretraction_speed": [
+        "20"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "3.2"
+    ],
+    "filament_multitool_ramming_volume": [
+        "0.1"
+    ],
+    "filament_retract_length_toolchange": [
+        "2"
+    ],
+    "filament_retraction_length": [
+        "1.5"
+    ],
+    "filament_retraction_speed": [
+        "20"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "nozzle_temperature": [
+        "215"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "215"
+    ]
+}

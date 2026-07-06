@@ -11,6 +11,8 @@
 #include <wx/button.h>
 #include <wx/statbmp.h>
 #include <wx/checkbox.h>
+#include <wx/utils.h>
+#include <wx/window.h>
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Utils.hpp"
@@ -234,6 +236,24 @@ void MsgUpdateConfig::on_dpi_changed(const wxRect &suggested_rect) {}
 
 
 MsgUpdateConfig::~MsgUpdateConfig() {}
+
+void dismiss_modal_msg_update_config_with_cancel()
+{
+    for (int i = 0; i < 8; ++i) {
+        MsgUpdateConfig *m = nullptr;
+        for (wxWindowList::compatibility_iterator node = wxTopLevelWindows.GetFirst(); node; node = node->GetNext()) {
+            if (auto *c = dynamic_cast<MsgUpdateConfig *>(node->GetData()))
+                if (c->IsModal()) {
+                    m = c;
+                    break;
+                }
+        }
+        if (!m)
+            return;
+        m->EndModal(wxID_CANCEL);
+        wxYieldIfNeeded();
+    }
+}
 
 //MsgUpdateForced
 

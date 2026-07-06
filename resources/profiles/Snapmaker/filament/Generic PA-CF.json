@@ -56,5 +56,6 @@
     ],
     "filament_vendor": [
         "Generic"
-    ]
+    ],
+    "filament_is_high_temperature": ["1"]
 }

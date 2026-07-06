@@ -150,6 +150,7 @@ enum class NotificationType
 	BBLPreviewOnlyMode,
     BBLPrinterConfigUpdateAvailable,
 	BBLUserPresetExceedLimit,
+        FilamentIncompatibleMixed,
 };
 
 class NotificationManager
@@ -199,7 +200,9 @@ public:
 	void stop_delayed_notifications_of_type(const NotificationType type);
 	// Creates Validate Error notification with a custom text and no fade out.
 	void push_validate_error_notification(StringObjectException const & error);
-		// print host upload
+    void close_validate_error_notification(const std::string& text);
+    void close_validate_warning_notification(const std::string& text);
+    // print host upload
 	void push_upload_job_notification(int id, float filesize, const std::string& filename, const std::string& host, float percentage = 0);
 	void set_upload_job_notification_percentage(int id, const std::string& filename, const std::string& host, float percentage);
 	void upload_job_notification_show_canceled(int id, const std::string& filename, const std::string& host);
@@ -844,6 +847,7 @@ private:
 	//can be used to create custom notification
 	bool push_notification_data(const NotificationData& notification_data, int timestamp);
 	bool push_notification_data(std::unique_ptr<NotificationManager::PopNotification> notification, int timestamp);
+    void close_notification_of_type_and_text(const NotificationType type, const std::string& text);
 	// Delayed notifications goes first to the m_waiting_notifications vector and only after remaining time is <= 0
 	// and condition callback is success, notification is regular pushed from update function.
 	// Otherwise another delay interval waiting. Timestamp is 0.
@@ -898,6 +902,8 @@ private:
 		NotificationType::PlaterWarning,
 		NotificationType::ProgressBar,
 		NotificationType::PrintHostUpload,
+        NotificationType::ValidateError,
+        NotificationType::ValidateWarning,
         NotificationType::SimplifySuggestion
 	};
 	//prepared (basic) notifications

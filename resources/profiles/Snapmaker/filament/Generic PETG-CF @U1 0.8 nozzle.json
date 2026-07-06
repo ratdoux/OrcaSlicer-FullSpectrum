@@ -1,0 +1,83 @@
+{
+    "type": "filament",
+    "name": "Generic PETG-CF @U1 0.8 nozzle",
+    "inherits": "Generic PETG-CF @base2",
+    "from": "system",
+    "setting_id": "GFSG50",
+    "instantiation": "true",
+    "fan_cooling_layer_time": [
+        "30"
+    ],
+    "fan_max_speed": [
+        "40"
+    ],
+    "fan_min_speed": [
+        "5"
+    ],
+    "filament_max_volumetric_speed": [
+        "11.5",
+        "11.5"
+    ],
+    "filament_ramming_travel_time": [
+        "0",
+        "0"
+    ],
+    "long_retractions_when_ec": [
+        "0",
+        "0"
+    ],
+    "nozzle_temperature": [
+        "255",
+        "255"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "255",
+        "255"
+    ],
+    "overhang_fan_speed": [
+        "100"
+    ],
+    "retraction_distances_when_ec": [
+        "0",
+        "0"
+    ],
+    "compatible_printers": [
+        "Snapmaker U1 (0.8 nozzle)"
+    ],
+
+
+
+    "eng_plate_temp": [
+        "80"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "80"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "16"
+    ],
+    "filament_multitool_ramming_volume": [
+        "1"
+    ],
+    "filament_retract_length_toolchange": [
+        "10"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "hot_plate_temp": [
+        "80"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "80"
+    ],
+    "textured_plate_temp": [
+        "80"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "80"
+    ]
+}

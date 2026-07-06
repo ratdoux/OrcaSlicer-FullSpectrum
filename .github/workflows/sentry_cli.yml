@@ -6,7 +6,7 @@ on:
       os:
         required: true
         type: string
-        description: "Target OS: windows-latest, macos-14, ubuntu-20.04, ubuntu-24.04"
+        description: "Target OS: windows-2022, macos-14, ubuntu-20.04, ubuntu-24.04"
       pdb-artifact-name:
         required: false
         type: string
@@ -27,20 +27,20 @@ jobs:
     steps:
       # ==================== Windows ====================
       - name: "[Windows] Install sentry-cli via choco"
-        if: inputs.os == 'windows-latest'
+        if: inputs.os == 'windows-2022'
         shell: pwsh
         run: |
           choco install sentry-cli -y -y 2>&1 | Out-Null
 
       - name: "[Windows] Download PDB artifact"
-        if: inputs.os == 'windows-latest'
+        if: inputs.os == 'windows-2022'
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.pdb-artifact-name }}
           path: ./symbols
 
       - name: "[Windows] Extract PDB archive"
-        if: inputs.os == 'windows-latest'
+        if: inputs.os == 'windows-2022'
         shell: pwsh
         run: |
           $archive = Get-ChildItem -Path ./symbols -Filter "*.7z" -File | Select-Object -First 1
@@ -60,7 +60,7 @@ jobs:
           }
 
       - name: "[Windows] Upload PDB to Sentry (sentry-cli)"
-        if: inputs.os == 'windows-latest'
+        if: inputs.os == 'windows-2022'
         shell: pwsh
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

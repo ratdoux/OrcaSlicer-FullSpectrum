@@ -361,6 +361,21 @@ int RichMessageDialog::ShowModal()
         show_dsa_button(m_checkBoxText);
         m_checkbox_dsa->SetValue(m_checkBoxValue);
     }
+
+    // Apply custom button labels set via SetYesNoLabels / SetYesNoCancelLabels etc.
+    if (!GetCustomYesLabel().empty())
+        if (auto* btn = get_button(wxID_YES))
+            btn->SetLabel(GetCustomYesLabel());
+    if (!GetCustomNoLabel().empty())
+        if (auto* btn = get_button(wxID_NO))
+            btn->SetLabel(GetCustomNoLabel());
+    if (!GetCustomOKLabel().empty())
+        if (auto* btn = get_button(wxID_OK))
+            btn->SetLabel(GetCustomOKLabel());
+    if (!GetCustomCancelLabel().empty())
+        if (auto* btn = get_button(wxID_CANCEL))
+            btn->SetLabel(GetCustomCancelLabel());
+
     Layout();
 
     return wxDialog::ShowModal();

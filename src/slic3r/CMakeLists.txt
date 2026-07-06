@@ -109,8 +109,27 @@ set(SLIC3R_GUI_SOURCES
     GUI/ExtrusionCalibration.hpp
     GUI/Field.cpp
     GUI/Field.hpp
+    GUI/FilamentColorUtils.cpp
+    GUI/FilamentColorUtils.hpp
     GUI/FileArchiveDialog.cpp
     GUI/FileArchiveDialog.hpp
+    GUI/filamentsync/FilamentColorMapBox.cpp
+    GUI/filamentsync/FilamentColorMapBox.hpp
+    GUI/filamentsync/FilamentColorMapBoxGroup.cpp
+    GUI/filamentsync/FilamentColorMapBoxGroup.hpp
+    GUI/filamentsync/FilamentData.hpp
+    GUI/filamentsync/FilamentScrollBar.cpp
+    GUI/filamentsync/FilamentScrollBar.hpp
+    GUI/filamentsync/FilamentSyncAlgorithm.cpp
+    GUI/filamentsync/FilamentSyncAlgorithm.hpp
+    GUI/filamentsync/MachineFilamentPicker.cpp
+    GUI/filamentsync/MachineFilamentPicker.hpp
+    GUI/filamentsync/PlaterPreview.cpp
+    GUI/filamentsync/PlaterPreview.hpp
+    GUI/filamentsync/SyncConfirmDialog.cpp
+    GUI/filamentsync/SyncConfirmDialog.hpp
+    GUI/filamentsync/SyncFilamentColorDialog.cpp
+    GUI/filamentsync/SyncFilamentColorDialog.hpp
     GUI/format.hpp
     GUI/GCodeViewer.cpp
     GUI/GCodeViewer.hpp
@@ -311,8 +330,22 @@ set(SLIC3R_GUI_SOURCES
     GUI/NotificationManager.hpp
     GUI/OAuthDialog.cpp
     GUI/OAuthDialog.hpp
+    GUI/MixedFilamentDialog.cpp
+    GUI/MixedFilamentDialog.hpp
+    GUI/MixedGradientSelector.hpp
+    GUI/MixedGradientSelector.cpp
+    GUI/MixedColorMatchPanel.cpp
+    GUI/MixedColorMatchPanel.hpp
+    GUI/MixedColorMatchHelpers.hpp
+    GUI/MixedColorMatchHelpers.cpp
+    GUI/MixedFilamentColorMapPanel.hpp
+    GUI/MixedFilamentColorMapPanel.cpp
+    GUI/MixedFilamentBadge.cpp
+    GUI/MixedFilamentBadge.hpp
     GUI/ObjColorDialog.cpp
     GUI/ObjColorDialog.hpp
+    GUI/FilamentColorDialog.cpp
+    GUI/FilamentColorDialog.hpp
     GUI/ObjectDataViewModel.cpp
     GUI/ObjectDataViewModel.hpp
     GUI/OG_CustomCtrl.cpp
@@ -473,6 +506,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/Scrollbar.hpp
     GUI/Widgets/ScrolledWindow.cpp
     GUI/Widgets/ScrolledWindow.hpp
+    GUI/Widgets/SegmentedToggle.cpp
+    GUI/Widgets/SegmentedToggle.hpp
     GUI/Widgets/SideButton.cpp
     GUI/Widgets/SideButton.hpp
     GUI/Widgets/SideMenuPopup.cpp
@@ -602,6 +637,8 @@ set(SLIC3R_GUI_SOURCES
     Utils/MQTT.cpp
     Utils/MoonRaker.cpp
     Utils/MoonRaker.hpp
+    Utils/TimeSyncManager.cpp
+    Utils/TimeSyncManager.hpp
     Utils/TimeoutMap.hpp
 )
 

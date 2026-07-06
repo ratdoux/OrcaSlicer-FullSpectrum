@@ -12,7 +12,7 @@ set(BBL_INTERNAL_TESTING "0")
 endif()
 set(Snapmaker_VERSION "0.9.9")
 set(FULLSPECTRUM_VERSION "0.9.9")
-set(MIN_FIRM_VER "1.0.0")
+set(MIN_FIRM_VER "1.5.0")
 string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)"
        Snapmaker_VERSION_MATCH ${Snapmaker_VERSION})
 set(ORCA_VERSION_MAJOR ${CMAKE_MATCH_1})

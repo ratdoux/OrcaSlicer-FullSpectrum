@@ -196,6 +196,7 @@ struct PrinterPicker: wxPanel //TO check
 private:
     int width;
     std::vector<int> m_button_indexes;
+    std::unordered_map<std::string, std::vector<std::string>> model_id_to_variants;
 
     void on_checkbox(const Checkbox *cbox, bool checked);
 };

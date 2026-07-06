@@ -12,6 +12,7 @@
 #include "Algorithm/RegionExpansion.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <string>
 #include <map>
@@ -116,9 +117,14 @@ Flow LayerRegion::flow(FlowRole role) const
 
 Flow LayerRegion::flow(FlowRole role, double layer_height) const
 {
+    return this->flow(role, layer_height, m_layer->id() == 0);
+}
+
+Flow LayerRegion::flow(FlowRole role, double layer_height, bool use_initial_layer_width) const
+{
     const PrintConfig          &print_config = m_layer->object()->print()->config();
     ConfigOptionFloatOrPercent config_width;
-    if (m_layer->id() == 0 && print_config.initial_layer_line_width.value > 0) {
+    if (use_initial_layer_width && print_config.initial_layer_line_width.value > 0) {
         config_width = print_config.initial_layer_line_width;
     } else if (role == frExternalPerimeter) {
         config_width = m_region->config().outer_wall_line_width;
@@ -131,7 +137,9 @@ Flow LayerRegion::flow(FlowRole role, double layer_height) const
     } else if (role == frTopSolidInfill) {
         config_width = m_region->config().top_surface_line_width;
     } else {
-        throw Slic3r::InvalidArgument("Unknown role");
+        BOOST_LOG_TRIVIAL(error) << "Unknown role in LayerRegion::flow: " << int(role);
+        assert(false);
+        return Flow();
     }
 
     if (config_width.value == 0)

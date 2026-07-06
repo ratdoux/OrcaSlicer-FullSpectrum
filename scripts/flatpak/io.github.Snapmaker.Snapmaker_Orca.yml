@@ -1,6 +1,6 @@
 app-id: io.github.Snapmaker.Snapmaker_Orca
 runtime: org.gnome.Platform
-runtime-version: "48"
+runtime-version: "49"
 sdk: org.gnome.Sdk
 command: entrypoint
 separate-locales: true
@@ -19,6 +19,10 @@ finish-args:
   - --talk-name=io.github.Snapmaker.Snapmaker_Orca.InstanceCheck.*
   - --system-talk-name=org.freedesktop.UDisks2
   - --env=SPNAV_SOCKET=/run/spnav.sock
+
+build-options:
+  env:
+    CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 modules:
 
@@ -51,6 +55,8 @@ modules:
 
   - name: kde-extra-cmake-modules
     buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     sources:
       - type: git
         url: https://github.com/KDE/extra-cmake-modules
@@ -68,6 +74,8 @@ modules:
     buildsystem: simple
     build-commands:
       - |
+        set -euo pipefail
+        export CMAKE_POLICY_VERSION_MINIMUM=3.5
         mkdir builddir && cd builddir
         cmake ../ -GNinja \
           -DwxBUILD_PRECOMP=ON \
@@ -97,7 +105,8 @@ modules:
           -DBUILD_SHARED_LIBS:BOOL=ON \
           -DCMAKE_INSTALL_PREFIX:STRING=/app \
           -DCMAKE_PREFIX_PATH=/app \
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build . --target install -j$FLATPAK_BUILDER_N_JOBS
     sources:
       - type: git
@@ -116,21 +125,27 @@ modules:
     build-commands:
       # start build
       - |
+        set -euo pipefail
+        export CMAKE_POLICY_VERSION_MINIMUM=3.5
+        export FLATPAK_BUILDER_N_JOBS="${FLATPAK_BUILDER_N_JOBS:-4}"
         mkdir -p deps/build_flatpak && cd deps/build_flatpak
-        cmake ../ \
+        cmake -G Ninja ../ \
           -DDEP_WX_GTK3=ON \
           -DDEP_DOWNLOAD_DIR=/run/build/orca_deps/external-packages \
           -DCMAKE_PREFIX_PATH=/app \
           -DDESTDIR=/app \
           -DFLATPAK=ON \
-          -DCMAKE_INSTALL_PREFIX=/app
-        cmake --build . --parallel
+          -DCMAKE_INSTALL_PREFIX=/app \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        cmake --build . -j"${FLATPAK_BUILDER_N_JOBS}"
+        test -f /app/include/openvdb/version.h
+        test -f /app/lib/libopenvdb.a -o -f /app/lib64/libopenvdb.a
         rm -rf /run/build/orca_deps/external-packages
     
     cleanup:
-      - /app/include
-      - "*.a"
+      # Keep headers and static libs in /app for the Snapmaker_Orca module (SLIC3R_STATIC=ON).
       - "*.la"
+      - "/share/pkgconfig"
     
     sources:
       # -
@@ -255,6 +270,11 @@ modules:
     buildsystem: simple
     build-commands:
       - |
+        set -euo pipefail
+        export CMAKE_POLICY_VERSION_MINIMUM=3.5
+        export FLATPAK_BUILDER_N_JOBS="${FLATPAK_BUILDER_N_JOBS:-4}"
+        test -f /app/include/openvdb/version.h
+        test -f /app/lib/libopenvdb.a -o -f /app/lib64/libopenvdb.a
         mkdir -p build_flatpak
         CXXFLAGS=-std=gnu++20 cmake . -B build_flatpak \
           -DSLIC3R_PCH=OFF \
@@ -267,15 +287,31 @@ modules:
           -DFLATPAK=ON \
           -DBBL_RELEASE_TO_PUBLIC=1 \
           -DCMAKE_PREFIX_PATH=/app \
-          -DCMAKE_INSTALL_PREFIX=/app
-        CXXFLAGS=-std=gnu++20 cmake --build build_flatpak --target Snapmaker_Orca -j$FLATPAK_BUILDER_N_JOBS
+          -DCMAKE_INSTALL_PREFIX=/app \
+          -DOPENVDB_ROOT=/app \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        CXXFLAGS=-std=gnu++20 cmake --build build_flatpak --target Snapmaker_Orca -j"${FLATPAK_BUILDER_N_JOBS:-4}"
         ./scripts/run_gettext.sh
-        CXXFLAGS=-std=gnu++20 cmake --build build_flatpak --target install -j$FLATPAK_BUILDER_N_JOBS
+        CXXFLAGS=-std=gnu++20 cmake --build build_flatpak --target install -j"${FLATPAK_BUILDER_N_JOBS:-4}"
 
     cleanup:
       - /include
 
     post-install:
+      # orca_deps installs static libs and headers into /app for SLIC3R_STATIC linking.
+      # Module "cleanup:" only removes files installed by *this* module, so strip build-only
+      # artifacts here (matches ~140MB Flathub bundles vs ~600MB if left in place).
+      - |
+        set -euo pipefail
+        rm -rf /app/include
+        find /app/lib /app/lib64 -name '*.a' -delete
+        find /app/lib /app/lib64 -name '*.la' -delete
+        rm -rf /app/lib/cmake /app/lib/pkgconfig /app/lib/debug
+        rm -rf /app/lib64/cmake /app/lib64/pkgconfig
+        rm -rf /app/share/doc /app/share/ECM /app/share/cmake /app/share/man /app/share/info
+        for _tool in vdb_print qconvex qdelaunay qhalf qhull qvoronoi rbox openssl c_rehash curl-config env.sh wx-config wxrc wxrc-3.1; do
+          rm -f "/app/bin/${_tool}"
+        done
 
       - | # Desktop Integration files
         install -Dm644 -t /app/share/icons/hicolor/scalable/apps/ resources/images/Snapmaker_Orca.svg

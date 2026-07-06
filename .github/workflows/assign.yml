@@ -7,12 +7,13 @@ on:
 
 jobs:
   assign:
+    if: github.ref == 'refs/heads/main'
     permissions:
       issues: write
     runs-on: ubuntu-latest
     steps:
       - name: Assign the user or unassign stale assignments
-        uses: takanome-dev/assign-issue-action@v2.3
+        uses: takanome-dev/assign-issue-action@main
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           maintainers: 'noisyfox,softfever'

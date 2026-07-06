@@ -1,10 +1,9 @@
-#  Changelog
-
-## 2026-04-16
-
-### Bugfix
-  *   - Fixed an issue on the "Print Preprocessing" page: when more than 4 preset filaments were available,
-		users could not select the excess filaments to match with the mounted filaments on the device. 
-		
-### 问题修复
-  *   - 修复了预设耗材超过 4 个时，超过部分无法在 "打印预处理页" 选择设备挂载耗材的问题
+ #  Changelog
+ 
+## 2026-06-25
+### Features
+  * Add purifier control.
+  * Support official consumable identification.
+### Improvements
+  * Optimize internal API call logic.
+  * Optimize the experience of obtaining consumable matching on the print initiation page.

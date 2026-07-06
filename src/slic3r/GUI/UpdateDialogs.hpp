@@ -64,6 +64,8 @@ public:
 	~MsgUpdateConfig();
 };
 
+void dismiss_modal_msg_update_config_with_cancel();
+
 // Informs about currently installed bundles not being compatible with the running Slic3r. Asks about action.
 class MsgUpdateForced : public MsgDialog
 {

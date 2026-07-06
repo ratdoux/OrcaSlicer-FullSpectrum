@@ -57,7 +57,7 @@
         "1"
     ],
     "enable_pressure_advance": [
-        "1"
+        "0"
     ],
     "eng_plate_temp": [
         "60"
@@ -281,5 +281,11 @@
     ],
     "filament_retract_length_toolchange": [
         "10"
+    ],
+    "graphic_effect_plate_temp": [
+        "65"
+    ],
+    "graphic_effect_plate_temp_initial_layer": [
+        "65"
     ]
 }

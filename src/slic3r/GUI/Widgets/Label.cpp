@@ -271,7 +271,8 @@ Label::Label(wxWindow *parent, wxFont const &font, wxString const &text, long st
     };
     if (style & LB_AUTO_WRAP) {
         Bind(wxEVT_SIZE, &Label::OnSize, this);
-        Wrap(GetSize().x);
+        int w = GetSize().x;
+        if (w > 0) Wrap(w);
     }
 }
 
@@ -281,7 +282,9 @@ void Label::SetLabel(const wxString& label)
         return;
     m_text = label;
     if ((GetWindowStyle() & LB_AUTO_WRAP)) {
-        Wrap(GetSize().x);
+        int w = GetSize().x;
+        if (w > 0) Wrap(w);
+        else wxStaticText::SetLabel(label);
     } else {
         wxStaticText::SetLabel(label);
     }

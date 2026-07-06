@@ -619,6 +619,8 @@ public:
     Preset* find_preset2(const std::string& name, bool auto_match = true);
 
     std::vector<std::string> diameters_of_selected_printer();
+    // All nozzle variants shipped for the current edited preset's printer_model (ignores is_visible).
+    std::vector<std::string> diameters_for_same_printer_model();
 
     const Preset* find_preset2(const std::string& name, bool auto_match = true) const
     {

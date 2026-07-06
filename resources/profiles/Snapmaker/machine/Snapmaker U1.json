@@ -7,7 +7,7 @@
   "model_id": "SM_U1",
   "bed_model": "Snapmaker U1_bed.stl",
   "bed_texture": "Snapmaker U1_texture.svg",
-  "nozzle_diameter": "0.4"
+  "nozzle_diameter": "0.2;0.4;0.6;0.8"
 }
 
 

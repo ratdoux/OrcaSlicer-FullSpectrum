@@ -96,19 +96,12 @@ function HandleModelList( pVal )
 		if( !ModelHtml.hasOwnProperty(strVendor))
 			ModelHtml[strVendor]='';
 
-		let NozzleArray=OneModel['nozzle_diameter'].split(';');
-		let HtmlNozzel='';
-		for(let m=0;m<NozzleArray.length;m++)
-		{
-			let nNozzel=NozzleArray[m];
-			/* ORCA use label tag to allow checkbox to toggle when user ckicked to text */
-			HtmlNozzel += '<label class="pNozzel TextS2"><input type="checkbox" model="' + OneModel['model'] + '" nozzel="' + nNozzel + '" vendor="' + strVendor +'" onclick="CheckBoxOnclick(this)" /><span>'+nNozzel+'</span><span class="trans" tid="t13">mm nozzle</span></label>';
-		}
+		let HtmlNozzel = '<label class="pNozzel TextS2"><input type="checkbox" model="' + OneModel['model'] + '" vendor="' + strVendor + '" nozzle_all="' + OneModel['nozzle_diameter'] + '" onclick="CheckBoxOnclick(this)" /></label>';
 
 		let CoverImage=OneModel['cover'];
 		ModelHtml[strVendor]+='<div class="PrinterBlock">'+
 '	<div class="PImg"><img src="'+CoverImage+'"  /></div>'+
-'    <div class="PName">'+OneModel['name']+'</div>'+ HtmlNozzel +'</div>';
+'    <div class="PNameRow">'+ HtmlNozzel +'<div class="PName">'+OneModel['name']+'</div></div></div>';
 	}
 
 	//Append Vendor blocks in priority order
@@ -142,22 +135,13 @@ function HandleModelList( pVal )
 		let OneModel=pModel[m];
 
 		let SelectList=OneModel['nozzle_selected'];
-		if(SelectList!='')
-		{
-			SelectList=OneModel['nozzle_selected'].split(';');
-    		let nLen=SelectList.length;
-
-		    for(let a=0;a<nLen;a++)
-			{
-			    let nNozzel=SelectList[a];
-				$("input[vendor='" + OneModel['vendor'] + "'][model='" + OneModel['model'] + "'][nozzel='" + nNozzel + "']").prop("checked", true);
-
-				SetModelSelect(OneModel['vendor'], OneModel['model'], nNozzel, true);
-			}
-		}
-		else
-		{
-			$("input[vendor='"+OneModel['vendor']+"'][model='"+OneModel['model']+"']").prop("checked", false);
+		let checked = SelectList != '';
+		$("input[vendor='" + OneModel['vendor'] + "'][model='" + OneModel['model'] + "']").prop("checked", checked);
+		let allNozzles = OneModel['nozzle_diameter'].split(';');
+		for (let a = 0; a < allNozzles.length; a++) {
+			let nNozzel = allNozzles[a];
+			if (nNozzel != '')
+				SetModelSelect(OneModel['vendor'], OneModel['model'], nNozzel, checked);
 		}
 	}	
 
@@ -172,13 +156,15 @@ function HandleModelList( pVal )
 }
 
 function CheckBoxOnclick(obj) {
-
 	let strModel = obj.getAttribute("model");
-
 	let strVendor = obj.getAttribute("vendor");
-	let strNozzel = obj.getAttribute("nozzel");
-
-	SetModelSelect(strVendor, strModel, strNozzel, obj.checked);
+	let nozzleAll = obj.getAttribute("nozzle_all") || "";
+	let nozzles = nozzleAll.split(";");
+	for (let i = 0; i < nozzles.length; i++) {
+		let noz = nozzles[i];
+		if (noz != '')
+			SetModelSelect(strVendor, strModel, noz, obj.checked);
+	}
 
 }
 
@@ -230,9 +216,14 @@ function FilterModelList(keyword) {
 		let strModel = OneItem.getAttribute("model");
 
 		let strVendor = OneItem.getAttribute("vendor");
-		let strNozzel = OneItem.getAttribute("nozzel");
+		let nozzleAll = OneItem.getAttribute("nozzle_all") || "";
+		let nozzles = nozzleAll.split(';');
 
-		SetModelSelect(strVendor, strModel, strNozzel, OneItem.checked);
+		for (let i = 0; i < nozzles.length; i++) {
+			let strNozzel = nozzles[i];
+			if (strNozzel != '')
+				SetModelSelect(strVendor, strModel, strNozzel, OneItem.checked);
+		}
 	}
 
 	let nTotal = pModel.length;
@@ -279,18 +270,12 @@ function FilterModelList(keyword) {
 		if (!ModelHtml.hasOwnProperty(strVendor))
 			ModelHtml[strVendor] = '';
 
-		let NozzleArray = OneModel['nozzle_diameter'].split(';');
-		let HtmlNozzel = '';
-		for (let m = 0; m < NozzleArray.length; m++) {
-			let nNozzel = NozzleArray[m];
-			/* ORCA use label tag to allow checkbox to toggle when user ckicked to text */
-			HtmlNozzel += '<label class="pNozzel TextS2"><input type="checkbox" model="' + OneModel['model'] + '" nozzel="' + nNozzel + '" vendor="' + strVendor + '" onclick="CheckBoxOnclick(this)" /><span>' + nNozzel + '</span><span class="trans" tid="t13">mm nozzle</span></label>';
-		}
+		let HtmlNozzel = '<label class="pNozzel TextS2"><input type="checkbox" model="' + OneModel['model'] + '" vendor="' + strVendor + '" nozzle_all="' + OneModel['nozzle_diameter'] + '" onclick="CheckBoxOnclick(this)" /></label>';
 
 		let CoverImage = OneModel['cover'];
 		ModelHtml[strVendor] += '<div class="PrinterBlock">' +
 			'	<div class="PImg"><img src="' + CoverImage + '"  /></div>' +
-			'    <div class="PName">' + OneModel['name'] + '</div>' + HtmlNozzel + '</div>';
+			'    <div class="PNameRow">' + HtmlNozzel + '<div class="PName">' + OneModel['name'] + '</div></div></div>';
 	}
 
 	//Append Vendor blocks in priority order
@@ -322,10 +307,16 @@ function FilterModelList(keyword) {
 
 		let strModel = OneItem.getAttribute("model");
 		let strVendor = OneItem.getAttribute("vendor");
-		let strNozzel = OneItem.getAttribute("nozzel");
-
-		let checked = GetModelSelect(strVendor, strModel, strNozzel);
-
+		let nozzleAll = OneItem.getAttribute("nozzle_all") || "";
+		let nozzles = nozzleAll.split(';');
+		let checked = false;
+		for (let i = 0; i < nozzles.length; i++) {
+			let strNozzel = nozzles[i];
+			if (strNozzel != '' && GetModelSelect(strVendor, strModel, strNozzel)) {
+				checked = true;
+				break;
+			}
+		}
 		OneItem.checked = checked;
 	}
 
@@ -362,25 +353,27 @@ function OnExitFilter() {
 	let ModelAll = {};
 	for (vendor in ModelNozzleSelected) {
 		for (model in ModelNozzleSelected[vendor]) {
+			let anyChecked = false;
 			for (nozzel in ModelNozzleSelected[vendor][model]) {
-				if (!ModelNozzleSelected[vendor][model][nozzel])
-					continue;
-
-				if (!ModelAll.hasOwnProperty(model)) {
-					//alert("ADD: "+strModel);
-
-					ModelAll[model] = {};
-
-					ModelAll[model]["model"] = model;
-					ModelAll[model]["nozzle_diameter"] = '';
-					ModelAll[model]["vendor"] = vendor;
+				if (ModelNozzleSelected[vendor][model][nozzel]) {
+					anyChecked = true;
+					break;
 				}
-
-				ModelAll[model]["nozzle_diameter"] += ModelAll[model]["nozzle_diameter"] == '' ? nozzel : ';' + nozzel;
-
-				nTotal++;
 			}
+			if (!anyChecked)
+				continue;
 
+			for (let i = 0; i < pModel.length; i++) {
+				let pm = pModel[i];
+				if (pm['vendor'] == vendor && pm['model'] == model) {
+					ModelAll[model] = {};
+					ModelAll[model]["model"] = model;
+					ModelAll[model]["nozzle_diameter"] = pm["nozzle_diameter"];
+					ModelAll[model]["vendor"] = vendor;
+					nTotal++;
+					break;
+				}
+			}
 		}
 	}
 
@@ -416,7 +409,7 @@ function OnExit()
 		
 		let strModel=OneItem.getAttribute("model");
 		let strVendor=OneItem.getAttribute("vendor");
-		let strNozzel=OneItem.getAttribute("nozzel");
+		let strNozzelAll=OneItem.getAttribute("nozzle_all");
 			
 		//alert(strModel+strVendor+strNozzel);
 		
@@ -431,7 +424,7 @@ function OnExit()
 			ModelAll[strModel]["vendor"]=strVendor;
 		}
 		
-		ModelAll[strModel]["nozzle_diameter"]+=ModelAll[strModel]["nozzle_diameter"]==''?strNozzel:';'+strNozzel;
+		ModelAll[strModel]["nozzle_diameter"]=strNozzelAll;
 	}
 		
 	var tSend={};

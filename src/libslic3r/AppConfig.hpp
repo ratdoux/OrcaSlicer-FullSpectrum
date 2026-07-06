@@ -234,19 +234,24 @@ public:
         m_printer_settings.erase(printer);
         m_dirty = true;
     }
-    bool has_printer_setting(std::string printer, std::string name) {
-        if (!has_printer_settings(printer))
+    bool has_printer_setting(const std::string& printer, const std::string& name) const {
+        MachineSettingMap::const_iterator printerIt = m_printer_settings.find(printer);
+        if (printerIt == m_printer_settings.end())
             return false;
-        if (!m_printer_settings[printer].contains(name))
-            return false;
-        return true;
+        return printerIt->second.contains(name);
     }
-    std::string get_printer_setting(std::string printer, std::string name) {
-        if (!has_printer_setting(printer, name))
+    std::string get_printer_setting(const std::string& printer, const std::string& name) const {
+        MachineSettingMap::const_iterator printerIt = m_printer_settings.find(printer);
+        if (printerIt == m_printer_settings.end())
             return "";
-        return m_printer_settings[printer][name];
+
+        nlohmann::json::const_iterator settingIt = printerIt->second.find(name);
+        if (settingIt == printerIt->second.end() || !settingIt.value().is_string())
+            return "";
+
+        return settingIt.value().get<std::string>();
     }
-    void set_printer_setting(std::string printer, std::string name, std::string value) {
+    void set_printer_setting(const std::string& printer, const std::string& name, const std::string& value) {
         m_printer_settings[printer][name] = value;
         m_dirty = true;
     }

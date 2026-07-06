@@ -1,4 +1,5 @@
 #include "NetworkTestDialog.hpp"
+#include "MainFrame.hpp"
 #include "I18N.hpp"
 
 #include "libslic3r/Utils.hpp"
@@ -22,11 +23,11 @@
 namespace Slic3r {
 namespace GUI {
 
-wxDECLARE_EVENT(EVT_UPDATE_RESULT, wxCommandEvent);
-
-wxDEFINE_EVENT(EVT_UPDATE_RESULT, wxCommandEvent);
 
 static wxString NA_STR = _L("N/A");
+
+// Searchable tag for network test log entries in file logs.
+#define NETWORK_TEST_LOG_TAG "[NetworkTest]"
 
 NetworkTestDialog::NetworkTestDialog(wxWindow* parent, wxWindowID id, const wxString& title, const wxPoint& pos, const wxSize& size, long style)
     : DPIDialog(parent,wxID_ANY,from_u8((boost::format(_utf8(L("Network Test")))).str()),wxDefaultPosition,
@@ -310,45 +311,6 @@ NetworkTestDialog::~NetworkTestDialog()
 
 void NetworkTestDialog::init_bind()
 {
-	Bind(EVT_UPDATE_RESULT, [weak_this = weak_this](wxCommandEvent& evt) {
-		auto self = weak_this.lock();
-		if (!self || self->m_closing.load()) return;
-
-		if (evt.GetInt() == TEST_ORCA_JOB) {
-			self->text_link_val->SetLabelText(evt.GetString());
-		} else if (evt.GetInt() == TEST_BING_JOB) {
-			self->text_bing_val->SetLabelText(evt.GetString());
-		} else if (evt.GetInt() == TEST_LAN_MQTT_JOB) {
-			self->text_lan_mqtt_val->SetLabelText(evt.GetString());
-		} else if (evt.GetInt() == TEST_CLOUD_MQTT_JOB) {
-			self->text_cloud_mqtt_val->SetLabelText(evt.GetString());
-		} else if (evt.GetInt() == TEST_LOGIN_API_JOB) {
-			self->text_login_api_val->SetLabelText(evt.GetString());
-		} else if (evt.GetInt() == TEST_UPLOAD_API_JOB) {
-			self->text_upload_api_val->SetLabelText(evt.GetString());
-		}
-
-		std::time_t t = std::time(0);
-		std::tm* now_time = std::localtime(&t);
-		std::stringstream buf;
-		buf << std::put_time(now_time, "%a %b %d %H:%M:%S");
-		wxString info = wxString(buf.str()) + ": " + evt.GetString() + "\n";
-		try {
-			if (!self->m_closing.load() && self->txt_log) {
-				self->txt_log->AppendText(info);
-			}
-		}
-		catch (std::exception& e) {
-			BOOST_LOG_TRIVIAL(error) << "Unkown Exception in print_log, exception=" << e.what();
-			return;
-		}
-		catch (...) {
-			BOOST_LOG_TRIVIAL(error) << "Unkown Exception in print_log";
-			return;
-		}
-		return;
-	});
-
 	Bind(wxEVT_CLOSE_WINDOW, &NetworkTestDialog::on_close, this);
 }
 
@@ -369,6 +331,8 @@ wxString NetworkTestDialog::get_dns_info()
 
 void NetworkTestDialog::start_all_job()
 {
+	log_section_header(_L("Network test started"));
+
 	start_test_github_thread();
 	start_test_bing_thread();
 	start_test_lan_mqtt_thread();
@@ -399,10 +363,7 @@ void NetworkTestDialog::start_all_job_sequence()
 	m_sequence_job = new boost::thread([weak_this = weak_this, device_ip] {
 		auto self = weak_this.lock();
 		if (!self) return;
-		self->update_status(-1, "========================================");
-		self->update_status(-1, "Start sequence test (single-thread mode)");
-		self->update_status(-1, "========================================");
-		self->update_status(-1, "");
+		self->log_section_header("Start sequence test (single-thread mode)");
 
         self->start_test_url(TEST_BING_JOB, "Bing", "http://www.bing.com");
         if (self->m_closing.load()) return;
@@ -440,10 +401,7 @@ void NetworkTestDialog::start_all_job_sequence()
 		self->start_test_url(TEST_UPLOAD_API_JOB, "Upload API", upload_api_url);
 		if (self->m_closing.load()) return;
 
-		self->update_status(-1, "");
-		self->update_status(-1, "========================================");
-		self->update_status(-1, "Sequence test completed");
-		self->update_status(-1, "========================================");
+		self->log_section_header("Sequence test completed");
 	});
 }
 
@@ -856,11 +814,6 @@ void NetworkTestDialog::start_test_telnet(TestJob job, wxString name, wxString s
 		update_status(-1, "--- Step 1: Network Layer Test (ICMP Ping) ---");
 		start_test_ping(server, job);
 
-		if (m_closing.load()) {
-			m_in_testing[job].store(false);
-			return;
-		}
-
 		// 添加步骤间空行
 		update_status(-1, "");
 
@@ -1186,28 +1139,79 @@ void NetworkTestDialog::on_dpi_changed(const wxRect &suggested_rect)
     ;
 }
 
+void NetworkTestDialog::log_section_header(const wxString& title)
+{
+	static const wxString sep("========================================");
+	update_status(-1, wxEmptyString);
+	update_status(-1, sep);
+	update_status(-1, title);
+	update_status(-1, sep);
+	update_status(-1, wxEmptyString);
+}
+
 void NetworkTestDialog::update_status(int job_id, wxString info)
 {
-	// Early exit if dialog is closing - don't access any members
-	if (m_closing.load()) return;
+	if (m_closing.load())
+		return;
 
-	// Use try-catch to protect against accessing destroyed dialog
-	try {
-		// Double check before creating event
-		if (m_closing.load()) return;
+	if (!wxThread::IsMain()) {
+		wxGetApp().CallAfter([weak_this = weak_this, job_id, info]() {
+			if (auto self = weak_this.lock())
+				self->update_status(job_id, info);
+		});
+		return;
+	}
 
-		auto evt = new wxCommandEvent(EVT_UPDATE_RESULT, this->GetId());
-		evt->SetString(info);
-		evt->SetInt(job_id);
+	// Send log to MainFrame for file writing
+	auto log_evt = new wxCommandEvent(EVT_NETWORK_TEST_LOG_UPDATE);
+	log_evt->SetString(info);
+	wxQueueEvent(wxGetApp().mainframe, log_evt);
 
-		// Triple check before queuing - race condition window is very small
-		if (!m_closing.load()) {
-			wxQueueEvent(this, evt);
-		} else {
-			delete evt;
+	switch (job_id)
+	{
+		case TEST_ORCA_JOB:
+		{
+			text_link_val->SetLabelText(info);
+			break;
 		}
-	} catch (...) {
-		// Silently ignore if dialog was destroyed during operation
+		case TEST_BING_JOB:
+		{
+			text_bing_val->SetLabelText(info);
+			break;
+		}
+		case TEST_LAN_MQTT_JOB:
+		{
+			text_lan_mqtt_val->SetLabelText(info);
+			break;
+		}
+		case TEST_CLOUD_MQTT_JOB:
+		{
+			text_cloud_mqtt_val->SetLabelText(info);
+			break;
+		}
+		case TEST_LOGIN_API_JOB:
+		{
+			text_login_api_val->SetLabelText(info);
+			break;
+		}
+		case TEST_UPLOAD_API_JOB:
+		{
+			text_upload_api_val->SetLabelText(info);
+			break;
+		}
+		default:
+			if (job_id >= TEST_JOB_MAX)
+				BOOST_LOG_TRIVIAL(warning) << "[NetworkTest] unknown job_id=" << job_id << ", info=" << into_u8(info);
+			break;
+	}
+
+	std::time_t t = std::time(0);
+	std::tm* now_time = std::localtime(&t);
+	std::stringstream buf;
+	buf << std::put_time(now_time, "%a %b %d %H:%M:%S");
+	wxString log_line = wxString(buf.str()) + ": " + info + "\n";
+	if (!m_closing.load() && txt_log) {
+		txt_log->AppendText(log_line);
 	}
 }
 

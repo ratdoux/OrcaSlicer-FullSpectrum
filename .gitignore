@@ -44,3 +44,5 @@ deps_src/build/
 nul
 .codex_tmp
 tests
+.hermes/
+CLAUDE.md

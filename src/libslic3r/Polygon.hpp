@@ -61,6 +61,7 @@ public:
     bool make_clockwise();
     bool is_valid() const { return this->points.size() >= 3; }
     void douglas_peucker(double tolerance);
+    void round_to_grid(double grid_size);
 
     // Does an unoriented polygon contain a point?
     bool contains(const Point &point) const { return Slic3r::contains(*this, point, true); }

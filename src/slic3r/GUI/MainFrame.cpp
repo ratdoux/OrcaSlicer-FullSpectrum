@@ -88,6 +88,7 @@ wxDEFINE_EVENT(EVT_HTTP_ERROR, wxCommandEvent);
 wxDEFINE_EVENT(EVT_SHOW_IP_DIALOG, wxCommandEvent);
 wxDEFINE_EVENT(EVT_UPDATE_MACHINE_LIST, wxCommandEvent);
 wxDEFINE_EVENT(EVT_UPDATE_PRESET_CB, SimpleEvent);
+wxDEFINE_EVENT(EVT_NETWORK_TEST_LOG_UPDATE, wxCommandEvent);
 
 
 
@@ -253,7 +254,6 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
 		e.Skip();
 	});
 #endif
-
 #ifdef __APPLE__
     // Initialize the docker task bar icon.
     switch (wxGetApp().get_app_mode()) {
@@ -364,6 +364,9 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
     });
 
     Bind(EVT_SYNC_CLOUD_PRESET, &MainFrame::on_select_default_preset, this);
+    Bind(EVT_NETWORK_TEST_LOG_UPDATE, [](wxCommandEvent& evt) {
+        BOOST_LOG_TRIVIAL(warning) << "[NetworkTest] " << into_u8(evt.GetString());
+    });
 
 //    Bind(wxEVT_MENU,
 //        [this](wxCommandEvent&)
@@ -565,7 +568,15 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
             }
             return;}
 #endif
-        if (evt.CmdDown() && evt.GetKeyCode() == 'R') { if (m_slice_enable) { wxGetApp().plater()->update(true, true); wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_PLATE)); this->m_tabpanel->SetSelection(tpPreview); } return; }
+        if (evt.CmdDown() && evt.GetKeyCode() == 'R')
+        {
+            if (m_slice_enable)
+            {
+                wxGetApp().plater()->update(true, true);
+                wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_PLATE));
+            }
+            return;
+        }
         if (evt.CmdDown() && evt.ShiftDown() && evt.GetKeyCode() == 'G') {
             m_plater->apply_background_progress();
             m_print_enable = get_enable_print_status();
@@ -1043,11 +1054,13 @@ void MainFrame::init_tabpanel() {
         m_last_selected_tab = m_tabpanel->GetSelection();
         if (panel == m_plater) {
             if (sel == tp3DEditor) {
-                wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_3D));
+                if (!m_plater || !m_plater->is_view3D_shown())
+                    wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_3D));
                 m_param_panel->OnActivate();
             }
             else if (sel == tpPreview) {
-                wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_PREVIEW));
+                if (!m_plater || m_plater->is_view3D_shown())
+                    wxPostEvent(m_plater, SimpleEvent(EVT_GLVIEWTOOLBAR_PREVIEW));
                 m_param_panel->OnActivate();
             }
         }
@@ -1526,19 +1539,18 @@ bool MainFrame::can_send_gcode() const
     if (m_plater && !m_plater->model().objects.empty())
     {
         auto        devices     = wxGetApp().app_config->get_devices();
-        std::string preset_name = "Snapmaker U1 0.4 nozzle";
         const auto& edit_preset = wxGetApp().preset_bundle->printers.get_edited_preset();
 
-        std::string local_name = "";
-        if (edit_preset.is_system) {
-            local_name = edit_preset.name;
-        } else {
-            const auto& base_preset = wxGetApp().preset_bundle->printers.get_preset_base(edit_preset);
-            local_name              = base_preset->name;
+        auto printer_config    = wxGetApp().preset_bundle->printers.get_edited_preset().config;
+        auto printer_model_opt = printer_config.option<ConfigOptionString>("printer_model");
+        bool is_snapmaker_u1   = false;
+        if (printer_model_opt) {
+            std::string printer_model = printer_model_opt->value;
+            is_snapmaker_u1           = boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1");
         }
-        local_name.erase(std::remove(local_name.begin(), local_name.end(), '('), local_name.end());
-        local_name.erase(std::remove(local_name.begin(), local_name.end(), ')'), local_name.end());
-        if (local_name == preset_name) {
+
+        if (is_snapmaker_u1)
+        {
             return true;
         }
 
@@ -1553,27 +1565,6 @@ bool MainFrame::can_send_gcode() const
     }
     return true;
 }
-
-/*bool MainFrame::can_export_gcode_sd() const
-{
-    if (m_plater == nullptr)
-        return false;
-
-    if (m_plater->model().objects.empty())
-        return false;
-
-    if (m_plater->is_export_gcode_scheduled())
-        return false;
-
-    // TODO:: add other filters
-
-    return wxGetApp().removable_drive_manager()->status().has_removable_drives;
-}
-
-bool MainFrame::can_eject() const
-{
-	return wxGetApp().removable_drive_manager()->status().has_eject;
-}*/
 
 bool MainFrame::can_slice() const
 {
@@ -1681,7 +1672,6 @@ wxBoxSizer* MainFrame::create_side_tools()
             else
                 wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_PLATE));
 
-            this->m_tabpanel->SetSelection(tpPreview);
         });
 
     m_print_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
@@ -1913,8 +1903,7 @@ bool MainFrame::get_enable_slice_status()
         {
             enable = false;
         }*/
-        //always enable slice_all button
-        enable = true;
+        enable = m_plater->has_sliceable_plate_for_slice_all();
     }
     else if (m_slice_select == eSlicePlate)
     {
@@ -1923,6 +1912,14 @@ bool MainFrame::get_enable_slice_status()
             enable = false;
         }
         else if (!current_plate->can_slice())
+        {
+            enable = false;
+        }
+        else if (m_plater->has_incompatible_mixed_filament_in_use())
+        {
+            enable = false;
+        }
+        else if (m_plater->is_plate_blocked_by_filament_temp_mixing(part_plate_list.get_curr_plate_index()))
         {
             enable = false;
         }
@@ -2073,11 +2070,14 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
 {
     bool enable_print = true, enable_slice = true;
 
-    if (!can_slice)
-    {
-        if (m_slice_select == eSlicePlate)
-            enable_slice = false;
-    }
+    if (event == eEventPlateUpdate)
+        enable_slice = get_enable_slice_status();
+    else if (!can_slice)
+        // Don't hard-disable the slice button; let get_enable_slice_status()
+        // decide. In eSliceAll mode other plates may still be sliceable even
+        // if the caller thinks the current plate isn't.
+        enable_slice = get_enable_slice_status();
+
     if (!can_print)
         enable_print = false;
 
@@ -2089,7 +2089,7 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     }
 
     //process slice logic
-    if (enable_slice)
+    if (event != eEventPlateUpdate && enable_slice)
     {
         enable_slice = get_enable_slice_status();
     }
@@ -3937,22 +3937,27 @@ void MainFrame::downloadOpenProject(const std::string& fileUrl, const std::strin
     if (res != wxID_OK)
         return;
 
-    if (completeFilePath.empty()) {
-        auto downloadPath = wxGetApp().app_config->get("download_path");
-        completeFilePath  = downloadPath + "/" + releaFileName;
+    // DownloadManager may save under a uniquified name (e.g. a(1).3mf); use the path returned by the dialog.
+    std::string path_to_open = dlg.get_file_path();
+    if (path_to_open.empty()) {
+        if (completeFilePath.empty()) {
+            auto downloadPath = wxGetApp().app_config->get("download_path");
+            completeFilePath  = downloadPath + "/" + releaFileName;
+        }
+        path_to_open = completeFilePath;
     }
-    if (!boost::filesystem::exists(completeFilePath)) 
+    if (!boost::filesystem::exists(path_to_open))
     {
-        BOOST_LOG_TRIVIAL(warning) << boost::format("the file '%1%' not exists") % completeFilePath;
+        BOOST_LOG_TRIVIAL(warning) << boost::format("the file '%1%' not exists") % path_to_open;
         return;
     }
 
     // Auto-open project if it's a .3mf file
-    boost::filesystem::path path(completeFilePath);
+    boost::filesystem::path path(path_to_open);
     std::string             extension = boost::algorithm::to_lower_copy(path.extension().string());
     if (extension == ".3mf") {
-        BOOST_LOG_TRIVIAL(info) << boost::format("GenericDownloadDialog: Auto-opening project file '%1%'") % completeFilePath;
-        wxString wx_file_path = wxString::FromUTF8(completeFilePath.c_str());
+        BOOST_LOG_TRIVIAL(info) << boost::format("GenericDownloadDialog: Auto-opening project file '%1%'") % path_to_open;
+        wxString wx_file_path = wxString::FromUTF8(path_to_open.c_str());
         if (wxGetApp().can_load_project() && wxGetApp().mainframe && wxGetApp().mainframe->plater()) {
             wxGetApp().mainframe->plater()->load_project(wx_file_path);
         }
@@ -4025,6 +4030,9 @@ void MainFrame::export_logs()
         return;
 
     wxString zip_path = dlg.GetPath();
+
+    // Write version info and flush to log file before zipping
+    GUI_App::log_version_info();
 
     // 4. Create ZIP file and add all logs
     try {

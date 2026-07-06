@@ -1,0 +1,42 @@
+{
+    "type": "filament",
+    "name": "Generic TPU 95A HF @U1 0.8 nozzle",
+    "inherits": "Generic TPU 95A HF @base2",
+    "from": "system",
+    "setting_id": "GFSR99",
+    "instantiation": "true",
+    "compatible_printers": [
+        "Snapmaker U1 (0.8 nozzle)"
+    ],
+
+
+
+
+    "filament_max_volumetric_speed": [
+        "10.5"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "15"
+    ],
+    "filament_multitool_ramming_volume": [
+        "1"
+    ],
+    "filament_retract_length_toolchange": [
+        "4"
+    ],
+    "filament_retraction_length": [
+        "1.5"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "nozzle_temperature": [
+        "220"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "220"
+    ]
+}

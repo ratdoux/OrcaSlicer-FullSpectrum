@@ -1836,6 +1836,16 @@ void NotificationManager::push_validate_error_notification(StringObjectException
 	set_slicing_progress_hidden();
 }
 
+void NotificationManager::close_validate_error_notification(const std::string& text)
+{
+    close_notification_of_type_and_text(NotificationType::ValidateError, _u8L("Error:") + "\n" + text);
+}
+
+void NotificationManager::close_validate_warning_notification(const std::string& text)
+{
+    close_notification_of_type_and_text(NotificationType::ValidateWarning, _u8L("WARNING:") + "\n" + text);
+}
+
 void NotificationManager::push_slicing_error_notification(const std::string &text, std::vector<ModelObject const *> objs)
 {
     std::vector<ObjectID> ids;
@@ -2003,6 +2013,16 @@ void NotificationManager::close_notification_of_type(const NotificationType type
 		}
 	}
 }
+
+void NotificationManager::close_notification_of_type_and_text(const NotificationType type, const std::string& text)
+{
+    for (std::unique_ptr<PopNotification>& notification : m_pop_notifications)
+    {
+        if (notification->get_type() == type && notification->compare_text(text))
+            notification->close();
+    }
+}
+
 void NotificationManager::remove_slicing_warnings_of_released_objects(const std::vector<ObjectID>& living_oids)
 {
 	for (std::unique_ptr<PopNotification> &notification : m_pop_notifications)

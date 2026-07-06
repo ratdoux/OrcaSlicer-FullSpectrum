@@ -392,9 +392,24 @@ static const t_config_enum_values s_keys_map_BedType = {
     { "Engineering Plate",  btEP  },
     { "High Temp Plate",    btPEI  },
     { "Textured PEI Plate", btPTE },
-    { "Textured Cool Plate", btPCT }
+    { "Textured Cool Plate", btPCT },
+    // Canonical name for btGESP (UI: "Graphic Effect Plate"). Keep legacy string so old projects/3MF still deserialize.
+    { "Graphic Effect Plate", btGESP },
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(BedType)
+
+namespace {
+// Two keys map to btGESP; enum_names_from_keys_map assigns the lexicographically last key to names[btGESP].
+// Force the canonical string used by serialize() / 3MF export.
+struct BedTypeGespCanonicalSerializeName
+{
+    BedTypeGespCanonicalSerializeName()
+    {
+        if (s_keys_names_BedType.size() > size_t(btGESP))
+            s_keys_names_BedType[size_t(btGESP)] = "Graphic Effect Plate";
+    }
+} s_bed_type_gesp_canonical_serialize_name;
+} // namespace
 
 // BBS
 static const t_config_enum_values s_keys_map_LayerSeq = {
@@ -761,6 +776,16 @@ void PrintConfigDef::init_fff_params()
     def->max = 300;
     def->set_default_value(new ConfigOptionInts{45});
 
+    def             = this->add("graphic_effect_plate_temp", coInts);
+    def->label      = L("Other layers");
+    def->tooltip    = L("Bed temperature for layers except the initial one. "
+                           "A value of 0 means the filament does not support printing on the Graphic Effect Plate.");
+    def->sidetext   = u8"\u2103" /* °C */; // degrees Celsius, don't need translation
+    def->full_label = L("Bed temperature");
+    def->min        = 0;
+    def->max        = 300;
+    def->set_default_value(new ConfigOptionInts{0});
+
     def = this->add("supertack_plate_temp_initial_layer", coInts);
     def->label = L("Initial layer");
     def->full_label = L("Initial layer bed temperature");
@@ -820,6 +845,16 @@ void PrintConfigDef::init_fff_params()
     def->max = 300;
     def->set_default_value(new ConfigOptionInts{45});
 
+    def             = this->add("graphic_effect_plate_temp_initial_layer", coInts);
+    def->label      = L("Initial layer");
+    def->full_label = L("Initial layer bed temperature");
+    def->tooltip    = L("Bed temperature of the initial layer. "
+                           "A value of 0 means the filament does not support printing on the Graphic Effect Plate.");
+    def->sidetext   = u8"\u2103" /* °C */; // degrees Celsius, don't need translation
+    def->min        = 0;
+    def->max        = 300;
+    def->set_default_value(new ConfigOptionInts{0});
+
     def = this->add("curr_bed_type", coEnum);
     def->label = L("Bed type");
     def->tooltip = L("Bed types supported by the printer.");
@@ -838,6 +873,28 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.emplace_back(L("Textured PEI Plate"));
     def->enum_labels.emplace_back(L("Textured Cool Plate"));
     def->enum_labels.emplace_back(L("Cool Plate (SuperTack)"));
+    // U1 only 3
+    def->enum_values_u1.emplace_back("Textured PEI Plate");
+    def->enum_values_u1.emplace_back("High Temp Plate");
+    def->enum_values_u1.emplace_back("Graphic Effect Plate");
+    def->enum_labels_u1.emplace_back(L("Textured PEI Plate"));
+    def->enum_labels_u1.emplace_back(L("Smooth PEI Plate"));
+    def->enum_labels_u1.emplace_back(L("Graphic Effect Plate"));
+    // U1 use 7 when open support_multi_bed_types
+    def->enum_values_ex.emplace_back("Cool Plate");
+    def->enum_values_ex.emplace_back("Engineering Plate");
+    def->enum_values_ex.emplace_back("High Temp Plate");
+    def->enum_values_ex.emplace_back("Textured PEI Plate");
+    def->enum_values_ex.emplace_back("Textured Cool Plate");
+    def->enum_values_ex.emplace_back("Supertack Plate");
+    def->enum_values_ex.emplace_back("Graphic Effect Plate");
+    def->enum_labels_ex.emplace_back(L("Smooth Cool Plate"));
+    def->enum_labels_ex.emplace_back(L("Engineering Plate"));
+    def->enum_labels_ex.emplace_back(L("Smooth PEI Plate"));
+    def->enum_labels_ex.emplace_back(L("Textured PEI Plate"));
+    def->enum_labels_ex.emplace_back(L("Textured Cool Plate"));
+    def->enum_labels_ex.emplace_back(L("Cool Plate (SuperTack)"));
+    def->enum_labels_ex.emplace_back(L("Graphic Effect Plate"));
     def->set_default_value(new ConfigOptionEnum<BedType>(btPC));
 
     // Orca: allow profile maker to set default bed type in machine profile
@@ -2003,6 +2060,22 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionStrings{ "#F2754E" });
 
+    def = this->add("filament_multi_colors", coStrings);
+    def->label = L("Filament multi colors");
+    def->tooltip = L("Serialized filament color sequence. Multiple colors are separated by '|'.");
+    def->mode = comAdvanced;
+    def->cli = ConfigOptionDef::nocli;
+    def->set_default_value(new ConfigOptionStrings{ "" });
+
+    def = this->add("filament_colour_mode", coInts);
+    def->label = L("Filament color display mode");
+    def->tooltip = L("Filament color display mode: 0 for split colors, 1 for gradient.");
+    def->mode = comAdvanced;
+    def->cli = ConfigOptionDef::nocli;
+    def->min = 0;
+    def->max = 1;
+    def->set_default_value(new ConfigOptionInts{ 0 });
+
     def           = this->add("thumb0", coStrings);
     def->label    = L("small thumb");
     def->tooltip  = L("first small thumb");
@@ -2333,6 +2406,12 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("Support material is commonly used to print supports and support interfaces.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBools { false });
+
+    def          = this->add("filament_is_high_temperature", coBools);
+    def->label   = L("Is high-temperature filament");
+    def->tooltip = L("Indicates whether this is a high-temperature filament that requires elevated printing temperatures.");
+    def->mode    = comSimple;
+    def->set_default_value(new ConfigOptionBools{false});
 
     // BBS
     def = this->add("temperature_vitrification", coInts);
@@ -5433,7 +5512,7 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("Support layer uses layer height independent with object layer. This is to support customizing z-gap and save print time. "
                      "This option will be invalid when the prime tower is enabled.");
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionBool(true));
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("support_threshold_angle", coInt);
     def->label = L("Threshold angle");
@@ -5945,13 +6024,8 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionFloat(30.0));
     
     def = this->add("wipe_tower_max_purge_speed", coFloat);
-    def->label = L("Maximum wipe tower print speed");
-    def->tooltip = L("The maximum print speed when purging in the wipe tower and printing the wipe tower sparse layers. "
-                     "When purging, if the sparse infill speed or calculated speed from the filament max volumetric speed is lower, the lowest will be used instead.\n\n"
-                     "When printing the sparse layers, if the internal perimeter speed or calculated speed from the filament max volumetric speed is lower, the lowest will be used instead.\n\n"
-                     "Increasing this speed may affect the tower's stability as well as increase the force with which the nozzle collides with any blobs that may have formed on the wipe tower.\n\n"
-                     "Before increasing this parameter beyond the default of 90 mm/s, make sure your printer can reliably bridge at the increased speeds and that ooze when tool changing is well controlled.\n\n"
-                     "For the wipe tower external perimeters the internal perimeter speed is used regardless of this setting.");
+    def->label = L("Maximum wipe tower print speed of out wall");
+    def->tooltip = L("Maximum wipe tower print speed of out wall.");
     def->sidetext = "mm/s";	// milimeters per second, don't need translation
     def->mode = comAdvanced;
     def->min = 10;
@@ -5996,7 +6070,6 @@ void PrintConfigDef::init_fff_params()
     def->mode    = comAdvanced;
     def->set_default_value(new ConfigOptionBool(true));
 
-
     def = this->add("wipe_tower_filament", coInt);
     def->gui_type = ConfigOptionDef::GUIType::i_enum_open;
     def->label = L("Wipe tower");
@@ -6006,6 +6079,14 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionInt(0));
+
+    def          = this->add("wipe_tower_wall_gap", coBool);
+    def->label   = L("Wall gap");
+    def->tooltip = L("Create small gaps in the wipe tower outer wall at tool change entry points. "
+                     "The first extrusion path after a filament change will enter through the gap, "
+                     "leaving the filament blob on the gap edge instead of on the outer wall surface.");
+    def->mode    = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("wiping_volumes_extruders", coFloats);
     def->label = L("Purging volumes - load/unload volumes");
@@ -6083,6 +6164,14 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->max = max_temp;
     def->set_default_value(new ConfigOptionInts{0});
+
+    def = this->add("filament_tower_ironing_area", coFloats);
+    def->label = L("Tower ironing area");
+    def->tooltip = L("Ironing area for prime tower interface layer (where different materials meet).");
+    def->sidetext = L("mm²");
+    def->min = 0;
+    def->mode = comDevelop;
+    def->set_default_value(new ConfigOptionFloats{4.});
 
     def = this->add("xy_hole_compensation", coFloat);
     def->label = L("X-Y hole compensation");
@@ -6372,6 +6461,7 @@ void PrintConfigDef::init_filament_option_keys()
         "retraction_length", "z_hop", "z_hop_types", "retract_lift_above", "retract_lift_below", "retract_lift_enforce", "retraction_speed", "deretraction_speed",
         "retract_before_wipe", "retract_restart_extra", "retraction_minimum_travel", "wipe", "wipe_distance",
         "retract_when_changing_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "filament_colour",
+        "filament_multi_colors", "filament_colour_mode",
         "default_filament_profile","retraction_distances_when_cut","long_retractions_when_cut"/*,"filament_seam_gap"*/
     };
 
@@ -7113,7 +7203,7 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         }
     } else if (opt_key == "overhang_fan_threshold" && value == "5%") {
         value = "10%";
-    } else if( opt_key == "wall_infill_order" ) {
+    }else if( opt_key == "wall_infill_order" ) {
         if (value == "inner wall/outer wall/infill" || value == "infill/inner wall/outer wall") {
             opt_key = "wall_sequence";
             value = "inner wall/outer wall";

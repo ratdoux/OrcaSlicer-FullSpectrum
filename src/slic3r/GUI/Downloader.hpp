@@ -31,7 +31,8 @@ enum DownloaderUserAction
 
 class Download { 
 public:
-    Download(int ID, std::string url, wxEvtHandler* evt_handler, const boost::filesystem::path& dest_folder);
+    Download(int ID, std::string url, wxEvtHandler* evt_handler, const boost::filesystem::path& dest_folder,
+             const std::string& preferred_filename = std::string());
     void start();
     void cancel();
     void pause();

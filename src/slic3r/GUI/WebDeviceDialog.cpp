@@ -16,7 +16,7 @@ END_EVENT_TABLE()
 WebDeviceDialog::WebDeviceDialog()
     : wxDialog((wxWindow*)(wxGetApp().mainframe), wxID_ANY, _L("Add Device"))
 {
-    m_device_url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) +
+    m_device_url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(wxGetApp().get_page_http_port()) +
                    "/web/flutter_web/index.html?path=discovery");
 
     SetBackgroundColour(*wxWHITE);
@@ -123,10 +123,10 @@ void WebDeviceDialog::OnError(wxWebViewEvent &evt)
 
 void WebDeviceDialog::OnScriptMessage(wxWebViewEvent &evt)
 {
-    BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
+    // BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
 
-    if (wxGetApp().get_mode() == comDevelop)
-        wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
+    // if (wxGetApp().get_mode() == comDevelop)
+    //     wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);

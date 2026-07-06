@@ -28,11 +28,12 @@
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>Snapmaker_Orcaopen url</string>
+      <string>Snapmaker Orca Open URL</string>
       <key>CFBundleURLSchemes</key>
       <array>
         <string>Snapmaker_Orcaopen</string>
         <string>Snapmaker_Orca</string>
+        <string>snapmaker-orca</string>
       </array>
     </dict>
   </array>

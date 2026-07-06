@@ -139,6 +139,10 @@ public:
 
     virtual void async_start_cloud_print(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
 
+    virtual void async_start_local_print(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
+
+    virtual void async_machine_heartbeat(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
+
     virtual void async_cancel_pull_cloud_file(std::function<void(const nlohmann::json& response)>) {}
 
     virtual void async_set_device_name(const std::string& device_name, std::function<void(const nlohmann::json& response)>) {}
@@ -150,6 +154,8 @@ public:
     virtual void async_bedmesh_abort_probe_mesh(std::function<void(const nlohmann::json& response)>) {}
 
     virtual void async_controlPurifier(int fan_speed, int delay_time, int work_time, std::function<void(const nlohmann::json& response)>) {}
+
+    virtual void async_controlPurifier(const nlohmann::json& params, std::function<void(const nlohmann::json& response)> callback) {}
 
     virtual void async_control_main_fan(int speed, std::function<void(const nlohmann::json& response)>) {}
 

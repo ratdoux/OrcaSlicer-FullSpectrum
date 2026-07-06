@@ -2850,6 +2850,12 @@ msgstr ""
 msgid "Confirm"
 msgstr ""
 
+msgid "Confirm slicing"
+msgstr ""
+
+msgid "This material combination may cause risks. Do you want to continue?"
+msgstr ""
+
 msgid "Close"
 msgstr ""
 
@@ -8125,6 +8131,12 @@ msgid "Append all"
 msgstr ""
 
 msgid "Add all clustered colors after the existing filaments."
+msgstr ""
+
+msgid "Keep color"
+msgstr ""
+
+msgid "Add this cluster color as a new filament."
 msgstr ""
 
 msgid "Keep color"
@@ -16250,7 +16262,7 @@ msgstr ""
 msgid "Snapmaker Orca integrates some features from the 3D printing open-source community, with specific attributions provided in the code comments."
 msgstr "
 
-msgid "Snapmaker Orca is licensed under the GNU Affero Generall Public License, version 3."
+msgid "Snapmaker Orca is licensed under the GNU Affero General Public License, version 3."
 msgstr ""
 
 msgid "OrcaSlicer is forked from Bambu Studio by Bambu Lab."

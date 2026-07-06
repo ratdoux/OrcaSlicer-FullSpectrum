@@ -1,39 +1,59 @@
-#!/bin/sh
+#!/usr/bin/env bash
 APPIMAGETOOLURL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$(uname -m).AppImage"
-
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# build_appimage.sh is generated under top-level CMake binary dir (e.g. ./build)
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 APP_IMAGE="@SLIC3R_APP_KEY@_Linux_V@Snapmaker_VERSION@.AppImage"
 
 wget ${APPIMAGETOOLURL} -O ../appimagetool.AppImage
 chmod +x ../appimagetool.AppImage
 
-if [ -f /.dockerenv ] ; then # Only run if inside of a Docker Container
-sed '0,/AI\x02/{s|AI\x02|\x00\x00\x00|}' -i  ../appimagetool.AppImage
+if [ -f /.dockerenv ]; then
+    sed '0,/AI\x02/{s|AI\x02|\x00\x00\x00|}' -i ../appimagetool.AppImage
 fi
 
-sed -i -e 's#/usr#././#g' bin/@SLIC3R_APP_CMD@
 mv @SLIC3R_APP_CMD@ AppRun
 chmod +x AppRun
 
 cp resources/images/@SLIC3R_APP_KEY@_192px.png @SLIC3R_APP_KEY@.png
 mkdir -p usr/share/icons/hicolor/192x192/apps
 cp resources/images/@SLIC3R_APP_KEY@_192px.png usr/share/icons/hicolor/192x192/apps/@SLIC3R_APP_KEY@.png
-cat <<EOF > @SLIC3R_APP_KEY@.desktop
+
+cat >io.github.Snapmaker.Snapmaker_Orca.desktop <<EOF
 [Desktop Entry]
-Name=@SLIC3R_APP_KEY@
+Name=Snapmaker Orca
 Exec=AppRun %F
 Icon=@SLIC3R_APP_KEY@
 Type=Application
-Categories=Utility;
-MimeType=model/stl;application/vnd.ms-3mfdocument;application/prs.wavefront-obj;application/x-amf;
+PrefersNonDefaultGPU=true
+X-KDE-RunOnDiscreteGpu=true
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=model/stl;model/3mf;application/vnd.ms-3mfdocument;application/prs.wavefront-obj;application/x-amf;
 EOF
 
+mkdir -p usr/share/applications
+cp io.github.Snapmaker.Snapmaker_Orca.desktop usr/share/applications/
 
-if [ -f /.dockerenv ] ; then # Only run if inside of a Docker Container
-  ../appimagetool.AppImage --appimage-extract-and-run . $([ ! -z "${container}" ] && echo '--appimage-extract-and-run')
+mkdir -p usr/share/metainfo
+META_SRC="${REPO_ROOT}/scripts/flatpak/io.github.Snapmaker.Snapmaker_Orca.metainfo.xml"
+if [[ ! -f "${META_SRC}" ]]; then
+    echo "Error: missing ${META_SRC}"
+    exit 1
+fi
+cp "${META_SRC}" usr/share/metainfo/io.github.Snapmaker.Snapmaker_Orca.metainfo.xml
+cp "${META_SRC}" usr/share/metainfo/io.github.Snapmaker.Snapmaker_Orca.appdata.xml
+
+export ARCH=$(uname -m)
+
+# Write into cwd (package_appimage); build_linux_image.sh moves it to the CMake build dir.
+OUT="${APP_IMAGE}"
+rm -f "${OUT}"
+
+if [ -f /.dockerenv ]; then
+    ../appimagetool.AppImage --appimage-extract-and-run . "${OUT}" $([ -n "${container}" ] && echo '--appimage-extract-and-run')
 else
-  ../appimagetool.AppImage . $([ ! -z "${container}" ] && echo '--appimage-extract-and-run')
+    ../appimagetool.AppImage . "${OUT}" $([ -n "${container}" ] && echo '--appimage-extract-and-run')
 fi
 
-mv @SLIC3R_APP_KEY@-$(uname -m).AppImage ${APP_IMAGE}
-chmod +x ${APP_IMAGE}
+chmod +x "${OUT}"

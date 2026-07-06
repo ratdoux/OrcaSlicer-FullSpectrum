@@ -301,9 +301,10 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
 	fs::path ph(data_dir());
 	ph /= "resources/tooltip/releasenote.html";
 	if (!fs::exists(ph)) {
-		ph = resources_dir();
-		ph /= "tooltip/releasenote.html";
+		ph = fs::path(resources_dir()) / "tooltip/releasenote.html";
 	}
+	// Make absolute to get proper "C:/..." prefix for file:// URL
+	ph = fs::absolute(ph);
 	auto url = ph.string();
 	std::replace(url.begin(), url.end(), '\\', '/');
 	url = "file:///" + url;
@@ -459,7 +460,7 @@ void UpdateVersionDialog::OnError(wxWebViewEvent& event)
     case wxWEBVIEW_NAV_ERR_USER_CANCELLED: e = "wxWEBVIEW_NAV_ERR_USER_CANCELLED"; break;
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
-    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":UpdateVersionDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e %event.GetString();
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__<< boost::format(":UpdateVersionDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e %event.GetString();
     event.Skip();
 }
 

@@ -865,7 +865,7 @@ public:
                 m_extrusions.role_visibility_flags = m_extrusions.role_visibility_flags | (1 << role);
             }
         } else if (type == EViewType::ColorPrint){
-            for(auto item: m_tools.m_tool_visibles) item = true;
+            m_tools.m_tool_visibles.assign(m_tools.m_tool_visibles.size(), true);
         }
     }
 

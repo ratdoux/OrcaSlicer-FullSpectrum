@@ -1,0 +1,61 @@
+{
+    "type": "filament",
+    "name": "Snapmaker TPU 90A @U1 0.8 nozzle",
+    "inherits": "fdm_filament_tpu_generic",
+    "from": "system",
+    "filament_id": "GFU99",
+    "setting_id": "GFSR99",
+    "instantiation": "true",
+    "filament_max_volumetric_speed": ["3.5"],
+    "compatible_printers": [
+        "Snapmaker U1 (0.8 nozzle)"
+    ],
+    "filament_start_gcode": [
+        "; filament start gcode\n"
+    ],
+    "filament_end_gcode": [
+        "; filament end gcode \n\n"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_volume": [
+        "0.1"
+    ],
+    "pressure_advance": ["0.02"],
+    "additional_cooling_fan_speed": ["70"],
+    "complete_print_exhaust_fan_speed": ["70"],
+    "during_print_exhaust_fan_speed": ["70"],
+    "enable_pressure_advance": ["0"],
+    "filament_deretraction_speed": ["20"],
+    "filament_flow_ratio": ["1.095"],
+    "filament_multitool_ramming_flow": [
+        "5"
+    ],
+    "filament_retract_length_toolchange": [
+        "4"
+    ],
+    "filament_retraction_length": [
+        "1.2"
+    ],
+    "filament_retraction_speed": ["20"],
+    "filament_settings_id": [
+        "TPU 90A"
+    ],
+    "filament_vendor": [
+        "Snapmaker"
+    ],
+    "nozzle_temperature": ["220"],
+    "nozzle_temperature_initial_layer": ["220"],
+    "slow_down_layer_time": [
+        "14"
+    ],
+    "graphic_effect_plate_temp": [
+        "35"
+    ],
+    "graphic_effect_plate_temp_initial_layer": [
+        "35"
+    ],
+    "nozzle_temperature_range_high": ["240"],
+    "filament_z_hop_types": ["Slope Lift"]
+}

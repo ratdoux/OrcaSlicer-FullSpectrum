@@ -15,6 +15,7 @@
 #include "GCode/WipeTower.hpp"
 #include "GCode/WipeTower2.hpp"
 #include "ShortestPath.hpp"
+#include "MixedFilament.hpp"
 #include "Print.hpp"
 #include "Utils.hpp"
 #include "ClipperUtils.hpp"
@@ -837,11 +838,7 @@ std::string WipeTowerIntegration::post_process_wipe_tower_moves(const WipeTower:
                                                                 const Vec2f&                       translation,
                                                                 float                              angle) const
 {
-    Vec2f extruder_offset;
-    if (m_single_extruder_multi_material)
-        extruder_offset = m_extruder_offsets[0].cast<float>();
-    else
-        extruder_offset = m_extruder_offsets[tcr.initial_tool].cast<float>();
+    Vec2f extruder_offset = extruder_offset_at(tcr.initial_tool).cast<float>();
 
     std::istringstream gcode_str(tcr.gcode);
     std::string        gcode_out;
@@ -893,6 +890,9 @@ std::string WipeTowerIntegration::post_process_wipe_tower_moves(const WipeTower:
                 line.replace(line.find(cur_gcode_start), 3, oss.str());
                 old_pos = transformed_pos;
             }
+            else {
+                line = line_out.str();
+            }
         }
 
         gcode_out += line + "\n";
@@ -901,10 +901,10 @@ std::string WipeTowerIntegration::post_process_wipe_tower_moves(const WipeTower:
         if (line == "[change_filament_gcode]") {
             // BBS
             if (!m_single_extruder_multi_material) {
-                extruder_offset = m_extruder_offsets[tcr.new_tool].cast<float>();
+                extruder_offset = extruder_offset_at(tcr.new_tool).cast<float>();
 
                 // If the extruder offset changed, add an extra move so everything is continuous
-                if (extruder_offset != m_extruder_offsets[tcr.initial_tool].cast<float>()) {
+                if (extruder_offset != extruder_offset_at(tcr.initial_tool).cast<float>()) {
                     std::ostringstream oss;
                     oss << std::fixed << std::setprecision(3) << "G1 X" << transformed_pos.x() - extruder_offset.x() << " Y"
                         << transformed_pos.y() - extruder_offset.y() << "\n";
@@ -914,6 +914,19 @@ std::string WipeTowerIntegration::post_process_wipe_tower_moves(const WipeTower:
         }
     }
     return gcode_out;
+}
+
+Vec2d WipeTowerIntegration::extruder_offset_at(size_t extruder_id) const
+{
+    if (m_single_extruder_multi_material) {
+        return m_extruder_offsets[0];
+    } else {
+        // If the extruder_id is out of range, we return the offset of the first extruder. 
+        if (extruder_id >= m_extruder_offsets.size())
+            return m_extruder_offsets[0];
+        else
+            return m_extruder_offsets[extruder_id];
+    }
 }
 
 std::string WipeTowerIntegration::prime(GCode& gcodegen)
@@ -1253,6 +1266,8 @@ std::string WipeTowerIntegration::tool_change(GCode& gcodegen, int extruder_id, 
 
     return gcode;
 }
+
+
 
 bool WipeTowerIntegration::is_empty_wipe_tower_gcode(GCode& gcodegen, int extruder_id, bool finish_layer)
 {
@@ -2616,9 +2631,24 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
     {
         int curr_bed_type = m_config.curr_bed_type.getInt();
 
-        std::string             first_layer_bed_temp_str;
-        const ConfigOptionInts* first_bed_temp_opt = m_config.option<ConfigOptionInts>(get_bed_temp_1st_layer_key((BedType) curr_bed_type));
-        const ConfigOptionInts* bed_temp_opt       = m_config.option<ConfigOptionInts>(get_bed_temp_key((BedType) curr_bed_type));
+        std::string first_layer_bed_temp_str;
+        const BedType curr_bed = static_cast<BedType>(curr_bed_type);
+        // Some bed types (for example newly added btGESP) may not have dedicated temp options in old presets.
+        // Fallback to PEI temps to avoid null-dereference during slicing placeholder setup.
+        const std::string first_bed_temp_key = get_bed_temp_1st_layer_key(curr_bed).empty() ? get_bed_temp_1st_layer_key(btPEI) : get_bed_temp_1st_layer_key(curr_bed);
+        const std::string bed_temp_key       = get_bed_temp_key(curr_bed).empty() ? get_bed_temp_key(btPEI) : get_bed_temp_key(curr_bed);
+        const ConfigOptionInts* first_bed_temp_opt = m_config.option<ConfigOptionInts>(first_bed_temp_key);
+        const ConfigOptionInts* bed_temp_opt       = m_config.option<ConfigOptionInts>(bed_temp_key);
+        ConfigOptionInts        safe_zero_bed_temp({ 0 });
+        if (first_bed_temp_opt == nullptr || bed_temp_opt == nullptr) {
+            first_bed_temp_opt = m_config.option<ConfigOptionInts>(get_bed_temp_1st_layer_key(btPEI));
+            bed_temp_opt       = m_config.option<ConfigOptionInts>(get_bed_temp_key(btPEI));
+        }
+        if (first_bed_temp_opt == nullptr || bed_temp_opt == nullptr) {
+            BOOST_LOG_TRIVIAL(error) << "Missing bed temperature options for current bed type, using safe zero placeholders.";
+            first_bed_temp_opt = &safe_zero_bed_temp;
+            bed_temp_opt       = &safe_zero_bed_temp;
+        }
         this->placeholder_parser().set("bbl_bed_temperature_gcode", new ConfigOptionBool(false));
         this->placeholder_parser().set("bed_temperature_initial_layer", new ConfigOptionInts(*first_bed_temp_opt));
         this->placeholder_parser().set("bed_temperature", new ConfigOptionInts(*bed_temp_opt));
@@ -2668,6 +2698,29 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
             this->placeholder_parser().set("scan_first_layer", new ConfigOptionBool(false));
         }
     }
+
+    // Compute chamber cooling mode based on all filaments used on this plate.
+    constexpr int kChamberCoolingKeepWarm  = 0;
+    constexpr int kChamberCoolingWeak      = 1;
+    constexpr int kChamberCoolingStrong    = 2;
+    constexpr int kVitrificationStrongCool = 50;  // <= 50: trigger strong cooling
+    constexpr int kVitrificationWeakCool   = 70;  // <= 70: trigger weak cooling (and > 50)
+    {
+        int chamber_cooling_mode = kChamberCoolingKeepWarm;
+        for (unsigned int extruder : tool_ordering.all_extruders()) {
+            if (!m_config.filament_is_high_temperature.get_at(extruder)) {
+                int vitrification = m_config.temperature_vitrification.get_at(extruder);
+                if (vitrification <= kVitrificationStrongCool) {
+                    chamber_cooling_mode = kChamberCoolingStrong;
+                    break;
+                } else if (vitrification <= kVitrificationWeakCool) {
+                    chamber_cooling_mode = kChamberCoolingWeak;
+                }
+            }
+        }
+        this->placeholder_parser().set("chamber_cooling_mode", new ConfigOptionInt(chamber_cooling_mode));
+    }
+
     std::string machine_start_gcode = this->placeholder_parser_process("machine_start_gcode", print.config().machine_start_gcode.value,
                                                                        initial_extruder_id);
     if (print.config().gcode_flavor != gcfKlipper) {

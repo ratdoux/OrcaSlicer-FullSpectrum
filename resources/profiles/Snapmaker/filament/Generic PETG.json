@@ -24,7 +24,7 @@
         ""
     ],
     "enable_pressure_advance": [
-        "1"
+        "0"
     ],
     "filament_multitool_ramming": [
         "1"
@@ -73,5 +73,6 @@
     ],
     "slow_down_min_speed": [
         "20"
-    ]
+    ],
+    "filament_is_high_temperature": ["0"]
 }

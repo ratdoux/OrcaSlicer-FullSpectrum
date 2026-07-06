@@ -149,37 +149,31 @@ void FileGet::priv::get_perform()
 		std::string just_filename = m_filename.substr(0, m_filename.size() - extension.size());
 		std::string final_filename = just_filename;
         // Find unsed filename 
-		try {
-			size_t version = 0;
-			while (boost::filesystem::exists(m_dest_folder / (final_filename + extension)) || boost::filesystem::exists(m_dest_folder / (final_filename + extension + "." + std::to_string(get_current_pid()) + ".download")))
-			{
-				++version;
-				if (version > 999) {
-					wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_ERROR);
-					evt->SetString(GUI::format_wxstr(L"Failed to find suitable filename. Last name: %1%." , (m_dest_folder / (final_filename + extension)).string()));
-					evt->SetInt(m_id);
-					m_evt_handler->QueueEvent(evt);
-					return;
-				}
-				final_filename = GUI::format("%1%(%2%)", just_filename, std::to_string(version));
-			}
-		} catch (const boost::filesystem::filesystem_error& e)
+
+		size_t version = 0;
+		while (boost::filesystem::exists(m_dest_folder / (final_filename + extension)) || boost::filesystem::exists(m_dest_folder / (final_filename + extension + "." + std::to_string(get_current_pid()) + ".download")))
 		{
-			wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_ERROR);
-			evt->SetString(e.what());
-			evt->SetInt(m_id);
-			m_evt_handler->QueueEvent(evt);
-			return;
+			++version;
+			if (version > 999)
+			{
+				wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_ERROR);
+				evt->SetString(GUI::format_wxstr(L"Failed to find suitable filename. Last name: %1%." , (m_dest_folder / (final_filename + extension)).string()));
+				evt->SetInt(m_id);
+				m_evt_handler->QueueEvent(evt);
+				return;
+			}
+			final_filename = GUI::format("%1%(%2%)", just_filename, std::to_string(version));
 		}
 
         m_filename = sanitize_filename(final_filename + extension);
 
         m_tmp_path = m_dest_folder / (m_filename + "." + std::to_string(get_current_pid()) + ".download");
 
-		wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_NAME_CHANGE);
-		evt->SetString(boost::nowide::widen(m_filename));
-		evt->SetInt(m_id);
-		m_evt_handler->QueueEvent(evt);
+		//the signals not work
+		//wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_NAME_CHANGE);
+		//evt->SetString(boost::nowide::widen(m_filename));
+		//evt->SetInt(m_id);
+		//m_evt_handler->QueueEvent(evt);
 	}
 	
 	boost::filesystem::path dest_path;
@@ -188,19 +182,21 @@ void FileGet::priv::get_perform()
 
 	wxString temp_path_wstring(m_tmp_path.wstring());
 	
-	//std::cout << "dest_path: " << dest_path.string() << std::endl;
-	//std::cout << "m_tmp_path: " << m_tmp_path.string() << std::endl;
-	
 	BOOST_LOG_TRIVIAL(info) << GUI::format("Starting download from %1% to %2%. Temp path is %3%",m_url, dest_path, m_tmp_path);
 
 	FILE* file;
 	// open file for writting
 	if (m_written == 0)
-		file = fopen(temp_path_wstring.c_str(), "wb");
+#ifndef __WIN32__
+        file = fopen(temp_path_wstring.c_str(), "wb");
 	else 
 		file = fopen(temp_path_wstring.c_str(), "ab");
+#else
+		file = _wfopen(temp_path_wstring.c_str(), L"wb");
+    else 
+		file = _wfopen(temp_path_wstring.c_str(), L"ab");
+#endif	
 
-	//assert(file != NULL);
 	if (file == NULL) {
 		wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_ERROR);
 		// TRN %1% = file path
@@ -223,10 +219,11 @@ void FileGet::priv::get_perform()
 				if (!filename.empty()) {
 					m_filename = filename;
 					dest_path = m_dest_folder / m_filename;
-					wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_NAME_CHANGE);
-					evt->SetString(boost::nowide::widen(m_filename));
-					evt->SetInt(m_id);
-					m_evt_handler->QueueEvent(evt);
+					//the signals not work
+					//wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_NAME_CHANGE);
+					//evt->SetString(boost::nowide::widen(m_filename));
+					//evt->SetInt(m_id);
+					//m_evt_handler->QueueEvent(evt);
 				}
 			}
 		})
@@ -267,21 +264,10 @@ void FileGet::priv::get_perform()
 
 			if (progress.dlnow != 0) {
 			if (progress.dlnow - written_this_session > DOWNLOAD_MAX_CHUNK_SIZE || progress.dlnow == progress.dltotal) {
-					try
-					{
-						std::string part_for_write = progress.buffer.substr(written_this_session, progress.dlnow);
-						fwrite(part_for_write.c_str(), 1, part_for_write.size(), file);
-					}
-					catch (const std::exception& e)
-					{
-						// fclose(file); do it?
-						wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_ERROR);
-						evt->SetString(e.what());
-						evt->SetInt(m_id);
-						m_evt_handler->QueueEvent(evt);
-						cancel = true;
-						return;
-					}
+
+					std::string part_for_write = progress.buffer.substr(written_this_session, progress.dlnow);
+					fwrite(part_for_write.c_str(), 1, part_for_write.size(), file);
+
 					written_this_session = progress.dlnow;
 					m_written = written_previously + written_this_session;
 				}
@@ -306,39 +292,20 @@ void FileGet::priv::get_perform()
 		})
 		.on_complete([&](std::string body, unsigned /* http_status */) {
 
-			// TODO: perform a body size check
-			// 
-			//size_t body_size = body.size();
-			//if (body_size != expected_size) {
-			//	return;
-			//}
-			try
+			// Orca: thingiverse need this
+			if (m_written < body.size())
 			{
-				// Orca: thingiverse need this
-				if (m_written < body.size())
-				{
-					// this code should never be entered. As there should be on_progress call after last bit downloaded.
-					std::string part_for_write = body.substr(m_written);
-					fwrite(part_for_write.c_str(), 1, part_for_write.size(), file);
+				// this code should never be entered. As there should be on_progress call after last bit downloaded.
+				std::string part_for_write = body.substr(m_written);
+				fwrite(part_for_write.c_str(), 1, part_for_write.size(), file);
 
-                    wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_PROGRESS);
-                    evt->SetString(std::to_string(100));
-                    evt->SetInt(m_id);
-                    m_evt_handler->QueueEvent(evt);
-                }
-				fclose(file);
-				boost::filesystem::rename(m_tmp_path, dest_path);
-			}
-			catch (const std::exception& /*e*/)
-			{
-				//TODO: report?
-				//error_message = GUI::format("Failed to write and move %1% to %2%", tmp_path, dest_path);
-				wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_ERROR);
-				evt->SetString("Failed to write and move.");
-				evt->SetInt(m_id);
-				m_evt_handler->QueueEvent(evt);
-				return;
-			}
+                wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_PROGRESS);
+                evt->SetString(std::to_string(100));
+                evt->SetInt(m_id);
+                m_evt_handler->QueueEvent(evt);
+            }
+			fclose(file);
+			boost::filesystem::rename(m_tmp_path, dest_path);
 
 			wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_COMPLETE);
 			evt->SetString(dest_path.wstring());

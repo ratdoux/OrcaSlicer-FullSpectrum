@@ -99,6 +99,16 @@ void Polygon::douglas_peucker(double tolerance)
     this->points = std::move(p);
 }
 
+void Polygon::round_to_grid(double grid_size)
+{
+    if (grid_size <= 0.)
+        return;
+    for (Point &p : this->points) {
+        p.x() = coord_t(std::round(double(p.x()) / grid_size) * grid_size);
+        p.y() = coord_t(std::round(double(p.y()) / grid_size) * grid_size);
+    }
+}
+
 Polygons Polygon::simplify(double tolerance) const
 {
     // Works on CCW polygons only, CW contour will be reoriented to CCW by Clipper's simplify_polygons()!

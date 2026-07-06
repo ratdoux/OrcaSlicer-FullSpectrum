@@ -534,9 +534,18 @@ bool GLTexture::generate_from_text(const std::string &text_str, wxFont &font, wx
     glsafe(::glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
     glsafe(::glGenTextures(1, &m_id));
     glsafe(::glBindTexture(GL_TEXTURE_2D, (GLuint)m_id));
-    if (OpenGLManager::are_compressed_textures_supported())
-        glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, (GLsizei)m_width, (GLsizei)m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, (const void*)data.data()));
-    else
+    if (OpenGLManager::are_compressed_textures_supported()) {
+        constexpr size_t kDxt5BlockPixels = 4u;  // DXT5 4×4 pixel blocks
+        constexpr size_t kDxt5BlockBytes  = 16u; // Each block is 16 bytes
+        size_t dxt5_blocks = ((static_cast<size_t>(m_width)  + kDxt5BlockPixels - 1u) / kDxt5BlockPixels)
+                           * ((static_cast<size_t>(m_height) + kDxt5BlockPixels - 1u) / kDxt5BlockPixels);
+        std::vector<unsigned char> compressed(dxt5_blocks * kDxt5BlockBytes, 0);
+        int compressed_size = 0;
+        rygCompress(compressed.data(), data.data(), m_width, m_height, 1, compressed_size);
+        compressed.resize(compressed_size);
+        glsafe(::glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+            (GLsizei)m_width, (GLsizei)m_height, 0, compressed_size, compressed.data()));
+    } else
         glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)m_width, (GLsizei)m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, (const void*)data.data()));
     glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
     glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));

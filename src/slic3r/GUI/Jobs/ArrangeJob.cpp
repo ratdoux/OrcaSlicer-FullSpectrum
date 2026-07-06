@@ -280,6 +280,14 @@ void ArrangeJob::prepare_wipe_tower()
 {
     bool need_wipe_tower = false;
 
+    const size_t num_physical = static_cast<size_t>(std::max(wxGetApp().filaments_cnt(), 0));
+    const auto &mixed_mgr = wxGetApp().preset_bundle->mixed_filaments;
+    auto expand_virtual_ids = [&](std::set<int> &ids) {
+        std::vector<int> vec(ids.begin(), ids.end());
+        mixed_mgr.expand_virtual_extruder_ids(vec, num_physical);
+        ids.insert(vec.begin(), vec.end());
+    };
+
     // if wipe tower is explicitly disabled, no need to estimate
     DynamicPrintConfig& current_config = wxGetApp().preset_bundle->prints.get_edited_preset().config;
     auto                op = current_config.option("enable_prime_tower");
@@ -296,6 +304,7 @@ void ArrangeJob::prepare_wipe_tower()
     for (const auto& item : m_selected) {
         std::set<int> obj_extruders;
         obj_extruders.insert(item.extrude_ids.begin(), item.extrude_ids.end());
+        expand_virtual_ids(obj_extruders);
         if (obj_extruders.size() > 1) {
             need_wipe_tower = true;
             BOOST_LOG_TRIVIAL(info) << "arrange: need wipe tower because object " << item.name << " has multiple extruders (has paint-on colors)";
@@ -309,6 +318,7 @@ void ArrangeJob::prepare_wipe_tower()
         std::map<int, std::set<int>> bedTemp2extruderIds;
         for (const auto& item : m_selected)
             for (auto id : item.extrude_ids) { bedTemp2extruderIds[item.bed_temp].insert(id); }
+        for (auto &be : bedTemp2extruderIds) { expand_virtual_ids(be.second); }
         for (const auto& be : bedTemp2extruderIds) {
             if (be.second.size() > 1) {
                 need_wipe_tower = true;

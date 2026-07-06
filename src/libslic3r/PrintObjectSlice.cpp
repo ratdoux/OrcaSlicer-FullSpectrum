@@ -11,11 +11,11 @@
 #include <sstream>
 
 #include <tbb/parallel_for.h>
-
 #include "ClipperUtils.hpp"
 #include "ElephantFootCompensation.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "MixedFilament.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
 #include "SVG.hpp"
@@ -3739,7 +3739,6 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                         // Update the beginning PaintedRegion iterator for the next iteration.
                         it_painted_region_begin = it_target_region;
 
-                        // FIXME: Don't trim by self, it is not reliable.
                         if (it_target_region->region == &parent_print_region) {
                             if (self_extruder_id < 0)
                                 self_extruder_id = extruder_id;
@@ -4326,8 +4325,8 @@ void apply_fuzzy_skin_segmentation(PrintObject &print_object, ThrowOnCancel thro
             it_layer_range = layer_range_next(layer_ranges, it_layer_range, layer.slice_z);
             const PrintObjectRegions::LayerRangeRegions &layer_range = *it_layer_range;
 
-            assert(segmentation[layer_idx].size() == 1);
-            const ExPolygons &fuzzy_skin_segmentation      = segmentation[layer_idx][0];
+            assert(segmentation[layer_idx].size() >= 2);
+            const ExPolygons &fuzzy_skin_segmentation      = segmentation[layer_idx][1];
             const BoundingBox fuzzy_skin_segmentation_bbox = get_extents(fuzzy_skin_segmentation);
             if (fuzzy_skin_segmentation.empty())
                 continue;

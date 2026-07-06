@@ -278,7 +278,8 @@ static constexpr const char* OFFSET_ATTR = "offset";
 static constexpr const char* PRINTABLE_ATTR = "printable";
 static constexpr const char* INSTANCESCOUNT_ATTR = "instances_count";
 static constexpr const char* CUSTOM_SUPPORTS_ATTR = "paint_supports";
-static constexpr const char* CUSTOM_FUZZY_SKIN_ATTR  = "paint_fuzzy_skin";
+static constexpr const char* CUSTOM_FUZZY_SKIN_ATTR      = "paint_fuzzy_skin";
+static constexpr const char* CUSTOM_FUZZY_SKIN_ATTR_OLD  = "paint_fuzzy";
 static constexpr const char* CUSTOM_SEAM_ATTR = "paint_seam";
 static constexpr const char* MMU_SEGMENTATION_ATTR = "paint_color";
 // BBS
@@ -440,6 +441,18 @@ std::string bbs_get_attribute_value_string(const char** attributes, unsigned int
 {
     const char* text = bbs_get_attribute_value_charptr(attributes, attributes_size, attribute_key);
     return (text != nullptr) ? text : "";
+}
+
+// Try each key in order, returning the first non-empty value.
+// Supports any number of fallback keys for backward compatibility.
+static std::string bbs_get_attribute_value_string(const char** attributes, unsigned int attributes_size,
+                                                   std::initializer_list<const char*> keys)
+{
+    for (const char* key : keys) {
+        std::string data = bbs_get_attribute_value_string(attributes, attributes_size, key);
+        if (!data.empty()) return data;
+    }
+    return "";
 }
 
 float bbs_get_attribute_value_float(const char** attributes, unsigned int attributes_size, const char* attribute_key)
@@ -3699,7 +3712,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
             m_curr_object->geometry.custom_supports.push_back(bbs_get_attribute_value_string(attributes, num_attributes, CUSTOM_SUPPORTS_ATTR));
             m_curr_object->geometry.custom_seam.push_back(bbs_get_attribute_value_string(attributes, num_attributes, CUSTOM_SEAM_ATTR));
             m_curr_object->geometry.mmu_segmentation.push_back(bbs_get_attribute_value_string(attributes, num_attributes, MMU_SEGMENTATION_ATTR));
-            m_curr_object->geometry.fuzzy_skin.push_back(bbs_get_attribute_value_string(attributes, num_attributes, CUSTOM_FUZZY_SKIN_ATTR));
+            m_curr_object->geometry.fuzzy_skin.push_back(bbs_get_attribute_value_string(attributes, num_attributes, {CUSTOM_FUZZY_SKIN_ATTR, CUSTOM_FUZZY_SKIN_ATTR_OLD}));
             // BBS
             m_curr_object->geometry.face_properties.push_back(bbs_get_attribute_value_string(attributes, num_attributes, FACE_PROPERTY_ATTR));
         }
@@ -5344,7 +5357,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
             current_object->geometry.custom_supports.push_back(bbs_get_attribute_value_string(attributes, num_attributes, CUSTOM_SUPPORTS_ATTR));
             current_object->geometry.custom_seam.push_back(bbs_get_attribute_value_string(attributes, num_attributes, CUSTOM_SEAM_ATTR));
             current_object->geometry.mmu_segmentation.push_back(bbs_get_attribute_value_string(attributes, num_attributes, MMU_SEGMENTATION_ATTR));
-            current_object->geometry.fuzzy_skin.push_back(bbs_get_attribute_value_string(attributes, num_attributes, CUSTOM_FUZZY_SKIN_ATTR));
+            current_object->geometry.fuzzy_skin.push_back(bbs_get_attribute_value_string(attributes, num_attributes, {CUSTOM_FUZZY_SKIN_ATTR, CUSTOM_FUZZY_SKIN_ATTR_OLD}));
             // BBS
             current_object->geometry.face_properties.push_back(bbs_get_attribute_value_string(attributes, num_attributes, FACE_PROPERTY_ATTR));
         }

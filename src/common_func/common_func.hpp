@@ -6,13 +6,13 @@
 #define SLIC3R_APP_NAME "SnapmakerOrca-FullSpectrum"
 #define SLIC3R_APP_KEY "Snapmaker_Orca"
 #define SLIC3R_VERSION "01.10.01.70"
-#define Snapmaker_VERSION "2.3.1"
+#define Snapmaker_VERSION "2.3.5"
 #define FULLSPECTRUM_VERSION "0.9.9"
-#define MIN_FIRM_VER "1.0.0"
+#define MIN_FIRM_VER "1.5.0"
 #ifndef GIT_COMMIT_HASH
 #define GIT_COMMIT_HASH "0000000" // 0000000 means uninitialized
 #endif
-#define SLIC3R_BUILD_ID "2.3.1"
+#define SLIC3R_BUILD_ID "2.3.5"
 // #define SLIC3R_RC_VERSION "01.10.01.50"
 #define BBL_RELEASE_TO_PUBLIC 1
 #define BBL_INTERNAL_TESTING 0

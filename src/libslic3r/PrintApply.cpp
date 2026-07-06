@@ -1,3 +1,4 @@
+#include "MixedFilament.hpp"
 #include "Model.hpp"
 #include "MixedFilament.hpp"
 #include "Print.hpp"
@@ -239,6 +240,8 @@ static t_config_option_keys print_config_diffs(
     const std::string               filament_prefix       = "filament_";
     t_config_option_keys            print_diff;
     for (const t_config_option_key &opt_key : current_config.keys()) {
+        //if (opt_key == "wipe_tower_filament")
+        //    continue;
         const ConfigOption *opt_old = current_config.option(opt_key);
         assert(opt_old != nullptr);
         const ConfigOption *opt_new = new_full_config.option(opt_key);
@@ -301,6 +304,8 @@ static t_config_option_keys full_print_config_diffs(const DynamicPrintConfig &cu
 {
     t_config_option_keys full_config_diff;
     for (const t_config_option_key &opt_key : new_full_config.keys()) {
+        //if (opt_key == "wipe_tower_filament")
+        //    continue;
         const ConfigOption *opt_old = current_full_config.option(opt_key);
         const ConfigOption *opt_new = new_full_config.option(opt_key);
         if (opt_old == nullptr || !config_options_equal(opt_new, opt_old)) {

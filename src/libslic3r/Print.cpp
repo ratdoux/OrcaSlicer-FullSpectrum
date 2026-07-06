@@ -17,6 +17,7 @@
 #include "GCode/WipeTower2.hpp"
 #include "Utils.hpp"
 #include "PrintConfig.hpp"
+#include "FilamentHotBedNozzleRules.hpp"
 #include "Model.hpp"
 #include "format.hpp"
 #include <float.h>
@@ -553,6 +554,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "fan_speedup_overhangs",
         "fan_speedup_time",
         "filament_colour",
+        "filament_multi_colors",
+        "filament_colour_mode",
         "default_filament_colour",
         "filament_diameter",
         "filament_density",
@@ -573,6 +576,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "eng_plate_temp_initial_layer",
         "hot_plate_temp_initial_layer",
         "textured_plate_temp_initial_layer",
+        "graphic_effect_plate_temp_initial_layer",
         "gcode_add_line_number",
         "layer_change_gcode",
         "time_lapse_gcode",
@@ -732,7 +736,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "textured_cool_plate_temp"
             || opt_key == "eng_plate_temp"
             || opt_key == "hot_plate_temp"
-            || opt_key == "textured_plate_temp"
+            || opt_key == "textured_plate_temp" 
+            || opt_key == "graphic_effect_plate_temp"
             || opt_key == "enable_prime_tower"
             || opt_key == "prime_tower_width"
             || opt_key == "prime_tower_brim_width"
@@ -754,7 +759,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "initial_layer_speed"
             || opt_key == "initial_layer_travel_speed"
             || opt_key == "slow_down_layers"
-            || opt_key == "idle_temperature"
+            || opt_key == "idle_temperature" 
+            || opt_key == "filament_tower_ironing_area"
             || opt_key == "wipe_tower_cone_angle"
             || opt_key == "wipe_tower_extra_spacing"
             || opt_key == "wipe_tower_max_purge_speed"
@@ -762,8 +768,10 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_extra_rib_length"
             || opt_key == "wipe_tower_rib_width"
             || opt_key == "wipe_tower_fillet_wall"
+            || opt_key == "wipe_tower_wall_gap"
             || opt_key == "wipe_tower_filament"
             || opt_key == "wiping_volumes_extruders"
+            || opt_key == "dithering_local_z_infill"
             || opt_key == "enable_filament_ramming"
             || opt_key == "purge_in_prime_tower"
             || opt_key == "z_offset"
@@ -944,7 +952,26 @@ std::vector<unsigned int> Print::extruders(bool conside_custom_gcode) const
     }
 
     sort_remove_duplicates(extruders);
+
     return extruders;
+}
+
+void Print::filament_rule_mismatch_flags(NozzleFilamentRuleMismatch& out_nozzle_mismatch,
+                                         bool& out_gesp,
+                                         bool& out_pei_not_pla,
+                                         bool& out_pei_tpu,
+                                         const PresetBundle* preset_bundle) const
+{
+    FilamentHotBedNozzleRules::singleton().ensure_loaded();
+    const std::vector<unsigned int> used = extruders(true);
+    FilamentHotBedNozzleRules&      rules = FilamentHotBedNozzleRules::singleton();
+    out_nozzle_mismatch = NozzleFilamentRuleMismatch{};
+    rules.evaluate_nozzle_filament_mismatch_detail(m_config, used, preset_bundle, out_nozzle_mismatch);
+
+    out_gesp   = rules.evaluate_graphic_effect_bed_filament_mismatch(m_config, used);
+
+    out_pei_tpu     = rules.evaluate_pei_bed_filament_mismatch_tpu(m_config, used);
+    out_pei_not_pla = rules.evaluate_pei_bed_filament_mismatch_not_pla(m_config, used);
 }
 
 unsigned int Print::num_object_instances() const
@@ -1522,15 +1549,6 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
 
     if (extruders.empty())
         return { L("No extrusions under current settings.") };
-
-    if (nozzles < 2 && extruders.size() > 1 && m_config.print_sequence != PrintSequence::ByObject) {
-        auto ret = check_multi_filament_valid(*this);
-        if (!ret.string.empty())
-        {
-            ret.type = STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP;
-            return ret;
-        }
-    }
 
     if (m_config.print_sequence == PrintSequence::ByObject) {
         if (m_config.timelapse_type == TimelapseType::tlSmooth)
@@ -3412,6 +3430,7 @@ void Print::_make_wipe_tower()
                                                   m_wipe_tower_data.z_and_depth_pairs, m_wipe_tower_data.brim_width,
                                                   config().wipe_tower_rotation_angle, config().wipe_tower_cone_angle,
                                                   {scale_(origin.x()), scale_(origin.y())});
+        m_fake_wipe_tower.outer_wall = wipe_tower.get_outer_wall();
     }
 }
 
@@ -4846,7 +4865,10 @@ BoundingBoxf3 PrintInstance::get_bounding_box() {
 
 Polygon PrintInstance::get_convex_hull_2d() {
     Polygon poly = print_object->model_object()->convex_hull_2d(model_instance->get_matrix());
-    poly.douglas_peucker(0.1);
+    // Change the distance threshold of the Douglas-Peucker algorithm to 0.5 millimeter and reduce the number of points
+    poly.douglas_peucker(scale_(0.5));
+    // Round coordinates to 0.1mm grid to limit decimal places
+    poly.round_to_grid(scale_(0.1));
     return poly;
 }
 
@@ -4873,6 +4895,42 @@ PrintRegion *PrintObjectRegions::FuzzySkinPaintedRegion::parent_print_object_reg
 int PrintObjectRegions::FuzzySkinPaintedRegion::parent_print_object_region_id(const LayerRangeRegions &layer_range) const
 {
     return this->parent_print_object_region(layer_range)->print_object_region_id();
+}
+
+ExtrusionLayers FakeWipeTower::getTrueExtrusionLayersFromWipeTower() const 
+{ 
+    ExtrusionLayers wtels;
+    wtels.type = ExtrusionLayersType::WIPE_TOWER;
+    std::vector<float> layer_heights;
+    layer_heights.reserve(outer_wall.size());
+    auto pre = outer_wall.begin();
+    for (auto it = outer_wall.begin(); it != outer_wall.end(); ++it) {
+        if (it == outer_wall.begin())
+            layer_heights.push_back(it->first);
+        else {
+            layer_heights.push_back(it->first - pre->first);
+            ++pre;
+        }
+    }
+    Point trans = {scale_(pos.x()), scale_(pos.y())};
+    for (auto it = outer_wall.begin(); it != outer_wall.end(); ++it) {
+        int index = std::distance(outer_wall.begin(), it);
+        ExtrusionLayer el;
+        ExtrusionPaths paths;
+        paths.reserve(it->second.size());
+        for (auto& polyline : it->second) {
+            ExtrusionPath path(ExtrusionRole::erWipeTower, 0.0, 0.0, layer_heights[index]);
+            path.polyline = polyline;
+            for (auto& p : path.polyline.points)
+                p += trans;
+            paths.push_back(path);
+        }
+        el.paths = std::move(paths);
+        el.bottom_z = it->first - layer_heights[index];
+        el.layer = nullptr;
+        wtels.push_back(el);
+    }
+    return wtels;
 }
 
 } // namespace Slic3r

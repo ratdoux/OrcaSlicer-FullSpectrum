@@ -43,7 +43,6 @@ public:
 			  const std::vector<std::vector<float>>& wiping_matrix,
 			  size_t initial_tool);
 
-
 	// Set the extruder properties.
     void set_extruder(size_t idx, const PrintConfig& config);
 
@@ -163,10 +162,14 @@ public:
         float               filament_area;
 		bool			    multitool_ramming;
 		float               multitool_ramming_time = 0.f;
+		float               multitool_ramming_volume = 0.f;
 		float               filament_minimal_purge_on_wipe_tower = 0.f;
         float               retract_length;
         float               retract_speed;
+        float               flat_iron_area;
     };
+
+    const std::map<float, Polylines>& get_outer_wall() const { return m_outer_wall; }
 
 private:
     struct WipeTowerInfo;
@@ -215,11 +218,14 @@ private:
 
 	int m_wall_type;
     bool   m_used_fillet                  = true;
+    bool   m_use_gap_wall                 = true;
     float  m_rib_width                    = 10;
     float  m_extra_rib_length             = 0;
+    std::vector<std::vector<Vec2f>> m_wall_skip_points;
     float  m_rib_length                   = 0;
 
     bool   m_enable_arc_fitting           = false;
+    std::map<float, Polylines> m_outer_wall; // for wipe tower out wall and brim
 
 	// G-code generator parameters.
     float           m_cooling_tube_retraction   = 0.f;
@@ -334,25 +340,22 @@ private:
 
 	void toolchange_Unload(
 		WipeTowerWriter2 &writer,
-		const WipeTower::box_coordinates  &cleaning_box, 
+		const WipeTower::box_coordinates  &cleaning_box,
 		const std::string&	 	current_material,
 		const int 				old_temperature,
 		const int 				new_temperature);
 
-	void toolchange_Change(
-		WipeTowerWriter2 &writer,
-        const size_t		new_tool,
-		const std::string& 		new_material);
-	
+    void toolchange_Change(WipeTowerWriter2 &writer, const size_t new_tool, 
+        const std::string& new_material);
+
 	void toolchange_Load(
 		WipeTowerWriter2 &writer,
 		const WipeTower::box_coordinates  &cleaning_box);
-	
+
 	void toolchange_Wipe(
 		WipeTowerWriter2 &writer,
 		const WipeTower::box_coordinates  &cleaning_box,
 		float wipe_volume);
-
 
     Polygon generate_support_rib_wall(WipeTowerWriter2&                 writer,
                                       const WipeTower::box_coordinates& wt_box,
@@ -360,16 +363,26 @@ private:
                                       bool                   first_layer,
                                       bool                   rib_wall,
                                       bool                   extrude_perimeter,
-                                      bool                   skip_points);
+                                      const std::vector<Vec2f>&         skip_points);
+
+    void get_all_wall_skip_points();
+    // Retrieve pre-computed gap points for a specific layer. Returns empty if layer_id out of bounds.
+    std::vector<Vec2f> get_wall_skip_points(size_t layer_id);
+    // Predict nozzle X after toolchange_Unload ramming, matching its xl/xr and do_ramming logic.
+    // old_tool: extruder index of the filament being unloaded
+    float predict_ramming_end_x(int old_tool, float layer_height) const;
 
     Polygon generate_support_cone_wall(
         WipeTowerWriter2& writer, 
 		const WipeTower::box_coordinates& wt_box, 
 		double feedrate, 
 		bool infill_cone, 
-		float spacing);
+		float spacing,
+		const std::vector<Vec2f>& skip_points = {});
 
     Polygon generate_rib_polygon(const WipeTower::box_coordinates& wt_box);
+
+    WipeTowerInfo::ToolChange set_toolchange(int old_tool, int new_tool, float layer_height, float wipe_volume);
 };
 
 

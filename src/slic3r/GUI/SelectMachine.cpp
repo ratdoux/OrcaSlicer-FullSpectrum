@@ -49,6 +49,18 @@ static wxString MACHINE_BED_TYPE_STRING[BED_TYPE_COUNT] = {
     _L("Bambu Smooth PEI Plate") + "/" + _L("High temperature Plate"),
     _L("Bambu Textured PEI Plate")};
 
+static wxString MACHINE_BED_TYPE_STRING_EX[BED_TYPE_COUNT_EX] = {
+    _L("Bambu Textured PEI Plate"), 
+    _L("Bambu Smooth PEI Plate"), 
+    _L("Graphic Effect Plate")};
+
+static wxString MACHINE_BED_TYPE_STRING_ALL[BED_TYPE_COUNT_ALL] = {
+    _L("Bambu Cool Plate") + " / " + _L("PLA Plate"),
+    _L("Bambu Engineering Plate"),
+    _L("Bambu Smooth PEI Plate") + "/" + _L("High temperature Plate"),
+    _L("Bambu Textured PEI Plate"),                                                             
+    _L("Graphic Effect Plate")};
+
 void SelectMachineDialog::stripWhiteSpace(std::string& str)
 {
     if (str == "") { return; }

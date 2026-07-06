@@ -169,6 +169,11 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
                                              100 - mix_b, mix_b);
 }
 
+std::string compute_mixed_filament_display_color(const MixedFilamentLegacyRow& row, const MixedFilamentDisplayContext& context)
+{
+    return compute_mixed_filament_display_color(mixed_filament_definition_from_legacy_row(row, context.num_physical), context);
+}
+
 // Blend N colours using weighted pairwise FilamentMixer blending.
 std::string MixedFilamentManager::blend_color_multi(const std::vector<std::pair<std::string, int>>& color_percents)
 {

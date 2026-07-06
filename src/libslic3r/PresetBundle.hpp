@@ -3,12 +3,14 @@
 
 #include "Preset.hpp"
 #include "AppConfig.hpp"
+#include "FilamentColorLibrary.hpp"
 #include "enum_bitmask.hpp"
 #include "MixedFilament.hpp"
 
 #include <memory>
 #include <unordered_map>
 #include <array>
+#include <vector>
 #include <boost/filesystem/path.hpp>
 
 #define DEFAULT_USER_FOLDER_NAME "default"
@@ -27,6 +29,18 @@ enum class VendorType {
     Marlin,
     Marlin_BBL
 };
+
+struct ConnectMachineInfo
+{
+    std::string filament_info {""};
+    std::string filament_type {""};
+    std::string nozzle_info {""};
+    std::string color_info{""};
+    std::vector<std::string> multiColors;
+    Slic3r::FilamentColorMode colorMode { Slic3r::FilamentColorMode::Segment };
+    int index {0};
+};
+
 namespace Slic3r {
 
 // Bundle of Print + Filament + Printer presets.
@@ -159,6 +173,7 @@ public:
 
     // Snapmaker
     std::map<int, std::pair<std::string, std::string>> machine_filaments;
+    std::vector<ConnectMachineInfo>                    m_connect_machine_info_list;
 
     // Calibrate
     Preset const * calibrate_printer = nullptr;
@@ -280,7 +295,12 @@ public:
     // Set the is_visible flag for printer vendors, printer models and printer variants
     // based on the user configuration.
     // If the "vendor" section is missing, enable all models and variants of the particular vendor.
-    void                        load_installed_printers(const AppConfig &config);
+    // Also merges newly shipped nozzle variants into app config when the model was already enabled (no wizard needed).
+    void                        load_installed_printers(AppConfig &config);
+
+    // If the user already enabled a printer model (any nozzle variant in app config), enable every variant
+    // currently defined in the vendor profile. Called from load_installed_printers; exposed for rare direct use.
+    void                        install_missing_variants_for_enabled_models(AppConfig &config);
 
     const std::string&          get_preset_name_by_alias(const Preset::Type& preset_type, const std::string& alias) const;
 

@@ -5875,6 +5875,67 @@ msgid ""
 "presets."
 msgstr ""
 
+msgid "Source Filament"
+msgstr ""
+
+msgid "Printer Filament"
+msgstr ""
+
+msgid "Sync Filament Information"
+msgstr ""
+
+msgid "Match Mapping"
+msgstr ""
+
+msgid "Direct Override"
+msgstr ""
+
+msgid "Original Model"
+msgstr ""
+
+msgid "Mapped Model"
+msgstr ""
+
+msgid "Overridden Model"
+msgstr ""
+
+msgctxt "FilamentSync"
+msgid "Plate"
+msgstr ""
+
+msgid "Sync Now"
+msgstr ""
+
+msgid "Note: Only filament types and colors are synchronized. Nozzle assignments are not included."
+msgstr ""
+
+msgid "Add filaments from the remaining toolheads to the software filament list"
+msgstr ""
+
+msgid "No printer is connected. Please connect your U1 from the Device page before syncing."
+msgstr ""
+
+msgid "The connected printer is not U1. Unable to sync filament information. Please switch to U1 and try again."
+msgstr ""
+
+msgid "No filaments detected on the printer. Please preload the filaments before syncing."
+msgstr ""
+
+msgid "Got it"
+msgstr ""
+
+msgid "Connect Now"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
+msgid "Filament types and colors have been successfully synced from the printer."
+msgstr ""
+
+msgid "Some filaments used in color mixing will be replaced or removed. This will update the color mixing results. Continue?"
+msgstr ""
+
 #, boost-format
 msgid "Do you want to save changes to \"%1%\"?"
 msgstr ""
@@ -7231,6 +7292,9 @@ msgstr "Cannot send print tasks when an update is in progress"
 msgid "The selected printer is incompatible with the chosen printer presets."
 msgstr ""
 
+msgid "Incompatible filament types cannot be mixed. Please correct the selection."
+msgstr ""
+
 msgid "An SD card needs to be inserted before send to printer SD card."
 msgstr ""
 "A MicroSD card needs to be inserted before sending to the printer SD card."
@@ -8246,6 +8310,12 @@ msgid "Append all"
 msgstr ""
 
 msgid "Add all clustered colors after the existing filaments."
+msgstr ""
+
+msgid "Keep color"
+msgstr ""
+
+msgid "Add this cluster color as a new filament."
 msgstr ""
 
 msgid "Keep color"

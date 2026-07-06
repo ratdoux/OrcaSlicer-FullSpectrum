@@ -280,5 +280,11 @@
     ],
     "filament_retract_length_toolchange": [
         "5"
+    ],
+    "graphic_effect_plate_temp": [
+        "65"
+    ],
+    "graphic_effect_plate_temp_initial_layer": [
+        "65"
     ]
 }

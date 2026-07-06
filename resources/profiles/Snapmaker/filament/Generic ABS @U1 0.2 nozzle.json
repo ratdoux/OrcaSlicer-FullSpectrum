@@ -1,0 +1,42 @@
+{
+    "type": "filament",
+    "name": "Generic ABS @U1 0.2 nozzle",
+    "inherits": "Generic ABS @base",
+    "from": "system",
+    "setting_id": "GFSB99",
+    "instantiation": "true",
+    "filament_max_volumetric_speed": [
+        "15"
+    ],
+    "compatible_printers": [
+        "Snapmaker U1 (0.2 nozzle)"
+    ],
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "filament_end_gcode": [
+        ""
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "15"
+    ],
+    "filament_multitool_ramming_volume": [
+        "0.5"
+    ],
+    "filament_retract_length_toolchange": [
+        "10"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "filament_vendor": [
+        "Generic"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "270"
+    ],
+    "filament_is_high_temperature": ["1"]
+}

@@ -125,8 +125,6 @@ class MainFrame : public DPIFrame
     bool can_export_all_gcode() const;
     bool can_print_3mf() const;
     bool can_send_gcode() const;
-    //bool can_export_gcode_sd() const;
-    //bool can_eject() const;
     bool can_slice() const;
     bool can_change_view() const;
     bool can_select() const;
@@ -424,6 +422,7 @@ wxDECLARE_EVENT(EVT_HTTP_ERROR, wxCommandEvent);
 wxDECLARE_EVENT(EVT_SHOW_IP_DIALOG, wxCommandEvent);
 wxDECLARE_EVENT(EVT_UPDATE_MACHINE_LIST, wxCommandEvent);
 wxDECLARE_EVENT(EVT_UPDATE_PRESET_CB, SimpleEvent);
+wxDECLARE_EVENT(EVT_NETWORK_TEST_LOG_UPDATE, wxCommandEvent);
 
 
 

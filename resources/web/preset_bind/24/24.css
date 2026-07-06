@@ -46,49 +46,27 @@
 	text-align:left;
 }
 
-.pNozzel
+.PNameRow
 {
 	display: flex;
 	align-items: center;
-	justify-content:flex-start;
-	color: #5A5A5A;	
-	padding-left: 10px;
+	justify-content: flex-start;
+	gap: 5px;
 }
 
-.pNozzel input[type="radio"] {
-    vertical-align: middle;
-    margin-right: 5px;
-    cursor: pointer;
+.pNozzel
+{
+	display: contents;
+	color: #5A5A5A;
 }
 
-.pNozzel input[type="radio"] {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border: 2px solid #009688;
-    border-radius: 50%;
-    outline: none;
-    margin-right: 8px;
-    position: relative;
-}
-
-.pNozzel input[type="radio"]:checked {
-    background-color: #009688;
-    border-color: #009688;
-}
-
-.pNozzel input[type="radio"]:checked:after {
-    content: '';
-    width: 6px;
-    height: 6px;
-    background: white;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    border-radius: 50%;
+.PNameRow input[type="checkbox"] {
+	flex: 0 0 auto;
+	margin: 0;
+	cursor: pointer;
+	width: 16px;
+	height: 16px;
+	vertical-align: middle;
 }
 
 /*-----Notice-----*/

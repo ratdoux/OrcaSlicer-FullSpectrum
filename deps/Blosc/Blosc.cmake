@@ -6,6 +6,13 @@ else()
     set(_build_static ON)
 endif()
 
+# GCC 15+ (Flatpak GNOME 49 SDK) defaults to C23 where 'bool' is a keyword;
+# c-blosc shuffle.c uses 'typedef _Bool bool' which then fails. gnu17 is safe on Linux.
+set(_blosc_c_std_args "")
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(_blosc_c_std_args "-DCMAKE_C_FLAGS=-std=gnu17")
+endif ()
+
 if(IS_CROSS_COMPILE AND APPLE)
     Snapmaker_Orca_add_cmake_project(Blosc
         #URL https://github.com/Blosc/c-blosc/archive/refs/tags/v1.17.0.zip
@@ -24,6 +31,7 @@ if(IS_CROSS_COMPILE AND APPLE)
             -DPREFER_EXTERNAL_ZLIB=ON
             -DDEACTIVATE_SSE2=ON
             -DDEACTIVATE_AVX2=ON
+            ${_blosc_c_std_args}
     )
 else()
     Snapmaker_Orca_add_cmake_project(Blosc
@@ -41,6 +49,7 @@ else()
             -DBUILD_TESTS=OFF 
             -DBUILD_BENCHMARKS=OFF 
             -DPREFER_EXTERNAL_ZLIB=ON
+            ${_blosc_c_std_args}
     )
 endif()
 if (MSVC)

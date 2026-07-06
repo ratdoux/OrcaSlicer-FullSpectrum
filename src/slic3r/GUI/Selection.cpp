@@ -638,7 +638,7 @@ void Selection::set_deserialized(EMode mode, const std::vector<std::pair<size_t,
     set_bounding_boxes_dirty();
 }
 
-void Selection::clear()
+void Selection::clear(bool notify_sidebar)
 {
     if (!m_valid)
         return;
@@ -682,7 +682,8 @@ void Selection::clear()
 #endif
 
     // #et_FIXME fake KillFocus from sidebar
-    wxGetApp().plater()->canvas3D()->handle_sidebar_focus_event("", false);
+    if (notify_sidebar)
+        wxGetApp().plater()->canvas3D()->handle_sidebar_focus_event("", false);
 }
 
 // Update the selection based on the new instance IDs.

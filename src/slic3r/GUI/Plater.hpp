@@ -1,7 +1,9 @@
 #ifndef slic3r_Plater_hpp_
 #define slic3r_Plater_hpp_
 
+#include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 #include <boost/filesystem/path.hpp>
 
@@ -10,6 +12,7 @@
 #include <wx/notebook.h>
 
 #include "Selection.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 #include "libslic3r/enum_bitmask.hpp"
 #include "libslic3r/Preset.hpp"
@@ -102,6 +105,7 @@ wxDECLARE_EVENT(EVT_GLCANVAS_COLOR_MODE_CHANGED,   SimpleEvent);
 wxDECLARE_EVENT(EVT_PRINT_FROM_SDCARD_VIEW,   SimpleEvent);
 wxDECLARE_EVENT(EVT_CREATE_FILAMENT, SimpleEvent);
 wxDECLARE_EVENT(EVT_MODIFY_FILAMENT, SimpleEvent);
+wxDECLARE_EVENT(EVT_FILAMENT_USAGE_CHANGED, SimpleEvent);
 wxDECLARE_EVENT(EVT_ADD_FILAMENT, SimpleEvent);
 wxDECLARE_EVENT(EVT_DEL_FILAMENT, SimpleEvent);
 using ColorEvent = Event<wxColour>;
@@ -151,6 +155,7 @@ public:
     // BBS. Add on_filaments_change() method.
     void on_filaments_change(size_t num_filaments);
     void change_filament(size_t from_id, size_t to_id);
+    void merge_mixed_filament(size_t from_id, size_t to_id);
     void add_filament();
     void delete_filament(size_t filament_id  = size_t(-1), int replace_filament_id = -1); // 0 base, -1 means default
     void add_custom_filament(wxColour new_col);
@@ -164,6 +169,7 @@ public:
     void load_ams_list(std::string const & device, MachineObject* obj);
     std::map<int, DynamicPrintConfig> build_filament_ams_list(MachineObject* obj);
     void sync_ams_list();
+    void show_sync_filament_dialog();
     // Orca
     void update_dynamic_filament_list();
 
@@ -206,6 +212,7 @@ public:
     Search::OptionsSearcher&        get_searcher();
     std::string&                    get_search_line();
     void                            update_printer_thumbnail();
+    const std::vector<std::string>& get_bed_type_combo_enum_values() const { return m_bed_type_combo_enum_values; }
 
 private:
     struct priv;
@@ -213,6 +220,7 @@ private:
 
     wxBoxSizer* m_scrolled_sizer = nullptr;
     ComboBox* m_bed_type_list = nullptr;
+    std::vector<std::string> m_bed_type_combo_enum_values;
     ScalableButton* connection_btn = nullptr;
     ScalableButton* machine_connecting_btn = nullptr;
 };
@@ -221,6 +229,12 @@ class Plater: public wxPanel
 {
 public:
     using fs_path = boost::filesystem::path;
+    enum class FilamentTempMixingState
+    {
+        Compatible,
+        AllowedWarning,
+        BlockedError
+    };
 
     Plater(wxWindow *parent, MainFrame *main_frame);
     Plater(Plater &&) = delete;
@@ -497,6 +511,46 @@ public:
     bool update_filament_colors_in_full_config();
     void config_change_notification(const DynamicPrintConfig &config, const std::string& key);
     void on_config_change(const DynamicPrintConfig &config);
+    /// @brief Check whether high-temperature and low-temperature filaments are mixed on the current plate.
+    /// @return True if compatible; false if high/low temperature materials are mixed.
+    bool check_filament_temp_mixing();
+    /// @brief Check whether high-temperature and low-temperature filaments are mixed on a specific plate.
+    /// @param plate_index Plate index to check.
+    /// @return True if compatible or plate index is invalid; false if high/low temperature materials are mixed.
+    bool check_filament_temp_mixing(int plate_index);
+    /// @brief Get high/low temperature material mixing state for the current plate.
+    /// @return Current plate material mixing state.
+    FilamentTempMixingState get_filament_temp_mixing_state();
+    /// @brief Get high/low temperature material mixing state for a specific plate.
+    /// @param plate_index Plate index to check.
+    /// @return Plate material mixing state.
+    FilamentTempMixingState get_filament_temp_mixing_state(int plate_index);
+    /// @brief Check whether a specific plate is blocked by high/low temperature material mixing.
+    /// @param plate_index Plate index to check.
+    /// @return True if slicing this plate is blocked; otherwise false.
+    bool is_plate_blocked_by_filament_temp_mixing(int plate_index);
+    /// @brief Check whether slice-all has at least one plate that can be sliced.
+    /// @return True if any plate can be sliced and is not blocked by material mixing.
+    bool has_sliceable_plate_for_slice_all();
+    /// @brief Find the next plate that can be sliced by slice-all.
+    /// @param start_plate_index First plate index to check.
+    /// @return Plate index if found; otherwise -1.
+    int find_next_sliceable_plate_for_slice_all(int start_plate_index);
+    /// Sync notification state with current filament temp mixing status.
+    /// Returns true if slicing is allowed, false if high/low temperature mixing blocks slicing.
+    bool sync_filament_temp_mixing_notification();
+    /// Check and guard filament temp mixing before slicing current plate.
+    bool guard_before_slice_plate();
+    /// Check and guard filament temp mixing before slicing all plates.
+    bool guard_before_slice_all();
+    /// @brief Show confirmation dialog for allowed high/low temperature mixing before slice.
+    /// @return True if slicing can proceed; false if blocked or user cancelled.
+    bool confirm_filament_temp_mixing_before_slice();
+    /// @brief Confirm warning-level high/low temperature material mixing before slicing all plates.
+    /// @return True if slice-all can continue; otherwise false.
+    bool confirm_filament_temp_mixing_before_slice_all();
+    /// Queue a single UI sync after filament preset/assignment/plate usage changes.
+    void notify_filament_usage_changed();
     void force_filament_colors_update();
     void force_print_bed_update();
     // On activating the parent window.
@@ -515,6 +569,8 @@ public:
     wxString get_export_gcode_filename(const wxString& extension = wxEmptyString, bool only_filename = false, bool export_all = false) const;
     void set_project_filename(const wxString& filename);
     void update_print_error_info(int code, std::string msg, std::string extra);
+    void notify_vhl_dithering_conflict(bool local_z_enabled);
+    bool has_incompatible_mixed_filament_in_use() const;
 
     bool is_export_gcode_scheduled() const;
 
@@ -666,6 +722,7 @@ public:
 #endif
 
     void reset_gcode_toolpaths();
+    void post_slice_state_change_update();
     void reset_last_loaded_gcode() { m_last_loaded_gcode = ""; }
 
     const Mouse3DController& get_mouse3d_controller() const;
@@ -860,6 +917,7 @@ private:
 };
 
 std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config);
+
 } // namespace GUI
 } // namespace Slic3r
 

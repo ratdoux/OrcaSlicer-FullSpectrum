@@ -9,6 +9,7 @@
 
 #include "GUI.hpp"
 #include "GUI_App.hpp"
+#include "FilamentColorUtils.hpp"
 #include "GUI_ObjectList.hpp"
 #include "I18N.hpp"
 #include "GUI_Utils.hpp"
@@ -17,6 +18,9 @@
 #include "BitmapComboBox.hpp"
 #include "Widgets/StaticBox.hpp"
 #include "Widgets/Label.hpp"
+#include "MixedFilamentBadge.hpp"
+#include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/PresetBundle.hpp"
 
 #ifndef __linux__
 // msw_menuitem_bitmaps is used for MSW and OSX
@@ -539,10 +543,76 @@ std::vector<wxBitmap*> get_extruder_color_icons(bool thin_icon/* = false*/)
     const int icon_width = lround((thin_icon ? 2 : 4.4) * em);
     const int icon_height = lround(2 * em);
 
+    // Determine the split between physical and mixed filaments.
+    const std::vector<std::string> physical_colors =
+        Slic3r::GUI::wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
+    const size_t num_physical = physical_colors.size();
+
+    const Slic3r::DynamicPrintConfig* config = Slic3r::GUI::wxGetApp().preset_bundle != nullptr ?
+                                               &Slic3r::GUI::wxGetApp().preset_bundle->project_config : nullptr;
+    const Slic3r::ConfigOptionStrings* multiColorOption = config != nullptr && config->has("filament_multi_colors") ?
+                                                config->option<Slic3r::ConfigOptionStrings>("filament_multi_colors") : nullptr;
+    const Slic3r::ConfigOptionInts* modeOption = config != nullptr && config->has("filament_colour_mode") ?
+                                                config->option<Slic3r::ConfigOptionInts>("filament_colour_mode") : nullptr;
+
     int index = 0;
     for (const std::string &color : colors)
     {
         auto label = std::to_string(++index);
+        const size_t color_idx = size_t(index) - 1;
+
+        if (color_idx < num_physical) {
+            const std::string multiColors = multiColorOption != nullptr && multiColorOption->values.size() > color_idx ?
+                                             multiColorOption->values[color_idx] : std::string();
+            int modeValue = 0;
+            if (modeOption != nullptr && modeOption->values.size() > color_idx)
+                modeValue = modeOption->values[color_idx];
+            const Slic3r::FilamentColorMode colorMode = Slic3r::FilamentColorModeFromConfig(modeValue);
+            bmps.push_back(Slic3r::GUI::FilamentColorUtils::GetFilamentColorIcon(multiColors, colorMode, color, label,
+                                                                                  icon_width, icon_height));
+            continue;
+        }
+
+        if (color_idx >= num_physical) {
+            // Mixed filament — try to draw a gradient icon.
+            const size_t mixed_idx = color_idx - num_physical;
+            const auto* pb = Slic3r::GUI::wxGetApp().preset_bundle;
+            if (pb != nullptr) {
+                const auto &mfs = pb->mixed_filaments.mixed_filaments();
+                size_t visible = 0;
+                for (const auto &mf : mfs) {
+                    if (mf.deleted || !mf.enabled) continue;
+                    if (visible == mixed_idx) {
+                        const bool is_gradient = Slic3r::GUI::is_simple_gradient(mf);
+                        if (is_gradient) {
+                            auto get_c = [&](unsigned fid) -> wxColour {
+                                if (fid == 0 || fid > physical_colors.size())
+                                    return wxColour("#26A69A");
+                                wxColour parsed(physical_colors[fid - 1]);
+                                return parsed.IsOk() ? parsed : wxColour("#26A69A");
+                            };
+                            const wxColour ca = get_c(mf.component_a);
+                            const wxColour cb = get_c(mf.component_b);
+                            const bool a_to_b = mf.gradient_start >= mf.gradient_end;
+
+                            Slic3r::GUI::ColorBlockParams params;
+                            params.mode   = Slic3r::GUI::ColorBlockParams::Gradient;
+                            params.width  = icon_width;
+                            params.height = icon_height;
+                            params.label  = label;
+                            params.gradient_colors.push_back(a_to_b ? ca : cb);
+                            params.gradient_colors.push_back(a_to_b ? cb : ca);
+
+                            bmps.push_back(Slic3r::GUI::get_color_block_bitmap_cached(params));
+                        }
+                        break;
+                    }
+                    ++visible;
+                }
+                if (bmps.size() > color_idx) continue;
+            }
+        }
+
         bmps.push_back(get_extruder_color_icon(color, label, icon_width, icon_height));
     }
 

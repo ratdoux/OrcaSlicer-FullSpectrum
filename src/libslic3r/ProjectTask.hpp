@@ -27,6 +27,8 @@ enum MachineBedType {
     BED_TYPE_PEI,
     BED_TYPE_PTE,
     BED_TYPE_COUNT,
+    BED_TYPE_COUNT_EX,
+    BED_TYPE_COUNT_ALL,
 };
 
 enum MappingResult {

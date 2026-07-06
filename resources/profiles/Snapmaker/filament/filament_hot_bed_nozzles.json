@@ -1,0 +1,9 @@
+{
+    "btPEI": {
+        "support": ["PLA"],
+        "warning": ["TPU"]
+    },
+    "btGESP": {
+        "support": ["PLA", "TPU"]
+    }
+}

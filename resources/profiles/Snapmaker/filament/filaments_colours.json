@@ -1,0 +1,1802 @@
+{
+	"vendor": "Snapmaker",
+	"updated_date": "2026-06-11",
+	"filaments": [
+		{
+			"filament_id": "1682237920",
+			"filament_name": "Snapmaker ABS @U1",
+			"filament_type": "ABS",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34237",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "White",
+						"zh_CN": "白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34238",
+					"mode": 0,
+					"filament_color": [
+						"#000000"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34239",
+					"mode": 0,
+					"filament_color": [
+						"#FFB81C"
+					],
+					"color_name": {
+						"en": "Yellow",
+						"zh_CN": "黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34240",
+					"mode": 0,
+					"filament_color": [
+						"#DE4343"
+					],
+					"color_name": {
+						"en": "Red",
+						"zh_CN": "红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34241",
+					"mode": 0,
+					"filament_color": [
+						"#3A913F"
+					],
+					"color_name": {
+						"en": "Green",
+						"zh_CN": "绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34242",
+					"mode": 0,
+					"filament_color": [
+						"#FF6A13"
+					],
+					"color_name": {
+						"en": "Orange",
+						"zh_CN": "橙色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34243",
+					"mode": 0,
+					"filament_color": [
+						"#6E3FA3"
+					],
+					"color_name": {
+						"en": "Purple",
+						"zh_CN": "紫色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34244",
+					"mode": 0,
+					"filament_color": [
+						"#5BC2E7"
+					],
+					"color_name": {
+						"en": "Light Blue",
+						"zh_CN": "浅蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34245",
+					"mode": 0,
+					"filament_color": [
+						"#002677"
+					],
+					"color_name": {
+						"en": "Navy Blue",
+						"zh_CN": "海军蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34246",
+					"mode": 0,
+					"filament_color": [
+						"#54585A"
+					],
+					"color_name": {
+						"en": "Dark Gray",
+						"zh_CN": "深灰色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "12471727060",
+			"filament_name": "Snapmaker ASA @U1",
+			"filament_type": "ASA",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34252",
+					"mode": 0,
+					"filament_color": [
+						"#FFE800"
+					],
+					"color_name": {
+						"en": "Yellow",
+						"zh_CN": "黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34253",
+					"mode": 0,
+					"filament_color": [
+						"#AF231C"
+					],
+					"color_name": {
+						"en": "Red",
+						"zh_CN": "红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34254",
+					"mode": 0,
+					"filament_color": [
+						"#53565A"
+					],
+					"color_name": {
+						"en": "Dark Gray",
+						"zh_CN": "深灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34255",
+					"mode": 0,
+					"filament_color": [
+						"#161618"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34256",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "White",
+						"zh_CN": "白色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "GFG96",
+			"filament_name": "Snapmaker PETG HF @U1",
+			"filament_type": "PETG HF",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34157",
+					"mode": 0,
+					"filament_color": [
+						"#16171B"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34158",
+					"mode": 0,
+					"filament_color": [
+						"#F4F9FF"
+					],
+					"color_name": {
+						"en": "White",
+						"zh_CN": "白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34159",
+					"mode": 0,
+					"filament_color": [
+						"#ACB8C5"
+					],
+					"color_name": {
+						"en": "Light Gray",
+						"zh_CN": "浅灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34160",
+					"mode": 0,
+					"filament_color": [
+						"#FF1523"
+					],
+					"color_name": {
+						"en": "Red",
+						"zh_CN": "红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34161",
+					"mode": 0,
+					"filament_color": [
+						"#FB7E1B"
+					],
+					"color_name": {
+						"en": "Orange",
+						"zh_CN": "橙色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34162",
+					"mode": 0,
+					"filament_color": [
+						"#0049B8"
+					],
+					"color_name": {
+						"en": "Cobalt Blue",
+						"zh_CN": "钴蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34163",
+					"mode": 0,
+					"filament_color": [
+						"#7C818E"
+					],
+					"color_name": {
+						"en": "Silver Gray",
+						"zh_CN": "银灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34164",
+					"mode": 0,
+					"filament_color": [
+						"#493AB2"
+					],
+					"color_name": {
+						"en": "Violet",
+						"zh_CN": "紫罗兰"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34165",
+					"mode": 0,
+					"filament_color": [
+						"#473378"
+					],
+					"color_name": {
+						"en": "Deep Purple",
+						"zh_CN": "深紫色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34166",
+					"mode": 0,
+					"filament_color": [
+						"#6B504C"
+					],
+					"color_name": {
+						"en": "Cocoa Brown",
+						"zh_CN": "可可棕"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34167",
+					"mode": 0,
+					"filament_color": [
+						"#FBE95C"
+					],
+					"color_name": {
+						"en": "Yellow",
+						"zh_CN": "黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34168",
+					"mode": 0,
+					"filament_color": [
+						"#38B837"
+					],
+					"color_name": {
+						"en": "Green",
+						"zh_CN": "绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34169",
+					"mode": 0,
+					"filament_color": [
+						"#223622"
+					],
+					"color_name": {
+						"en": "Dark Green",
+						"zh_CN": "深绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34170",
+					"mode": 0,
+					"filament_color": [
+						"#F5BEE9"
+					],
+					"color_name": {
+						"en": "Light Pink",
+						"zh_CN": "浅粉色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "PETG_TRANSLUCENT_001",
+			"filament_name": "Snapmaker PETG Translucent @U1",
+			"filament_type": "PETG Translucent",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34217",
+					"mode": 0,
+					"filament_color": [
+						"#3DD1CE"
+					],
+					"color_name": {
+						"en": "Translucent Teal",
+						"zh_CN": "透光蓝绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34218",
+					"mode": 0,
+					"filament_color": [
+						"#338CC4"
+					],
+					"color_name": {
+						"en": "Translucent Blue",
+						"zh_CN": "透光蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34219",
+					"mode": 0,
+					"filament_color": [
+						"#7F8896"
+					],
+					"color_name": {
+						"en": "Translucent Gray",
+						"zh_CN": "透光灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34220",
+					"mode": 0,
+					"filament_color": [
+						"#537A37"
+					],
+					"color_name": {
+						"en": "Translucent Green",
+						"zh_CN": "透光绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34221",
+					"mode": 0,
+					"filament_color": [
+						"#92713F"
+					],
+					"color_name": {
+						"en": "Translucent Brown",
+						"zh_CN": "透光棕色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34222",
+					"mode": 0,
+					"filament_color": [
+						"#FB8D02"
+					],
+					"color_name": {
+						"en": "Translucent Orange",
+						"zh_CN": "透光橙色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34223",
+					"mode": 0,
+					"filament_color": [
+						"#E68FBD"
+					],
+					"color_name": {
+						"en": "Translucent Pink",
+						"zh_CN": "透光粉色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34224",
+					"mode": 0,
+					"filament_color": [
+						"#D480EF"
+					],
+					"color_name": {
+						"en": "Translucent Purple",
+						"zh_CN": "透光紫色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "10425112260",
+			"filament_name": "Snapmaker PETG-CF @U1",
+			"filament_type": "PETG-CF",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34302",
+					"mode": 0,
+					"filament_color": [
+						"#0D0D0D"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34303",
+					"mode": 0,
+					"filament_color": [
+						"#706399"
+					],
+					"color_name": {
+						"en": "Purple",
+						"zh_CN": "紫色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34304",
+					"mode": 0,
+					"filament_color": [
+						"#C7653E"
+					],
+					"color_name": {
+						"en": "Burnt Orange",
+						"zh_CN": "焦橙色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34305",
+					"mode": 0,
+					"filament_color": [
+						"#853E3E"
+					],
+					"color_name": {
+						"en": "Dark Red",
+						"zh_CN": "深红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34306",
+					"mode": 0,
+					"filament_color": [
+						"#237D7C"
+					],
+					"color_name": {
+						"en": "Teal",
+						"zh_CN": "蓝绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34307",
+					"mode": 0,
+					"filament_color": [
+						"#2F4E93"
+					],
+					"color_name": {
+						"en": "Deep Blue",
+						"zh_CN": "深蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34308",
+					"mode": 0,
+					"filament_color": [
+						"#606068"
+					],
+					"color_name": {
+						"en": "Dark Gray",
+						"zh_CN": "深灰色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "14170311270",
+			"filament_name": "Snapmaker PLA Full Spectrum @U1",
+			"filament_type": "PLA Full Spectrum",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34262",
+					"mode": 0,
+					"filament_color": [
+						"#08ABFB"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Cyan",
+						"zh_CN": "半透青色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34263",
+					"mode": 0,
+					"filament_color": [
+						"#D93B90"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Magenta",
+						"zh_CN": "半透品红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34264",
+					"mode": 0,
+					"filament_color": [
+						"#F9ED3D"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Yellow",
+						"zh_CN": "半透黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34265",
+					"mode": 0,
+					"filament_color": [
+						"#9199A4"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Gray",
+						"zh_CN": "半透灰色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "141703112701",
+			"filament_name": "Snapmaker PLA Matte @U1",
+			"filament_type": "PLA Matte",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34076",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "Ivory White",
+						"zh_CN": "骨白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34077",
+					"mode": 0,
+					"filament_color": [
+						"#F78E0E"
+					],
+					"color_name": {
+						"en": "Lava Orange",
+						"zh_CN": "熔岩橙"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34078",
+					"mode": 0,
+					"filament_color": [
+						"#F0BE02"
+					],
+					"color_name": {
+						"en": "Sunburst Yellow",
+						"zh_CN": "日曜黄"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34079",
+					"mode": 0,
+					"filament_color": [
+						"#000000"
+					],
+					"color_name": {
+						"en": "Carbon Black",
+						"zh_CN": "碳素黑"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34080",
+					"mode": 0,
+					"filament_color": [
+						"#BEC9A5"
+					],
+					"color_name": {
+						"en": "Moss Mist",
+						"zh_CN": "苔雾绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34081",
+					"mode": 0,
+					"filament_color": [
+						"#519F61"
+					],
+					"color_name": {
+						"en": "Pine Green",
+						"zh_CN": "松木绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34082",
+					"mode": 0,
+					"filament_color": [
+						"#DE1619"
+					],
+					"color_name": {
+						"en": "Engine Red",
+						"zh_CN": "引擎红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34083",
+					"mode": 0,
+					"filament_color": [
+						"#485155"
+					],
+					"color_name": {
+						"en": "Ash Grey",
+						"zh_CN": "烬灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34084",
+					"mode": 0,
+					"filament_color": [
+						"#8BD5EE"
+					],
+					"color_name": {
+						"en": "Celestial Blue",
+						"zh_CN": "天幕蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34085",
+					"mode": 0,
+					"filament_color": [
+						"#F3D6E5"
+					],
+					"color_name": {
+						"en": "Sakura Pink",
+						"zh_CN": "樱花粉"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34086",
+					"mode": 0,
+					"filament_color": [
+						"#FC6371"
+					],
+					"color_name": {
+						"en": "Watermelon Red",
+						"zh_CN": "西瓜红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34087",
+					"mode": 0,
+					"filament_color": [
+						"#0078BF"
+					],
+					"color_name": {
+						"en": "Marine Blue",
+						"zh_CN": "海蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34088",
+					"mode": 0,
+					"filament_color": [
+						"#D3B7A7"
+					],
+					"color_name": {
+						"en": "Latte Brown",
+						"zh_CN": "拿铁棕"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34089",
+					"mode": 0,
+					"filament_color": [
+						"#FEE5A5"
+					],
+					"color_name": {
+						"en": "Butter Cream",
+						"zh_CN": "奶油黄"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34090",
+					"mode": 0,
+					"filament_color": [
+						"#6600CC"
+					],
+					"color_name": {
+						"en": "Violet Purple",
+						"zh_CN": "紫罗兰"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34091",
+					"mode": 0,
+					"filament_color": [
+						"#AE96D4"
+					],
+					"color_name": {
+						"en": "Lavender Purple",
+						"zh_CN": "薰衣草紫"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34092",
+					"mode": 0,
+					"filament_color": [
+						"#775C50"
+					],
+					"color_name": {
+						"en": "Mocha Brown",
+						"zh_CN": "摩卡棕"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34093",
+					"mode": 0,
+					"filament_color": [
+						"#D4E458"
+					],
+					"color_name": {
+						"en": "Lime Green",
+						"zh_CN": "青柠绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34094",
+					"mode": 0,
+					"filament_color": [
+						"#68724D"
+					],
+					"color_name": {
+						"en": "Olive Green",
+						"zh_CN": "橄榄绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34095",
+					"mode": 0,
+					"filament_color": [
+						"#2E4462"
+					],
+					"color_name": {
+						"en": "Steel Blue",
+						"zh_CN": "钢蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34097",
+					"mode": 0,
+					"filament_color": [
+						"#56B7E6"
+					],
+					"color_name": {
+						"en": "Sky Blue",
+						"zh_CN": "天空蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34098",
+					"mode": 0,
+					"filament_color": [
+						"#D84B2E"
+					],
+					"color_name": {
+						"en": "Terracotta Red",
+						"zh_CN": "陶土红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34099",
+					"mode": 0,
+					"filament_color": [
+						"#ADB4E6"
+					],
+					"color_name": {
+						"en": "Periwinkle",
+						"zh_CN": "长春花紫"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "11813638720",
+			"filament_name": "Snapmaker PLA Silk @U1",
+			"filament_type": "PLA Silk",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34137",
+					"mode": 0,
+					"filament_color": [
+						"#BCC2C8"
+					],
+					"color_name": {
+						"en": "Silver",
+						"zh_CN": "银色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34138",
+					"mode": 0,
+					"filament_color": [
+						"#C1443F"
+					],
+					"color_name": {
+						"en": "Garnet Red",
+						"zh_CN": "石榴红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34139",
+					"mode": 0,
+					"filament_color": [
+						"#EFC2CA"
+					],
+					"color_name": {
+						"en": "Pearl Pink",
+						"zh_CN": "珠光粉"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34140",
+					"mode": 0,
+					"filament_color": [
+						"#768EC7"
+					],
+					"color_name": {
+						"en": "Sapphire Blue",
+						"zh_CN": "宝石蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34141",
+					"mode": 0,
+					"filament_color": [
+						"#F6CE1B"
+					],
+					"color_name": {
+						"en": "Gold",
+						"zh_CN": "金色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34142",
+					"mode": 0,
+					"filament_color": [
+						"#AF6B4C"
+					],
+					"color_name": {
+						"en": "Copper",
+						"zh_CN": "铜色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34143",
+					"mode": 0,
+					"filament_color": [
+						"#A8FF54"
+					],
+					"color_name": {
+						"en": "Neon Green",
+						"zh_CN": "荧光绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34144",
+					"mode": 0,
+					"filament_color": [
+						"#4CC1CB"
+					],
+					"color_name": {
+						"en": "Aqua Blue",
+						"zh_CN": "水蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34145",
+					"mode": 0,
+					"filament_color": [
+						"#55B687"
+					],
+					"color_name": {
+						"en": "Emerald Green",
+						"zh_CN": "翡翠绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34146",
+					"mode": 0,
+					"filament_color": [
+						"#DFE4E4"
+					],
+					"color_name": {
+						"en": "Pearl White",
+						"zh_CN": "珠光白"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34202",
+					"mode": 0,
+					"filament_color": [
+						"#D9A63A", "#CC434F"
+					],
+					"color_name": {
+						"en": "Sunset Ember",
+						"zh_CN": "金红双色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34203",
+					"mode": 0,
+					"filament_color": [
+						"#D9A63A", "#9675CD"
+					],
+					"color_name": {
+						"en": "Aurora Gold",
+						"zh_CN": "金紫双色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34204",
+					"mode": 0,
+					"filament_color": [
+						"#D9A63A", "#C4C7D9"
+					],
+					"color_name": {
+						"en": "Solar Alloy",
+						"zh_CN": "金银双色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34205",
+					"mode": 0,
+					"filament_color": [
+						"#ECED17", "#44ADE5"
+					],
+					"color_name": {
+						"en": "Mint Lemonade",
+						"zh_CN": "黄蓝双色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34206",
+					"mode": 0,
+					"filament_color": [
+						"#44ADE5", "#18CCAF"
+					],
+					"color_name": {
+						"en": "Sea Glass",
+						"zh_CN": "蓝绿双色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34207",
+					"mode": 0,
+					"filament_color": [
+						"#C4C7D9", "#44ADE5"
+					],
+					"color_name": {
+						"en": "Ice Lake",
+						"zh_CN": "银蓝双色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34208",
+					"mode": 0,
+					"filament_color": [
+						"#CBF914", "#D623AA"
+					],
+					"color_name": {
+						"en": "City Billboard",
+						"zh_CN": "黄红双色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "141703112701",
+			"filament_name": "Snapmaker PLA SnapSpeed @U1",
+			"filament_type": "PLA SnapSpeed",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34061",
+					"mode": 0,
+					"filament_color": [
+						"#E2DEDB"
+					],
+					"color_name": {
+						"en": "Pearl White",
+						"zh_CN": "珍珠白"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34062",
+					"mode": 0,
+					"filament_color": [
+						"#080A0D"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34063",
+					"mode": 0,
+					"filament_color": [
+						"#8C9099"
+					],
+					"color_name": {
+						"en": "Grey",
+						"zh_CN": "灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34064",
+					"mode": 0,
+					"filament_color": [
+						"#003776"
+					],
+					"color_name": {
+						"en": "Blue",
+						"zh_CN": "蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34065",
+					"mode": 0,
+					"filament_color": [
+						"#E72F1D"
+					],
+					"color_name": {
+						"en": "Red",
+						"zh_CN": "红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34066",
+					"mode": 0,
+					"filament_color": [
+						"#6C5BB1"
+					],
+					"color_name": {
+						"en": "Purple",
+						"zh_CN": "紫色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34067",
+					"mode": 0,
+					"filament_color": [
+						"#F97429"
+					],
+					"color_name": {
+						"en": "Orange",
+						"zh_CN": "橙色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34068",
+					"mode": 0,
+					"filament_color": [
+						"#2D9E59"
+					],
+					"color_name": {
+						"en": "Green",
+						"zh_CN": "绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34069",
+					"mode": 0,
+					"filament_color": [
+						"#F4C032"
+					],
+					"color_name": {
+						"en": "Yellow",
+						"zh_CN": "黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34070",
+					"mode": 0,
+					"filament_color": [
+						"#6F4C2F"
+					],
+					"color_name": {
+						"en": "Brown",
+						"zh_CN": "棕色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34071",
+					"mode": 0,
+					"filament_color": [
+						"#FFC0CB"
+					],
+					"color_name": {
+						"en": "Pink",
+						"zh_CN": "粉色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34072",
+					"mode": 0,
+					"filament_color": [
+						"#FFF5E0"
+					],
+					"color_name": {
+						"en": "Cream",
+						"zh_CN": "奶油白"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34073",
+					"mode": 0,
+					"filament_color": [
+						"#D9DFE5"
+					],
+					"color_name": {
+						"en": "Cool White",
+						"zh_CN": "冷白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34074",
+					"mode": 0,
+					"filament_color": [
+						"#F24574"
+					],
+					"color_name": {
+						"en": "Magenta",
+						"zh_CN": "品红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34075",
+					"mode": 0,
+					"filament_color": [
+						"#5EBDDB"
+					],
+					"color_name": {
+						"en": "Sky Blue",
+						"zh_CN": "天空蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34112",
+					"mode": 0,
+					"filament_color": [
+						"#F8F81C"
+					],
+					"color_name": {
+						"en": "Bright Yellow",
+						"zh_CN": "亮黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34113",
+					"mode": 0,
+					"filament_color": [
+						"#AFC33C"
+					],
+					"color_name": {
+						"en": "Olive Green",
+						"zh_CN": "橄榄绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34114",
+					"mode": 0,
+					"filament_color": [
+						"#94B7C9"
+					],
+					"color_name": {
+						"en": "Blue Gray",
+						"zh_CN": "蓝灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34115",
+					"mode": 0,
+					"filament_color": [
+						"#C19E86"
+					],
+					"color_name": {
+						"en": "Warm Beige",
+						"zh_CN": "暖米色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34116",
+					"mode": 0,
+					"filament_color": [
+						"#674B47"
+					],
+					"color_name": {
+						"en": "Cocoa Brown",
+						"zh_CN": "可可棕"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34117",
+					"mode": 0,
+					"filament_color": [
+						"#0086D6"
+					],
+					"color_name": {
+						"en": "Cyan",
+						"zh_CN": "青色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34118",
+					"mode": 0,
+					"filament_color": [
+						"#EC008C"
+					],
+					"color_name": {
+						"en": "Vivid Magenta",
+						"zh_CN": "亮品红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34119",
+					"mode": 0,
+					"filament_color": [
+						"#FCE300"
+					],
+					"color_name": {
+						"en": "Lemon Yellow",
+						"zh_CN": "柠檬黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34120",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "Pure White",
+						"zh_CN": "纯白色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "SPTR001",
+			"filament_name": "Snapmaker PLA Translucent @U1",
+			"filament_type": "PLA Translucent",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34322",
+					"mode": 0,
+					"filament_color": [
+						"#C08559"
+					],
+					"color_name": {
+						"en": "Translucent Amber",
+						"zh_CN": "透光琥珀色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34323",
+					"mode": 0,
+					"filament_color": [
+						"#FFF200"
+					],
+					"color_name": {
+						"en": "Translucent Yellow",
+						"zh_CN": "透光黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34324",
+					"mode": 0,
+					"filament_color": [
+						"#008729"
+					],
+					"color_name": {
+						"en": "Translucent Green",
+						"zh_CN": "透光绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34325",
+					"mode": 0,
+					"filament_color": [
+						"#7FEBE2"
+					],
+					"color_name": {
+						"en": "Translucent Cyan",
+						"zh_CN": "透光青色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34326",
+					"mode": 0,
+					"filament_color": [
+						"#B1ACA6"
+					],
+					"color_name": {
+						"en": "Translucent Light Gray",
+						"zh_CN": "透光浅灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34327",
+					"mode": 0,
+					"filament_color": [
+						"#A7A8D9"
+					],
+					"color_name": {
+						"en": "Translucent Light Purple",
+						"zh_CN": "透光浅紫色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34328",
+					"mode": 0,
+					"filament_color": [
+						"#46BAE0"
+					],
+					"color_name": {
+						"en": "Translucent Blue",
+						"zh_CN": "透光蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34329",
+					"mode": 0,
+					"filament_color": [
+						"#EEBCC8"
+					],
+					"color_name": {
+						"en": "Translucent Pink",
+						"zh_CN": "透光粉色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34330",
+					"mode": 0,
+					"filament_color": [
+						"#DC0080"
+					],
+					"color_name": {
+						"en": "Translucent Magenta",
+						"zh_CN": "透光品红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34331",
+					"mode": 0,
+					"filament_color": [
+						"#990002"
+					],
+					"color_name": {
+						"en": "Translucent Dark Red",
+						"zh_CN": "透光深红色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "17021473250",
+			"filament_name": "Snapmaker PLA-CF @U1",
+			"filament_type": "PLA-CF",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34227",
+					"mode": 0,
+					"filament_color": [
+						"#823F2E"
+					],
+					"color_name": {
+						"en": "Wine Red",
+						"zh_CN": "酒红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34228",
+					"mode": 0,
+					"filament_color": [
+						"#6F8653"
+					],
+					"color_name": {
+						"en": "Matcha Green",
+						"zh_CN": "抹茶绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34229",
+					"mode": 0,
+					"filament_color": [
+						"#54555B"
+					],
+					"color_name": {
+						"en": "Graphite Gray",
+						"zh_CN": "石墨灰"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34230",
+					"mode": 0,
+					"filament_color": [
+						"#725E7C"
+					],
+					"color_name": {
+						"en": "Violet Purple",
+						"zh_CN": "紫罗兰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34231",
+					"mode": 0,
+					"filament_color": [
+						"#9B7C56"
+					],
+					"color_name": {
+						"en": "Chestnut Brown",
+						"zh_CN": "栗棕色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34232",
+					"mode": 0,
+					"filament_color": [
+						"#49799D"
+					],
+					"color_name": {
+						"en": "Denim Blue",
+						"zh_CN": "丹宁蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34233",
+					"mode": 0,
+					"filament_color": [
+						"#000000"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "GFU99",
+			"filament_name": "Snapmaker TPU 90A @U1",
+			"filament_type": "TPU 90A",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34190",
+					"mode": 0,
+					"filament_color": [
+						"#16161A"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34191",
+					"mode": 0,
+					"filament_color": [
+						"#B2B4B2"
+					],
+					"color_name": {
+						"en": "Grey",
+						"zh_CN": "灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34192",
+					"mode": 0,
+					"filament_color": [
+						"#F8F8F5"
+					],
+					"color_name": {
+						"en": "White",
+						"zh_CN": "白色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "GFU99",
+			"filament_name": "Snapmaker TPU 95A HF @U1",
+			"filament_type": "TPU 95A HF",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34176",
+					"mode": 0,
+					"filament_color": [
+						"#000000"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34177",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "White",
+						"zh_CN": "白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34178",
+					"mode": 0,
+					"filament_color": [
+						"#9E9E9E"
+					],
+					"color_name": {
+						"en": "Silver Gray",
+						"zh_CN": "银灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34179",
+					"mode": 0,
+					"filament_color": [
+						"#865B41"
+					],
+					"color_name": {
+						"en": "Brown",
+						"zh_CN": "棕色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34180",
+					"mode": 0,
+					"filament_color": [
+						"#0683EF"
+					],
+					"color_name": {
+						"en": "Bright Blue",
+						"zh_CN": "亮蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34181",
+					"mode": 0,
+					"filament_color": [
+						"#EE2A20"
+					],
+					"color_name": {
+						"en": "Red",
+						"zh_CN": "红色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34182",
+					"mode": 0,
+					"filament_color": [
+						"#595E69"
+					],
+					"color_name": {
+						"en": "Dark Gray",
+						"zh_CN": "深灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34183",
+					"mode": 0,
+					"filament_color": [
+						"#FFC72C"
+					],
+					"color_name": {
+						"en": "Yellow",
+						"zh_CN": "黄色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34184",
+					"mode": 0,
+					"filament_color": [
+						"#33A15A"
+					],
+					"color_name": {
+						"en": "Green",
+						"zh_CN": "绿色"
+					},
+					"enabled": true
+				}
+			]
+		}
+	]
+}

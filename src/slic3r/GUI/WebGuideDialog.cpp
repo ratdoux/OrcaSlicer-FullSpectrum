@@ -379,11 +379,11 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
 {
     try {
         wxString strInput = evt.GetString();
-        BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;OnRecv:" << strInput.c_str();
+        // BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;OnRecv:" << strInput.c_str();
         json     j        = json::parse(strInput);
 
         wxString strCmd = j["command"];
-        BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;Command:" << strCmd;
+        // BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;Command:" << strCmd;
 
         if (strCmd == "close_page") {
             this->EndModal(wxID_CANCEL);
@@ -418,7 +418,7 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
             //wxString strJS = wxString::Format("HandleStudio(%s)", m_Res.dump(-1, ' ', false, json::error_handler_t::ignore));
             wxString strJS = wxString::Format("HandleStudio(%s)", m_Res.dump(-1, ' ', true));
 
-            BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;request_userguide_profile:" << strJS.c_str();
+            // BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;request_userguide_profile:" << strJS.c_str();
             wxGetApp().CallAfter([this,strJS] { RunScript(strJS); });
         }
         else if (strCmd == "request_custom_filaments") {
@@ -548,7 +548,7 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
         }
     } catch (std::exception &e) {
         // wxMessageBox(e.what(), "json Exception", MB_OK);
-        BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;Error:" << e.what();
+        // BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;Error:" << e.what();
     }
 
     //wxString strAll = m_ProfileJson.dump(-1,' ',false, json::error_handler_t::ignore);
@@ -610,8 +610,7 @@ void GuideFrame::OnError(wxWebViewEvent& event)
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
 
-    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":GuideFrame error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
-    
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__<< boost::format(":GuideFrame error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
 }
 
 void GuideFrame::OnScriptResponseMessage(wxCommandEvent &WXUNUSED(evt))
@@ -683,21 +682,27 @@ int GuideFrame::SaveProfile()
                 std::string model_name = temp_model["model"];
                 std::string vendor_name = temp_model["vendor"];
                 std::string selected = temp_model["nozzle_selected"];
+                std::string nozzle_diameter = temp_model["nozzle_diameter"];
                 boost::trim(selected);
-                std::string nozzle;
-                while (selected.size() > 0) {
-                    auto pos = selected.find(';');
-                    if (pos != std::string::npos) {
-                        nozzle   = selected.substr(0, pos);
-                        m_appconfig_new.set_variant(vendor_name, model_name, nozzle, "true");
-                        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format("vendor_name %1%, model_name %2%, nozzle %3% selected")%vendor_name %model_name %nozzle;
-                        selected = selected.substr(pos + 1);
-                        boost::trim(selected);
-                    }
-                    else {
-                        m_appconfig_new.set_variant(vendor_name, model_name, selected, "true");
-                        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format("vendor_name %1%, model_name %2%, nozzle %3% selected")%vendor_name %model_name %selected;
-                        break;
+                boost::trim(nozzle_diameter);
+                if (!selected.empty()) {
+                    std::string nozzle;
+                    while (nozzle_diameter.size() > 0) {
+                        auto pos = nozzle_diameter.find(';');
+                        if (pos != std::string::npos) {
+                            nozzle = nozzle_diameter.substr(0, pos);
+                            boost::trim(nozzle);
+                            if (!nozzle.empty())
+                                m_appconfig_new.set_variant(vendor_name, model_name, nozzle, "true");
+                            nozzle_diameter = nozzle_diameter.substr(pos + 1);
+                            boost::trim(nozzle_diameter);
+                        }
+                        else {
+                            boost::trim(nozzle_diameter);
+                            if (!nozzle_diameter.empty())
+                                m_appconfig_new.set_variant(vendor_name, model_name, nozzle_diameter, "true");
+                            break;
+                        }
                     }
                 }
             }
@@ -1146,32 +1151,24 @@ int GuideFrame::SaveProfileData()
                 std::string selected;
                 boost::trim(nozzle_diameter);
                 std::string nozzle;
-                bool enabled = false, first=true;
+                bool enabled = false;
+                bool any_enabled = false;
                 while (nozzle_diameter.size() > 0) {
                     auto pos = nozzle_diameter.find(';');
                     if (pos != std::string::npos) {
                         nozzle   = nozzle_diameter.substr(0, pos);
                         enabled = m_appconfig_new.get_variant(vendor_name, model_name, nozzle);
-                        if (enabled) {
-                            if (!first)
-                                selected += ";";
-                            selected += nozzle;
-                            first = false;
-                        }
+                        any_enabled = any_enabled || enabled;
                         nozzle_diameter = nozzle_diameter.substr(pos + 1);
                         boost::trim(nozzle_diameter);
                     }
                     else {
                         enabled = m_appconfig_new.get_variant(vendor_name, model_name, nozzle_diameter);
-                        if (enabled) {
-                            if (!first)
-                                selected += ";";
-                            selected += nozzle_diameter;
-                        }
+                        any_enabled = any_enabled || enabled;
                         break;
                     }
                 }
-                temp_model["nozzle_selected"] = selected;
+                temp_model["nozzle_selected"] = any_enabled ? temp_model["nozzle_diameter"] : "";
                 //m_ProfileJson["model"][a]["nozzle_selected"]
             }
         }

@@ -52,5 +52,6 @@
     ],
     "nozzle_temperature_initial_layer": [
         "280"
-    ]
+    ],
+    "filament_is_high_temperature": ["1"]
 }

@@ -1,0 +1,57 @@
+{
+    "type": "filament",
+    "name": "Generic PC @U1 0.6 nozzle",
+    "inherits": "Generic PC @base",
+    "from": "system",
+    "setting_id": "GFSC99",
+    "instantiation": "true",
+    "compatible_printers": [
+        "Snapmaker U1 (0.6 nozzle)"
+    ],
+    "eng_plate_temp": [
+        "100"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "100"
+    ],
+    "hot_plate_temp": [
+        "100"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "100"
+    ],
+    "textured_plate_temp": [
+        "100"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "100"
+    ],
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "filament_end_gcode": [
+        "\n"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "16"
+    ],
+    "filament_multitool_ramming_volume": [
+        "0.5"
+    ],
+    "filament_retract_length_toolchange": [
+        "10"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "filament_vendor": [
+        "Generic"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "280"
+    ],
+    "filament_is_high_temperature": ["1"]
+}

@@ -1,0 +1,8 @@
+{
+  "type": "filament",
+  "from": "system",
+  "instantiation": "false",
+  "name": "Snapmaker PETG Translucent @U1 base",
+  "filament_id": "PETG_TRANSLUCENT_001",
+  "inherits": "fdm_filament_petg"
+}

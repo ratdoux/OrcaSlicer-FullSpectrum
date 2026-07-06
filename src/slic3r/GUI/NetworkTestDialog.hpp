@@ -129,6 +129,9 @@ public:
 
 	wxString get_cloud_server_address();
 
+	// Print a section header with separator lines to both UI and file log.
+	void log_section_header(const wxString& title);
+
 private:
 	void cleanup_threads();
 };

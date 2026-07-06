@@ -19,6 +19,12 @@
   <meta charset="UTF-8"> 
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Snapmaker Orca">
+  
+  <!-- ★★★ 新增：禁止浏览器缓存 index.html ★★★ -->
+  <!-- <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"> -->
+  <!-- <meta http-equiv="Pragma" content="no-cache"> -->
+  <!-- <meta http-equiv="Expires" content="0"> --> 
+
    <!-- 添加权限策略 -->
   <meta http-equiv="Permissions-Policy" content="local-files-write=*">
   <meta http-equiv="Access-Control-Allow-Origin" content="*">
@@ -46,33 +52,9 @@
   <link rel="apple-touch-startup-image" href="splash.png">
 </head>
 <body>
-  <script>
-    (async function bootstrapDesktopFlutter() {
-      if ('serviceWorker' in navigator) {
-        try {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.allSettled(registrations.map((registration) => registration.unregister()));
-        } catch (error) {
-          console.warn('Failed to unregister service workers:', error);
-        }
-      }
-
-      if ('caches' in window) {
-        try {
-          const cacheNames = await caches.keys();
-          const flutterCaches = cacheNames.filter((name) => name.startsWith('flutter-'));
-          await Promise.allSettled(flutterCaches.map((name) => caches.delete(name)));
-        } catch (error) {
-          console.warn('Failed to clear Flutter caches:', error);
-        }
-      }
-
-      const bootstrapScript = document.createElement('script');
-      bootstrapScript.src = 'flutter_bootstrap.js';
-      bootstrapScript.async = true;
-      document.body.appendChild(bootstrapScript);
-    })();
-  </script>
+  <!-- ★★★ 修改：加上版本号参数，每次发版更新这个数字 ★★★ -->
+  <!-- <script src="flutter_bootstrap.js?v=2.3.18" async></script> -->
+  <script src="flutter_bootstrap.js" async></script>
 
   <script>
     if ('application/octet-stream' in MimeType) {

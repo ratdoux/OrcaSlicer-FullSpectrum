@@ -28,7 +28,7 @@ PrinterWebView::PrinterWebView(wxWindow *parent)
 
     wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
 
-    wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
+    wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(wxGetApp().get_page_http_port()) + "/web/flutter_web/index.html?path=2");
     auto     real_url = wxGetApp().get_international_url(url);
       // Create the webview
     m_browser = WebView::CreateWebView(this, real_url);
@@ -93,6 +93,8 @@ void PrinterWebView::reload()
 
 bool PrinterWebView::isSnapmakerPage()
 {
+    if (m_browser == nullptr)
+        return false;
     auto url = m_browser->GetCurrentURL();
     return (url.find("flutter_web") != std::string::npos);
 }
@@ -184,10 +186,10 @@ void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
 }
 
 void PrinterWebView::OnScriptMessage(wxWebViewEvent& evt) {
-    BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
+    // BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
 
-    if (wxGetApp().get_mode() == comDevelop)
-        wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
+    // if (wxGetApp().get_mode() == comDevelop)
+    //     wxLogMessage("Script message received; value = %s, handler = %s", evt.GetString(), evt.GetMessageHandler());
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);

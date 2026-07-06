@@ -18,8 +18,13 @@ struct MixedFilamentLegacyRow
 {
     enum DistributionMode : uint8_t {
         LayerCycle = 0,
+        SameLayerPointillisme = 1,
         Simple = 2
     };
+
+    static constexpr float k_default_gradient_dominant = 0.8f;
+    static constexpr float k_default_gradient_minority = 0.2f;
+    static constexpr float k_min_gradient_difference   = 0.05f;
 
     // 1-based physical filament IDs that are combined.
     unsigned int component_a = 1;
@@ -49,6 +54,13 @@ struct MixedFilamentLegacyRow
     // Optional explicit multi-color weights aligned with gradient_component_ids.
     // Compact integer list joined by '/': for example "50/25/25".
     std::string gradient_component_weights;
+
+    // Legacy UI fields retained for dialogs and badges that still consume
+    // mixed rows directly. Typed definitions remain the source of truth.
+    bool pointillism_all_filaments = false;
+    bool gradient_enabled = false;
+    float gradient_start = k_default_gradient_dominant;
+    float gradient_end   = k_default_gradient_minority;
 
     // How this mixed row is distributed:
     // - LayerCycle: one filament per layer based on cadence.
@@ -83,6 +95,10 @@ struct MixedFilamentLegacyRow
     // Computed display colour as "#RRGGBB".
     std::string display_color;
 
+    // UI mode that created this row (-1=unknown/legacy, 0=RATIO, 1=CYCLE,
+    // 2=MATCH, 3=GRADIENT).
+    int ui_mode = -1;
+
     bool operator==(const MixedFilamentLegacyRow &rhs) const
     {
         constexpr float k_surface_offset_epsilon = 1e-6f;
@@ -95,17 +111,23 @@ struct MixedFilamentLegacyRow
                manual_pattern == rhs.manual_pattern &&
                gradient_component_ids == rhs.gradient_component_ids &&
                gradient_component_weights == rhs.gradient_component_weights &&
+               pointillism_all_filaments == rhs.pointillism_all_filaments &&
+               gradient_enabled == rhs.gradient_enabled &&
+               std::abs(gradient_start - rhs.gradient_start) <= 1e-4f &&
+               std::abs(gradient_end - rhs.gradient_end) <= 1e-4f &&
                distribution_mode == rhs.distribution_mode &&
                local_z_max_sublayers == rhs.local_z_max_sublayers &&
                std::abs(component_a_surface_offset - rhs.component_a_surface_offset) <= k_surface_offset_epsilon &&
                std::abs(component_b_surface_offset - rhs.component_b_surface_offset) <= k_surface_offset_epsilon &&
                deleted      == rhs.deleted &&
                custom       == rhs.custom &&
-               origin_auto  == rhs.origin_auto;
+               origin_auto  == rhs.origin_auto &&
+               ui_mode      == rhs.ui_mode;
     }
     bool operator!=(const MixedFilamentLegacyRow &rhs) const { return !(*this == rhs); }
 };
 
+using MixedFilament = MixedFilamentLegacyRow;
 using MixedFilamentStableId = uint64_t;
 
 struct MixedFilamentPhysicalRef
@@ -280,6 +302,7 @@ std::pair<int, int> mixed_filament_apparent_pair_percentages(const MixedFilament
                                                              const std::vector<double>          &nozzle_diameters,
                                                              bool                                bias_mode_enabled);
 std::string compute_mixed_filament_display_color(const MixedFilamentDefinition &definition, const MixedFilamentDisplayContext &context);
+std::string compute_mixed_filament_display_color(const MixedFilamentLegacyRow &row, const MixedFilamentDisplayContext &context);
 
 MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFilamentLegacyRow &row, size_t num_physical = 0);
 void                    apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition &definition,
@@ -349,8 +372,18 @@ public:
 
     // Normalize a manual mixed-pattern string into compact token form.
     // Accepts separators and A/B aliases. Returns empty string if invalid.
+    static constexpr size_t kMaxPhysicalFilaments = 9;
     static std::string normalize_manual_pattern(const std::string &pattern);
     static int         mix_percent_from_manual_pattern(const std::string &pattern);
+    static std::vector<unsigned int> decode_gradient_component_ids(const std::string &components,
+                                                                   size_t             num_physical = kMaxPhysicalFilaments);
+    static std::string encode_gradient_component_ids(const std::vector<unsigned int> &component_ids);
+    static std::vector<std::string> split_pattern_groups(const std::string &pattern);
+    static std::vector<std::string> split_pattern_group_to_tokens(const std::string &group,
+                                                                  size_t             num_physical = 0);
+    static unsigned int physical_filament_from_token(const std::string            &token,
+                                                     const MixedFilamentLegacyRow &row,
+                                                     size_t                       num_physical = kMaxPhysicalFilaments);
 
     // ---- Queries --------------------------------------------------------
 
@@ -431,6 +464,8 @@ public:
     // ---- Accessors ------------------------------------------------------
 
     std::vector<MixedFilamentDefinition> mixed_filament_definitions(size_t num_physical = 0) const;
+    std::vector<size_t> mixed_filaments_using_physical(unsigned int physical_filament_id) const;
+    void expand_virtual_extruder_ids(std::vector<int> &filament_ids, size_t num_physical) const;
     bool set_mixed_filament_definition(size_t                          index,
                                        const MixedFilamentDefinition  &definition,
                                        const std::vector<std::string> &filament_colours = {});
@@ -448,6 +483,10 @@ public:
     // Read-only legacy-row snapshot for persistence and compatibility tests.
     // The manager owns typed definitions; this vector is rebuilt from them on demand.
     const std::vector<MixedFilamentLegacyRow> &mixed_filament_legacy_rows() const;
+    std::vector<MixedFilamentLegacyRow>       &mixed_filaments();
+    const std::vector<MixedFilamentLegacyRow> &mixed_filaments() const;
+    MixedFilamentLegacyRow                    *mixed_filament_from_id(unsigned int filament_id, size_t num_physical);
+    const MixedFilamentLegacyRow              *mixed_filament_from_id(unsigned int filament_id, size_t num_physical) const;
     size_t                           mixed_filament_count() const;
 
     size_t visible_count() const;
@@ -469,12 +508,14 @@ private:
     void refresh_display_colors(const std::vector<std::string> &filament_colours);
     void invalidate_legacy_cache() const;
     void rebuild_legacy_cache() const;
+    void sync_mutable_legacy_cache_to_definitions(size_t num_physical = 0);
     uint64_t allocate_stable_id();
     uint64_t normalize_stable_id(uint64_t stable_id);
 
     std::vector<MixedFilamentDefinition> m_definitions;
     mutable std::vector<MixedFilamentLegacyRow>   m_legacy_cache;
     mutable bool                         m_legacy_cache_dirty = true;
+    mutable bool                         m_legacy_cache_mutable_borrowed = false;
     int                                  m_gradient_mode       = 0;
     float                                m_height_lower_bound  = 0.04f;
     float                                m_height_upper_bound  = 0.16f;

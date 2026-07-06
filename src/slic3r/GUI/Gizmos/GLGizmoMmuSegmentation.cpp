@@ -31,6 +31,40 @@ static inline void show_notification_extruders_limit_exceeded()
                                            "first %1% filaments will be available in painting tool."), GLGizmoMmuSegmentation::EXTRUDERS_LIMIT));
 }
 
+// --- Gradient rendering helpers (ported from MixedFilamentBadge) ---
+
+static ImU32 interpolate_ImU32(ImU32 c0, ImU32 c1, double t)
+{
+    t = std::max(0.0, std::min(1.0, t));
+    int r = int(((c0 >> IM_COL32_R_SHIFT) & 0xFF) * (1.0 - t) + ((c1 >> IM_COL32_R_SHIFT) & 0xFF) * t);
+    int g = int(((c0 >> IM_COL32_G_SHIFT) & 0xFF) * (1.0 - t) + ((c1 >> IM_COL32_G_SHIFT) & 0xFF) * t);
+    int b = int(((c0 >> IM_COL32_B_SHIFT) & 0xFF) * (1.0 - t) + ((c1 >> IM_COL32_B_SHIFT) & 0xFF) * t);
+    return IM_COL32(r, g, b, 255);
+}
+
+static float bT601_luminance(ImU32 c)
+{
+    float r = ((c >> IM_COL32_R_SHIFT) & 0xFF) / 255.0f;
+    float g = ((c >> IM_COL32_G_SHIFT) & 0xFF) / 255.0f;
+    float b = ((c >> IM_COL32_B_SHIFT) & 0xFF) / 255.0f;
+    return 0.299f * r + 0.587f * g + 0.114f * b;
+}
+
+static bool very_light(ImU32 c)
+{
+    return ((c >> IM_COL32_R_SHIFT) & 0xFF) > 224
+        && ((c >> IM_COL32_G_SHIFT) & 0xFF) > 224
+        && ((c >> IM_COL32_B_SHIFT) & 0xFF) > 224;
+}
+
+static ImU32 physical_color_to_ImU32(const std::string& hex)
+{
+    unsigned char rgba[4] = {};
+    Slic3r::GUI::BitmapCache::parse_color4(hex, rgba);
+    ColorRGBA col(float(rgba[0]) / 255.f, float(rgba[1]) / 255.f, float(rgba[2]) / 255.f, float(rgba[3]) / 255.f);
+    return ImGuiWrapper::to_ImU32(col);
+}
+
 void GLGizmoMmuSegmentation::on_opening()
 {
     if (get_extruders_colors().size() > GLGizmoMmuSegmentation::EXTRUDERS_LIMIT)
@@ -133,6 +167,11 @@ void GLGizmoMmuSegmentation::init_extruders_data(const std::vector<ColorRGBA> &e
     m_extruder_remap.resize(m_display_filament_ids.size());
     for (size_t i = 0; i < m_extruder_remap.size(); ++i)
         m_extruder_remap[i] = i;
+
+    // Build minimal display context for gradient rendering
+    std::vector<std::string> physical_hex = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
+    // Only physical_colors is used for gradient rendering; other fields intentionally at defaults
+    m_mixed_display_context = MixedFilamentDisplayContext{physical_hex.size(), std::move(physical_hex), {}, {}, false};
 }
 
 void GLGizmoMmuSegmentation::init_extruders_data()
@@ -478,6 +517,96 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             ImGui::SameLine(button_offset);
         }
 
+        const MixedFilament* mf_data =
+            wxGetApp().preset_bundle != nullptr ?
+                wxGetApp().preset_bundle->mixed_filaments.mixed_filament_from_id(actual_filament_id,
+                                                                                 m_mixed_display_context.num_physical) :
+                nullptr;
+        const bool is_gradient = mf_data != nullptr &&
+                                 (mf_data->gradient_enabled || !mf_data->gradient_component_ids.empty()) &&
+                                 mf_data->component_a != mf_data->component_b;
+
+        if (is_gradient) {
+            // --- Gradient path: ColorButton for sizing + interaction, then draw gradient on top ---
+            // Resolve gradient endpoint colors first
+            ImU32 phys_a = IM_COL32(0x26, 0xA6, 0x9A, 255);
+            ImU32 phys_b = IM_COL32(0x26, 0xA6, 0x9A, 255);
+            if (mf_data->component_a > 0 && mf_data->component_a <= m_mixed_display_context.physical_colors.size())
+                phys_a = physical_color_to_ImU32(m_mixed_display_context.physical_colors[mf_data->component_a - 1]);
+            if (mf_data->component_b > 0 && mf_data->component_b <= m_mixed_display_context.physical_colors.size())
+                phys_b = physical_color_to_ImU32(m_mixed_display_context.physical_colors[mf_data->component_b - 1]);
+            bool a_to_b = mf_data->gradient_start >= mf_data->gradient_end;
+            ImU32 bottom_col = a_to_b ? phys_a : phys_b;
+            ImU32 top_col    = a_to_b ? phys_b : phys_a;
+
+            // Average color for ColorButton's solid fill (hidden by gradient overlay)
+            int avg_r = int((((bottom_col >> IM_COL32_R_SHIFT) & 0xFF) + ((top_col >> IM_COL32_R_SHIFT) & 0xFF)) / 2);
+            int avg_g = int((((bottom_col >> IM_COL32_G_SHIFT) & 0xFF) + ((top_col >> IM_COL32_G_SHIFT) & 0xFF)) / 2);
+            int avg_b = int((((bottom_col >> IM_COL32_B_SHIFT) & 0xFF) + ((top_col >> IM_COL32_B_SHIFT) & 0xFF)) / 2);
+            ImVec4 avg_color_vec(float(avg_r) / 255.f, float(avg_g) / 255.f, float(avg_b) / 255.f, 1.f);
+
+            // ColorButton provides exact sizing, click detection, border, and cursor advance
+            ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoTooltip;
+            if (m_selected_extruder_idx != extruder_idx) flags |= ImGuiColorEditFlags_NoBorder;
+            #ifdef __APPLE__
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGuiWrapper::COL_ORCA);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0);
+                bool color_picked = ImGui::ColorButton(color_label.c_str(), avg_color_vec, flags, button_size);
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor(1);
+            #else
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGuiWrapper::COL_ORCA);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0);
+                bool color_picked = ImGui::ColorButton(color_label.c_str(), avg_color_vec, flags, button_size);
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor(1);
+            #endif
+            color_button_high = ImGui::GetCursorPos().y - color_button - 2.0;
+            if (color_picked) { m_selected_extruder_idx = extruder_idx; }
+
+            // Draw gradient slightly inset to match solid color block visual size
+            ImVec2 btn_min = ImGui::GetItemRectMin();
+            ImVec2 btn_max = ImGui::GetItemRectMax();
+            const float inset = 2.5f;
+            ImVec2 fill_min(btn_min.x + inset, btn_min.y + inset);
+            ImVec2 fill_max(btn_max.x - inset, btn_max.y - inset);
+            float fill_h = fill_max.y - fill_min.y;
+
+            // Per-scanline gradient fill (pos=0 bottom, pos=1 top)
+            if (fill_h > 0.0f) {
+                for (int y_i = 0; y_i < int(std::round(fill_h)); ++y_i) {
+                    double pos = 1.0 - double(y_i) / double(fill_h);
+                    ImU32 c = interpolate_ImU32(bottom_col, top_col, pos);
+                    draw_list->AddRectFilled(
+                        ImVec2(fill_min.x, fill_min.y + float(y_i)),
+                        ImVec2(fill_max.x, fill_min.y + float(y_i + 1)), c);
+                }
+            }
+
+            // Very-light gradient border
+            if (very_light(bottom_col) && very_light(top_col))
+                draw_list->AddRect(fill_min, fill_max, IM_COL32(128, 128, 128, 255), ImGui::GetStyle().FrameRounding, 0, 1.0f);
+
+            // Tooltip
+            if (ImGui::IsItemHovered()) {
+                if (extruder_idx < 9)
+                    m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+                else
+                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(extruder_idx + 1)), max_tooltip_width);
+            }
+
+            // Number text centered on button
+            float lum_avg = (bT601_luminance(bottom_col) + bT601_luminance(top_col)) * 0.5f;
+            ImU32 text_col = (lum_avg < 0.51f) ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255);
+            float text_w = ImGui::CalcTextSize(item_text.c_str()).x;
+            draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                ImVec2(btn_min.x + (btn_max.x - btn_min.x - text_w) / 2.f,
+                       btn_min.y + (btn_max.y - btn_min.y - ImGui::GetFontSize()) / 2.f),
+                text_col, item_text.c_str());
+
+        } else {
         // draw filament background
         ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoTooltip;
         if (m_selected_extruder_idx != extruder_idx) flags |= ImGuiColorEditFlags_NoBorder;
@@ -516,6 +645,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "%s", item_text.c_str());
 
         ImGui::PopStyleVar();
+        }
     }
     //ImGui::NewLine();
     ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.1));
@@ -797,6 +927,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
 
             for (int i = 0; i < m_triangle_selectors.size(); i++) {
                 TriangleSelectorPatch* ts_mm = dynamic_cast<TriangleSelectorPatch*>(m_triangle_selectors[i].get());
+                if (!ts_mm) continue;
                 ts_mm->update_selector_triangles();
                 ts_mm->request_update_render_data(true);
             }
@@ -870,6 +1001,7 @@ void GLGizmoMmuSegmentation::update_model_object()
         wxGetApp().obj_list()->update_info_items(obj_idx);
         wxGetApp().plater()->get_partplate_list().notify_instance_update(obj_idx, 0);
         m_parent.post_event(SimpleEvent(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS));
+        wxGetApp().plater()->notify_filament_usage_changed();
     }
 }
 
@@ -892,6 +1024,7 @@ void GLGizmoMmuSegmentation::init_model_triangle_selectors()
             continue;
 
         int extruder_idx = (mv->extruder_id() > 0) ? mv->extruder_id() - 1 : 0;
+        extruder_idx = std::min(extruder_idx, int(m_extruders_colors.size()) - 1);
         std::vector<ColorRGBA> ebt_colors;
         ebt_colors.push_back(m_extruders_colors[size_t(extruder_idx)]);
         ebt_colors.insert(ebt_colors.end(), m_extruders_colors.begin(), m_extruders_colors.end());
@@ -910,10 +1043,14 @@ void GLGizmoMmuSegmentation::init_model_triangle_selectors()
 
 void GLGizmoMmuSegmentation::update_triangle_selectors_colors()
 {
+    if (m_extruders_colors.empty())
+        return;
     for (int i = 0; i < m_triangle_selectors.size(); i++) {
         TriangleSelectorPatch* selector = dynamic_cast<TriangleSelectorPatch*>(m_triangle_selectors[i].get());
+        if (!selector) continue;
         int extruder_idx = m_volumes_extruder_idxs[i];
         int extruder_color_idx = std::max(0, extruder_idx - 1);
+        extruder_color_idx = std::min(extruder_color_idx, int(m_extruders_colors.size()) - 1);
         std::vector<ColorRGBA> ebt_colors;
         ebt_colors.push_back(m_extruders_colors[extruder_color_idx]);
         ebt_colors.insert(ebt_colors.end(), m_extruders_colors.begin(), m_extruders_colors.end());
@@ -943,6 +1080,7 @@ void GLGizmoMmuSegmentation::tool_changed(wchar_t old_tool, wchar_t new_tool)
 
     for (auto& selector_ptr : m_triangle_selectors) {
         TriangleSelectorPatch* tsp = dynamic_cast<TriangleSelectorPatch*>(selector_ptr.get());
+        if (!tsp) continue;
         tsp->set_filter_state(new_tool == ImGui::GapFillIcon);
     }
 }

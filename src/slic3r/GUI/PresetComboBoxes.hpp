@@ -6,6 +6,7 @@
 #include <wx/gdicmn.h>
 #include <wx/clrpicker.h>
 
+#include "libslic3r/FilamentColorLibrary.hpp"
 #include "libslic3r/Preset.hpp"
 #include "wxExtensions.hpp"
 #include "BitmapComboBox.hpp"
@@ -176,7 +177,7 @@ public:
     wxColor get_color() { return m_color; }
 
     bool switch_to_tab();
-    void change_extruder_color();
+    void ChangeExtruderColor();
     void show_add_menu();
     void show_edit_menu();
 
@@ -250,6 +251,11 @@ private:
     wxRect get_machine_connecting_btn_rect() const;
     wxRect get_edit_btn_rect() const;
     wxRect get_dropdown_rect() const;
+
+    void SelectLegacyFilamentColor();
+    void ApplyFilamentColor(const FilamentColor& colorData);
+    std::string CurrentFilamentPresetName() const;
+    std::string CurrentFilamentId() const;
 };
 
 

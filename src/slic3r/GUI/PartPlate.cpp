@@ -1372,6 +1372,16 @@ int PartPlate::picking_id_component(int idx) const
     return this->m_plate_index * GRABBER_COUNT + idx;
 }
 
+
+static void expand_plate_extruders(std::vector<int>& ids)
+{
+	const size_t num_physical = static_cast<size_t>(std::max(wxGetApp().filaments_cnt(), 0));
+	if (num_physical > 0) {
+		wxGetApp().preset_bundle->mixed_filaments.expand_virtual_extruder_ids(ids, num_physical);
+		std::sort(ids.begin(), ids.end());
+		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+	}
+}
 std::vector<int> PartPlate::get_extruders(bool conside_custom_gcode) const
 {
 	std::vector<int> plate_extruders;
@@ -1484,6 +1494,10 @@ std::vector<int> PartPlate::get_extruders(bool conside_custom_gcode) const
 	std::sort(plate_extruders.begin(), plate_extruders.end());
 	auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());
 	plate_extruders.resize(std::distance(plate_extruders.begin(), it_end));
+
+		expand_plate_extruders(plate_extruders);
+
+
 	return plate_extruders;
 }
 
@@ -1497,7 +1511,7 @@ std::vector<int> PartPlate::get_extruders_under_cli(bool conside_custom_gcode, D
 
     // if 3mf file
     int glb_support_intf_extr = full_config.opt_int("support_interface_filament");
-    int glb_support_extr = full_config.opt_int("support_filament");
+	int glb_support_extr = full_config.opt_int("support_filament");
 	int glb_wall_extr = full_config.opt_int("wall_filament");
 	const ResolvedInfillFilament global_infill { glb_wall_extr, glb_wall_extr, false };
 	int glb_sparse_infill_extr = glb_wall_extr;
@@ -1670,6 +1684,8 @@ std::vector<int> PartPlate::get_extruders_without_support(bool conside_custom_gc
 	std::sort(plate_extruders.begin(), plate_extruders.end());
 	auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());
 	plate_extruders.resize(std::distance(plate_extruders.begin(), it_end));
+
+	expand_plate_extruders(plate_extruders);
 	return plate_extruders;
 }
 
@@ -2031,7 +2047,7 @@ bool PartPlate::is_valid_gcode_file()
 	return true;
 }
 
-ModelObjectPtrs PartPlate::get_objects_on_this_plate() {
+ModelObjectPtrs PartPlate::get_objects_on_this_plate() const {
     ModelObjectPtrs objects_ptr;
     int obj_id;
     for (auto it = obj_to_instance_set.begin(); it != obj_to_instance_set.end(); it++) {
@@ -4051,6 +4067,8 @@ int PartPlateList::select_plate(int index)
 		return -1;
 	}
 
+        const int old_plate_index = m_current_plate;
+
 	// BBS: erase unnecessary snapshot
 	if (get_curr_plate_index() != index && m_intialized) {
 		if (m_plater)
@@ -4064,6 +4082,8 @@ int PartPlateList::select_plate(int index)
 
 	m_current_plate = index;
 	m_plate_list[m_current_plate]->set_selected();
+        if (old_plate_index != m_current_plate && wxGetApp().plater())
+            wxGetApp().plater()->notify_filament_usage_changed();
 
 	//BBS
 	if(m_model)
@@ -4538,6 +4558,8 @@ int PartPlateList::add_to_plate(int obj_id, int instance_id, int plate_id)
 		return -1;
 	}
 	ret = plate->add_instance(obj_id, instance_id, true);
+
+    wxGetApp().plater()->notify_filament_usage_changed();
 
 	return ret;
 }

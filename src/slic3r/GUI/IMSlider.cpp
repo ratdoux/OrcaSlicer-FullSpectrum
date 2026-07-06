@@ -291,6 +291,7 @@ void IMSlider::SetLayersTimes(const std::vector<float> &layers_times, float tota
 
     // Erase duplicates values from m_values and save it to the m_layers_values
     // They will be used for show the correct estimated time for MM print, when "No sparce layer" is enabled
+    m_layers_values.clear();
     if (m_is_wipe_tower && m_values.size() != m_layers_times.size()) {
         m_layers_values = m_values;
         sort(m_layers_values.begin(), m_layers_values.end());

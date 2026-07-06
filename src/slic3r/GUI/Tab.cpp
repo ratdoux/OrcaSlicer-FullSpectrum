@@ -23,8 +23,11 @@
 #include <wx/imaglist.h>
 #include <wx/settings.h>
 #include <wx/filedlg.h>
+#include <iomanip>
+#include <sstream>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include "libslic3r/libslic3r.h"
 #include "slic3r/GUI/OptionsGroup.hpp"
@@ -64,6 +67,69 @@ namespace GUI {
 #define DISABLE_UNDO_SYS
 
 static const std::vector<std::string> plate_keys = { "curr_bed_type", "skirt_start_angle", "first_layer_print_sequence", "first_layer_sequence_choice", "other_layers_print_sequence", "other_layers_sequence_choice", "print_sequence", "spiral_mode"};
+
+static std::string bed_type_to_rule_key(BedType bed_type)
+{
+    switch (bed_type) {
+    case btPEI:  return "btPEI";
+    case btGESP: return "btGESP";
+    default:     return "";
+    }
+}
+
+static std::string nozzle_diameter_to_rule_key(double nozzle_diameter)
+{
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(2) << nozzle_diameter;
+    std::string out = ss.str();
+    while (!out.empty() && out.back() == '0')
+        out.pop_back();
+    if (!out.empty() && out.back() == '.')
+        out.pop_back();
+    return out + "mm";
+}
+
+static void validate_filament_hot_bed_nozzle_relation(wxWindow* parent)
+{
+    (void)parent;
+    auto& app = wxGetApp();
+    if (!app.has_filament_hot_bed_nozzle_rules() || app.preset_bundle == nullptr)
+        return;
+
+    const Preset& filament_preset = app.preset_bundle->filaments.get_edited_preset();
+    std::string filament_type;
+    if (auto filament_type_opt = filament_preset.config.option<ConfigOptionStrings>("filament_type");
+        filament_type_opt != nullptr && !filament_type_opt->values.empty())
+    {
+        filament_type = filament_type_opt->values.front();
+    }
+    if (filament_type.empty())
+        return;
+
+    auto&       printer_preset = app.preset_bundle->printers.get_edited_preset();
+    const auto& printer_config = printer_preset.config;
+    BedType     bed_type = printer_preset.get_default_bed_type(app.preset_bundle);
+    if (app.preset_bundle->project_config.has("curr_bed_type"))
+        bed_type = app.preset_bundle->project_config.opt_enum<BedType>("curr_bed_type");
+    const std::string bed_key = bed_type_to_rule_key(bed_type);
+
+    if (!bed_key.empty()) {        
+        const bool is_supported = app.is_bed_filament_supported(bed_key, filament_type);
+        const bool is_warning   = app.is_bed_filament_warning(bed_key, filament_type);
+        (void)is_supported;
+        (void)is_warning;
+    }
+
+    const auto* nozzle_opt = printer_config.option<ConfigOptionFloats>("nozzle_diameter");
+    if (nozzle_opt != nullptr && !nozzle_opt->values.empty()) {
+        const std::string nozzle_key = nozzle_diameter_to_rule_key(nozzle_opt->values.front());
+        NozzleType        nozzle_mat = NozzleType::ntUndefine;
+        if (const auto* nto = printer_config.option<ConfigOptionEnum<NozzleType>>("nozzle_type"))
+            nozzle_mat = nto->value;
+        const bool is_noz_warn = app.is_nozzle_filament_warning(nozzle_key, filament_preset.name, nozzle_mat);
+        (void)is_noz_warn;
+    }
+}
 
 void Tab::Highlighter::set_timer_owner(wxEvtHandler* owner, int timerid/* = wxID_ANY*/)
 {
@@ -1464,6 +1530,41 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     if(opt_key == "purge_in_prime_tower")
         wxGetApp().get_tab(Preset::TYPE_PRINT)->update();
 
+    if (m_type == Preset::TYPE_PRINT && opt_key == "dithering_local_z_mode") {
+        const bool local_z_enabled = boost::any_cast<bool>(value);
+        DynamicPrintConfig new_conf = *m_config;
+        bool dependent_config_changed = false;
+        DynamicPrintConfig &project_cfg = wxGetApp().preset_bundle->project_config;
+
+        auto set_print_bool = [this, &new_conf, &dependent_config_changed](const char *key, bool enabled) {
+            if (!m_config->has(key) || m_config->option(key) == nullptr || m_config->opt_bool(key) == enabled)
+                return;
+            new_conf.set_key_value(key, new ConfigOptionBool(enabled));
+            dependent_config_changed = true;
+        };
+        auto set_project_bool = [&project_cfg](const char *key, bool enabled) {
+            project_cfg.set_key_value(key, new ConfigOptionBool(enabled));
+        };
+
+        if (local_z_enabled) {
+            set_print_bool("dithering_local_z_infill", true);
+        } else {
+            set_print_bool("dithering_local_z_whole_objects", false);
+            set_print_bool("dithering_local_z_infill", false);
+            set_project_bool("dithering_local_z_direct_multicolor", false);
+        }
+
+        if (dependent_config_changed)
+            m_config_manipulation.apply(m_config, &new_conf);
+
+        if (new_conf.has("dithering_local_z_whole_objects"))
+            set_project_bool("dithering_local_z_whole_objects", new_conf.opt_bool("dithering_local_z_whole_objects"));
+        if (new_conf.has("dithering_local_z_infill"))
+            set_project_bool("dithering_local_z_infill", new_conf.opt_bool("dithering_local_z_infill"));
+
+        if (auto* plater = wxGetApp().plater())
+            plater->notify_vhl_dithering_conflict(local_z_enabled);
+    }
 
     if (opt_key == "enable_prime_tower") {
         auto timelapse_type = m_config->option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
@@ -1784,7 +1885,8 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
 
     //Orca: sync filament num if it's a multi tool printer
     if (opt_key == "extruders_count" && !m_config->opt_bool("single_extruder_multi_material")){
-        auto num_extruder = boost::any_cast<size_t>(value);
+        const auto *nozzle_diameter = dynamic_cast<const ConfigOptionFloats*>(m_config->option("nozzle_diameter"));
+        size_t num_extruder = (nozzle_diameter != nullptr) ? nozzle_diameter->values.size() : 0;
         int         old_filament_size = wxGetApp().preset_bundle->filament_presets.size();
         std::vector<std::string> new_colors;
         for (int i = old_filament_size; i < num_extruder; ++i) {
@@ -2499,7 +2601,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("prime_tower_brim_width", "multimaterial_settings_prime_tower#brim-width");
         optgroup->append_single_option_line("prime_tower_brim_chamfer", "multimaterial_settings_prime_tower#brim-chamfer");
         optgroup->append_single_option_line("prime_tower_brim_chamfer_max_width", "multimaterial_settings_prime_tower#brim-chamfer-max-width");
-        optgroup->append_single_option_line("wipe_tower_rotation_angle", "multimaterial_settings_prime_tower#wipe-tower-rotation-angle");
+
         optgroup->append_single_option_line("wipe_tower_bridging", "multimaterial_settings_prime_tower#maximal-bridging-distance");
         optgroup->append_single_option_line("wipe_tower_extra_spacing", "multimaterial_settings_prime_tower#wipe-tower-purge-lines-spacing");
         optgroup->append_single_option_line("wipe_tower_extra_flow", "multimaterial_settings_prime_tower#extra-flow-for-purge");
@@ -2511,6 +2613,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("wipe_tower_rib_width", "multimaterial_settings_prime_tower#rib-width");
         optgroup->append_single_option_line("wipe_tower_fillet_wall", "multimaterial_settings_prime_tower#fillet-wall");
         optgroup->append_single_option_line("wipe_tower_no_sparse_layers", "multimaterial_settings_prime_tower#no-sparse-layers");
+        optgroup->append_single_option_line("wipe_tower_wall_gap", "multimaterial_settings_prime_tower#wall-gap");
         optgroup->append_single_option_line("single_extruder_multi_material_priming", "multimaterial_settings_prime_tower");
 
         optgroup = page->new_optgroup(L("Filament for Features"), L"param_filament_for_features");
@@ -2540,7 +2643,12 @@ void TabPrint::build()
         optgroup->append_single_option_line("interlocking_depth", "multimaterial_settings_advanced#interlocking-depth");
         optgroup->append_single_option_line("interlocking_boundary_avoidance", "multimaterial_settings_advanced#interlocking-boundary-avoidance");
 
-page = add_options_page(L("Others"), "custom-gcode_other"); // ORCA: icon only visible on placeholders
+        optgroup = page->new_optgroup(L("Color Mixing (Experimental)"), L"param_mixed_color");
+        optgroup->append_single_option_line("dithering_local_z_mode");
+        optgroup->append_single_option_line("dithering_local_z_whole_objects");
+        optgroup->append_single_option_line("dithering_local_z_infill");
+
+    page = add_options_page(L("Others"), "custom-gcode_other"); // ORCA: icon only visible on placeholders
         optgroup = page->new_optgroup(L("Skirt"), L"param_skirt");
 optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops");
         optgroup->append_single_option_line("skirt_type", "others_settings_skirt#type");
@@ -2695,6 +2803,62 @@ void TabPrint::toggle_options()
         }
         cb->SetValue(n);
     }
+
+    // Keep plate bed-type list in sync with currently selected printer.
+    if (m_type == Preset::TYPE_PLATE && m_active_page->title() == L("Plate Settings")) {
+        Field* bed_type_field = m_active_page->get_field("curr_bed_type");
+        if (auto bed_type_choice = dynamic_cast<Choice*>(bed_type_field)) {
+            auto bed_type_cb = dynamic_cast<ComboBox*>(bed_type_choice->window);
+            auto bed_type_def = print_config_def.get("curr_bed_type");
+            if (bed_type_cb && bed_type_def) {
+                const Preset& printer_preset = m_preset_bundle->printers.get_selected_preset();
+                auto printer_cfg = m_preset_bundle->printers.get_edited_preset().config;
+                bool is_snapmaker_u1 = boost::icontains(printer_preset.name, "Snapmaker U1");
+                if (auto printer_model_opt = printer_cfg.option<ConfigOptionString>("printer_model")) {
+                    const std::string printer_model = printer_model_opt->value;
+                    is_snapmaker_u1 = is_snapmaker_u1 || (boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1"));
+                }
+                bool support_multi_bed_types = false;
+                if (auto support_multi_bed_types_opt = printer_cfg.option<ConfigOptionBool>("support_multi_bed_types")) {
+                    support_multi_bed_types = support_multi_bed_types_opt->value;
+                }
+
+                auto& opt = const_cast<ConfigOptionDef&>(bed_type_field->m_opt);
+                opt.enum_values.clear();
+                opt.enum_labels.clear();
+
+                const std::vector<std::string>* target_values = &bed_type_def->enum_values;
+                const std::vector<std::string>* target_labels = &bed_type_def->enum_labels;
+                if (is_snapmaker_u1) {
+                    if (support_multi_bed_types) {
+                        target_values = &bed_type_def->enum_values_ex;
+                        target_labels = &bed_type_def->enum_labels_ex;
+                    } else {
+                        target_values = &bed_type_def->enum_values_u1;
+                        target_labels = &bed_type_def->enum_labels_u1;
+                    }
+                }
+
+                bed_type_cb->Clear();
+                for (size_t i = 0; i < target_values->size() && i < target_labels->size(); ++i) {
+                    opt.enum_values.push_back((*target_values)[i]);
+                    opt.enum_labels.push_back((*target_labels)[i]);
+                    bed_type_cb->Append(_((*target_labels)[i]));
+                }
+
+                int curr_bed_type = m_config->opt_enum<BedType>("curr_bed_type");
+                std::string curr_key;
+                for (const auto& kv : *bed_type_def->enum_keys_map) {
+                    if (kv.second == curr_bed_type) {
+                        curr_key = kv.first;
+                        break;
+                    }
+                }
+                auto it = std::find(opt.enum_values.begin(), opt.enum_values.end(), curr_key);
+                bed_type_cb->SetSelection(it == opt.enum_values.end() ? 0 : int(it - opt.enum_values.begin()));
+            }
+        }
+    }
 }
 
 void TabPrint::update()
@@ -2795,6 +2959,18 @@ static DynamicPrintConfig resolved_model_config_for_tab(const DynamicPrintConfig
     return resolved;
 }
 
+static void sync_plate_bed_type_to_global(DynamicPrintConfig& config)
+{
+    if (wxGetApp().preset_bundle == nullptr)
+        return;
+
+    DynamicConfig& global_cfg = wxGetApp().preset_bundle->project_config;
+    if (global_cfg.has("curr_bed_type")) {
+        BedType global_bed_type = global_cfg.opt_enum<BedType>("curr_bed_type");
+        config.set_key_value("curr_bed_type", new ConfigOptionEnum<BedType>(global_bed_type));
+    }
+}
+
 TabPrintModel::TabPrintModel(ParamsPanel* parent, std::vector<std::string> const & keys)
     : TabPrint(parent, Preset::TYPE_MODEL)
     , m_keys(intersect(Preset::print_options(), keys))
@@ -2859,6 +3035,9 @@ void TabPrintModel::update_model_config()
     m_config->apply(*m_parent_tab->m_config);
     if (m_type != Preset::TYPE_PLATE) {
         m_config->apply_only(*wxGetApp().plate_tab->get_config(), plate_keys);
+    } else {
+        sync_plate_bed_type_to_global(m_prints.get_selected_preset().config);
+        sync_plate_bed_type_to_global(*m_config);
     }
     m_null_keys.clear();
     if (!m_object_configs.empty()) {
@@ -3002,6 +3181,8 @@ void TabPrintModel::on_value_change(const std::string& opt_key, const boost::any
         notify_changed(config.first);
     }
     wxGetApp().params_panel()->notify_object_config_changed();
+
+    wxGetApp().plater()->notify_filament_usage_changed();
 }
 
 void TabPrintModel::reload_config()
@@ -3052,11 +3233,9 @@ void TabPrintPlate::build()
     load_initial_data();
 
     m_config->option("curr_bed_type", true);
-    if (m_preset_bundle->project_config.has("curr_bed_type")) {
-        BedType global_bed_type = m_preset_bundle->project_config.opt_enum<BedType>("curr_bed_type");
-        global_bed_type = BedType(global_bed_type - 1);
-        m_config->set_key_value("curr_bed_type", new ConfigOptionEnum<BedType>(global_bed_type));
-    }
+    m_prints.get_selected_preset().config.option("curr_bed_type", true);
+    sync_plate_bed_type_to_global(m_prints.get_selected_preset().config);
+    sync_plate_bed_type_to_global(*m_config);
     m_config->option("first_layer_sequence_choice", true);
     m_config->option("first_layer_print_sequence", true);
     m_config->option("other_layers_print_sequence", true);
@@ -3064,7 +3243,32 @@ void TabPrintPlate::build()
 
     auto page = add_options_page(L("Plate Settings"), "empty");
     auto optgroup = page->new_optgroup("");
-    optgroup->append_single_option_line("curr_bed_type");
+    {
+        Option bed_type_option = optgroup->get_option("curr_bed_type");
+        bool is_snapmaker_u1 = false;
+        bool support_multi_bed_types = false;
+        const Preset& printer_preset = m_preset_bundle->printers.get_edited_preset();
+        auto printer_cfg = printer_preset.config;
+        is_snapmaker_u1 = boost::icontains(printer_preset.name, "Snapmaker U1");
+        if (auto printer_model_opt = printer_cfg.option<ConfigOptionString>("printer_model")) {
+            const std::string printer_model = printer_model_opt->value;
+            is_snapmaker_u1 = is_snapmaker_u1 || (boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1"));
+        }
+        if (auto support_multi_bed_types_opt = printer_cfg.option<ConfigOptionBool>("support_multi_bed_types")) {
+            support_multi_bed_types = support_multi_bed_types_opt->value;
+        }
+
+        if (is_snapmaker_u1) {
+            if (support_multi_bed_types) {
+                bed_type_option.opt.enum_values = bed_type_option.opt.enum_values_ex;
+                bed_type_option.opt.enum_labels = bed_type_option.opt.enum_labels_ex;
+            } else {
+                bed_type_option.opt.enum_values = bed_type_option.opt.enum_values_u1;
+                bed_type_option.opt.enum_labels = bed_type_option.opt.enum_labels_u1;
+            }
+        }
+        optgroup->append_single_option_line(bed_type_option);
+    }
     optgroup->append_single_option_line("skirt_start_angle");
     optgroup->append_single_option_line("print_sequence");
     optgroup->append_single_option_line("spiral_mode");
@@ -3206,6 +3410,8 @@ void TabPrintPlate::on_value_change(const std::string& opt_key, const boost::any
     }
 
     wxGetApp().params_panel()->notify_object_config_changed();
+    if (k == "curr_bed_type")
+        validate_filament_hot_bed_nozzle_relation(parent());
     update();
 }
 
@@ -3557,7 +3763,9 @@ void TabFilament::build()
         optgroup->append_single_option_line("filament_cost");
         //BBS
         optgroup->append_single_option_line("temperature_vitrification");
+        // filament_is_high_temperature is controlled by preset data, not user-facing
         optgroup->append_single_option_line("idle_temperature");
+        optgroup->append_single_option_line("filament_tower_ironing_area");
         Line line = { L("Recommended nozzle temperature"), L("Recommended nozzle temperature range of this filament. 0 means no set") };
         line.append_option(optgroup->get_option("nozzle_temperature_range_low"));
         line.append_option(optgroup->get_option("nozzle_temperature_range_high"));
@@ -3641,6 +3849,12 @@ void TabFilament::build()
                  L("Bed temperature when the Textured PEI Plate is installed. A value of 0 means the filament does not support printing on the Textured PEI Plate.") };
         line.append_option(optgroup->get_option("textured_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("textured_plate_temp"));
+        optgroup->append_line(line);
+
+        line = {L("Graphic Effect Plate"), 
+                L("Bed temperature when the Graphic Effect Plate is installed. A value of 0 means the filament does not support printing on the Graphic Effect Plate.")};
+        line.append_option(optgroup->get_option("graphic_effect_plate_temp_initial_layer"));
+        line.append_option(optgroup->get_option("graphic_effect_plate_temp"));
         optgroup->append_line(line);
 
         optgroup->m_on_change = [this](t_config_option_key opt_key, boost::any value)
@@ -3892,11 +4106,39 @@ void TabFilament::toggle_options()
     {
         bool pa = m_config->opt_bool("enable_pressure_advance", 0);
         toggle_option("pressure_advance", pa);
-        
+
         // BBS: 控制床温选项的显示
         auto support_multi_bed_types = is_BBL_printer || cfg.opt_bool("support_multi_bed_types");
-        if (support_multi_bed_types) {
-            // 支持多床型：显示所有床温选项
+        bool is_snapmaker_u1 = false;
+        const Preset& printer_preset = m_preset_bundle->printers.get_edited_preset();
+        is_snapmaker_u1 = boost::icontains(printer_preset.name, "Snapmaker U1");
+        if (auto printer_model_opt = cfg.option<ConfigOptionString>("printer_model")) {
+            std::string printer_model = printer_model_opt->value;
+            is_snapmaker_u1 = is_snapmaker_u1 || (boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1"));
+        }
+        if (Line* hot_plate_line = get_line("hot_plate_temp_initial_layer")) {
+            hot_plate_line->label = is_snapmaker_u1
+                ? _L("Smooth PEI Plate")
+                : _L("Smooth PEI Plate / High Temp Plate");
+        }
+        if (is_snapmaker_u1 && !support_multi_bed_types) {
+            // U1 default show 3 plates
+            toggle_line("supertack_plate_temp_initial_layer", false);
+            toggle_line("supertack_plate_temp", false);
+            toggle_line("cool_plate_temp_initial_layer", false);
+            toggle_line("cool_plate_temp", false);
+            toggle_line("textured_cool_plate_temp_initial_layer", false);
+            toggle_line("textured_cool_plate_temp", false);
+            toggle_line("eng_plate_temp_initial_layer", false);
+            toggle_line("eng_plate_temp", false);
+            toggle_line("hot_plate_temp_initial_layer", true);
+            toggle_line("hot_plate_temp", true);
+            toggle_line("textured_plate_temp_initial_layer", true);
+            toggle_line("textured_plate_temp", true);
+            toggle_line("graphic_effect_plate_temp_initial_layer", true);
+            toggle_line("graphic_effect_plate_temp", true);
+        } else if (support_multi_bed_types) {
+            // u1 has 7 plates
             toggle_line("supertack_plate_temp_initial_layer", true);
             toggle_line("cool_plate_temp", true);
             toggle_line("cool_plate_temp_initial_layer", true);
@@ -3909,11 +4151,10 @@ void TabFilament::toggle_options()
             toggle_line("hot_plate_temp", true);
             toggle_line("textured_plate_temp_initial_layer", true);
             toggle_line("textured_plate_temp", true);
+            toggle_line("graphic_effect_plate_temp_initial_layer", is_snapmaker_u1);
+            toggle_line("graphic_effect_plate_temp", is_snapmaker_u1);
         } else {
-            // 不支持多床型：只显示当前选择的床型
-            
             BedType curr_bed_type = m_preset_bundle->printers.get_edited_preset().get_default_bed_type(m_preset_bundle);
-           
             toggle_line("supertack_plate_temp_initial_layer", curr_bed_type == btSuperTack);
             toggle_line("supertack_plate_temp", curr_bed_type == btSuperTack);
             toggle_line("cool_plate_temp_initial_layer", curr_bed_type == btPC);
@@ -3926,6 +4167,8 @@ void TabFilament::toggle_options()
             toggle_line("hot_plate_temp", curr_bed_type == btPEI);
             toggle_line("textured_plate_temp_initial_layer", curr_bed_type == btPTE);
             toggle_line("textured_plate_temp", curr_bed_type == btPTE);
+            toggle_line("graphic_effect_plate_temp_initial_layer", curr_bed_type == btGESP);
+            toggle_line("graphic_effect_plate_temp", curr_bed_type == btGESP);
         }
 
 
@@ -4510,7 +4753,7 @@ if (is_marlin_flavor)
             // Otherwise, boost::any_cast<size_t> causes an "unhandled unknown exception"
             const auto v = optgroup_sh->get_value("extruders_count");
             if (v.empty()) return;
-            size_t extruders_count = size_t(boost::any_cast<int>(v));
+            size_t extruders_count = static_cast<size_t>(boost::any_cast<int>(v));
             wxTheApp->CallAfter([this, opt_key, value, extruders_count]() {
                 if (opt_key == "extruders_count" || opt_key == "single_extruder_multi_material") {
                     extruders_count_changed(extruders_count);
@@ -4667,6 +4910,8 @@ if (is_marlin_flavor)
 
                     update_dirty();
                     update();
+                    if (opt_key.find("nozzle_diameter") != std::string::npos)
+                        validate_filament_hot_bed_nozzle_relation(parent());
                 };
 
                 optgroup = page->new_optgroup(L("Layer height limits"), L"param_layer_height");
@@ -5041,6 +5286,11 @@ void Tab::load_current_preset()
 
     // Reload preset pages with the new configuration values.
     reload_config();
+
+    // Refresh field decorations (orange/modified markers) after reload.
+    // Without this, stale decorations from a previous dirty state persist
+    // even after discard_current_changes() resets the config.
+    update_changed_ui();
 
     update_ui_items_related_on_parent_preset(m_presets->get_selected_preset_parent());
 
@@ -5471,20 +5721,45 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
         if (m_type == Preset::TYPE_PRINTER && wxGetApp().app_config->get_bool("remember_printer_config")) {
             if (preset_name.find("Snapmaker U1") != std::string::npos) {
                 // 在 update_selections() 改变耗材数量之前先保存旧数量和颜色
+                DynamicPrintConfig& project_config = m_preset_bundle->project_config;
                 std::vector<std::string> old_filament_colors = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
+                std::vector<std::string> old_filament_multi_colors;
+                std::vector<int> old_filament_colour_modes;
+                if (ConfigOptionStrings* multi_colors = project_config.option<ConfigOptionStrings>("filament_multi_colors"))
+                    old_filament_multi_colors = multi_colors->values;
+                if (ConfigOptionInts* modes = project_config.option<ConfigOptionInts>("filament_colour_mode"))
+                    old_filament_colour_modes = modes->values;
                 std::vector<std::string> old_filament_presets = m_preset_bundle->filament_presets;
+                const size_t old_filament_count = old_filament_presets.size();
+                old_filament_colors.resize(old_filament_count, "#26A69A");
+                old_filament_multi_colors.resize(old_filament_count);
+                old_filament_colour_modes.resize(old_filament_count, 0);
+                for (size_t i = 0; i < old_filament_count; ++i) {
+                    if (old_filament_colors[i].empty())
+                        old_filament_colors[i] = "#26A69A";
+                    if (old_filament_multi_colors[i].empty())
+                        old_filament_multi_colors[i] = old_filament_colors[i];
+                    old_filament_colour_modes[i] = old_filament_colour_modes[i] == 1 ? 1 : 0;
+                }
 
                 m_preset_bundle->update_selections(*wxGetApp().app_config);
 
-                // 恢复耗材预设到原来的数量和预设名称（保持类型自适应）
                 m_preset_bundle->filament_presets = old_filament_presets;
 
-                // 恢复原来的颜色，保持用户设置的耗材颜色不变
-                wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour")->values = old_filament_colors;
+                project_config.option<ConfigOptionStrings>("filament_colour")->values = old_filament_colors;
+                project_config.option<ConfigOptionStrings>("filament_multi_colors", true)->values = old_filament_multi_colors;
+                project_config.option<ConfigOptionInts>("filament_colour_mode", true)->values = old_filament_colour_modes;
 
-                // 重要：立即保存颜色到配置文件，这样下次切换时也会保持
-                std::string filament_colors_str = boost::algorithm::join(old_filament_colors, ",");
-                wxGetApp().app_config->set_printer_setting(preset_name, "filament_colors", filament_colors_str);
+                std::vector<std::string> filament_colour_mode_strings;
+                filament_colour_mode_strings.reserve(old_filament_colour_modes.size());
+                for (int mode : old_filament_colour_modes)
+                    filament_colour_mode_strings.emplace_back(mode == 1 ? "1" : "0");
+                const std::string filament_colors = boost::algorithm::join(old_filament_colors, ",");
+                const std::string filament_multi_colors = boost::algorithm::join(old_filament_multi_colors, ",");
+                const std::string filament_colour_modes = boost::algorithm::join(filament_colour_mode_strings, ",");
+                wxGetApp().app_config->set_printer_setting(preset_name, "filament_colors", filament_colors);
+                wxGetApp().app_config->set_printer_setting(preset_name, "filament_multi_colors", filament_multi_colors);
+                wxGetApp().app_config->set_printer_setting(preset_name, "filament_colour_mode", filament_colour_modes);
 
                 wxGetApp().plater()->sidebar().on_filaments_change(m_preset_bundle->filament_presets.size());
             } else {
@@ -5531,6 +5806,8 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
 
     if (technology_changed)
         wxGetApp().mainframe->technology_changed();
+    if (!canceled && m_presets->type() == Preset::TYPE_FILAMENT)
+        validate_filament_hot_bed_nozzle_relation(parent());
     BOOST_LOG_TRIVIAL(info) << boost::format("select preset, exit");
 
     return !canceled;

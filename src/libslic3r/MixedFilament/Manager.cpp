@@ -136,6 +136,66 @@ void MixedFilamentManager::set_auto_generate_enabled(bool enabled)
 
 bool MixedFilamentManager::auto_generate_enabled() { return s_mixed_filament_auto_generate_enabled.load(std::memory_order_relaxed); }
 
+std::vector<unsigned int> MixedFilamentManager::decode_gradient_component_ids(const std::string& components, size_t num_physical)
+{
+    const size_t limit = num_physical == 0 ? kMaxPhysicalFilaments : std::min<size_t>(num_physical, kMaxPhysicalFilaments);
+    return MixedFilamentInternal::decode_gradient_component_ids(components, limit);
+}
+
+std::string MixedFilamentManager::encode_gradient_component_ids(const std::vector<unsigned int>& component_ids)
+{
+    std::string encoded;
+    encoded.reserve(component_ids.size());
+    bool seen[10] = {false};
+    for (const unsigned int component_id : component_ids) {
+        if (component_id == 0 || component_id > kMaxPhysicalFilaments || seen[component_id])
+            continue;
+        seen[component_id] = true;
+        encoded.push_back(char('0' + component_id));
+    }
+    return encoded;
+}
+
+std::vector<std::string> MixedFilamentManager::split_pattern_groups(const std::string& pattern)
+{
+    return split_manual_pattern_groups(pattern);
+}
+
+std::vector<std::string> MixedFilamentManager::split_pattern_group_to_tokens(const std::string& group, size_t num_physical)
+{
+    (void) num_physical;
+    std::vector<std::string> tokens;
+    tokens.reserve(group.size());
+    for (const char c : group) {
+        if (is_pattern_separator(c))
+            continue;
+        char token = 0;
+        if (!decode_pattern_step(c, token))
+            continue;
+        tokens.emplace_back(1, token);
+    }
+    return tokens;
+}
+
+unsigned int MixedFilamentManager::physical_filament_from_token(const std::string&            token,
+                                                                const MixedFilamentLegacyRow& row,
+                                                                size_t                       num_physical)
+{
+    if (token.empty())
+        return 0;
+    char decoded = 0;
+    if (token.size() != 1 || !decode_pattern_step(token.front(), decoded))
+        return 0;
+
+    const MixedFilamentLegacyPair pair{{row.component_a}, {row.component_b}};
+    const unsigned int filament_id = physical_filament_from_legacy_pattern_token(decoded, pair);
+    if (filament_id == 0)
+        return 0;
+    if (num_physical != 0 && filament_id > num_physical)
+        return 0;
+    return filament_id;
+}
+
 void MixedFilamentManager::auto_generate(const std::vector<std::string>& filament_colours)
 {
     // Keep a copy of the old list so we can preserve user-modified ratios,
@@ -335,6 +395,8 @@ void MixedFilamentManager::apply_gradient_settings(int gradient_mode, float lowe
 
 std::string MixedFilamentManager::serialize_custom_entries()
 {
+    sync_mutable_legacy_cache_to_definitions(m_display_context.num_physical);
+
     std::ostringstream ss;
     bool               first = true;
     for (MixedFilamentDefinition& definition : m_definitions) {
@@ -570,6 +632,49 @@ std::vector<MixedFilamentDefinition> MixedFilamentManager::mixed_filament_defini
     return m_definitions;
 }
 
+std::vector<size_t> MixedFilamentManager::mixed_filaments_using_physical(unsigned int physical_filament_id) const
+{
+    std::vector<size_t> indices;
+    if (physical_filament_id == 0)
+        return indices;
+
+    for (size_t i = 0; i < m_definitions.size(); ++i) {
+        const MixedFilamentDefinition& definition = m_definitions[i];
+        if (definition.visibility.tombstoned)
+            continue;
+        if (definition_uses_physical_filament(definition, physical_filament_id))
+            indices.emplace_back(i);
+    }
+
+    return indices;
+}
+
+void MixedFilamentManager::expand_virtual_extruder_ids(std::vector<int>& filament_ids, size_t num_physical) const
+{
+    std::vector<int> expanded;
+    for (const int filament_id : filament_ids) {
+        if (filament_id <= 0)
+            continue;
+
+        const int mixed_idx = mixed_index_from_filament_id(static_cast<unsigned int>(filament_id), num_physical);
+        if (mixed_idx < 0 || size_t(mixed_idx) >= m_definitions.size())
+            continue;
+
+        const MixedFilamentDefinition& definition = m_definitions[size_t(mixed_idx)];
+        std::vector<unsigned int> component_ids;
+        if (definition.recipe.manual_pattern)
+            component_ids = mixed_filament_manual_pattern_sequence(definition, num_physical);
+        else
+            component_ids = definition.recipe.blend.component_ids(num_physical);
+
+        for (const unsigned int component_id : component_ids)
+            if (component_id >= 1 && component_id <= num_physical)
+                expanded.emplace_back(static_cast<int>(component_id));
+    }
+
+    filament_ids.insert(filament_ids.end(), expanded.begin(), expanded.end());
+}
+
 bool MixedFilamentManager::set_mixed_filament_definition(size_t                          index,
                                                          const MixedFilamentDefinition&  definition,
                                                          const std::vector<std::string>& filament_colours)
@@ -659,6 +764,36 @@ const std::vector<MixedFilamentLegacyRow>& MixedFilamentManager::mixed_filament_
     return m_legacy_cache;
 }
 
+std::vector<MixedFilamentLegacyRow>& MixedFilamentManager::mixed_filaments()
+{
+    rebuild_legacy_cache();
+    m_legacy_cache_mutable_borrowed = true;
+    return m_legacy_cache;
+}
+
+const std::vector<MixedFilamentLegacyRow>& MixedFilamentManager::mixed_filaments() const
+{
+    return mixed_filament_legacy_rows();
+}
+
+MixedFilamentLegacyRow* MixedFilamentManager::mixed_filament_from_id(unsigned int filament_id, size_t num_physical)
+{
+    const int idx = mixed_index_from_filament_id(filament_id, num_physical);
+    if (idx < 0)
+        return nullptr;
+    std::vector<MixedFilamentLegacyRow>& rows = mixed_filaments();
+    return size_t(idx) < rows.size() ? &rows[size_t(idx)] : nullptr;
+}
+
+const MixedFilamentLegacyRow* MixedFilamentManager::mixed_filament_from_id(unsigned int filament_id, size_t num_physical) const
+{
+    const int idx = mixed_index_from_filament_id(filament_id, num_physical);
+    if (idx < 0)
+        return nullptr;
+    const std::vector<MixedFilamentLegacyRow>& rows = mixed_filament_legacy_rows();
+    return size_t(idx) < rows.size() ? &rows[size_t(idx)] : nullptr;
+}
+
 size_t MixedFilamentManager::mixed_filament_count() const
 {
     return m_definitions.size();
@@ -667,6 +802,7 @@ size_t MixedFilamentManager::mixed_filament_count() const
 void MixedFilamentManager::invalidate_legacy_cache() const
 {
     m_legacy_cache_dirty = true;
+    m_legacy_cache_mutable_borrowed = false;
 }
 
 void MixedFilamentManager::rebuild_legacy_cache() const
@@ -679,6 +815,29 @@ void MixedFilamentManager::rebuild_legacy_cache() const
     for (const MixedFilamentDefinition& definition : m_definitions)
         m_legacy_cache.emplace_back(legacy_row_from_definition_for_manager(definition));
     m_legacy_cache_dirty = false;
+}
+
+void MixedFilamentManager::sync_mutable_legacy_cache_to_definitions(size_t num_physical)
+{
+    if (!m_legacy_cache_mutable_borrowed)
+        return;
+    if (m_legacy_cache_dirty) {
+        m_legacy_cache_mutable_borrowed = false;
+        return;
+    }
+
+    std::vector<MixedFilamentDefinition> definitions;
+    definitions.reserve(m_legacy_cache.size());
+    for (const MixedFilamentLegacyRow& row : m_legacy_cache) {
+        MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(row, num_physical);
+        definition.recipe.blend            = normalized_manager_blend(std::move(definition.recipe.blend), num_physical);
+        definition.identity.stable_id      = normalize_stable_id(definition.identity.stable_id);
+        definitions.emplace_back(std::move(definition));
+    }
+
+    m_definitions                       = std::move(definitions);
+    m_legacy_cache_dirty                = true;
+    m_legacy_cache_mutable_borrowed     = false;
 }
 
 void MixedFilamentManager::set_display_context(const MixedFilamentDisplayContext& context)

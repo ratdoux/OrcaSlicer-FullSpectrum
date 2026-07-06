@@ -942,19 +942,193 @@ set (CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
 set (CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/resources/images\\\\Snapmaker_Orca.ico")
 set (CPACK_NSIS_MUI_ICON "${CPACK_PACKAGE_ICON}")
 set (CPACK_NSIS_MUI_UNIICON "${CPACK_PACKAGE_ICON}")
-set (CPACK_NSIS_INSTALLED_ICON_NAME  "$INSTDIR\\\\snapmaker orca.exe")
-set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
-    CreateShortCut \\\"$DESKTOP\\\\SnapmakerOrca-FullSpectrum.lnk\\\" \\\"$INSTDIR\\\\snapmaker-orca.exe\\\"
-")
+set (CPACK_NSIS_INSTALLED_ICON_NAME "$INSTDIR\\\\snapmaker-orca.exe")
+set(CPACK_NSIS_UNINSTALL_NAME "Uninstall")
+set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS [=[
+SnapmakerOrcaPre_check_loop:
+  ExecWait 'cmd.exe /c tasklist /FI "IMAGENAME eq snapmaker-orca.exe" 2>nul | find /i "snapmaker-orca.exe" >nul' $0
+  IntCmp $0 0 SnapmakerOrcaPre_in_use SnapmakerOrcaPre_try_legacy SnapmakerOrcaPre_try_legacy
+SnapmakerOrcaPre_try_legacy:
+  ExecWait 'cmd.exe /c tasklist /FI "IMAGENAME eq Snapmaker_Orca.exe" 2>nul | find /i "Snapmaker_Orca.exe" >nul' $0
+  IntCmp $0 0 SnapmakerOrcaPre_in_use SnapmakerOrcaPre_idle SnapmakerOrcaPre_idle
+SnapmakerOrcaPre_idle:
+  Goto SnapmakerOrcaPre_done
+SnapmakerOrcaPre_in_use:
+  IfSilent SnapmakerOrcaPre_silent SnapmakerOrcaPre_prompt
+SnapmakerOrcaPre_silent:
+  SetErrorLevel 7
+  Quit
+SnapmakerOrcaPre_prompt:
+  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Snapmaker Orca is still running.$\nClose the program, then click Retry to continue, or Cancel to exit the installer." IDRETRY SnapmakerOrcaPre_check_loop
+  Abort
+SnapmakerOrcaPre_done:
+  ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca" "UninstallString"
+  StrCmp $0 "" SnapmakerOrcaPre_read_hkcu_uninst SnapmakerOrcaPre_has_uninst
+SnapmakerOrcaPre_read_hkcu_uninst:
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca" "UninstallString"
+SnapmakerOrcaPre_has_uninst:
+  StrCmp $0 "" SnapmakerOrcaPre_finish
+
+  MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION "Snapmaker_Orca is already installed.$\n$\nDo you want to uninstall the old version before installing the new one?" /SD IDYES IDYES SnapmakerOrcaPre_uninst IDNO SnapmakerOrcaPre_finish
+  Abort
+
+SnapmakerOrcaPre_uninst:
+  ClearErrors
+  StrCpy $2 $0 1 0
+  StrCmp $2 "$\"" SnapmakerOrcaPre_trim_first_quote SnapmakerOrcaPre_check_last_quote
+SnapmakerOrcaPre_trim_first_quote:
+  StrCpy $0 $0 "" 1
+SnapmakerOrcaPre_check_last_quote:
+  StrCpy $2 $0 1 -1
+  StrCmp $2 "$\"" SnapmakerOrcaPre_trim_last_quote SnapmakerOrcaPre_have_uninst_path
+SnapmakerOrcaPre_trim_last_quote:
+  StrCpy $0 $0 -1
+SnapmakerOrcaPre_have_uninst_path:
+
+  StrLen $2 "Uninstall.exe"
+  StrCpy $3 $0 -$2
+SnapmakerOrcaPre_trim_inst_slash:
+  StrCpy $2 $3 1 -1
+  StrCmp $2 "\" SnapmakerOrcaPre_do_trim_slash SnapmakerOrcaPre_trim_slash_done
+SnapmakerOrcaPre_do_trim_slash:
+  StrCpy $3 $3 -1
+  Goto SnapmakerOrcaPre_trim_inst_slash
+SnapmakerOrcaPre_trim_slash_done:
+  IfFileExists "$0" 0 SnapmakerOrcaPre_uninst_launch_failed
+  ExecWait '"$0" /S _?=$3' $1
+  IfErrors SnapmakerOrcaPre_uninst_launch_failed 0
+  IntCmp $1 0 SnapmakerOrcaPre_finish SnapmakerOrcaPre_uninst_failed SnapmakerOrcaPre_uninst_failed
+
+SnapmakerOrcaPre_uninst_failed:
+  MessageBox MB_OK|MB_ICONSTOP "Uninstall failed.$\nUninstaller path: $0$\nWorking dir: $3$\nExit code: $1"
+  Abort
+
+SnapmakerOrcaPre_uninst_launch_failed:
+  MessageBox MB_OK|MB_ICONSTOP "Failed to start uninstaller process.$\nUninstaller path: $0$\nWorking dir: $3$\n$\nSystem error: the uninstall command could not be executed by Windows (IfErrors set).$\nPossible causes: missing/corrupted uninstaller, access denied, or invalid install directory."
+  Abort
+
+SnapmakerOrcaPre_finish:
+]=])
+file(READ "${CMAKE_SOURCE_DIR}/cmake/nsis/SnapmakerURLProtocols_install.nsh" CPACK_NSIS_EXTRA_INSTALL_COMMANDS)
+file(READ "${CMAKE_SOURCE_DIR}/cmake/nsis/SnapmakerURLProtocols_uninstall.nsh" CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS)
+set(CPACK_NSIS_CREATE_ICONS_EXTRA [=[
+  SetShellVarContext current
+  CreateShortCut "$DESKTOP\SnapmakerOrca-FullSpectrum.lnk" "$INSTDIR\snapmaker-orca.exe" "" "$INSTDIR\snapmaker-orca.exe" 0
+  SetShellVarContext all
+]=])
+set(CPACK_NSIS_DELETE_ICONS_EXTRA [=[
+  SetShellVarContext current
+  Delete "$DESKTOP\SnapmakerOrca-FullSpectrum.lnk"
+  SetShellVarContext all
+]=])
 set (CPACK_PACKAGE_CHECKSUM SHA256)
 set (CPACK_PACKAGE_INSTALL_REGISTRY_KEY "Snapmaker_Orca")
-set (CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set (CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set (CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 # set (CPACK_NSIS_MODIFY_PATH "ON")
 set(CPACK_PACKAGE_EXECUTABLES "snapmaker-orca;SnapmakerOrca-FullSpectrum")
-set(CPACK_CREATE_DESKTOP_LINKS "snapmaker-orca")
 set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_SOURCE_DIR}/LICENSE.txt) # must also include in install command
 
 set(CPACK_WIX_UPGRADE_GUID "058245e8-20e0-4a95-9ab7-1acfe17ad511")
 set(CPACK_GENERATOR NSIS)
+set(CPACK_VERBATIM_VARIABLES ON)
+# Strip CPack "Install Options" page; shortcuts follow the start-menu checkbox only.
+if (WIN32)
+    file(READ "${CMAKE_ROOT}/Modules/Internal/CPack/NSIS.template.in" _snapmaker_nsis_tpl)
+    string(REPLACE "\r\n" "\n" _snapmaker_nsis_tpl "${_snapmaker_nsis_tpl}")
+    string(REPLACE "\r" "\n" _snapmaker_nsis_tpl "${_snapmaker_nsis_tpl}")
+    set(_snapmaker_nsis_old_registry [=[
+  ;Read a value from an InstallOptions INI file
+  !insertmacro MUI_INSTALLOPTIONS_READ $DO_NOT_ADD_TO_PATH "NSIS.InstallOptions.ini" "Field 2" "State"
+  !insertmacro MUI_INSTALLOPTIONS_READ $ADD_TO_PATH_ALL_USERS "NSIS.InstallOptions.ini" "Field 3" "State"
+  !insertmacro MUI_INSTALLOPTIONS_READ $ADD_TO_PATH_CURRENT_USER "NSIS.InstallOptions.ini" "Field 4" "State"
+
+  ; Write special uninstall registry entries
+  Push "StartMenu"
+  Push "$STARTMENU_FOLDER"
+  Call ConditionalAddToRegistry
+  Push "DoNotAddToPath"
+  Push "$DO_NOT_ADD_TO_PATH"
+  Call ConditionalAddToRegistry
+  Push "AddToPathAllUsers"
+  Push "$ADD_TO_PATH_ALL_USERS"
+  Call ConditionalAddToRegistry
+  Push "AddToPathCurrentUser"
+  Push "$ADD_TO_PATH_CURRENT_USER"
+  Call ConditionalAddToRegistry
+  Push "InstallToDesktop"
+  Push "$INSTALL_DESKTOP"
+  Call ConditionalAddToRegistry
+
+]=])
+    set(_snapmaker_nsis_new_registry [=[
+  ; Write special uninstall registry entries
+  Push "StartMenu"
+  Push "$STARTMENU_FOLDER"
+  Call ConditionalAddToRegistry
+
+]=])
+    string(REPLACE "${_snapmaker_nsis_old_registry}" "${_snapmaker_nsis_new_registry}" _snapmaker_nsis_tpl "${_snapmaker_nsis_tpl}")
+    foreach(_snapmaker_nsis_erase IN ITEMS
+        [=[  Var DO_NOT_ADD_TO_PATH
+  Var ADD_TO_PATH_ALL_USERS
+  Var ADD_TO_PATH_CURRENT_USER
+  Var INSTALL_DESKTOP
+]=]
+        [=[  ReserveFile "NSIS.InstallOptions.ini"
+  !insertmacro MUI_RESERVEFILE_INSTALLOPTIONS
+
+]=]
+        [=[  Page custom InstallOptionsPage
+]=]
+        [=[  !insertmacro MUI_INSTALLOPTIONS_READ $INSTALL_DESKTOP "NSIS.InstallOptions.ini" "Field 5" "State"
+]=]
+        [=[Section "-Add to path"
+  Push $INSTDIR\bin
+  StrCmp "@CPACK_NSIS_MODIFY_PATH@" "ON" 0 doNotAddToPath
+  StrCmp $DO_NOT_ADD_TO_PATH "1" doNotAddToPath 0
+    Call AddToPath
+  doNotAddToPath:
+SectionEnd
+
+]=]
+        [=[;--------------------------------
+; Create custom pages
+Function InstallOptionsPage
+  !insertmacro MUI_HEADER_TEXT "Install Options" "Choose options for installing @CPACK_NSIS_PACKAGE_NAME@"
+  !insertmacro MUI_INSTALLOPTIONS_DISPLAY "NSIS.InstallOptions.ini"
+
+FunctionEnd
+
+]=]
+        [=[  ReadRegStr $DO_NOT_ADD_TO_PATH SHCTX \
+    "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "DoNotAddToPath"
+  ReadRegStr $ADD_TO_PATH_ALL_USERS SHCTX \
+    "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "AddToPathAllUsers"
+  ReadRegStr $ADD_TO_PATH_CURRENT_USER SHCTX \
+    "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "AddToPathCurrentUser"
+  ;MessageBox MB_OK "Add to path: $DO_NOT_ADD_TO_PATH all users: $ADD_TO_PATH_ALL_USERS"
+  ReadRegStr $INSTALL_DESKTOP SHCTX \
+    "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "InstallToDesktop"
+  ;MessageBox MB_OK "Install to desktop: $INSTALL_DESKTOP "
+
+]=]
+        [=[  Push $INSTDIR\bin
+  StrCmp $DO_NOT_ADD_TO_PATH_ "1" doNotRemoveFromPath 0
+    Call un.RemoveFromPath
+  doNotRemoveFromPath:
+]=]
+        [=[  StrCmp "@CPACK_NSIS_MODIFY_PATH@" "ON" 0 noOptionsPage
+    !insertmacro MUI_INSTALLOPTIONS_EXTRACT "NSIS.InstallOptions.ini"
+
+  noOptionsPage:
+]=]
+    )
+        string(REPLACE "${_snapmaker_nsis_erase}" "" _snapmaker_nsis_tpl "${_snapmaker_nsis_tpl}")
+    endforeach()
+    set(_snapmaker_nsis_tpl_dir "${CMAKE_BINARY_DIR}/cmake/cpack")
+    file(MAKE_DIRECTORY "${_snapmaker_nsis_tpl_dir}")
+    file(WRITE "${_snapmaker_nsis_tpl_dir}/NSIS.template.in" "${_snapmaker_nsis_tpl}")
+    list(PREPEND CMAKE_MODULE_PATH "${_snapmaker_nsis_tpl_dir}")
+endif ()
 include(CPack)

@@ -65,7 +65,9 @@ public:
 
 	void import_flutter_web();
 
-	void load_flutter_web(const std::string& zip_file,bool serverUpdate = false);
+	// serverUpdate=true: pass extracted flutter_web directory.
+	// serverUpdate=false: pass zip file chosen by user.
+	void load_flutter_web(const std::string& resource_path, bool serverUpdate = false);
 
     void sync_config_async();
 

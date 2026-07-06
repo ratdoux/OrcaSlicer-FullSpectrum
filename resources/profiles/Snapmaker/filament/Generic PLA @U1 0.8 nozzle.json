@@ -1,0 +1,50 @@
+{
+    "type": "filament",
+    "name": "Generic PLA @U1 0.8 nozzle",
+    "inherits": "Generic PLA @base2",
+    "from": "system",
+    "setting_id": "GFSL99",
+    "instantiation": "true",
+    "compatible_printers": [
+        "Snapmaker U1 (0.8 nozzle)"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "filament_end_gcode": [
+        "; filament end gcode \n\n"
+    ],
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "18"
+    ],
+    "filament_multitool_ramming_volume": [
+        "1"
+    ],
+    "filament_retract_length_toolchange": [
+        "10"
+    ],
+    "hot_plate_temp": [
+        "65"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "65"
+    ],
+    "textured_plate_temp": [
+        "65"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "65"
+    ],
+    "graphic_effect_plate_temp": [
+        "65"
+    ],
+    "graphic_effect_plate_temp_initial_layer": [
+        "65"
+    ]
+}

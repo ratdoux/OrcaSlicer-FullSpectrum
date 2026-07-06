@@ -1099,6 +1099,20 @@ static ExPolygons outer_inner_brim_area(const Print& print,
     if (!bedExPoly.empty()){
         no_brim_area.push_back(bedExPoly.front());
     }
+
+    if (print.has_wipe_tower() && !print.get_fake_wipe_tower().outer_wall.empty()) {
+        ExPolygons expolyFromLines{};
+        for (auto polyline : print.get_fake_wipe_tower().outer_wall.begin()->second) {
+            polyline.remove_duplicate_points();
+            expolyFromLines.emplace_back(polyline.points);
+            expolyFromLines.back().translate(Point(scale_(print.get_fake_wipe_tower().pos[0]), scale_(print.get_fake_wipe_tower().pos[1])));
+        }
+        expolygons_append(no_brim_area, expolyFromLines);
+    }
+
+    const float scaled_flow_width = print.brim_flow().scaled_spacing();
+    no_brim_area = offset2_ex(no_brim_area, scaled_flow_width, -scaled_flow_width);
+
     for (const PrintObject* object : print.objects()) {
         if (brimAreaMap.find(object->id()) != brimAreaMap.end())
         {

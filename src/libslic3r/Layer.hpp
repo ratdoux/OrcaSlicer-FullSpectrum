@@ -74,6 +74,7 @@ public:
     unsigned int extruder(FlowRole role) const;
     Flow    flow(FlowRole role) const;
     Flow    flow(FlowRole role, double layer_height) const;
+    Flow    flow(FlowRole role, double layer_height, bool use_initial_layer_width) const;
     Flow    bridging_flow(FlowRole role, bool thick_bridge = false) const;
 
     void    slices_to_fill_surfaces_clipped();

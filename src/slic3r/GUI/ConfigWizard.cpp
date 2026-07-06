@@ -216,7 +216,6 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
 
     const auto font_title = GetFont().MakeBold().Scaled(1.3f);
     const auto font_name = GetFont().MakeBold();
-    const auto font_alt_nozzle = GetFont().Scaled(0.9f);
 
     // wxGrid appends widgets by rows, but we need to construct them in columns.
     // These vectors are used to hold the elements so that they can be appended in the right order.
@@ -227,7 +226,6 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
     int max_row_width = 0;
     int current_row_width = 0;
 
-    bool is_variants = false;
 
     for (const auto &model : models) {
         if (! filter(model)) { continue; }
@@ -272,33 +270,33 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
         auto *variants_sizer = new wxBoxSizer(wxVERTICAL);
         variants_panel->SetSizer(variants_sizer);
         const auto model_id = model.id;
-
-        for (size_t i = 0; i < model.variants.size(); i++) {
-            const auto &variant = model.variants[i];
-
-            const auto label = model.technology == ptFFF
-                ? from_u8((boost::format("%1% %2% %3%") % variant.name % _utf8("mm") % _utf8(L("nozzle"))).str())
-                : from_u8(model.name);
-
-            if (i == 1) {
-                auto *alt_label = new wxStaticText(variants_panel, wxID_ANY, _L("Alternate nozzles:"));
-                alt_label->SetFont(font_alt_nozzle);
-                variants_sizer->Add(alt_label, 0, wxBOTTOM, 3);
-                is_variants = true;
-            }
-
-            auto *cbox = new Checkbox(variants_panel, label, model_id, variant.name);
-            i == 0 ? cboxes.push_back(cbox) : cboxes_alt.push_back(cbox);
-
-            const bool enabled = appconfig.get_variant(vendor.id, model_id, variant.name);
-            cbox->SetValue(enabled);
-
-            variants_sizer->Add(cbox, 0, wxBOTTOM, 3);
-
-            cbox->Bind(wxEVT_CHECKBOX, [this, cbox](wxCommandEvent &event) {
-                on_checkbox(cbox, event.IsChecked());
-            });
+        {
+            std::vector<std::string> vnames;
+            vnames.reserve(model.variants.size());
+            for (const auto &v : model.variants)
+                vnames.push_back(v.name);
+            model_id_to_variants[model_id] = std::move(vnames);
         }
+
+        // Model-level selection: one checkbox per machine, internally maps to all variants.
+        const auto label = from_u8(model.name);
+        std::string primary_variant = model.variants.empty() ? std::string() : model.variants.front().name;
+        auto *cbox = new Checkbox(variants_panel, label, model_id, primary_variant);
+        cboxes.push_back(cbox);
+
+        bool enabled = false;
+        for (const auto &variant : model.variants) {
+            if (appconfig.get_variant(vendor.id, model_id, variant.name)) {
+                enabled = true;
+                break;
+            }
+        }
+        cbox->SetValue(enabled);
+
+        variants_sizer->Add(cbox, 0, wxBOTTOM, 3);
+        cbox->Bind(wxEVT_CHECKBOX, [this, cbox](wxCommandEvent &event) {
+            on_checkbox(cbox, event.IsChecked());
+        });
 
         variants_panels.push_back(variants_panel);
     }
@@ -342,9 +340,8 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
     }
     title_sizer->AddStretchSpacer();
 
-    if (titles.size() > 1 || is_variants) {
+    if (titles.size() > 1) {
         // It only makes sense to add the All / None buttons if there's multiple printers
-        // All Standard button is added when there are more variants for at least one printer
         auto *sel_all_std = new Button(this, titles.size() > 1 ? _L("All standard") : _L("Standard"));
         auto *sel_all = new Button(this, _L("All"));
         auto *sel_none = new Button(this, _L("None"));
@@ -353,12 +350,8 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
         wxGetApp().UpdateDarkUI(sel_all);
         wxGetApp().UpdateDarkUI(sel_none);
 
-        if (is_variants) 
-            sel_all_std->Bind(wxEVT_BUTTON, [this](const wxCommandEvent& event) { this->select_all(true, false); });
         sel_all->Bind(wxEVT_BUTTON, [this](const wxCommandEvent &event) { this->select_all(true, true); });
         sel_none->Bind(wxEVT_BUTTON, [this](const wxCommandEvent &event) { this->select_all(false); });
-        if (is_variants) 
-            title_sizer->Add(sel_all_std, 0, wxRIGHT, BTN_SPACING);
         title_sizer->Add(sel_all, 0, wxRIGHT, BTN_SPACING);
         title_sizer->Add(sel_none);
 
@@ -367,12 +360,8 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
         wxGetApp().UpdateDarkUI(sel_none);
 
         // fill button indexes used later for buttons rescaling
-        if (is_variants)
-            m_button_indexes = { sel_all_std->GetId(), sel_all->GetId(), sel_none->GetId() };
-        else {
-            sel_all_std->Destroy();
-            m_button_indexes = { sel_all->GetId(), sel_none->GetId() };
-        }
+        sel_all_std->Destroy();
+        m_button_indexes = { sel_all->GetId(), sel_none->GetId() };
     }
 
     sizer->Add(title_sizer, 0, wxEXPAND | wxBOTTOM, BTN_SPACING);
@@ -442,8 +431,29 @@ std::set<std::string> PrinterPicker::get_selected_models() const
 
 void PrinterPicker::on_checkbox(const Checkbox *cbox, bool checked)
 {
-    PrinterPickerEvent evt(EVT_PRINTER_PICK, GetId(), vendor_id, cbox->model, cbox->variant, checked);
-    AddPendingEvent(evt);
+    auto sync_group = [&](std::vector<Checkbox*> &group) {
+        for (auto *cb : group) {
+            if (cb->model != cbox->model)
+                continue;
+            if (cb->GetValue() != checked)
+                cb->SetValue(checked);
+        }
+    };
+
+    // Treat a model selection as selecting all of its nozzle variants.
+    sync_group(cboxes);
+    sync_group(cboxes_alt);
+
+    const auto it = model_id_to_variants.find(cbox->model);
+    if (it != model_id_to_variants.end() && !it->second.empty()) {
+        for (const std::string &vname : it->second) {
+            PrinterPickerEvent evt(EVT_PRINTER_PICK, GetId(), vendor_id, cbox->model, vname, checked);
+            AddPendingEvent(evt);
+        }
+    } else {
+        PrinterPickerEvent evt(EVT_PRINTER_PICK, GetId(), vendor_id, cbox->model, cbox->variant, checked);
+        AddPendingEvent(evt);
+    }
 }
 
 
@@ -1859,7 +1869,7 @@ void ConfigWizard::priv::load_vendors()
             }
     }
 
-    // Initialize the is_visible flag in printer Presets
+    // Initialize the is_visible flag in printer Presets (load_installed_printers also merges new nozzle variants)
     for (auto &pair : bundles) {
         pair.second.preset_bundle->load_installed_printers(appconfig_new);
     }

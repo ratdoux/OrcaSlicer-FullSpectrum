@@ -1,0 +1,14 @@
+{
+  "description": "Each category lists its compatible partners. Self-compatibility is implicit.",
+  "compatibility": {
+    "PLA":     ["PC"],
+    "PETG":    ["TPU", "PET", "ABS", "ASA", "PC"],
+    "TPU":     ["PETG", "PET"],
+    "PET":     ["PETG", "TPU", "ABS", "ASA", "PC"],
+    "ABS":     ["PETG", "PET", "ASA", "PC", "PA"],
+    "ASA":     ["PETG", "PET", "ABS", "PC", "PA"],
+    "PC":      ["PLA", "PETG", "PET", "ABS", "ASA", "PA"],
+    "PA":      ["ABS", "ASA", "PC"],
+    "SUPPORT": []
+  }
+}
