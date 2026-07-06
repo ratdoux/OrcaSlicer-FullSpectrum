@@ -497,6 +497,7 @@ public:
     // Return the display colours of all visible mixed filaments (in order).
     std::vector<std::string> display_colors() const;
     void set_display_context(const MixedFilamentDisplayContext &context);
+    void refresh_display_colors(const std::vector<std::string> &filament_colours);
 
 private:
     // Convert a 1-based virtual ID to a 0-based index into m_definitions.
@@ -505,7 +506,6 @@ private:
         return static_cast<size_t>(filament_id - num_physical - 1);
     }
 
-    void refresh_display_colors(const std::vector<std::string> &filament_colours);
     void invalidate_legacy_cache() const;
     void rebuild_legacy_cache() const;
     void sync_mutable_legacy_cache_to_definitions(size_t num_physical = 0);

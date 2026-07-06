@@ -52,13 +52,28 @@ void FilamentCardPhysical::build_ui()
     m_filament_edit_btn = new ScalableButton(this, wxID_ANY, "menu_filament");
     m_filament_edit_btn->SetToolTip(_L("Click to edit preset"));
     m_filament_edit_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        if (m_on_edit)
-            m_on_edit(m_index, m_filament_edit_btn);
+        if (m_on_edit_btn)
+            m_on_edit_btn(m_index, m_filament_edit_btn);
     });
     m_filament_combo_box->edit_btn = m_filament_edit_btn;
     m_sizer->Add(m_filament_edit_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(SidebarProps::ElementSpacing()) - FromDIP(2));
 
     m_filament_combo_box->update();
+
+    auto right_click_handler = [this](wxMouseEvent& event) {
+        if (m_on_right_click) {
+            wxPoint screen_pos = event.GetEventObject() ? ((wxWindow*)event.GetEventObject())->ClientToScreen(event.GetPosition()) : wxGetMousePosition();
+            m_on_right_click(m_index, screen_pos);
+        }
+        event.Skip();
+    };
+
+    Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_filament_combo_box->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    m_filament_edit_btn->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    if (m_filament_combo_box->clr_picker != nullptr) {
+        m_filament_combo_box->clr_picker->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    }
 
     SetSizer(m_sizer);
     Layout();

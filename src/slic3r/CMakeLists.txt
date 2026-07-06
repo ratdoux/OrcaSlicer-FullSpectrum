@@ -296,6 +296,28 @@ set(SLIC3R_GUI_SOURCES
     GUI/MediaPlayCtrl.h
     GUI/MeshUtils.cpp
     GUI/MeshUtils.hpp
+    GUI/MixedFilamentDialog.cpp
+    GUI/MixedFilamentDialog.hpp
+    GUI/MixedFilamentBatchDialog.cpp
+    GUI/MixedFilamentBatchDialog.hpp
+    GUI/MFDBatchActiveAccordion.cpp
+    GUI/MFDBatchActiveAccordion.hpp
+    GUI/MFDBatchRecommendedAccordion.cpp
+    GUI/MFDBatchRecommendedAccordion.hpp
+    GUI/MFDColorPickerAccordion.cpp
+    GUI/MFDColorPickerAccordion.hpp
+    GUI/MFDGradientAccordion.cpp
+    GUI/MFDGradientAccordion.hpp
+    GUI/MFDMaterialAccordion.cpp
+    GUI/MFDMaterialAccordion.hpp
+    GUI/MFDPatternSelectorAccordion.cpp
+    GUI/MFDPatternSelectorAccordion.hpp
+    GUI/MFDPreviewAccordion.cpp
+    GUI/MFDPreviewAccordion.hpp
+    GUI/MFDRatioAccordion.cpp
+    GUI/MFDRatioAccordion.hpp
+    GUI/MFDRecommendationsAccordion.cpp
+    GUI/MFDRecommendationsAccordion.hpp
     GUI/ModelMall.cpp
     GUI/ModelMall.hpp
     GUI/MonitorBasePanel.cpp
@@ -330,8 +352,6 @@ set(SLIC3R_GUI_SOURCES
     GUI/NotificationManager.hpp
     GUI/OAuthDialog.cpp
     GUI/OAuthDialog.hpp
-    GUI/MixedFilamentDialog.cpp
-    GUI/MixedFilamentDialog.hpp
     GUI/MixedGradientSelector.hpp
     GUI/MixedGradientSelector.cpp
     GUI/MixedColorMatchPanel.cpp
@@ -484,12 +504,18 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/FanControl.hpp
     GUI/Widgets/FilamentCard.cpp
     GUI/Widgets/FilamentCard.hpp
+    GUI/Widgets/FilamentCardMixed.cpp
+    GUI/Widgets/FilamentCardMixed.hpp
+    GUI/Widgets/HSLColorPicker.cpp
+    GUI/Widgets/HSLColorPicker.hpp
     GUI/Widgets/ImageSwitchButton.cpp
     GUI/Widgets/ImageSwitchButton.hpp
     GUI/Widgets/Label.cpp
+    GUI/Widgets/Label.hpp
     GUI/Widgets/LabeledStaticBox.cpp
     GUI/Widgets/LabeledStaticBox.hpp
-    GUI/Widgets/Label.hpp
+    GUI/Widgets/Accordion.cpp
+    GUI/Widgets/Accordion.hpp
     GUI/Widgets/PopupWindow.cpp
     GUI/Widgets/PopupWindow.hpp
     GUI/Widgets/ProgressBar.cpp

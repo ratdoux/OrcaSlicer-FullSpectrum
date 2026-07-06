@@ -1,187 +1,250 @@
-#pragma once
+#ifndef slic3r_GUI_MixedFilamentDialog_hpp_
+#define slic3r_GUI_MixedFilamentDialog_hpp_
 
-#include "GUI_Utils.hpp"
-#include "libslic3r/MixedFilament.hpp"
+// MixedFilamentDialog: Main dialog for creating and editing Mixed Filament presets.
+//
+// Architecture overview
+// ---------------------
+// The dialog is structured around four responsibilities:
+//   1. State ownership:   m_selected_filaments, m_selected_filaments_weights,
+//                         m_selected_filaments_colors, m_min_weight_ratio, etc.
+//   2. Tab management:    Three tabs (Mix / Pattern / Gradient) each show a
+//                         different combination of accordion sections.
+//   3. Cross-section coordination: The dialog is the single place that wires
+//                         accordion callbacks together (e.g. ratio change ->
+//                         update material panel -> sync color picker -> update preview).
+//   4. Data output:       Will expose get_result() or similar once the footer
+//                         is fully implemented.
+//
+// Why accordion sub-classes instead of a monolithic dialog?
+//   The original MixedFilamentDialog had >250 private member variables covering
+//   every pixel of every collapsible panel, plus build_*_ui / setup_collapsible_section
+//   helper methods that cross-referenced those variables in hard-to-follow ways.
+//   The accordion sub-classes (MFDColorPickerAccordion, MFDMaterialAccordion, etc.)
+//   each own the UI pointers for their section. The dialog only needs a single typed
+//   pointer per section and calls a narrow set of push-from-dialog update methods.
+//
+// Unidirectional data flow:
+//   Accordion raises callback  -->  dialog adjusts canonical state
+//                              -->  dialog calls update_*() on affected accordions
+//   This keeps state mutations in one place and avoids circular updates.
 
+#include <memory>
+#include <functional>
 #include <wx/wx.h>
-#include <wx/statline.h>
-#include <wx/dcbuffer.h>
-#include <wx/wrapsizer.h>
-#include <wx/clrpicker.h>
+#include <wx/scrolwin.h>
 
-#include <set>
-#include <vector>
-#include <string>
+#include "libslic3r/MixedFilament.hpp"
+#include "Widgets/Label.hpp"
+#include "Widgets/Button.hpp"
+#include "GUI_Utils.hpp"
+#include "MFDPreviewAccordion.hpp"
 
-// Forward declarations (in global namespace)
-class ScalableButton;
-class RadioGroup;
-class Button;
-class ComboBox;
-class Label;
-class StaticBox;
+namespace Slic3r::GUI {
 
-namespace Slic3r { namespace GUI {
-
-// Forward declarations (only pointers are stored)
-class MixedGradientSelector;
-class MixedColorMatchPanel;
-class MatchRangeSlider;
+class MFDColorPickerAccordion;
+class MFDPatternSelectorAccordion;
+class MFDMaterialAccordion;
+class MFDRatioAccordion;
+class MFDRecommendationsAccordion;
+class MFDPreviewAccordion;
+class MFDGradientAccordion;
 
 class MixedFilamentDialog : public DPIDialog
 {
 public:
-    MixedFilamentDialog(wxWindow* parent, const std::vector<std::string>& filament_colours);
-    MixedFilamentDialog(wxWindow* parent, const std::vector<std::string>& filament_colours,
-                      const Slic3r::MixedFilament& existing);
+    enum class Action { Add, Edit };
+    enum class Tab { Mix, Pattern, Gradient };
+    enum class MixMethod { ManualRatio, ByColor };
 
-    const Slic3r::MixedFilament& GetResult() const { return m_result; }
+    MixedFilamentDialog(
+        wxWindow* parent,
+        Action    action,
+        std::vector<std::pair<std::string, std::string>>& physical_filaments,
+        int       mixed_idx = -1,
+        bool      start_by_color = false);
+
+    MixedFilamentDefinition get_result() const;
+
+protected:
     void on_dpi_changed(const wxRect& suggested_rect) override;
 
 private:
-    void build_ui();
-    void rebuild_filament_rows();
-    void on_mode_changed(int mode_index);
+    // -----------------------------------------------------------------------
+    // Core state (single source of truth for all accordion sections)
+    // -----------------------------------------------------------------------
+    Action    m_action{Action::Add};
+    Tab       m_current_tab{Tab::Mix};
+    MixMethod m_mix_method{MixMethod::ManualRatio};
+
+    // Filament blend weights: values in [0, 1], sum to 1.0.
+    double m_min_weight_ratio{0.15};
+
+    int       max_filament{4};
+    const int min_filament{2};
+
+    int m_width_fixed;
+    int m_height_start;
+    int m_height_min;
+    int m_clr_swatch_size; // size in physical pixels for combobox color swatches
+
+    // Physical filament catalog (name, hex color) — not owned by this dialog.
+    std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
+
+    // Currently selected blend of physical filaments.
+    std::vector<int>     m_selected_filaments;
+    std::vector<double>  m_selected_filaments_weights;
+    std::vector<wxColor> m_selected_filaments_colors;
+
+    // Gradient state
+    std::vector<double>  m_gradient_positions;
+    double               m_gradient_min_ratio{0.10};
+
+    // -----------------------------------------------------------------------
+    // UI construction
+    // -----------------------------------------------------------------------
+    void build_ui(wxWindow* parent);
+    void build_mix_method_ui(wxPanel* parent, wxBoxSizer* parent_sizer);
+
+    // -----------------------------------------------------------------------
+    // Tab management
+    // -----------------------------------------------------------------------
+    void update_tabs();
+
+    wxColour m_orca_colour = wxColour(ColorRGBA::ORCA().r_uchar(), ColorRGBA::ORCA().g_uchar(), ColorRGBA::ORCA().b_uchar());
+    wxColour getTabBorderColor(bool is_selected, bool is_hovered) const;
+    wxColour getTabBackgroundColor(bool is_selected, bool is_hovered) const;
+    wxColour getTabTextColor(bool is_selected, bool is_hovered) const;
+    void     paintTabBtn(wxPanel* panel, bool round_left, bool round_right,
+                         double radius, wxString label, wxString icon_name,
+                         bool is_selected, bool is_hovered);
+
+    bool m_mix_tab_hovered     = false;
+    bool m_pattern_tab_hovered = false;
+    bool m_gradient_tab_hovered= false;
+
+    // -----------------------------------------------------------------------
+    // Material slot management
+    // (state changes flow through these methods, then propagate to accordions)
+    // -----------------------------------------------------------------------
+    void add_material_slot(int selected_filament_index = -1);
+    void remove_last_material_slot();
+    void on_filament_selection_changed(size_t slot, int new_phys_idx);
+    int  find_first_free_filament() const;
+
+    // Recompute and push updated weights/colors/labels to affected accordions.
+    void update_material_state();
+
+    // -----------------------------------------------------------------------
+    // Min-weight clamping
+    // Called when the ratio accordion signals a min-weight change.
+    // -----------------------------------------------------------------------
+    void apply_min_weight_clamping();
+
+    // -----------------------------------------------------------------------
+    // Color picker <-> ratio synchronization
+    // -----------------------------------------------------------------------
+    // Sync the HSL picker to the current weighted blend color.
+    void sync_color_picker_to_mix();
+    // Called when the color picker fires a color-changed event.
+    void on_color_picker_changed(const wxColour& color, bool is_dragging);
+
+    // Guard to prevent the sync from looping back when we programmatically
+    // set the picker from a ratio change (or vice versa).
+    bool m_syncing_from_color_picker{false};
+
+    // -----------------------------------------------------------------------
+    // Preview update
+    // -----------------------------------------------------------------------
     void update_preview();
-    void update_gradient_selector_colors();
-    void build_swatch_grid();
-    void rebuild_swatch_sizer();
-    void sync_rows_to_result();
-    void resize_gradient_ids(int target_count);
-    void update_compatibility_warning();
-    wxString get_ratio_warning_msg();
-    void display_warning(const wxString& msg);
-    void set_error(const wxString& msg);
-    std::string compute_preview_color();
-    wxBitmap make_color_bitmap(const wxColour& c, int size);
-    int max_filaments_for_mode(int mode_index) const;
-    void collect_result();
-    void draw_strip(wxDC& dc, wxPanel* panel);
+    void update_preview(const std::vector<int>& filaments,
+                        const std::vector<double>& weights);
 
-    static constexpr int MODE_RATIO    = 0;
-    static constexpr int MODE_CYCLE    = 1;
-    static constexpr int MODE_MATCH    = 2;
-    static constexpr int MODE_GRADIENT = 3;
-
-    // Segmented mode buttons
-    class StaticBox*        m_mode_btn_container    = nullptr;
-    std::vector<Button*>    m_mode_buttons;
-    int                     m_mode_btn_selected     = MODE_RATIO;
-    ScalableButton*         m_btn_add_filament    = nullptr;
-    ScalableButton*         m_btn_remove_filament = nullptr;
-    wxStaticText*           m_filament_card_title  = nullptr;
-    wxPanel*                m_filament_rows_panel = nullptr;
-    wxBoxSizer*             m_filament_rows_sizer = nullptr;
-    wxPanel*                m_preview_panel       = nullptr;
-    wxPanel*                m_preview_blend_panel = nullptr;
-    MixedGradientSelector*  m_gradient_selector   = nullptr;
-    wxPanel*                m_legend_panel         = nullptr;
-    wxBoxSizer*             m_legend_sizer         = nullptr;
-    std::vector<wxStaticText*> m_legend_labels;
-    wxPanel*                m_tri_picker          = nullptr;
-    wxSizerItem*            m_ratio_gradient_spacer = nullptr;
-    wxSizerItem*            m_ratio_tri_spacer      = nullptr;
-    wxPanel*                m_strip_panel         = nullptr;
-    wxPanel*                m_cycle_strip_panel   = nullptr;
-    wxPanel*                m_swatch_grid_panel   = nullptr;
-    std::vector<int>         m_swatch_min_weights;
-    wxPanel*                m_error_panel           = nullptr;
-    Label*                   m_error_text            = nullptr;
-    wxPanel*                m_warning_panel         = nullptr;
-    Label*                   m_warning_text          = nullptr;
-    Button*                 m_btn_cancel          = nullptr;
-    Button*                 m_btn_confirm         = nullptr;
-    wxTextCtrl*             m_pattern_ctrl        = nullptr;
-    std::vector<class MixedFilamentBadge*>  m_pattern_quick_buttons;
-
-    // Card containers (StaticBox for rounded-corner cards)
-    class StaticBox*        m_filament_card         = nullptr;
-    wxBoxSizer*             m_filament_card_sizer   = nullptr;
-    class StaticBox*        m_ratio_card            = nullptr;
-    wxBoxSizer*             m_ratio_card_sizer      = nullptr;
-    class StaticBox*        m_cycle_card            = nullptr;
-    wxBoxSizer*             m_cycle_card_sizer      = nullptr;
-    class StaticBox*        m_swatch_card           = nullptr;
-    wxBoxSizer*             m_swatch_card_sizer     = nullptr;
-    class StaticBox*        m_gradient_effect_card   = nullptr;
-    wxBoxSizer*             m_gradient_effect_card_sizer = nullptr;
-    wxScrolledWindow*       m_scrolled_content      = nullptr;
-    wxPanel*                m_cycle_blend_panel     = nullptr;
-    wxPanel*                m_cycle_legend_panel    = nullptr;
-    wxSizer*                m_cycle_legend_sizer    = nullptr;
-    std::vector<wxStaticText*> m_cycle_legend_labels;
-
-    // Match mode
-    wxBoxSizer*             m_match_panel_sizer   = nullptr;
-    MixedColorMatchPanel*   m_match_panel         = nullptr;
-
-    // Match mode's own Mix Ratio card (separate from ratio card)
-    class StaticBox*        m_match_ratio_card       = nullptr;
-    wxBoxSizer*             m_match_ratio_card_sizer = nullptr;
-    MixedGradientSelector*  m_match_gradient_selector = nullptr;
-    wxPanel*                m_match_tri_picker       = nullptr;
-    wxSizerItem*            m_match_gradient_spacer   = nullptr;
-    wxSizerItem*            m_match_tri_spacer        = nullptr;
-    wxPanel*                m_match_legend_panel     = nullptr;
-    wxBoxSizer*             m_match_legend_sizer     = nullptr;
-    std::vector<wxStaticText*> m_match_legend_labels;
-    wxPanel*                m_match_strip_panel      = nullptr;
-    wxPanel*                m_match_blend_panel      = nullptr;
-
-    // Card 1 (Match mode: filament badges + target color)
-    class StaticBox*        m_match_input_card      = nullptr;
-    wxPanel*                m_match_badges_panel    = nullptr;
-    wxWrapSizer*            m_match_badges_sizer    = nullptr;
-    wxPanel*                m_match_target_picker   = nullptr;
-    wxTextCtrl*             m_match_hex_input       = nullptr;
-    wxPanel*                m_match_hex_wrapper     = nullptr;
-    bool                    m_match_hex_error       = false;
-    wxPanel*                m_match_target_swatch   = nullptr;
-
-    // Range slider row (inside ratio card, match-mode only)
-    wxPanel*                m_match_range_row       = nullptr;
-    MatchRangeSlider*       m_match_range_slider    = nullptr;
-    wxStaticText*           m_match_range_value     = nullptr;
-    int                     m_match_min_pct         = 15;
-
-    ScalableButton*         m_btn_swap_gradient_dir = nullptr;
-    int                     m_gradient_direction   = 0;
-
-    double m_tri_wx{1.0/3.0}, m_tri_wy{1.0/3.0}, m_tri_wz{1.0/3.0};
-    bool   m_tri_dragging{false};
-
-    // Match-specific tri-picker state (fully independent from ratio)
-    std::vector<int>    m_match_tri_indices;
-    std::vector<double> m_match_tri_weights;
-    bool                m_match_tri_dragging{false};
-    double m_match_tri_wx{1.0/3.0}, m_match_tri_wy{1.0/3.0}, m_match_tri_wz{1.0/3.0};
-
-    void build_tri_picker(wxWindow* parent = nullptr);
-    void build_match_tri_picker(wxWindow* parent);
-    void set_combo_combined_icon(class ComboBox* cb, int filament_idx);
-    void rebuild_legend();
-    void update_legend_text();
-    void rebuild_match_legend();
-    void update_match_legend_labels();    void rebuild_cycle_legend();
-    void validate_cycle_pattern();
-    void update_ratio_or_tri_visibility();
-    // Combo box helpers
-    void populate_combo(ComboBox* cb, const std::set<int>& exclude_ids, int select_id,
-                        std::vector<int>& out_filament_indices);
-    void refresh_all_combos();
-    void rebuild_all_combos_with_selections(const std::vector<int>& selections);
-    int  get_filament_index(int row_idx) const;
-
-    struct FilamentRow {
-        wxPanel*         swatch           = nullptr;
-        ComboBox*        combo            = nullptr;
-        std::vector<int> filament_indices; // combo index → actual filament index
+    // -----------------------------------------------------------------------
+    // Mix preset helpers (used by color-picker matching)
+    // -----------------------------------------------------------------------
+    struct MixPreset {
+        std::vector<int>    filament_indices;
+        std::vector<double> weights;
+        wxColor             mixed_color;
     };
-    std::vector<FilamentRow> m_filament_rows;
+    std::vector<MixPreset> m_mix_presets;
+    void             generate_mix_presets();
+    static wxColor   compute_mixed_color(
+        const std::vector<std::pair<std::string, std::string>>& filaments,
+        const std::vector<int>&    indices,
+        const std::vector<double>& weights);
+    const MixPreset* find_closest_mix(const wxColour& target) const;
+    void             update_color_match(const wxColour& selected_color,
+                                        bool update_active_mix = false);
 
-    const std::vector<std::string>& m_filament_colours;
-    Slic3r::MixedFilament            m_result;
-    int                              m_current_mode = MODE_RATIO;
+    // Apply a recommendation preset (adjusts filament slots + weights).
+    void set_active_mix(const std::vector<int>& physical_filaments,
+                        const std::vector<double>& weights);
+
+    // -----------------------------------------------------------------------
+    // Utility helpers
+    // -----------------------------------------------------------------------
+    std::vector<double> get_default_weights(int filament_count);
+    std::vector<wxColor> get_selected_filaments_colors(
+        const std::vector<int>& filament_indices) const;
+    std::vector<wxColor> get_colors_from_indices(const std::vector<int>& indices) const;
+
+
+
+    // Fallback size constraint (prevents horizontal resizing).
+    void on_sizing(wxSizeEvent& event);
+
+    void on_ok();
+    void on_cancel();
+
+    // -----------------------------------------------------------------------
+    // Top-level UI panels
+    // -----------------------------------------------------------------------
+    wxPanel*          m_title_panel{nullptr};
+    wxScrolledWindow* m_content_panel{nullptr};
+    wxPanel*          m_footer_panel{nullptr};
+    wxPanel*          m_list_preview_panel{nullptr};
+    Button*           m_btn_ok{nullptr};
+    Button*           m_btn_cancel{nullptr};
+    bool              m_is_list_preview_hovered{false};
+
+    wxBoxSizer* m_main_sizer{nullptr};
+    wxBoxSizer* m_title_sizer{nullptr};
+    wxBoxSizer* m_content_sizer{nullptr};
+    wxBoxSizer* m_footer_sizer{nullptr};
+
+    // Tab buttons
+    wxPanel* m_mix_tab_btn{nullptr};
+    wxPanel* m_pattern_tab_btn{nullptr};
+    wxPanel* m_gradient_tab_btn{nullptr};
+
+    // Mix-method radio buttons (Manual Ratio / By Color) — lives outside any accordion
+    // because it controls which accordions are visible in the Mix tab.
+    wxPanel*       m_mix_method_panel{nullptr};
+    wxBoxSizer*    m_mix_method_sizer{nullptr};
+    wxRadioButton* m_method_manual_radio{nullptr};
+    wxRadioButton* m_method_by_color_radio{nullptr};
+
+    // -----------------------------------------------------------------------
+    // Accordion section pointers (each owns its own UI sub-tree)
+    // -----------------------------------------------------------------------
+    MFDColorPickerAccordion*      m_color_picker_accordion{nullptr};
+    MFDPatternSelectorAccordion*  m_pattern_selector_accordion{nullptr};
+    MFDMaterialAccordion*         m_material_accordion{nullptr};
+    MFDRatioAccordion*            m_ratio_accordion{nullptr};
+    MFDRecommendationsAccordion*  m_recommendations_accordion{nullptr};
+    MFDPreviewAccordion*          m_preview_accordion{nullptr};
+    MFDGradientAccordion*         m_gradient_accordion{nullptr};
+
+
+
+    // Color-match deviation (kept on the dialog for use by the color picker accordion)
+    double m_current_deviation{-1.0};
+    double m_warning_deviation_threshold{65.0};
+    double m_max_deviation{441.673}; // sqrt(3 * 255^2)
 };
 
-}} // namespace Slic3r::GUI
+} // namespace Slic3r::GUI
+
+#endif // slic3r_GUI_MixedFilamentDialog_hpp_

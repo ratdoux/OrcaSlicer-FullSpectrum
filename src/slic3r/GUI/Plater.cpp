@@ -135,6 +135,7 @@
 #include "ModelMall.hpp"
 #include "ConfigWizard.hpp"
 #include "Widgets/FilamentCard.hpp"
+#include "MixedFilamentDialog.hpp"
 #include "../Utils/ASCIIFolding.hpp"
 #include "../Utils/ColorSpaceConvert.hpp"
 #include "../Utils/FixModelByWin10.hpp"
@@ -308,6 +309,48 @@ static void collect_filament_slots_from_model_config(
                 used_slots.insert(val - 1);
         }
     }
+}
+
+static int count_referencing_mixed_filaments(size_t physical_idx)
+{
+    auto* preset_bundle = wxGetApp().preset_bundle;
+    if (!preset_bundle) return 0;
+    
+    size_t num_physical = wxGetApp().plater()->sidebar().filament_menu()->m_physical_count();
+    auto definitions = preset_bundle->mixed_filaments.mixed_filament_definitions(num_physical);
+    
+    int count = 0;
+    unsigned int target_ref_id = static_cast<unsigned int>(physical_idx + 1); // 1-based reference ID
+    
+    for (const auto& def : definitions) {
+        if (def.visibility.tombstoned)
+            continue;
+            
+        bool referenced = false;
+        if (def.recipe.kind == MixedFilamentRecipeKind::WeightedBlend) {
+            for (const auto& comp : def.recipe.blend.components) {
+                if (comp.filament.id == target_ref_id) {
+                    referenced = true;
+                    break;
+                }
+            }
+        } else if (def.recipe.kind == MixedFilamentRecipeKind::ManualPattern && def.recipe.manual_pattern) {
+            for (const auto& group : def.recipe.manual_pattern->groups) {
+                for (const auto& ref : group) {
+                    if (ref.id == target_ref_id) {
+                        referenced = true;
+                        break;
+                    }
+                }
+                if (referenced) break;
+            }
+        }
+        
+        if (referenced) {
+            count++;
+        }
+    }
+    return count;
 }
 
 wxDEFINE_EVENT(EVT_SCHEDULE_BACKGROUND_PROCESS,     SimpleEvent);
@@ -1706,7 +1749,31 @@ Sidebar::Sidebar(Plater *parent)
         p->m_sidebar_filament_menu = new SidebarFilamentMenu(p->scrolled, title_bg);
         scrolled_sizer->Add(p->m_sidebar_filament_menu, 0, wxEXPAND | wxALL, 0);
 
-        p->m_sidebar_filament_menu->set_on_action(SidebarFilamentMenu::ActionType::CollapseToggle, [this]() { m_scrolled_sizer->Layout(); });
+        p->m_sidebar_filament_menu->set_get_physical_filaments([this]() -> std::vector<std::pair<std::string, std::string>> {
+            if (wxGetApp().preset_bundle == nullptr)
+                return std::vector<std::pair<std::string, std::string>>();
+
+            ConfigOptionStrings* phyiscal_filament_config = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
+            
+            const std::vector<std::string>& physical_colors = 
+                phyiscal_filament_config
+                ? phyiscal_filament_config->values
+                : std::vector<std::string>();
+
+            
+            auto         preset_bundle  = wxGetApp().preset_bundle;
+            const std::vector < std::string>physical_names = preset_bundle ? preset_bundle->filament_presets : std::vector<std::string>();
+            
+            std::vector<std::pair<std::string, std::string>> physical_filaments;
+            for (size_t i = 0; i < physical_colors.size(); ++i) {
+                const std::string& color = physical_colors[i];
+                const std::string& name  = i < physical_names.size() ? physical_names[i] : "";
+                physical_filaments.emplace_back(color, name);
+            }
+            
+            return physical_filaments;
+        });
+
         p->m_sidebar_filament_menu->set_on_edit_physical([this](int index) {
             auto menu = p->plater->filament_action_menu(index);
 
@@ -1714,6 +1781,149 @@ Sidebar::Sidebar(Plater *parent)
 
             p->m_menu_filament_id = index;
             p->plater->PopupMenu(menu, (int) pt.x, pt.y);
+        });
+
+        p->m_sidebar_filament_menu->set_on_right_click_physical([this](int index, const wxPoint& screen_pos) {
+            auto menu = p->plater->filament_action_menu(index);
+            p->m_menu_filament_id = index;
+
+            wxPoint client_pos = p->plater->ScreenToClient(screen_pos);
+            p->plater->PopupMenu(menu, client_pos);
+        });
+
+        p->m_sidebar_filament_menu->set_on_edit_mixed([this](int index, bool edit_by_color) {
+            auto filaments = p->m_sidebar_filament_menu->get_physical_filaments();
+            MixedFilamentDialog dlg(p->m_sidebar_filament_menu, MixedFilamentDialog::Action::Edit, filaments, index, edit_by_color);
+            if (dlg.ShowModal() == wxID_OK) {
+                MixedFilamentDefinition updated_def = dlg.get_result();
+                auto* preset_bundle = wxGetApp().preset_bundle;
+                if (preset_bundle) {
+                    auto &mgr = preset_bundle->mixed_filaments;
+                    const size_t num_physical = filaments.size();
+                    std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(num_physical);
+                    std::vector<MixedFilamentDefinition> old_mixed = definitions;
+
+                    if (index < (int)definitions.size()) {
+                        updated_def.identity = definitions[index].identity;
+                        updated_def.source = definitions[index].source;
+                        updated_def.visibility = definitions[index].visibility;
+
+                        std::vector<std::string> physical_colors;
+                        for (const auto& p_fil : filaments) {
+                            physical_colors.push_back(p_fil.first);
+                        }
+
+                        mgr.set_mixed_filament_definition(index, updated_def, physical_colors);
+
+                        const std::string serialized = mgr.serialize_custom_entries();
+                        if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                            opt->value = serialized;
+                        else
+                            preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
+
+                        preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
+
+                        if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
+                            print_tab->update_dirty();
+                        if (wxGetApp().mainframe)
+                            wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
+
+                        p->plater->update_project_dirty_from_presets();
+                        p->plater->on_filaments_change(num_physical);
+                    }
+                }
+            }
+        });
+
+        p->m_sidebar_filament_menu->set_on_delete_mixed([this](int index) {
+            auto* preset_bundle = wxGetApp().preset_bundle;
+            if (!preset_bundle)
+                return;
+
+            auto &mgr = preset_bundle->mixed_filaments;
+            auto filaments = p->m_sidebar_filament_menu->get_physical_filaments();
+            const size_t num_physical = filaments.size();
+            std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(num_physical);
+            std::vector<MixedFilamentDefinition> old_mixed = definitions;
+
+            if (index >= 0 && index < (int)definitions.size()) {
+                auto &target = definitions[index];
+                auto canonical_pair = [](unsigned int a, unsigned int b) {
+                    return std::make_pair(std::min(a, b), std::max(a, b));
+                };
+                const MixedFilamentPrimaryPairView target_pair_view = target.recipe.blend.primary_pair_or();
+                const std::pair<unsigned int, unsigned int> target_pair = canonical_pair(target_pair_view.component_a.id, target_pair_view.component_b.id);
+                const bool valid_auto_pair = target_pair.first >= 1 &&
+                                             target_pair.second >= 1 &&
+                                             target_pair.first <= num_physical &&
+                                             target_pair.second <= num_physical &&
+                                             target_pair.first != target_pair.second;
+
+                if (target.source.kind == MixedFilamentSourceKind::Custom && target.source.origin_auto && valid_auto_pair) {
+                    bool tombstoned_existing_auto = false;
+                    for (size_t idx = 0; idx < definitions.size(); ++idx) {
+                        if (idx == static_cast<size_t>(index))
+                            continue;
+                        MixedFilamentDefinition &candidate = definitions[idx];
+                        if (candidate.source.kind == MixedFilamentSourceKind::Custom)
+                            continue;
+                        const MixedFilamentPrimaryPairView candidate_pair = candidate.recipe.blend.primary_pair_or();
+                        if (canonical_pair(candidate_pair.component_a.id, candidate_pair.component_b.id) != target_pair)
+                            continue;
+                        candidate.visibility.tombstoned = true;
+                        tombstoned_existing_auto = true;
+                        break;
+                    }
+
+                    if (tombstoned_existing_auto) {
+                        definitions.erase(definitions.begin() + index);
+                    } else {
+                        target.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+                        target.recipe.blend.components = {
+                            {MixedFilamentPhysicalRef{target_pair.first}, 50},
+                            {MixedFilamentPhysicalRef{target_pair.second}, 50}
+                        };
+                        target.recipe.manual_pattern.reset();
+                        target.behavior.layer_cadence.component_a_layers = 1;
+                        target.behavior.layer_cadence.component_b_layers = 1;
+                        target.behavior.distribution = MixedFilamentDistributionMode::Simple;
+                        target.source.kind = MixedFilamentSourceKind::AutoGenerated;
+                        target.source.origin_auto = true;
+                        target.visibility.tombstoned = true;
+                    }
+                } else if (target.source.kind == MixedFilamentSourceKind::Custom) {
+                    definitions.erase(definitions.begin() + index);
+                } else {
+                    target.visibility.tombstoned = true;
+                }
+
+                std::vector<std::string> physical_colors;
+                for (const auto& p_fil : filaments) {
+                    physical_colors.push_back(p_fil.first);
+                }
+
+                mgr.set_mixed_filament_definitions(definitions, physical_colors);
+
+                const std::string serialized = mgr.serialize_custom_entries();
+                if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                    opt->value = serialized;
+                else
+                    preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
+
+                preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
+
+                if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
+                    print_tab->update_dirty();
+                if (wxGetApp().mainframe)
+                    wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
+
+                p->plater->update_project_dirty_from_presets();
+                p->plater->on_filaments_change(num_physical);
+            }
+        });
+
+        p->m_sidebar_filament_menu->set_on_action(SidebarFilamentMenu::ActionType::CollapseToggle, [this]() { 
+            m_scrolled_sizer->Layout(); 
         });
 
         // BBS
@@ -1770,6 +1980,18 @@ Sidebar::Sidebar(Plater *parent)
                 return;
 
             size_t filament_count = p->m_sidebar_filament_menu->m_physical_count() - 1;
+
+            int ref_count = count_referencing_mixed_filaments(filament_count);
+            if (ref_count > 0) {
+                wxString message = wxString::Format(
+                    _L("Deleting this physical filament will also delete %d mixed filament(s) that reference it. \nAre you sure you want to delete it?"),
+                    ref_count);
+                MessageDialog dialog(wxGetApp().mainframe, message, _L("Confirm Delete"), wxYES_NO | wxICON_WARNING | wxNO_DEFAULT);
+                if (dialog.ShowModal() != wxID_YES) {
+                    return;
+                }
+            }
+
             if (wxGetApp().preset_bundle->is_the_only_edited_filament(filament_count) || (filament_count == 1)) {
                 wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0], false, "", true);
             }
@@ -1791,192 +2013,7 @@ Sidebar::Sidebar(Plater *parent)
             wxGetApp().run_wizard(ConfigWizard::RR_USER, ConfigWizard::SP_FILAMENTS);
         });
     }
-    // --- Mixed Filaments Panel (Collapsible) ---
-    {
-        // Create title bar (StaticBox for collapsible header)
-        p->m_panel_mixed_filaments_title = new StaticBox(p->scrolled, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
-        p->m_panel_mixed_filaments_title->SetBackgroundColor(title_bg);
-        p->m_panel_mixed_filaments_title->SetBackgroundColor2(0xF1F1F1);
-
-        // Create icon
-        p->m_mixed_filaments_icon = new ScalableButton(p->m_panel_mixed_filaments_title, wxID_ANY, "filament");
-
-        // Create title text
-        p->m_staticText_mixed_filaments = new Label(p->m_panel_mixed_filaments_title, _L("Mixed Filaments"), LB_PROPAGATE_MOUSE_EVENT);
-
-        // Create "Add Gradient" button
-        p->m_btn_add_gradient = new Button(p->m_panel_mixed_filaments_title, _L("Add Gradient"));
-        p->m_btn_add_gradient->SetStyle(ButtonStyle::Confirm, ButtonType::Compact);
-        p->m_btn_add_gradient->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) {
-            // Add gradient mixed filament
-            if (wxGetApp().preset_bundle) {
-                auto &mgr = wxGetApp().preset_bundle->mixed_filaments;
-                // Get physical filament colors
-                ConfigOptionStrings *co = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
-                std::vector<std::string> colors = co ? co->values : std::vector<std::string>();
-                // Add a custom gradient (50% mix)
-                mgr.add_custom_filament(1, 2, 50, colors);
-                // Persist the custom entries so they survive the clear/load cycle in update_mixed_filament_panel
-                if (ConfigOptionString *opt = wxGetApp().preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
-                    opt->value = mgr.serialize_custom_entries();
-                update_mixed_filament_panel(false);
-                m_scrolled_sizer->Layout();
-            }
-        });
-
-        // Create "Add Pattern" button
-        p->m_btn_add_pattern = new Button(p->m_panel_mixed_filaments_title, _L("Add Pattern"));
-        p->m_btn_add_pattern->SetStyle(ButtonStyle::Confirm, ButtonType::Compact);
-        p->m_btn_add_pattern->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) {
-            // Add pattern mixed filament
-            if (wxGetApp().preset_bundle) {
-                auto &mgr = wxGetApp().preset_bundle->mixed_filaments;
-                // Get physical filament colors
-                ConfigOptionStrings *co = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
-                std::vector<std::string> colors = co ? co->values : std::vector<std::string>();
-                MixedFilamentDefinition definition;
-                definition.recipe.blend.components = {
-                    {{1}, 50},
-                    {{2}, 50}
-                };
-                definition.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
-                definition.recipe.manual_pattern = MixedFilamentManualPattern{
-                    {{MixedFilamentPhysicalRef{1}, MixedFilamentPhysicalRef{2}}}
-                };
-                mgr.add_custom_filament_definition(std::move(definition), colors);
-                // Persist the custom entries so they survive the clear/load cycle in update_mixed_filament_panel
-                if (ConfigOptionString *opt = wxGetApp().preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
-                    opt->value = mgr.serialize_custom_entries();
-                update_mixed_filament_panel(false);
-                m_scrolled_sizer->Layout();
-            }
-        });
-
-        // Create "Add Color" button
-        p->m_btn_add_color = new Button(p->m_panel_mixed_filaments_title, _L("Add Color"));
-        p->m_btn_add_color->SetStyle(ButtonStyle::Confirm, ButtonType::Compact);
-        p->m_btn_add_color->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-            if (wxGetApp().preset_bundle == nullptr)
-                return;
-
-            ConfigOptionStrings *co = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
-            const std::vector<std::string> colors = co ? co->values : std::vector<std::string>();
-            if (colors.size() < 2)
-                return;
-
-            const MixedColorMatchRecipeResult recipe =
-                prompt_best_color_match_recipe(this, colors, Plater::get_next_color_for_filament());
-            if (recipe.cancelled)
-                return;
-            if (!recipe.valid) {
-                show_error(this, _L("Unable to create a color match from the current physical filament colors."));
-                return;
-            }
-
-            const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(colors);
-            auto &mgr = wxGetApp().preset_bundle->mixed_filaments;
-            MixedFilamentDefinition definition;
-            definition.source.kind  = MixedFilamentSourceKind::Custom;
-            const int pct_b = std::clamp(recipe.mix_b_percent, 0, 100);
-            definition.recipe.blend = {{{{recipe.component_a}, 100 - pct_b}, {{recipe.component_b}, pct_b}}};
-            if (!recipe.manual_pattern.empty()) {
-                definition.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
-                definition.recipe.manual_pattern =
-                    mixed_filament_manual_pattern_from_string(recipe.manual_pattern, recipe.component_a, recipe.component_b, colors.size());
-            }
-            if (!recipe.gradient_component_ids.empty()) {
-                std::vector<unsigned int> ids;
-                ids.reserve(recipe.gradient_component_ids.size());
-                for (const char token : recipe.gradient_component_ids)
-                    if (token >= '1' && token <= '9')
-                        ids.emplace_back(unsigned(token - '0'));
-                if (ids.size() >= 3) {
-                    const std::vector<int> weights =
-                        normalize_color_match_weights(decode_color_match_gradient_weights(recipe.gradient_component_weights, ids.size()), ids.size());
-                    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
-                    definition.recipe.blend.components.clear();
-                    for (size_t idx = 0; idx < ids.size(); ++idx)
-                        definition.recipe.blend.components.push_back({{ids[idx]}, idx < weights.size() ? weights[idx] : 0});
-                    definition.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;
-                }
-            }
-            definition.presentation.display_color = compute_color_match_recipe_display_color(recipe, display_context).GetAsString(wxC2S_HTML_SYNTAX).ToStdString();
-            mgr.set_display_context(display_context);
-            mgr.add_custom_filament_definition(std::move(definition), colors);
-            if (ConfigOptionString *opt = wxGetApp().preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
-                opt->value = mgr.serialize_custom_entries();
-            update_mixed_filament_panel(false);
-            m_scrolled_sizer->Layout();
-        });
-
-        // Create horizontal sizer for title bar
-        wxBoxSizer* h_sizer_mixed_title = new wxBoxSizer(wxHORIZONTAL);
-        h_sizer_mixed_title->Add(p->m_mixed_filaments_icon, 0, wxALIGN_CENTER | wxLEFT, FromDIP(SidebarProps::TitlebarMargin()));
-        h_sizer_mixed_title->AddSpacer(FromDIP(SidebarProps::ElementSpacing()));
-        h_sizer_mixed_title->Add(p->m_staticText_mixed_filaments, 0, wxALIGN_CENTER);
-        h_sizer_mixed_title->AddStretchSpacer();
-        h_sizer_mixed_title->Add(p->m_btn_add_gradient, 0, wxALIGN_CENTER | wxRIGHT, FromDIP(SidebarProps::ElementSpacing()));
-        h_sizer_mixed_title->Add(p->m_btn_add_pattern, 0, wxALIGN_CENTER | wxRIGHT, FromDIP(SidebarProps::ElementSpacing()));
-        h_sizer_mixed_title->Add(p->m_btn_add_color, 0, wxALIGN_CENTER | wxRIGHT, FromDIP(SidebarProps::TitlebarMargin()));
-        h_sizer_mixed_title->SetMinSize(-1, FromDIP(30));
-
-        p->m_panel_mixed_filaments_title->SetSizer(h_sizer_mixed_title);
-        p->m_panel_mixed_filaments_title->Layout();
-
-        // Add splitter line before title
-        auto spliter_mixed_1 = new ::StaticLine(p->scrolled);
-        spliter_mixed_1->SetLineColour("#A6A9AA");
-        scrolled_sizer->Add(spliter_mixed_1, 0, wxEXPAND);
-
-        // Add title bar to scrolled sizer
-        scrolled_sizer->Add(p->m_panel_mixed_filaments_title, 0, wxEXPAND | wxALL, 0);
-
-        // Add splitter line after title
-        auto spliter_mixed_2 = new ::StaticLine(p->scrolled);
-        spliter_mixed_2->SetLineColour("#CECECE");
-        scrolled_sizer->Add(spliter_mixed_2, 0, wxEXPAND);
-
-        // Create content panel (collapsible)
-        p->m_panel_mixed_filaments_content = new wxPanel(p->scrolled, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL);
-        {
-            const bool is_dark = wxGetApp().dark_mode();
-            p->m_panel_mixed_filaments_content->SetBackgroundColour(is_dark ? wxColour(45, 45, 49) : wxColour(255, 255, 255));
-        }
-
-        // Content sizer - store in member variable for later use
-        p->m_sizer_mixed_filaments_content = new wxBoxSizer(wxVERTICAL);
-        p->m_sizer_mixed_filaments_content->AddSpacer(FromDIP(SidebarProps::ContentMargin()));
-        p->m_panel_mixed_filaments_content->SetSizer(p->m_sizer_mixed_filaments_content);
-        p->m_panel_mixed_filaments_content->Layout();
-
-        // Add content panel to scrolled sizer
-        scrolled_sizer->Add(p->m_panel_mixed_filaments_content, 0, wxEXPAND, 0);
-
-        // Bind collapse/expand event to title bar
-        p->m_panel_mixed_filaments_title->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& e) {
-            // Exclude button areas from collapse/expand
-            int button_left = p->m_panel_mixed_filaments_title->GetClientSize().x;
-            auto consider_button = [&button_left](wxWindow *button) {
-                if (button && button->IsShown())
-                    button_left = std::min(button_left, button->GetPosition().x);
-            };
-            consider_button(p->m_btn_add_gradient);
-            consider_button(p->m_btn_add_pattern);
-            consider_button(p->m_btn_add_color);
-            if (e.GetPosition().x > button_left - FromDIP(12))
-                return;
-        
-            if (p->m_panel_mixed_filaments_content->GetMaxHeight() == 0)
-                p->m_panel_mixed_filaments_content->SetMaxSize({-1, -1});
-            else
-                p->m_panel_mixed_filaments_content->SetMaxSize({-1, 0});
-            m_scrolled_sizer->Layout();
-        });
-
-        // Initially hidden until 2+ filaments
-        p->m_panel_mixed_filaments_title->Hide();
-        p->m_panel_mixed_filaments_content->Hide();
-    }
+    // Legacy Mixed Filaments Panel creation removed. New UI driven by SidebarFilamentMenu.
 
     // --- Mixed Filaments Panel (Collapsible) ---
     {
@@ -2778,20 +2815,18 @@ void Sidebar::jump_to_option(size_t selected)
 // BBS. Move logic from Plater::on_extruders_change() to Sidebar::on_filaments_change().
 void Sidebar::on_filaments_change(size_t num_filaments)
 {
-    int current_count = p->m_sidebar_filament_menu->m_physical_count();
-
-    if (num_filaments == current_count) {
-        // Project load may keep the same physical filament count while mixed
-        // definitions changed. Refresh mixed panel even without count changes.
-        const bool sync_manager = !p->m_skip_mixed_filament_sync_once;
-        p->m_skip_mixed_filament_sync_once = false;
-        update_ui_from_settings();
-        update_dynamic_filament_list();
-        update_mixed_filament_panel(sync_manager);
+    auto* preset_bundle = wxGetApp().preset_bundle;
+    if (!preset_bundle)
         return;
-    }
 
-    p->m_sidebar_filament_menu->on_filaments_change(num_filaments);
+    auto& mixed_mgr = preset_bundle->mixed_filaments;
+    ConfigOptionStrings* color_opt = preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
+    if (color_opt) {
+        mixed_mgr.refresh_display_colors(color_opt->values);
+    }
+    std::vector<MixedFilamentDefinition> mixed_filaments = mixed_mgr.mixed_filament_definitions(num_filaments);
+
+    p->m_sidebar_filament_menu->on_filaments_change(num_filaments, mixed_filaments);
 
     p->m_skip_mixed_filament_sync_once = false;
     wxWindowUpdateLocker noUpdates_scrolled_panel(this);
@@ -5095,6 +5130,7 @@ MixedColorMatchRecipeResult prompt_best_color_match_recipe(wxWindow *parent,
 }
 void Sidebar::update_mixed_filament_panel(bool sync_manager)
 {
+#if 0
     // Check for new collapsible structure
     if (!p->m_panel_mixed_filaments_title || !p->m_panel_mixed_filaments_content)
         return;
@@ -5930,8 +5966,8 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
     content_sizer->AddSpacer(FromDIP(2));
     p->m_panel_mixed_filaments_content->Layout();
     m_scrolled_sizer->Layout();
-    Layout();
     refresh_model_canvas_colors();
+#endif
 }
 
 std::vector<unsigned int> Sidebar::get_ui_ordered_filament_ids() const
@@ -5985,8 +6021,12 @@ void Sidebar::on_filaments_delete(size_t num_filaments)
         return;
 
     wxWindowUpdateLocker noUpdates_scrolled_panel(this);
+        
+    auto*                                      preset_bundle   = wxGetApp().preset_bundle;
+    auto&                                      mixed_mgr       = preset_bundle->mixed_filaments;
+    std::vector<MixedFilamentDefinition> mixed_filaments = mixed_mgr.mixed_filament_definitions(num_filaments);
 
-    p->m_sidebar_filament_menu->on_filaments_change(num_filaments);
+    p->m_sidebar_filament_menu->on_filaments_change(num_filaments, mixed_filaments);
 
     Layout();
     update_ui_from_settings();
@@ -6198,11 +6238,24 @@ void Sidebar::delete_filament(size_t filament_id, int replace_filament_id)
 
     if (filament_id > filament_count) return;
 
-    if (wxGetApp().preset_bundle->is_the_only_edited_filament(filament_id) || (filament_id == 0))
-        wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0], false, "", true);
+    int ref_count = count_referencing_mixed_filaments(filament_id);
+    if (ref_count > 0) {
+        wxString message = wxString::Format(
+            _L("Deleting this physical filament will also delete %d mixed filament(s) that reference it. Are you sure you want to delete it?"),
+            ref_count);
+        MessageDialog dialog(wxGetApp().mainframe, message, _L("Confirm Delete"), wxYES_NO | wxICON_WARNING | wxNO_DEFAULT);
+        if (dialog.ShowModal() != wxID_YES) {
+            return;
+        }
+    }
 
-    if (p->editing_filament == filament_id || p->editing_filament >= filament_count)
+    if (wxGetApp().preset_bundle->is_the_only_edited_filament(filament_id) || (filament_id == 0)) {
+        wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0], false, "", true);
+    }
+
+    if (p->editing_filament == filament_id || p->editing_filament >= filament_count) {
         p->editing_filament = -1;
+    }
 
     wxGetApp().preset_bundle->update_num_filaments(filament_id);
     wxGetApp().plater()->get_partplate_list().on_filament_deleted(filament_count, filament_id);
@@ -12640,40 +12693,10 @@ bool Plater::priv::confirm_auto_generated_gradients(wxWindow *parent, size_t num
         return false;
     }
 
-    if (num_physical <= 4) {
-        m_last_auto_gradient_prompt_physical_count = 0;
-        m_last_auto_gradient_prompt_accepted = false;
-        MixedFilamentManager::set_auto_generate_enabled(true);
-        return true;
-    }
-
-    if (parent == nullptr || !parent->IsShownOnScreen()) {
-        m_last_auto_gradient_prompt_physical_count = 0;
-        m_last_auto_gradient_prompt_accepted = false;
-        MixedFilamentManager::set_auto_generate_enabled(true);
-        return true;
-    }
-
-    if (m_last_auto_gradient_prompt_physical_count == num_physical) {
-        MixedFilamentManager::set_auto_generate_enabled(m_last_auto_gradient_prompt_accepted);
-        return m_last_auto_gradient_prompt_accepted;
-    }
-
-    const size_t auto_gradient_count = num_physical * (num_physical - 1) / 2;
-    const wxString message = wxString::Format(
-        _L("Using %d physical filaments will create %d auto-generated gradients.\nDo you want to create them now?"),
-        int(num_physical),
-        int(auto_gradient_count));
-    const int result = MessageDialog(parent,
-                                     message,
-                                     wxString(SLIC3R_APP_FULL_NAME) + " - " + _L("Auto gradients"),
-                                     wxYES_NO | wxYES_DEFAULT | wxCENTRE | wxICON_QUESTION)
-                           .ShowModal();
-    const bool accepted = result == wxID_YES;
     m_last_auto_gradient_prompt_physical_count = num_physical;
-    m_last_auto_gradient_prompt_accepted = accepted;
-    MixedFilamentManager::set_auto_generate_enabled(accepted);
-    return accepted;
+    m_last_auto_gradient_prompt_accepted = true;
+    MixedFilamentManager::set_auto_generate_enabled(true);
+    return true;
 }
 
 void Plater::priv::set_auto_generated_gradient_decision(size_t num_physical, bool create_auto_gradients)
@@ -19167,6 +19190,7 @@ void Plater::on_config_change(const DynamicPrintConfig &config)
             if (update_filament_colors_in_full_config()) {
                 p->sidebar->obj_list()->update_filament_colors();
                 p->sidebar->update_dynamic_filament_list();
+                p->sidebar->on_filaments_change(p->config->option<ConfigOptionStrings>("filament_colour")->values.size());
                 continue;
             }
         }
