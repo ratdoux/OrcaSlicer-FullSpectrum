@@ -48,10 +48,15 @@ static std::map<wxColour, wxColour> gDarkColors{
     {"#E5F0EE", "#283232"}, // rgb(229, 240, 238)  Combo / Dropdown focused background color > ORCA color with %10 opacity
     // MixedFilamentDialog dark mode
     {"#F8F7F7", "#2A2A2E"}, // rgb(248, 247, 247)  Dialog / scrolled content background
+    {"#F5F5F5", "#242428"}, // rgb(245, 245, 245)  Dialog scrolled content gutter
     {"#F0F0F0", "#3F3F46"}, // rgb(240, 240, 240)  Card borders, dividers
+    {"#E0E0E0", "#52525B"}, // rgb(224, 224, 224)  Preview inner border
     {"#F3F4F6", "#3A3A3F"}, // rgb(243, 244, 246)  Internal card dividers
+    {"#333333", "#E4E4E7"}, // rgb(51, 51, 51)     Primary text
+    {"#1A1A1A", "#FFFFFF"}, // rgb(26, 26, 26)     Hovered/active primary text
     {"#242424", "#E4E4E7"}, // rgb(36, 36, 36)    Primary text (hex input, cancel btn)
     {"#4A4A4A", "#A1A1AA"}, // rgb(74, 74, 74)    Secondary text (segmented btns)
+    {"#7E7E7E", "#A1A1AA"}, // rgb(126, 126, 126)  Recommendation section labels
     {"#8F8F8F", "#8A8A95"}, // rgb(143, 143, 143) Label text (Hex:, Preview, percentages)
     {"#EBEBEB", "#45454B"}, // rgb(235, 235, 235)  Slider track background
     {"#FDE8E8", "#4D2020"}, // rgb(253, 232, 232)  Error banner background

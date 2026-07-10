@@ -6,6 +6,7 @@
 #include "Slic3r/GUI/GUI.hpp"
 #include "Slic3r/GUI/GUI_App.hpp"
 #include "Slic3r/GUI/GUI_Factories.hpp"
+#include "Slic3r/GUI/MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -21,19 +22,19 @@ void Accordion::build_ui(const wxString& title)
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     Bind(wxEVT_PAINT, &Accordion::on_paint, this);
 
-    SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    SetBackgroundColour(MFDTheme::card_background());
 
     wxBoxSizer* main_sizer = new wxBoxSizer(wxVERTICAL);
 
     // --- Header panel ---
     m_header_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_header_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_header_panel->SetBackgroundColour(MFDTheme::card_background());
     m_header_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_header_panel->SetSizer(m_header_sizer);
 
     m_title_text = new wxStaticText(m_header_panel, wxID_ANY, title,
         wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
-    m_title_text->SetForegroundColour(wxColour("#333333"));
+    m_title_text->SetForegroundColour(MFDTheme::primary_text());
     m_title_text->SetFont(::Label::Head_14);
 
     // Get un-truncated best width with correct font applied first
@@ -58,7 +59,7 @@ void Accordion::build_ui(const wxString& title)
 
     // --- Body panel ---
     m_body_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_body_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_body_panel->SetBackgroundColour(MFDTheme::card_background());
     m_body_sizer = new wxBoxSizer(wxVERTICAL);
     m_body_panel->SetSizer(m_body_sizer);
 
@@ -185,11 +186,11 @@ void Accordion::update_header_visual()
     if (m_is_collapsed) {
         m_chevron_bmp->SetBitmap(m_chevron_rotated);
         m_chevron_bmp->Show(true);
-        m_title_text->SetForegroundColour(wxColour("#1A1A1A"));
+        m_title_text->SetForegroundColour(MFDTheme::primary_text());
     } else {
         m_chevron_bmp->SetBitmap(m_chevron_normal);
         m_chevron_bmp->Show(m_is_hovered);
-        m_title_text->SetForegroundColour(m_is_hovered ? wxColour("#1A1A1A") : wxColour("#333333"));
+        m_title_text->SetForegroundColour(MFDTheme::primary_text());
     }
 
     m_title_text->Refresh();
@@ -249,9 +250,9 @@ void Accordion::on_paint(wxPaintEvent& /*event*/)
     dc.DrawRectangle(0, 0, size.x, size.y);
 
     // White card with subtle rounded border.
-    wxColour card_bg = StateColor::darkModeColorFor(*wxWHITE);
+    wxColour card_bg = MFDTheme::card_background();
     dc.SetBrush(wxBrush(card_bg));
-    dc.SetPen(wxPen(wxColour("#EBEBEB"), 1));
+    dc.SetPen(wxPen(MFDTheme::card_border(), 1));
     dc.DrawRoundedRectangle(0, 0, size.x, size.y, 4);
 }
 

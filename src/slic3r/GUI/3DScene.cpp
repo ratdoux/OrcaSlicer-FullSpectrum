@@ -19,6 +19,7 @@
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Tesselate.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -27,6 +28,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <boost/log/trivial.hpp>
 
@@ -310,6 +315,206 @@ ColorRGBA color_from_model_volume(const ModelVolume& model_volume)
     return color;
 }
 
+static std::vector<ColorRGBA> mixed_filament_preview_gradient_colors(const MixedFilamentDefinition& definition,
+                                                                     const std::vector<std::string>& physical_colors)
+{
+    if (definition.visibility.tombstoned || !definition.behavior.gradient.enabled || physical_colors.empty())
+        return {};
+
+    std::vector<unsigned int> component_ids = definition.recipe.blend.component_ids(physical_colors.size());
+    if (component_ids.size() < 2)
+        return {};
+    if (component_ids.size() == 2 &&
+        definition.behavior.gradient.component_a_start < definition.behavior.gradient.component_a_end)
+        std::reverse(component_ids.begin(), component_ids.end());
+
+    std::vector<ColorRGBA> colors;
+    colors.reserve(component_ids.size());
+    for (const unsigned int component_id : component_ids) {
+        if (component_id < 1 || component_id > physical_colors.size())
+            continue;
+
+        ColorRGBA rgba;
+        if (decode_color(physical_colors[component_id - 1], rgba))
+            colors.emplace_back(rgba);
+    }
+
+    return colors.size() >= 2 ? colors : std::vector<ColorRGBA>();
+}
+
+static std::vector<double> mixed_filament_preview_gradient_positions(const MixedFilamentDefinition& definition,
+                                                                     size_t component_count,
+                                                                     size_t num_physical)
+{
+    const size_t expected_stops = component_count >= 2 ? 2 * component_count - 1 : size_t(0);
+    if (expected_stops < 3)
+        return {};
+
+    std::vector<double> positions;
+    const std::vector<float>& explicit_positions = definition.behavior.gradient.stop_positions;
+    if (explicit_positions.size() == expected_stops) {
+        positions.reserve(expected_stops);
+        for (const float position : explicit_positions) {
+            if (!std::isfinite(position)) {
+                positions.clear();
+                break;
+            }
+            positions.emplace_back(std::clamp(double(position), 0.0, 1.0));
+        }
+    }
+
+    if (positions.empty()) {
+        std::vector<int> weights = definition.recipe.blend.component_percents(num_physical);
+        if (weights.size() == 2 &&
+            definition.behavior.gradient.component_a_start < definition.behavior.gradient.component_a_end)
+            std::reverse(weights.begin(), weights.end());
+        if (weights.size() != component_count)
+            weights.assign(component_count, 1);
+
+        double total = 0.0;
+        for (const int weight : weights)
+            total += double(std::max(0, weight));
+        if (total <= EPSILON) {
+            weights.assign(component_count, 1);
+            total = double(component_count);
+        }
+
+        std::vector<double> boundaries(component_count + 1, 0.0);
+        for (size_t i = 0; i < component_count; ++i)
+            boundaries[i + 1] = boundaries[i] + double(std::max(0, weights[i])) / total;
+        boundaries.front() = 0.0;
+        boundaries.back() = 1.0;
+
+        positions.assign(expected_stops, 0.0);
+        positions.front() = 0.0;
+        positions.back() = 1.0;
+        for (size_t i = 0; i + 1 < component_count; ++i)
+            positions[2 * i + 1] = std::clamp(boundaries[i + 1], 0.0, 1.0);
+        for (size_t i = 1; i + 1 < component_count; ++i)
+            positions[2 * i] = std::clamp((boundaries[i] + boundaries[i + 1]) * 0.5, 0.0, 1.0);
+    }
+
+    if (positions.size() != expected_stops)
+        return {};
+
+    positions.front() = 0.0;
+    positions.back() = 1.0;
+    constexpr double min_gap = 1e-6;
+    for (size_t i = 1; i < positions.size(); ++i)
+        positions[i] = std::max(positions[i], positions[i - 1] + min_gap);
+    positions.back() = 1.0;
+    for (size_t i = positions.size() - 1; i > 0; --i)
+        positions[i - 1] = std::min(positions[i - 1], positions[i] - min_gap);
+    positions.front() = 0.0;
+    for (double& position : positions)
+        position = std::clamp(position, 0.0, 1.0);
+    return positions;
+}
+
+static ColorRGBA interpolate_preview_gradient_color(const ColorRGBA& a, const ColorRGBA& b, double local)
+{
+    ColorRGBA out;
+    local = std::clamp(local, 0.0, 1.0);
+    for (size_t channel = 0; channel < 4; ++channel)
+        out[channel] = float(double(a[channel]) * (1.0 - local) + double(b[channel]) * local);
+    return out;
+}
+
+static ColorRGBA sample_preview_gradient_color(const std::vector<ColorRGBA>& colors,
+                                               const std::vector<double>&    positions,
+                                               double                        t)
+{
+    if (colors.empty())
+        return ColorRGBA::WHITE();
+    if (colors.size() == 1)
+        return colors.front();
+
+    const size_t expected_stops = 2 * colors.size() - 1;
+    if (positions.size() == expected_stops) {
+        const double progress = std::clamp(t, 0.0, std::nextafter(1.0, 0.0));
+        for (size_t idx = 0; idx + 1 < colors.size(); ++idx) {
+            const double p_start = std::clamp(positions[2 * idx], 0.0, 1.0);
+            const double p_mid   = std::clamp(positions[2 * idx + 1], p_start, 1.0);
+            const double p_end   = std::clamp(positions[2 * idx + 2], p_mid, 1.0);
+            if (progress > p_end && idx + 2 < colors.size())
+                continue;
+
+            double local = 0.0;
+            if (p_end <= p_start + EPSILON)
+                local = 0.0;
+            else if (progress <= p_mid)
+                local = 0.5 * std::clamp((progress - p_start) / std::max(EPSILON, p_mid - p_start), 0.0, 1.0);
+            else
+                local = 0.5 + 0.5 * std::clamp((progress - p_mid) / std::max(EPSILON, p_end - p_mid), 0.0, 1.0);
+            return interpolate_preview_gradient_color(colors[idx], colors[idx + 1], local);
+        }
+        return colors.back();
+    }
+
+    const double scaled = std::clamp(t, 0.0, std::nextafter(1.0, 0.0)) * double(colors.size() - 1);
+    const size_t idx    = std::min<size_t>(colors.size() - 2, size_t(std::floor(scaled)));
+    const double local  = scaled - double(idx);
+    return interpolate_preview_gradient_color(colors[idx], colors[idx + 1], local);
+}
+
+static bool render_preview_gradient_model(GUI::GLModel&                         model,
+                                          const std::pair<size_t, size_t>&       tverts_range,
+                                          GLShaderProgram*                      shader,
+                                          const BoundingBoxf3&                  box,
+                                          const std::array<float, 2>&           z_range,
+                                          const std::vector<ColorRGBA>&         colors,
+                                          const std::vector<double>&            positions,
+                                          float                                 alpha)
+{
+    if (shader == nullptr || !model.is_initialized() || colors.size() < 2)
+        return false;
+
+    const double z_min = box.min.z();
+    const double z_max = box.max.z();
+    const double z_height = z_max - z_min;
+    const double clip_min = std::max<double>(z_min, z_range[0]);
+    const double clip_max = std::min<double>(z_max, z_range[1]);
+    if (z_height <= EPSILON || clip_max <= clip_min + EPSILON)
+        return false;
+
+    bool rendered = false;
+    const size_t band_count = std::clamp<size_t>(colors.size() * 16, 24, 64);
+    for (size_t band_idx = 0; band_idx < band_count; ++band_idx) {
+        const double band_min = z_min + z_height * double(band_idx) / double(band_count);
+        const double band_max = z_min + z_height * double(band_idx + 1) / double(band_count);
+        const double draw_min = std::max<double>(band_min, clip_min);
+        const double draw_max = std::min<double>(band_max, clip_max);
+        if (draw_max <= draw_min + EPSILON)
+            continue;
+
+        ColorRGBA band_color = adjust_color_for_rendering(sample_preview_gradient_color(colors, positions,
+                                                                                       (double(band_idx) + 0.5) / double(band_count)));
+        band_color.a(alpha);
+        model.set_color(band_color);
+        shader->set_uniform("z_range", std::array<float, 2>{float(draw_min), float(draw_max)});
+        if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
+            model.render();
+        else
+            model.render(tverts_range);
+        rendered = true;
+    }
+    return rendered;
+}
+
+static bool volume_has_mmu_segmentation(const GLVolume& volume)
+{
+    ModelObjectPtrs& model_objects = GUI::wxGetApp().model().objects;
+    if (volume.object_idx() < 0 || volume.object_idx() >= model_objects.size())
+        return false;
+
+    const ModelObject* model_object = model_objects[volume.object_idx()];
+    if (model_object == nullptr || volume.volume_idx() < 0 || volume.volume_idx() >= model_object->volumes.size())
+        return false;
+
+    const ModelVolume* model_volume = model_object->volumes[volume.volume_idx()];
+    return model_volume != nullptr && !model_volume->mmu_segmentation_facets.empty();
+}
+
 Transform3d GLVolume::world_matrix() const
 {
     Transform3d m          = m_instance_transformation.get_matrix() * m_volume_transformation.get_matrix();
@@ -509,7 +714,8 @@ void GLVolume::render_with_outline(const GUI::Size& cnv_size)
 void GLVolume::simple_render(GLShaderProgram*        shader,
                              ModelObjectPtrs&        model_objects,
                              std::vector<ColorRGBA>& extruder_colors,
-                             bool                    ban_light)
+                             bool                    ban_light,
+                             const std::array<float, 2>* z_range)
 {
     if (this->is_left_handed())
         glFrontFace(GL_CW);
@@ -550,20 +756,57 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
                 extruder_color.a(render_color.a());
         }
 
+        const std::array<float, 2> full_z_range{std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max()};
+        const std::array<float, 2>& active_z_range = z_range != nullptr ? *z_range : full_z_range;
+        const BoundingBoxf3 box = transformed_bounding_box();
+
         for (int idx = 0; idx < mmuseg_models.size(); idx++) {
             GUI::GLModel& m = mmuseg_models[idx];
             if (!m.is_initialized())
                 continue;
 
+            int filament_id = idx;
+            if (idx == 0) {
+                filament_id = model_volume->extruder_id();
+                if (filament_id <= 0)
+                    filament_id = 1;
+            }
+            const size_t filament_idx = filament_id > 0 ? size_t(filament_id - 1) : size_t(0);
+
+            const bool has_gradient =
+                !picking &&
+                filament_idx < preview_gradient_colors_by_extruder.size() &&
+                preview_gradient_colors_by_extruder[filament_idx].size() >= 2;
+            if (has_gradient) {
+                float alpha = filament_idx < extruder_colors.size() ? extruder_colors[filament_idx].a() : 1.0f;
+                if (force_native_color && render_color.is_transparent())
+                    alpha = render_color.a();
+                if (ban_light)
+                    alpha = (255 - (filament_id - 1)) / 255.0f;
+
+                static const std::vector<double> empty_positions;
+                const std::vector<double>& positions =
+                    filament_idx < preview_gradient_positions_by_extruder.size() ?
+                        preview_gradient_positions_by_extruder[filament_idx] :
+                        empty_positions;
+                if (render_preview_gradient_model(m, tverts_range, shader, box, active_z_range,
+                                                  preview_gradient_colors_by_extruder[filament_idx], positions, alpha)) {
+                    shader->set_uniform("z_range", active_z_range);
+                    continue;
+                }
+            }
+
             if (shader) {
                 if (idx == 0) {
-                    int extruder_id = model_volume->extruder_id();
-                    if (extruder_id <= 0)
-                        extruder_id = 1;
                     // to make black not too hard too see
-                    ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[extruder_id - 1]);
+                    const size_t color_idx = filament_id > 0 && size_t(filament_id - 1) < extruder_colors.size() ?
+                        size_t(filament_id - 1) :
+                        size_t(0);
+                    ColorRGBA new_color = extruder_colors.empty() ?
+                        ColorRGBA::WHITE() :
+                        adjust_color_for_rendering(extruder_colors[color_idx]);
                     if (ban_light) {
-                        new_color[3] = (255 - (extruder_id - 1)) / 255.0f;
+                        new_color[3] = (255 - (filament_id - 1)) / 255.0f;
                     }
                     m.set_color(new_color);
                     // shader->set_uniform("uniform_color", new_color);
@@ -578,7 +821,9 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
                         // shader->set_uniform("uniform_color", new_color);
                     } else {
                         // to make black not too hard too see
-                        ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[0]);
+                        ColorRGBA new_color = extruder_colors.empty() ?
+                            ColorRGBA::WHITE() :
+                            adjust_color_for_rendering(extruder_colors[0]);
                         if (ban_light) {
                             new_color[3] = (255 - 0) / 255.0f;
                         }
@@ -981,18 +1226,58 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
 #endif // ENABLE_ENVIRONMENT_MAP
         glcheck();
 
-        volume.first->model.set_color(volume.first->render_color);
         const Transform3d model_matrix = volume.first->world_matrix();
         shader->set_uniform("view_model_matrix", view_matrix * model_matrix);
         shader->set_uniform("projection_matrix", projection_matrix);
         const Matrix3d view_normal_matrix = view_matrix.matrix().block(0, 0, 3, 3) *
                                             model_matrix.matrix().block(0, 0, 3, 3).inverse().transpose();
         shader->set_uniform("view_normal_matrix", view_normal_matrix);
+
+        bool rendered_preview_gradient = false;
+        const bool use_preview_gradient =
+            volume.first->preview_gradient_colors.size() >= 2 &&
+            volume.first->model.is_initialized() &&
+            volume.first->visible &&
+            volume.first->printable &&
+            !volume.first->disabled &&
+            !volume.first->is_modifier &&
+            !volume.first->is_wipe_tower &&
+            !volume.first->picking &&
+            !m_use_color_clip_plane &&
+            !volume_has_mmu_segmentation(*volume.first);
+        if (use_preview_gradient) {
+            rendered_preview_gradient = render_preview_gradient_model(volume.first->model,
+                                                                      volume.first->tverts_range,
+                                                                      shader,
+                                                                      volume.first->transformed_bounding_box(),
+                                                                      m_z_range,
+                                                                      volume.first->preview_gradient_colors,
+                                                                      volume.first->preview_gradient_positions,
+                                                                      volume.first->render_color.a());
+            if (rendered_preview_gradient)
+                shader->set_uniform("z_range", m_z_range);
+        }
+
+        if (!rendered_preview_gradient)
+            volume.first->model.set_color(volume.first->render_color);
+
+        const bool has_segmented_preview_gradient =
+            !rendered_preview_gradient &&
+            volume_has_mmu_segmentation(*volume.first) &&
+            !volume.first->preview_gradient_colors_by_extruder.empty() &&
+            !volume.first->picking &&
+            !m_use_color_clip_plane;
+
         // BBS: add outline related logic
-        if (volume.first->selected && GUI::wxGetApp().show_outline())
+        if (has_segmented_preview_gradient) {
+            ModelObjectPtrs& model_objects = GUI::wxGetApp().model().objects;
+            std::vector<ColorRGBA> extruder_colors = get_extruders_colors();
+            volume.first->simple_render(shader, model_objects, extruder_colors, false, &m_z_range);
+        } else if (!rendered_preview_gradient && volume.first->selected && GUI::wxGetApp().show_outline())
             volume.first->render_with_outline(cnv_size);
-        else
+        else if (!rendered_preview_gradient) {
             volume.first->render();
+        }
 
 #if ENABLE_ENVIRONMENT_MAP
         if (use_environment_texture)
@@ -1206,6 +1491,8 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
 {
     using ColorItem = std::pair<std::string, ColorRGBA>;
     std::vector<ColorItem> colors;
+    std::vector<std::vector<ColorRGBA>> preview_gradient_colors;
+    std::vector<std::vector<double>>    preview_gradient_positions;
 
     if (static_cast<PrinterTechnology>(config->opt_int("printer_technology")) == ptSLA) {
         const std::string& txt_color = config->opt_string("material_colour").empty() ?
@@ -1223,12 +1510,34 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
         if (filament_colors.empty())
             return;
 
+        const std::vector<std::string> physical_filament_colors = filament_colors;
+        preview_gradient_colors.resize(filament_colors.size());
+        preview_gradient_positions.resize(filament_colors.size());
+
         // Include visible mixed (virtual) filament colors so volume extruder IDs
         // assigned to mixed rows render correctly in Prepare view.
         if (GUI::wxGetApp().preset_bundle != nullptr) {
-            const auto mixed_colors = GUI::wxGetApp().preset_bundle->mixed_filaments.display_colors();
-            filament_colors.insert(filament_colors.end(), mixed_colors.begin(), mixed_colors.end());
+            const MixedFilamentManager& mixed_mgr = GUI::wxGetApp().preset_bundle->mixed_filaments;
+            const auto mixed_colors = mixed_mgr.display_colors();
+            const auto mixed_definitions = mixed_mgr.mixed_filament_definitions(physical_filament_colors.size());
+            size_t visible_mixed_idx = 0;
+            for (const MixedFilamentDefinition& definition : mixed_definitions) {
+                if (definition.visibility.tombstoned)
+                    continue;
+                const std::string display_color =
+                    visible_mixed_idx < mixed_colors.size() ? mixed_colors[visible_mixed_idx] : definition.presentation.display_color;
+                std::vector<ColorRGBA> gradient_colors = mixed_filament_preview_gradient_colors(definition, physical_filament_colors);
+                filament_colors.emplace_back(display_color);
+                preview_gradient_positions.emplace_back(
+                    mixed_filament_preview_gradient_positions(definition, gradient_colors.size(), physical_filament_colors.size()));
+                preview_gradient_colors.emplace_back(std::move(gradient_colors));
+                ++visible_mixed_idx;
+            }
         }
+        if (preview_gradient_colors.size() < filament_colors.size())
+            preview_gradient_colors.resize(filament_colors.size());
+        if (preview_gradient_positions.size() < filament_colors.size())
+            preview_gradient_positions.resize(filament_colors.size());
 
         colors.resize(filament_colors.size());
 
@@ -1249,6 +1558,16 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
             extruder_id = 0;
 
         const ColorItem& color = colors[extruder_id];
+        volume->preview_gradient_colors =
+            extruder_id >= 0 && size_t(extruder_id) < preview_gradient_colors.size() ?
+                preview_gradient_colors[size_t(extruder_id)] :
+                std::vector<ColorRGBA>();
+        volume->preview_gradient_positions =
+            extruder_id >= 0 && size_t(extruder_id) < preview_gradient_positions.size() ?
+                preview_gradient_positions[size_t(extruder_id)] :
+                std::vector<double>();
+        volume->preview_gradient_colors_by_extruder = preview_gradient_colors;
+        volume->preview_gradient_positions_by_extruder = preview_gradient_positions;
         if (!color.first.empty()) {
             if (!is_update_alpha) {
                 float old_a   = volume->color.a();

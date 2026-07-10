@@ -10,6 +10,7 @@
 #include "I18N.hpp"
 #include "GUI_App.hpp"
 #include "Widgets/Label.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -97,7 +98,7 @@ void MFDRatioAccordion::build_ratio_canvas()
 
     // The canvas size is determined by update_sizing() after filament count is known.
     m_canvas = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_canvas->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_canvas->SetBackgroundColour(MFDTheme::card_background());
     m_canvas->SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     m_canvas->Bind(wxEVT_PAINT,       &MFDRatioAccordion::on_canvas_paint,      this);
@@ -118,11 +119,13 @@ void MFDRatioAccordion::build_min_weight_row()
     wxBoxSizer* sizer  = get_body_sizer();
 
     m_min_weight_panel = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_min_weight_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* row_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_min_weight_panel->SetSizer(row_sizer);
 
     wxStaticText* label = new wxStaticText(m_min_weight_panel, wxID_ANY, _L("Min Weight Ratio:"));
     label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(label, MFDTheme::primary_text(), m_min_weight_panel->GetBackgroundColour());
 
     // Initial max is 50 (100 / 2 filaments); dynamically updated in update_sizing().
     m_min_weight_slider = new wxSlider(m_min_weight_panel, wxID_ANY,
@@ -133,9 +136,11 @@ void MFDRatioAccordion::build_min_weight_row()
         wxString::Format("%d", static_cast<int>(m_min_weight_ratio * 100)));
     m_min_weight_value_input->SetFont(::Label::Body_14);
     m_min_weight_value_input->SetMinSize(wxSize(FromDIP(40), -1));
+    MFDTheme::apply_input(m_min_weight_value_input);
 
     wxStaticText* pct_label = new wxStaticText(m_min_weight_panel, wxID_ANY, "%");
     pct_label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(pct_label, MFDTheme::primary_text(), m_min_weight_panel->GetBackgroundColour());
 
     row_sizer->Add(label,                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     row_sizer->Add(m_min_weight_slider,    1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
@@ -718,12 +723,12 @@ wxColour MFDRatioAccordion::get_contrast_border_color(const wxColour& bg) const
 
 wxColour MFDRatioAccordion::get_border_color() const
 {
-    return wxGetApp().dark_mode() ? wxColour("#5A5A5A") : wxColour("#D0D0D0");
+    return MFDTheme::input_border();
 }
 
 wxColour MFDRatioAccordion::get_background_color() const
 {
-    return StateColor::darkModeColorFor(*wxWHITE);
+    return MFDTheme::card_background();
 }
 
 } // namespace Slic3r::GUI

@@ -58,6 +58,13 @@ std::vector<int> MixedFilamentWeightedBlend::component_percents(size_t num_physi
 
 namespace {
 
+size_t expected_gradient_stop_count(size_t component_count, bool gradient_enabled)
+{
+    if (component_count >= 3)
+        return 2 * component_count - 1;
+    return gradient_enabled ? size_t(3) : size_t(0);
+}
+
 MixedFilamentWeightedBlend pair_blend_from_components(unsigned int component_a, unsigned int component_b, int component_b_percent)
 {
     const int pct_b = std::clamp(component_b_percent, 0, 100);
@@ -156,6 +163,13 @@ MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFil
     definition.behavior.layer_cadence.component_a_layers   = row.ratio_a;
     definition.behavior.layer_cadence.component_b_layers   = row.ratio_b;
     definition.behavior.local_z.max_sublayers              = row.local_z_max_sublayers;
+    definition.behavior.gradient.enabled                   = row.gradient_enabled;
+    definition.behavior.gradient.component_a_start         = row.gradient_start;
+    definition.behavior.gradient.component_a_end           = row.gradient_end;
+    definition.behavior.gradient.stop_positions =
+        decode_gradient_stop_positions(row.gradient_stop_positions,
+                                       expected_gradient_stop_count(definition.recipe.blend.components.size(),
+                                                                    definition.behavior.gradient.enabled));
     definition.behavior.surface_bias.component_a_offset_mm = row.component_a_surface_offset;
     definition.behavior.surface_bias.component_b_offset_mm = row.component_b_surface_offset;
 
@@ -176,6 +190,16 @@ void apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition
     row.mix_b_percent              = definition.recipe.blend.primary_pair_or().component_b_percent;
     row.distribution_mode          = legacy_distribution_mode_from_mixed_filament_distribution(definition.behavior.distribution);
     row.local_z_max_sublayers      = std::max(0, definition.behavior.local_z.max_sublayers);
+    row.gradient_enabled           = definition.behavior.gradient.enabled;
+    row.gradient_start             = std::clamp(definition.behavior.gradient.component_a_start, 0.01f, 0.99f);
+    row.gradient_end               = std::clamp(definition.behavior.gradient.component_a_end, 0.01f, 0.99f);
+    row.gradient_stop_positions    = legacy_gradient_positions_from_float_vector(
+        normalize_gradient_stop_position_vector(definition.behavior.gradient.stop_positions,
+                                                expected_gradient_stop_count(definition.recipe.blend.components.size(),
+                                                                             row.gradient_enabled)));
+    if (std::abs(row.gradient_start - row.gradient_end) < MixedFilamentLegacyRow::k_min_gradient_difference)
+        row.gradient_enabled = false;
+    row.ui_mode                    = row.gradient_enabled ? 3 : -1;
     row.component_a_surface_offset = definition.behavior.surface_bias.component_a_offset_mm;
     row.component_b_surface_offset = definition.behavior.surface_bias.component_b_offset_mm;
     row.deleted                    = definition.visibility.tombstoned;

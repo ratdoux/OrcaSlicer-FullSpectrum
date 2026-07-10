@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <numeric>
 #include <sstream>
 
@@ -204,6 +205,98 @@ std::vector<unsigned int> build_weighted_gradient_sequence(const std::vector<uns
         sequence.emplace_back(filtered_ids[best_idx]);
     }
     return sequence;
+}
+
+std::vector<float> parse_gradient_stop_position_tokens(const std::string& positions)
+{
+    std::vector<float> out;
+    std::string        token;
+    auto flush_token = [&out, &token]() {
+        if (token.empty())
+            return;
+
+        try {
+            size_t      consumed = 0;
+            const float value    = std::stof(token, &consumed);
+            if (consumed == token.size() && std::isfinite(value))
+                out.emplace_back(value);
+        } catch (...) {
+            // Ignore malformed position tokens; validation will drop the row-level stop list.
+        }
+        token.clear();
+    };
+
+    for (const char c : positions) {
+        const bool numeric_char = (c >= '0' && c <= '9') || c == '.' || c == '+' || c == '-' || c == 'e' || c == 'E';
+        if (numeric_char) {
+            token.push_back(c);
+            continue;
+        }
+
+        flush_token();
+    }
+    flush_token();
+    return out;
+}
+
+std::vector<float> normalize_gradient_stop_position_vector(const std::vector<float>& positions, size_t expected_stops)
+{
+    if (expected_stops < 3 || positions.size() != expected_stops)
+        return {};
+
+    std::vector<float> out;
+    out.reserve(expected_stops);
+    for (const float value : positions) {
+        if (!std::isfinite(value))
+            return {};
+        out.emplace_back(std::clamp(value, 0.f, 1.f));
+    }
+
+    out.front() = 0.f;
+    out.back()  = 1.f;
+
+    float min_gap = 0.0001f;
+    if (float(expected_stops - 1) * min_gap >= 1.f)
+        min_gap = 0.f;
+
+    for (size_t i = 1; i < out.size(); ++i)
+        out[i] = std::max(out[i], out[i - 1] + min_gap);
+
+    out.back() = 1.f;
+    for (size_t i = out.size() - 1; i > 0; --i)
+        out[i - 1] = std::min(out[i - 1], out[i] - min_gap);
+
+    out.front() = 0.f;
+    for (float& value : out)
+        value = std::clamp(value, 0.f, 1.f);
+
+    return out;
+}
+
+std::string normalize_gradient_stop_positions(const std::string& positions, size_t expected_stops)
+{
+    return legacy_gradient_positions_from_float_vector(
+        normalize_gradient_stop_position_vector(parse_gradient_stop_position_tokens(positions), expected_stops));
+}
+
+std::vector<float> decode_gradient_stop_positions(const std::string& positions, size_t expected_stops)
+{
+    return normalize_gradient_stop_position_vector(parse_gradient_stop_position_tokens(positions), expected_stops);
+}
+
+std::string legacy_gradient_positions_from_float_vector(const std::vector<float>& positions)
+{
+    if (positions.empty())
+        return std::string();
+
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(4);
+    for (size_t i = 0; i < positions.size(); ++i) {
+        if (i != 0)
+            out << '/';
+        out << std::clamp(positions[i], 0.f, 1.f);
+    }
+    return out.str();
 }
 
 std::vector<int> equal_percent_vector(size_t count)

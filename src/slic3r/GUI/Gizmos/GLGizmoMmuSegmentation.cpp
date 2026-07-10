@@ -17,6 +17,7 @@
 
 #include <GL/glew.h>
 #include <algorithm>
+#include <cmath>
 #include <boost/log/trivial.hpp>
 
 namespace Slic3r::GUI {
@@ -42,6 +43,20 @@ static ImU32 interpolate_ImU32(ImU32 c0, ImU32 c1, double t)
     return IM_COL32(r, g, b, 255);
 }
 
+static ImU32 interpolate_ImU32(const std::vector<ImU32>& colors, double pos)
+{
+    if (colors.empty())
+        return IM_COL32(0x26, 0xA6, 0x9A, 255);
+    if (colors.size() == 1)
+        return colors.front();
+
+    pos = std::clamp(pos, 0.0, 1.0);
+    const double scaled = pos * double(colors.size() - 1);
+    const size_t segment = std::min<size_t>(colors.size() - 2, size_t(std::floor(scaled)));
+    const double local = scaled - double(segment);
+    return interpolate_ImU32(colors[segment], colors[segment + 1], local);
+}
+
 static float bT601_luminance(ImU32 c)
 {
     float r = ((c >> IM_COL32_R_SHIFT) & 0xFF) / 255.0f;
@@ -63,6 +78,34 @@ static ImU32 physical_color_to_ImU32(const std::string& hex)
     Slic3r::GUI::BitmapCache::parse_color4(hex, rgba);
     ColorRGBA col(float(rgba[0]) / 255.f, float(rgba[1]) / 255.f, float(rgba[2]) / 255.f, float(rgba[3]) / 255.f);
     return ImGuiWrapper::to_ImU32(col);
+}
+
+static std::vector<ImU32> mixed_filament_gradient_stops_ImU32(const MixedFilament& mf, const MixedFilamentDisplayContext& ctx)
+{
+    const size_t num_physical = ctx.num_physical == 0 ? ctx.physical_colors.size() : ctx.num_physical;
+    auto get_color = [&](unsigned fid) -> ImU32 {
+        if (fid == 0 || fid > num_physical || fid > ctx.physical_colors.size())
+            return IM_COL32(0x26, 0xA6, 0x9A, 255);
+        return physical_color_to_ImU32(ctx.physical_colors[fid - 1]);
+    };
+
+    const std::vector<unsigned int> gradient_ids =
+        MixedFilamentManager::decode_gradient_component_ids(mf.gradient_component_ids, num_physical);
+    if (gradient_ids.size() >= 3) {
+        std::vector<ImU32> colors;
+        colors.reserve(gradient_ids.size());
+        for (const unsigned int id : gradient_ids)
+            colors.emplace_back(get_color(id));
+        return colors;
+    }
+
+    if (mf.component_a == 0 || mf.component_b == 0 || mf.component_a == mf.component_b)
+        return {};
+
+    const ImU32 phys_a = get_color(mf.component_a);
+    const ImU32 phys_b = get_color(mf.component_b);
+    const bool a_to_b = mf.gradient_start >= mf.gradient_end;
+    return { a_to_b ? phys_a : phys_b, a_to_b ? phys_b : phys_a };
 }
 
 void GLGizmoMmuSegmentation::on_opening()
@@ -528,21 +571,20 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
 
         if (is_gradient) {
             // --- Gradient path: ColorButton for sizing + interaction, then draw gradient on top ---
-            // Resolve gradient endpoint colors first
-            ImU32 phys_a = IM_COL32(0x26, 0xA6, 0x9A, 255);
-            ImU32 phys_b = IM_COL32(0x26, 0xA6, 0x9A, 255);
-            if (mf_data->component_a > 0 && mf_data->component_a <= m_mixed_display_context.physical_colors.size())
-                phys_a = physical_color_to_ImU32(m_mixed_display_context.physical_colors[mf_data->component_a - 1]);
-            if (mf_data->component_b > 0 && mf_data->component_b <= m_mixed_display_context.physical_colors.size())
-                phys_b = physical_color_to_ImU32(m_mixed_display_context.physical_colors[mf_data->component_b - 1]);
-            bool a_to_b = mf_data->gradient_start >= mf_data->gradient_end;
-            ImU32 bottom_col = a_to_b ? phys_a : phys_b;
-            ImU32 top_col    = a_to_b ? phys_b : phys_a;
+            const std::vector<ImU32> gradient_stops = mixed_filament_gradient_stops_ImU32(*mf_data, m_mixed_display_context);
 
-            // Average color for ColorButton's solid fill (hidden by gradient overlay)
-            int avg_r = int((((bottom_col >> IM_COL32_R_SHIFT) & 0xFF) + ((top_col >> IM_COL32_R_SHIFT) & 0xFF)) / 2);
-            int avg_g = int((((bottom_col >> IM_COL32_G_SHIFT) & 0xFF) + ((top_col >> IM_COL32_G_SHIFT) & 0xFF)) / 2);
-            int avg_b = int((((bottom_col >> IM_COL32_B_SHIFT) & 0xFF) + ((top_col >> IM_COL32_B_SHIFT) & 0xFF)) / 2);
+            int avg_r = 0;
+            int avg_g = 0;
+            int avg_b = 0;
+            for (const ImU32 stop : gradient_stops) {
+                avg_r += int((stop >> IM_COL32_R_SHIFT) & 0xFF);
+                avg_g += int((stop >> IM_COL32_G_SHIFT) & 0xFF);
+                avg_b += int((stop >> IM_COL32_B_SHIFT) & 0xFF);
+            }
+            const int stop_count = std::max(1, int(gradient_stops.size()));
+            avg_r /= stop_count;
+            avg_g /= stop_count;
+            avg_b /= stop_count;
             ImVec4 avg_color_vec(float(avg_r) / 255.f, float(avg_g) / 255.f, float(avg_b) / 255.f, 1.f);
 
             // ColorButton provides exact sizing, click detection, border, and cursor advance
@@ -578,7 +620,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             if (fill_h > 0.0f) {
                 for (int y_i = 0; y_i < int(std::round(fill_h)); ++y_i) {
                     double pos = 1.0 - double(y_i) / double(fill_h);
-                    ImU32 c = interpolate_ImU32(bottom_col, top_col, pos);
+                    ImU32 c = interpolate_ImU32(gradient_stops, pos);
                     draw_list->AddRectFilled(
                         ImVec2(fill_min.x, fill_min.y + float(y_i)),
                         ImVec2(fill_max.x, fill_min.y + float(y_i + 1)), c);
@@ -586,7 +628,9 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             }
 
             // Very-light gradient border
-            if (very_light(bottom_col) && very_light(top_col))
+            const bool all_stops_light = !gradient_stops.empty() &&
+                std::all_of(gradient_stops.begin(), gradient_stops.end(), [](ImU32 color) { return very_light(color); });
+            if (all_stops_light)
                 draw_list->AddRect(fill_min, fill_max, IM_COL32(128, 128, 128, 255), ImGui::GetStyle().FrameRounding, 0, 1.0f);
 
             // Tooltip
@@ -598,7 +642,10 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             }
 
             // Number text centered on button
-            float lum_avg = (bT601_luminance(bottom_col) + bT601_luminance(top_col)) * 0.5f;
+            float lum_avg = 0.0f;
+            for (const ImU32 stop : gradient_stops)
+                lum_avg += bT601_luminance(stop);
+            lum_avg /= float(stop_count);
             ImU32 text_col = (lum_avg < 0.51f) ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255);
             float text_w = ImGui::CalcTextSize(item_text.c_str()).x;
             draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(),

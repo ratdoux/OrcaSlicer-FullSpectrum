@@ -8,6 +8,7 @@
 #include "Plater.hpp"
 #include "Tab.hpp"
 #include "I18N.hpp"
+#include "MFDTheme.hpp"
 
 #include <wx/dcgraph.h>
 #include <algorithm>
@@ -19,7 +20,7 @@ MixedFilamentBatchDialog::MixedFilamentBatchDialog(
     wxWindow* parent,
     const std::vector<std::pair<std::string, std::string>>& physical_filaments)
     : DPIDialog(parent, wxID_ANY, _L("Batch Manage Mixed Filaments"),
-                wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+                wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE)
     , m_physical_filaments(physical_filaments)
     , m_resize_timer(this)
 {
@@ -40,21 +41,21 @@ MixedFilamentBatchDialog::MixedFilamentBatchDialog(
 
 void MixedFilamentBatchDialog::build_ui()
 {
-    SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    SetBackgroundColour(MFDTheme::dialog_background());
 
     wxBoxSizer* main_sizer = new wxBoxSizer(wxVERTICAL);
     SetSizer(main_sizer);
 
     // Title divider (matching MixedFilamentDialog)
     wxPanel* title_divider = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
-    title_divider->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#EBEBEB")));
+    title_divider->SetBackgroundColour(MFDTheme::divider());
     main_sizer->Add(title_divider, 0, wxEXPAND);
 
     // Scrolled window for the accordions content (styled grey)
     m_scroll_win = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL | wxTAB_TRAVERSAL);
     m_scroll_win->SetScrollRate(0, 20);
     m_scroll_win->SetDoubleBuffered(true);
-    m_scroll_win->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F5F5F5")));
+    m_scroll_win->SetBackgroundColour(MFDTheme::content_background());
 
     m_content_sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -101,7 +102,7 @@ void MixedFilamentBatchDialog::build_ui()
 
     m_info_label = new wxStaticText(m_footer_panel, wxID_ANY, "");
     m_info_label->SetFont(::Label::Body_14.Bold());
-    m_info_label->SetForegroundColour(StateColor::darkModeColorFor(*wxBLACK));
+    MFDTheme::apply_text(m_info_label, MFDTheme::primary_text(), m_footer_panel->GetBackgroundColour());
 
     Button* btn_cancel = new Button(m_footer_panel, _L("Cancel"), "", 0, 0, wxID_CANCEL);
     btn_cancel->SetStyle(ButtonStyle::Regular, ButtonType::Choice);

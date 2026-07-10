@@ -3,6 +3,7 @@
 #include "Widgets/FilamentCardMixed.hpp"
 #include "GUI_App.hpp"
 #include "I18N.hpp"
+#include "MFDTheme.hpp"
 #include <wx/dcgraph.h>
 #include <numeric>
 
@@ -29,6 +30,7 @@ void CollapsibleSubSection::build_ui(const wxString& title)
 
     // Header Panel
     m_header = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(24)), wxBORDER_NONE);
+    m_header->SetBackgroundColour(MFDTheme::card_background());
     m_header->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_header->SetCursor(wxCursor(wxCURSOR_HAND));
     m_header->SetDoubleBuffered(true);
@@ -42,12 +44,12 @@ void CollapsibleSubSection::build_ui(const wxString& title)
     // Title
     m_lbl_title = new wxStaticText(m_header, wxID_ANY, title);
     m_lbl_title->SetFont(::Label::Body_13.Bold());
-    m_lbl_title->SetForegroundColour(wxGetApp().dark_mode() ? wxColour("#999999") : wxColour("#666666"));
+    MFDTheme::apply_text(m_lbl_title, MFDTheme::muted_text(), m_header->GetBackgroundColour());
 
     // Info Count
     m_lbl_info = new wxStaticText(m_header, wxID_ANY, "");
     m_lbl_info->SetFont(::Label::Body_12);
-    m_lbl_info->SetForegroundColour(wxGetApp().dark_mode() ? wxColour("#A0A0A0") : wxColour("#555555"));
+    MFDTheme::apply_text(m_lbl_info, MFDTheme::secondary_text(), m_header->GetBackgroundColour());
 
     // Custom Checkbox
     m_check_box = new BatchCheckBox(m_header, [this]() {
@@ -62,7 +64,7 @@ void CollapsibleSubSection::build_ui(const wxString& title)
 
     // Body Panel
     m_body = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_body->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_body->SetBackgroundColour(MFDTheme::card_background());
 
     main_sizer->Add(m_header, 0, wxEXPAND | wxALL, FromDIP(4));
     main_sizer->Add(m_body, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(4));
@@ -72,7 +74,7 @@ void CollapsibleSubSection::build_ui(const wxString& title)
     
     auto enter_header = [this, header_hover](wxMouseEvent& e) {
         *header_hover = true;
-        m_lbl_title->SetForegroundColour(wxGetApp().dark_mode() ? *wxWHITE : wxColour("#1A1A1A"));
+        m_lbl_title->SetForegroundColour(MFDTheme::primary_text());
         m_header->Refresh();
         e.Skip();
     };
@@ -81,7 +83,7 @@ void CollapsibleSubSection::build_ui(const wxString& title)
         wxRect rect = m_header->GetScreenRect();
         if (!rect.Contains(pos)) {
             *header_hover = false;
-            m_lbl_title->SetForegroundColour(wxGetApp().dark_mode() ? wxColour("#999999") : wxColour("#666666"));
+            m_lbl_title->SetForegroundColour(MFDTheme::muted_text());
             m_header->Refresh();
         }
         e.Skip();
@@ -99,7 +101,7 @@ void CollapsibleSubSection::build_ui(const wxString& title)
         wxGCDC dc(pdc);
         wxSize s = m_header->GetClientSize();
 
-        dc.SetBackground(wxBrush(StateColor::darkModeColorFor(*wxWHITE)));
+        dc.SetBackground(wxBrush(MFDTheme::card_background()));
         dc.Clear();
 
         // Draw antialiased thin chevron arrow
@@ -143,9 +145,9 @@ void CollapsibleSubSection::on_paint(wxPaintEvent&)
     dc.DrawRectangle(0, 0, size.x, size.y);
 
     // Rounded card with slightly darker grey border
-    wxColour card_bg = StateColor::darkModeColorFor(*wxWHITE);
+    wxColour card_bg = MFDTheme::card_background();
     dc.SetBrush(wxBrush(card_bg));
-    dc.SetPen(wxPen(wxColour("#D2D2D2"), 1));
+    dc.SetPen(wxPen(MFDTheme::card_border(), 1));
     dc.DrawRoundedRectangle(0, 0, size.x, size.y, 4);
 }
 
@@ -230,7 +232,7 @@ void MFDBatchRecommendedAccordion::build_ui()
     // Explainer Label
     m_explainer_lbl = new wxStaticText(body, wxID_ANY, _L("Toggle filaments to enable or disable them for the recommended mixes"));
     m_explainer_lbl->SetFont(::Label::Body_13.Bold());
-    m_explainer_lbl->SetForegroundColour(wxColour("#666666"));
+    MFDTheme::apply_text(m_explainer_lbl, MFDTheme::secondary_text(), body->GetBackgroundColour());
     m_explainer_lbl->SetMinSize(wxSize(FromDIP(400), -1));
 
     sizer->Add(m_explainer_lbl, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, FromDIP(8));

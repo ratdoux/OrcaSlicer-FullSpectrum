@@ -13,7 +13,7 @@ FilamentCardPhysical::FilamentCardPhysical(wxWindow* parent, const int index)
 {
     m_index = index;
 
-    SetBackgroundColour(*wxWHITE);
+    SetBackgroundColour(parent ? parent->GetBackgroundColour() : *wxWHITE);
     build_ui();
 }
 

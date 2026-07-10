@@ -9,6 +9,7 @@
 #include "GUI_App.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/HSLColorPicker.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -36,16 +37,19 @@ void MFDColorPickerAccordion::build_ui()
 
     // Match-status row: hex display + color swatch
     m_match_section_panel = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_match_section_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* match_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_match_section_panel->SetSizer(match_sizer);
 
     wxStaticText* hash_label = new wxStaticText(m_match_section_panel, wxID_ANY, "#");
     hash_label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(hash_label, MFDTheme::primary_text(), m_match_section_panel->GetBackgroundColour());
 
     m_matched_hex_display = new wxTextCtrl(m_match_section_panel, wxID_ANY, "------",
         wxDefaultPosition, wxDefaultSize, wxTE_READONLY);
     m_matched_hex_display->SetFont(::Label::Body_14);
     m_matched_hex_display->SetMinSize(wxSize(FromDIP(70), -1));
+    MFDTheme::apply_input(m_matched_hex_display);
 
     m_matched_color_preview = new wxPanel(m_match_section_panel, wxID_ANY,
         wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE);
@@ -81,7 +85,7 @@ void MFDColorPickerAccordion::build_ui()
     // --- Header summary widgets (visible while collapsed) ---
     m_title_selected_hex = new wxStaticText(get_header_panel(), wxID_ANY, "#------");
     m_title_selected_hex->SetFont(::Label::Body_14);
-    m_title_selected_hex->SetForegroundColour("#333333");
+    MFDTheme::apply_text(m_title_selected_hex, MFDTheme::primary_text(), MFDTheme::card_background());
     m_title_selected_hex->Show(false);
     add_header_control(m_title_selected_hex);
 

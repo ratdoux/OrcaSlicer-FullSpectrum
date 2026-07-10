@@ -40,6 +40,7 @@ struct ColorBlockParams
 
 // Linear interpolation across an ordered list of colours (0.0 → colors[0], 1.0 → colors.back()).
 wxColour interpolate_color(const std::vector<wxColour>& colors, double pos);
+std::vector<wxColour> mixed_filament_gradient_colors(const MixedFilament& mf, const MixedFilamentDisplayContext& ctx);
 
 // Cached colour-block bitmap. The static BitmapCache lives inside the implementation.
 // Key format:  "solid:#RRGGBB:hH:wW:label"  or  "grad:#RRGGBB:#RRGGBBBT:hH:wW:label"
@@ -49,7 +50,8 @@ wxBitmap* get_color_block_bitmap_cached(const ColorBlockParams& params);
 wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, bool is_gradient,
                                         int width, int height, const wxString& label,
                                         const wxColour& lightBorderColor,
-                                        const CornerRadius& radius = {});
+                                        const CornerRadius& radius = {},
+                                        bool vertical_gradient = false);
 bool is_simple_gradient(const MixedFilament& mf);
 
 class MixedFilamentBadge : public wxPanel

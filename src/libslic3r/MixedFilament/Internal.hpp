@@ -48,12 +48,17 @@ bool                          parse_row_definition(const std::string& row,
                                                    int&               mix_b_percent,
                                                    std::string&       gradient_component_ids,
                                                    std::string&       gradient_component_weights,
+                                                   std::string&       gradient_stop_positions,
                                                    std::string&       manual_pattern,
                                                    int&               distribution_mode,
                                                    int&               local_z_max_sublayers,
                                                    float&             component_a_surface_offset,
                                                    float&             component_b_surface_offset,
-                                                   bool&              deleted);
+                                                   bool&              deleted,
+                                                   bool&              gradient_enabled,
+                                                   float&             gradient_start,
+                                                   float&             gradient_end,
+                                                   int&               ui_mode);
 int                           normalize_legacy_distribution_mode(int distribution_mode, const std::string& gradient_component_ids);
 void                          normalize_legacy_row(MixedFilamentLegacyRow& mf);
 MixedFilamentDistributionMode mixed_filament_distribution_from_legacy_mode(int                distribution_mode,
@@ -77,6 +82,11 @@ std::vector<int>          normalize_weight_vector_to_percent(const std::vector<i
 std::string               normalize_gradient_component_weights(const std::string& weights, size_t expected_components);
 std::vector<int>          decode_gradient_component_weights(const std::string& weights, size_t expected_components);
 std::vector<unsigned int> build_weighted_gradient_sequence(const std::vector<unsigned int>& ids, const std::vector<int>& weights);
+std::vector<float>        parse_gradient_stop_position_tokens(const std::string& positions);
+std::vector<float>        normalize_gradient_stop_position_vector(const std::vector<float>& positions, size_t expected_stops);
+std::string               normalize_gradient_stop_positions(const std::string& positions, size_t expected_stops);
+std::vector<float>        decode_gradient_stop_positions(const std::string& positions, size_t expected_stops);
+std::string               legacy_gradient_positions_from_float_vector(const std::vector<float>& positions);
 std::vector<int>          equal_percent_vector(size_t count);
 bool                      has_positive_sum(const std::vector<int>& values);
 std::vector<int>          normalized_percent_vector_or_equal(const std::vector<int>& weights, size_t count);

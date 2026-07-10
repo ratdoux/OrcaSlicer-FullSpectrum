@@ -9,6 +9,7 @@
 #include "Widgets/Label.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 #include "GUI_App.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -38,13 +39,14 @@ void MFDRecommendationsAccordion::fill_recommendations(
 
     // 1. Create and populate m_mix_panel
     m_mix_panel = new wxPanel(container, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_mix_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* mix_sizer = new wxBoxSizer(wxVERTICAL);
     m_mix_panel->SetSizer(mix_sizer);
 
     if (filament_count >= 2) {
         wxStaticText* label_2way = new wxStaticText(m_mix_panel, wxID_ANY, _L("2-Material Mixes"));
-        label_2way->SetForegroundColour("#7e7e7e");
         label_2way->SetFont(::Label::Body_12.Bold());
+        MFDTheme::apply_text(label_2way, MFDTheme::muted_text(), m_mix_panel->GetBackgroundColour());
         mix_sizer->Add(label_2way, 0, wxLEFT | wxTOP | wxRIGHT, FromDIP(8));
 
         wxWrapSizer* wrap_50 = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
@@ -74,8 +76,8 @@ void MFDRecommendationsAccordion::fill_recommendations(
 
     if (filament_count >= 3) {
         wxStaticText* label_3way = new wxStaticText(m_mix_panel, wxID_ANY, _L("3-Material Mixes"));
-        label_3way->SetForegroundColour("#7e7e7e");
         label_3way->SetFont(::Label::Body_12.Bold());
+        MFDTheme::apply_text(label_3way, MFDTheme::muted_text(), m_mix_panel->GetBackgroundColour());
         mix_sizer->Add(label_3way, 0, wxLEFT | wxTOP | wxRIGHT, FromDIP(8));
 
         wxWrapSizer* wrap_3 = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
@@ -97,14 +99,15 @@ void MFDRecommendationsAccordion::fill_recommendations(
 
     // 2. Create and populate m_gradient_panel
     m_gradient_panel = new wxPanel(container, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_gradient_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* gradient_sizer = new wxBoxSizer(wxVERTICAL);
     m_gradient_panel->SetSizer(gradient_sizer);
 
     // 2-material gradients
     if (filament_count >= 2) {
         wxStaticText* label_2way = new wxStaticText(m_gradient_panel, wxID_ANY, _L("2-Material Gradients"));
-        label_2way->SetForegroundColour("#7e7e7e");
         label_2way->SetFont(::Label::Body_12.Bold());
+        MFDTheme::apply_text(label_2way, MFDTheme::muted_text(), m_gradient_panel->GetBackgroundColour());
         gradient_sizer->Add(label_2way, 0, wxLEFT | wxTOP | wxRIGHT, FromDIP(8));
 
         wxWrapSizer* wrap_2 = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
@@ -131,8 +134,8 @@ void MFDRecommendationsAccordion::fill_recommendations(
                 if (is_color_in_between(c1, c2, c3)) {
                     if (!wrap_3) {
                         wxStaticText* label_3way = new wxStaticText(m_gradient_panel, wxID_ANY, _L("3-Material Gradients"));
-                        label_3way->SetForegroundColour("#7e7e7e");
                         label_3way->SetFont(::Label::Body_12.Bold());
+                        MFDTheme::apply_text(label_3way, MFDTheme::muted_text(), m_gradient_panel->GetBackgroundColour());
                         gradient_sizer->Add(label_3way, 0, wxLEFT | wxTOP | wxRIGHT, FromDIP(8));
                         wrap_3 = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
                     }
@@ -162,6 +165,7 @@ wxPanel* MFDRecommendationsAccordion::create_mix_tile(
     wxPanel* tile = new wxPanel(parent, wxID_ANY, wxDefaultPosition,
                                 wxSize(FromDIP(28), FromDIP(28)), wxBORDER_NONE);
     tile->SetMinSize(wxSize(FromDIP(28), FromDIP(28)));
+    tile->SetBackgroundColour(parent ? parent->GetBackgroundColour() : MFDTheme::card_background());
     tile->SetBackgroundStyle(wxBG_STYLE_PAINT);
     tile->SetCursor(wxCursor(wxCURSOR_HAND));
     tile->SetToolTip(tooltip);
@@ -238,7 +242,8 @@ void MFDRecommendationsAccordion::update_recommendations(
     const std::vector<std::pair<std::string, std::string>>& physical_filaments, 
     double current_min_weight_ratio)
 {
-    // currently a no-op as the recommendations are static based on physical filaments
+    wxUnusedVar(physical_filaments);
+    wxUnusedVar(current_min_weight_ratio);
 }
 
 void MFDRecommendationsAccordion::set_mode(Mode mode)
@@ -265,6 +270,7 @@ wxPanel* MFDRecommendationsAccordion::create_gradient_tile(
     wxPanel* tile = new wxPanel(parent, wxID_ANY, wxDefaultPosition,
                                 wxSize(FromDIP(28), FromDIP(28)), wxBORDER_NONE);
     tile->SetMinSize(wxSize(FromDIP(28), FromDIP(28)));
+    tile->SetBackgroundColour(parent ? parent->GetBackgroundColour() : MFDTheme::card_background());
     tile->SetBackgroundStyle(wxBG_STYLE_PAINT);
     tile->SetCursor(wxCursor(wxCURSOR_HAND));
     tile->SetToolTip(format_gradient_tooltip(physical_indices));
@@ -300,7 +306,7 @@ wxPanel* MFDRecommendationsAccordion::create_gradient_tile(
 
     tile->Bind(wxEVT_LEFT_UP, [this, physical_indices](wxMouseEvent&) {
         if (m_on_preset_selected)
-            m_on_preset_selected(physical_indices, std::vector<double>());
+            m_on_preset_selected(physical_indices, {});
     });
 
     return tile;

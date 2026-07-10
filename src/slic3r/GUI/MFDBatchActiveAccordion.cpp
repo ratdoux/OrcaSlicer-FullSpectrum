@@ -3,6 +3,7 @@
 #include "Widgets/FilamentCardMixed.hpp"
 #include "GUI_App.hpp"
 #include "I18N.hpp"
+#include "MFDTheme.hpp"
 #include <wx/dcgraph.h>
 
 namespace Slic3r::GUI {
@@ -30,7 +31,7 @@ void MFDBatchActiveAccordion::build_ui()
     if (!has_active) {
         wxStaticText* placeholder = new wxStaticText(body, wxID_ANY, _L("No active mixed filaments"));
         placeholder->SetFont(::Label::Body_13);
-        placeholder->SetForegroundColour(wxColour("#999999"));
+        MFDTheme::apply_text(placeholder, MFDTheme::muted_text(), body->GetBackgroundColour());
         sizer->Add(placeholder, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP | wxBOTTOM, FromDIP(8));
         body->Layout();
         return;

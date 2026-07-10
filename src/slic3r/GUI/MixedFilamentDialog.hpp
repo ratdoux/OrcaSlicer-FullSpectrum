@@ -49,6 +49,7 @@ class MFDRatioAccordion;
 class MFDRecommendationsAccordion;
 class MFDPreviewAccordion;
 class MFDGradientAccordion;
+class Accordion;
 
 class MixedFilamentDialog : public DPIDialog
 {
@@ -159,6 +160,32 @@ private:
     void update_preview();
     void update_preview(const std::vector<int>& filaments,
                         const std::vector<double>& weights);
+    wxColor compute_preview_mixed_color() const;
+
+    // -----------------------------------------------------------------------
+    // Pair bias controls
+    // -----------------------------------------------------------------------
+    void build_bias_ui();
+    void sync_bias_controls();
+    void refresh_bias_target_swatch();
+    void apply_bias_value(double value);
+    bool mixed_filament_bias_enabled() const;
+    bool bias_supported() const;
+    std::vector<double> nozzle_diameters() const;
+    double bias_reference_nozzle_mm(unsigned int component_a, unsigned int component_b) const;
+    double current_bias_limit_mm() const;
+    std::pair<float, float> current_bias_surface_offsets(double value) const;
+    double bias_value_from_definition(const MixedFilamentDefinition& def) const;
+    wxColour bias_target_color() const;
+    wxString bias_target_label() const;
+
+    // -----------------------------------------------------------------------
+    // Gradient result helpers
+    // -----------------------------------------------------------------------
+    std::vector<int> gradient_component_percents() const;
+    std::vector<double> gradient_positions_from_component_percents(const std::vector<int>& percents) const;
+    static std::vector<int> normalize_gradient_percents(const std::vector<double>& weights);
+    static std::pair<int, int> cadence_from_pair_percent(int component_b_percent);
 
     // -----------------------------------------------------------------------
     // Mix preset helpers (used by color-picker matching)
@@ -236,6 +263,11 @@ private:
     MFDRecommendationsAccordion*  m_recommendations_accordion{nullptr};
     MFDPreviewAccordion*          m_preview_accordion{nullptr};
     MFDGradientAccordion*         m_gradient_accordion{nullptr};
+    Accordion*                    m_bias_accordion{nullptr};
+    wxPanel*                      m_bias_target_swatch{nullptr};
+    wxSlider*                     m_bias_slider{nullptr};
+    wxTextCtrl*                   m_bias_value_input{nullptr};
+    double                        m_bias_value_mm{0.0};
 
 
 

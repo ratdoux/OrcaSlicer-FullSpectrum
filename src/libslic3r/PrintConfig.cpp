@@ -4341,29 +4341,52 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionFloat(0.0));
 
     def = this->add("dithering_local_z_mode", coBool);
-    def->label = L("Local Z dithering mode");
+    def->label = L("Subdivide Mix Layer");
     def->category = L("Others");
-    def->tooltip = L("Use Variable Layers for Color Blending\n\n"
+    def->tooltip = L("Enable \"Subdivide Mix Layer\" for mixing areas. Layer height will be subdivided for better color mixing results.\n\n"
                      "Blend colors by varying layer heights instead of using a fixed ratio of equal-height layers. This only affects blended color zones; non-blended areas keep their nominal layer height and cadence when possible.\n\n"
                      "This setting increases color blending smoothness by splitting each blended layer according to the blend ratio. For example, a 66/33 blend at 0.12 mm layer height will print as one 0.08 mm layer and one 0.04 mm layer. At 0.20 mm layer height, a 75/25 blend will print as one 0.15 mm layer and one 0.05 mm layer.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("dithering_local_z_whole_objects", coBool);
-    def->label = L("Apply Local-Z to whole mixed objects");
+    def->label = L("Full domain");
     def->category = L("Others");
-    def->tooltip = L("Experimental. Extend Local-Z dithering beyond painted mixed zones so mixed wall regions can use Local-Z across the whole object.\n\n"
-                     "This also lets Local-Z continue through default mixed walls around painted areas instead of limiting the effect strictly to painted masks.");
+    def->tooltip = L("Experimental. Extend Subdivide Mix Layer beyond painted mixed zones so mixed wall regions can use it across the full object domain.\n\n"
+                     "This also lets subdivision continue through default mixed walls around painted areas instead of limiting the effect strictly to painted masks.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("dithering_local_z_infill", coBool);
+    def->label = L("Apply subdivision to infill");
+    def->category = L("Material");
+    def->tooltip = L("Experimental. When Subdivide Mix Layer is enabled, also apply the same subdivision to infill inside mixed-color areas.\n\n"
+                     "This is enabled automatically with Subdivide Mix Layer. Turn it off to keep infill on the normal layer height.\n\n"
+                     "It can improve internal color mixing, but may add toolchanges and affect infill behavior.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("dithering_local_z_direct_multicolor", coBool);
     def->label = L("Use direct multicolor Local-Z solver");
     def->category = L("Others");
-    def->tooltip = L("Experimental. For mixed rows with 3 or more physical filaments, allocate Local-Z sublayers directly across all components with carry-over error between layers instead of collapsing them into pair cadence.\n\n"
+    def->tooltip = L("Experimental. For non-gradient mixed rows with 3 or more physical filaments, allocate Local-Z sublayers directly across all active components instead of collapsing them into pair cadence.\n\n"
+                     "Multi-stop gradients use Local-Z pair cadence.\n\n"
                      "This can reduce visible banding in multicolor Local-Z blends at the cost of more toolchanges. It is ignored when explicit Local-Z A/B heights are set.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("dithering_local_z_gradient_overlap_window", coPercent);
+    def->label = L("Gradient overlap window");
+    def->category = L("Others");
+    def->tooltip = L("Controls the Local-Z overlap window around internal stops in multi-filament gradients.\n\n"
+                     "Negative values expand the solid middle-filament portion around each internal stop. "
+                     "0% keeps the internal stop as only the middle filament. "
+                     "Positive values expand the overlap to the nearest surrounding gradient stops. "
+                     "The default 22% matches the current pair-cadence overlap.");
+    def->min = -100;
+    def->max = 100;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionPercent(22));
 
     def = this->add("dithering_step_painted_zones_only", coBool);
     def->label = L("Use step size in painted zones only");

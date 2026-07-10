@@ -11,6 +11,7 @@
 #include "GUI_App.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -45,7 +46,7 @@ void MFDGradientAccordion::build_canvas()
     wxBoxSizer* sizer = get_body_sizer();
 
     m_canvas = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_canvas->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_canvas->SetBackgroundColour(MFDTheme::card_background());
     m_canvas->SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     m_canvas->Bind(wxEVT_PAINT,       &MFDGradientAccordion::on_canvas_paint,      this);
@@ -66,6 +67,7 @@ void MFDGradientAccordion::build_edit_row()
     wxBoxSizer* sizer = get_body_sizer();
 
     m_edit_panel = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_edit_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* panel_sizer = new wxBoxSizer(wxVERTICAL);
     m_edit_panel->SetSizer(panel_sizer);
 
@@ -93,13 +95,16 @@ void MFDGradientAccordion::build_edit_row()
 
     m_pos_label = new wxStaticText(m_edit_panel, wxID_ANY, _L("Position:"));
     m_pos_label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(m_pos_label, MFDTheme::primary_text(), m_edit_panel->GetBackgroundColour());
 
     m_pos_input = new wxTextCtrl(m_edit_panel, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
     m_pos_input->SetFont(::Label::Body_14);
     m_pos_input->SetMinSize(wxSize(FromDIP(40), -1));
+    MFDTheme::apply_input(m_pos_input);
 
     m_pct_label = new wxStaticText(m_edit_panel, wxID_ANY, "%");
     m_pct_label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(m_pct_label, MFDTheme::primary_text(), m_edit_panel->GetBackgroundColour());
 
     row_sizer->Add(m_pos_label,       0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
     row_sizer->Add(m_pos_input,       0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
@@ -138,11 +143,13 @@ void MFDGradientAccordion::build_min_ratio_row()
     wxBoxSizer* sizer = get_body_sizer();
 
     m_min_ratio_panel = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_min_ratio_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* row_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_min_ratio_panel->SetSizer(row_sizer);
 
     wxStaticText* label = new wxStaticText(m_min_ratio_panel, wxID_ANY, _L("Min Stop Gap:"));
     label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(label, MFDTheme::primary_text(), m_min_ratio_panel->GetBackgroundColour());
 
     m_min_ratio_slider = new wxSlider(m_min_ratio_panel, wxID_ANY, static_cast<int>(m_min_ratio * 100), 0, 50);
     m_min_ratio_slider->SetTickFreq(10);
@@ -150,9 +157,11 @@ void MFDGradientAccordion::build_min_ratio_row()
     m_min_ratio_value_input = new wxTextCtrl(m_min_ratio_panel, wxID_ANY, wxString::Format("%d", static_cast<int>(m_min_ratio * 100)), wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
     m_min_ratio_value_input->SetFont(::Label::Body_14);
     m_min_ratio_value_input->SetMinSize(wxSize(FromDIP(40), -1));
+    MFDTheme::apply_input(m_min_ratio_value_input);
 
     wxStaticText* pct_label = new wxStaticText(m_min_ratio_panel, wxID_ANY, "%");
     pct_label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(pct_label, MFDTheme::primary_text(), m_min_ratio_panel->GetBackgroundColour());
 
     row_sizer->Add(label,                   0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
     row_sizer->Add(m_min_ratio_slider,      1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
@@ -213,7 +222,8 @@ void MFDGradientAccordion::update_sizing()
     m_canvas->SetMaxSize(wxSize(-1, FromDIP(60)));
 
     if (count != m_last_count) {
-        reset_points_to_defaults(count);
+        if (m_gradient_positions.size() != static_cast<size_t>(num_stops))
+            reset_points_to_defaults(count);
         m_selected_stop_index = 0; // Default to first filament
         m_last_count = count;
     }
@@ -641,7 +651,7 @@ wxColour MFDGradientAccordion::get_contrast_border_color(const wxColour& bg) con
 
 wxColour MFDGradientAccordion::get_border_color() const
 {
-    return StateColor::darkModeColorFor(wxColour("#CECECE"));
+    return MFDTheme::input_border();
 }
 
 wxColour MFDGradientAccordion::get_background_color() const

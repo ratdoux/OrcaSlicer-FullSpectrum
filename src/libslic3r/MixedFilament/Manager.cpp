@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <boost/log/trivial.hpp>
+#include <cstdio>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -407,12 +408,25 @@ std::string MixedFilamentManager::serialize_custom_entries()
         MixedFilamentLegacyRow mf                     = legacy_row_from_definition_for_manager(definition);
         const std::string normalized_ids     = normalize_gradient_component_ids(mf.gradient_component_ids);
         const std::string normalized_weights = normalize_gradient_component_weights(mf.gradient_component_weights, normalized_ids.size());
+        const size_t gradient_component_count = decode_gradient_component_ids(normalized_ids, m_display_context.num_physical).size();
+        const size_t expected_gradient_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
+            (mf.gradient_enabled ? size_t(3) : size_t(0));
+        const std::string normalized_positions = normalize_gradient_stop_positions(mf.gradient_stop_positions, expected_gradient_stops);
         ss << mf.component_a << ',' << mf.component_b << ',' << (mf.deleted ? 0 : 1) << ',' << (mf.custom ? 1 : 0) << ','
-           << clamp_int(mf.mix_b_percent, 0, 100) << ',' << 0 << ',' << 'g' << normalized_ids << ',' << 'w' << normalized_weights << ','
-           << 'm' << clamp_int(mf.distribution_mode, int(MixedFilamentLegacyRow::LayerCycle), int(MixedFilamentLegacyRow::Simple)) << ',' << 'z'
-           << std::max(0, mf.local_z_max_sublayers) << ',' << "xa" << format_surface_offset_token(mf.component_a_surface_offset) << ','
-           << "xb" << format_surface_offset_token(mf.component_b_surface_offset) << ',' << 'd' << (mf.deleted ? 1 : 0) << ',' << 'o'
-           << (mf.origin_auto ? 1 : 0) << ',' << 'u' << mf.stable_id;
+            << clamp_int(mf.mix_b_percent, 0, 100) << ',' << 0 << ',' << 'g' << normalized_ids << ',' << 'w' << normalized_weights << ','
+            << 'm' << clamp_int(mf.distribution_mode, int(MixedFilamentLegacyRow::LayerCycle), int(MixedFilamentLegacyRow::Simple)) << ',' << 'z'
+            << std::max(0, mf.local_z_max_sublayers) << ',' << "xa" << format_surface_offset_token(mf.component_a_surface_offset) << ','
+            << "xb" << format_surface_offset_token(mf.component_b_surface_offset) << ',' << 'd' << (mf.deleted ? 1 : 0) << ',' << 'o'
+            << (mf.origin_auto ? 1 : 0) << ',' << 'u' << mf.stable_id;
+        if (!normalized_positions.empty())
+            ss << ",p" << normalized_positions;
+        if (mf.ui_mode >= 0)
+            ss << ",cm" << mf.ui_mode;
+        if (mf.gradient_enabled) {
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "%.4f/%.4f", double(mf.gradient_start), double(mf.gradient_end));
+            ss << ",r1/" << buf;
+        }
         const std::string normalized_pattern = normalize_manual_pattern(mf.manual_pattern);
         if (!normalized_pattern.empty())
             ss << ',' << normalized_pattern;
@@ -478,15 +492,21 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
         int          mix         = 50;
         std::string  gradient_component_ids;
         std::string  gradient_component_weights;
+        std::string  gradient_stop_positions;
         std::string  manual_pattern;
         int          distribution_mode          = int(MixedFilamentLegacyRow::Simple);
         int          local_z_max_sublayers      = 0;
         float        component_a_surface_offset = 0.f;
         float        component_b_surface_offset = 0.f;
         bool         deleted                    = false;
+        bool         gradient_enabled           = false;
+        float        gradient_start             = MixedFilamentLegacyRow::k_default_gradient_dominant;
+        float        gradient_end               = MixedFilamentLegacyRow::k_default_gradient_minority;
+        int          ui_mode                    = -1;
         if (!parse_row_definition(row, a, b, stable_id, enabled, custom, origin_auto, mix, gradient_component_ids,
-                                  gradient_component_weights, manual_pattern, distribution_mode, local_z_max_sublayers,
-                                  component_a_surface_offset, component_b_surface_offset, deleted)) {
+                                   gradient_component_weights, gradient_stop_positions, manual_pattern, distribution_mode, local_z_max_sublayers,
+                                   component_a_surface_offset, component_b_surface_offset, deleted, gradient_enabled,
+                                   gradient_start, gradient_end, ui_mode)) {
             ++skipped_rows;
             BOOST_LOG_TRIVIAL(warning) << "MixedFilamentManager::load_custom_entries invalid row format: " << row;
             continue;
@@ -529,6 +549,16 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
             mf.local_z_max_sublayers      = std::max(0, local_z_max_sublayers);
             mf.component_a_surface_offset = clamp_surface_offset(component_a_surface_offset);
             mf.component_b_surface_offset = clamp_surface_offset(component_b_surface_offset);
+            mf.gradient_enabled           = gradient_enabled;
+            mf.gradient_start             = gradient_start;
+            mf.gradient_end               = gradient_end;
+            {
+                const size_t gradient_component_count = decode_gradient_component_ids(mf.gradient_component_ids, n).size();
+                const size_t expected_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
+                    (mf.gradient_enabled ? size_t(3) : size_t(0));
+                mf.gradient_stop_positions = normalize_gradient_stop_positions(gradient_stop_positions, expected_stops);
+            }
+            mf.ui_mode                    = ui_mode;
             mf.mix_b_percent              = mf.manual_pattern.empty() ? mix : mix_percent_from_normalized_pattern(mf.manual_pattern);
             mf.deleted                    = deleted;
             mf.enabled                    = !mf.deleted;
@@ -556,6 +586,16 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
         mf.local_z_max_sublayers      = std::max(0, local_z_max_sublayers);
         mf.component_a_surface_offset = clamp_surface_offset(component_a_surface_offset);
         mf.component_b_surface_offset = clamp_surface_offset(component_b_surface_offset);
+        mf.gradient_enabled           = gradient_enabled;
+        mf.gradient_start             = gradient_start;
+        mf.gradient_end               = gradient_end;
+        {
+            const size_t gradient_component_count = decode_gradient_component_ids(mf.gradient_component_ids, n).size();
+            const size_t expected_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
+                (mf.gradient_enabled ? size_t(3) : size_t(0));
+            mf.gradient_stop_positions = normalize_gradient_stop_positions(gradient_stop_positions, expected_stops);
+        }
+        mf.ui_mode                    = ui_mode;
         if (!mf.manual_pattern.empty())
             mf.mix_b_percent = mix_percent_from_normalized_pattern(mf.manual_pattern);
         mf.deleted = deleted;

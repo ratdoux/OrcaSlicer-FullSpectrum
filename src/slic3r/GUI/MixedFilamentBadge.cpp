@@ -41,6 +41,34 @@ bool is_simple_gradient(const MixedFilament& mf)
            mf.component_a != mf.component_b;
 }
 
+std::vector<wxColour> mixed_filament_gradient_colors(const MixedFilament& mf, const MixedFilamentDisplayContext& ctx)
+{
+    if (!is_simple_gradient(mf))
+        return {};
+
+    const size_t num_physical = ctx.num_physical == 0 ? ctx.physical_colors.size() : ctx.num_physical;
+    auto get_color = [&](unsigned fid) -> wxColour {
+        if (fid == 0 || fid > num_physical || fid > ctx.physical_colors.size())
+            return wxColour("#26A69A");
+        return parse_mixed_color(ctx.physical_colors[fid - 1]);
+    };
+
+    const std::vector<unsigned int> gradient_ids =
+        MixedFilamentManager::decode_gradient_component_ids(mf.gradient_component_ids, num_physical);
+    if (gradient_ids.size() >= 3) {
+        std::vector<wxColour> colors;
+        colors.reserve(gradient_ids.size());
+        for (const unsigned int id : gradient_ids)
+            colors.emplace_back(get_color(id));
+        return colors;
+    }
+
+    const wxColour ca = get_color(mf.component_a);
+    const wxColour cb = get_color(mf.component_b);
+    const bool a_to_b = mf.gradient_start >= mf.gradient_end;
+    return { a_to_b ? ca : cb, a_to_b ? cb : ca };
+}
+
 // Check whether a pixel lies inside a rounded rectangle.
 static inline bool pixelInRoundedRect(int x, int y, int w, int h, const CornerRadius& r)
 {
@@ -109,25 +137,15 @@ MixedFilamentBadge::MixedFilamentBadge(wxWindow* parent, wxWindowID id, int virt
 
     m_solid_color = parse_mixed_color(mf.display_color);
 
-    m_is_gradient = is_simple_gradient(mf);
+    m_gradient_colors = mixed_filament_gradient_colors(mf, display_context);
+    m_is_gradient = m_gradient_colors.size() >= 2;
 
-    if (m_is_gradient) {
-        auto get_color = [&](unsigned fid) -> wxColour {
-            if (fid == 0 || fid > display_context.physical_colors.size()) return wxColour("#26A69A");
-            return parse_mixed_color(display_context.physical_colors[fid - 1]);
-        };
-        const wxColour ca = get_color(mf.component_a);
-        const wxColour cb = get_color(mf.component_b);
-        const bool a_to_b = mf.gradient_start >= mf.gradient_end;
-        m_gradient_colors.push_back(a_to_b ? ca : cb);
-        m_gradient_colors.push_back(a_to_b ? cb : ca);
-    }
-
-    // Font color: for gradient use average luminance of the two endpoint colors
+    // Font color: for gradient use average luminance of the stops.
     if (m_is_gradient && m_gradient_colors.size() >= 2) {
-        double lum0 = m_gradient_colors[0].GetLuminance();
-        double lum1 = m_gradient_colors[1].GetLuminance();
-        double avg_lum = (lum0 + lum1) * 0.5;
+        double avg_lum = 0.0;
+        for (const wxColour& color : m_gradient_colors)
+            avg_lum += color.GetLuminance();
+        avg_lum /= double(m_gradient_colors.size());
         SetForegroundColour(avg_lum < 0.51 ? *wxWHITE : *wxBLACK);
     } else {
         SetForegroundColour(m_solid_color.GetLuminance() < 0.51 ? *wxWHITE : *wxBLACK);
@@ -153,11 +171,14 @@ void MixedFilamentBadge::on_paint(wxPaintEvent&)
             dc.DrawLine(rect.GetLeft(), y, rect.GetLeft() + rect.GetWidth(), y);
         }
 
-        // Draw grey border only if BOTH endpoint colors are very light (R/G/B all > 224)
-        const auto& c0 = m_gradient_colors[0];
-        const auto& c1 = m_gradient_colors[1];
-        bool both_light = (c0.Red() > 224 && c0.Green() > 224 && c0.Blue() > 224)
-                       && (c1.Red() > 224 && c1.Green() > 224 && c1.Blue() > 224);
+        // Draw grey border only if all stops are very light (R/G/B all > 224)
+        bool both_light = true;
+        for (const wxColour& color : m_gradient_colors) {
+            if (color.Red() <= 224 || color.Green() <= 224 || color.Blue() <= 224) {
+                both_light = false;
+                break;
+            }
+        }
         if (both_light) {
             dc.SetPen(*wxGREY_PEN);
             dc.SetBrush(*wxTRANSPARENT_BRUSH);
@@ -185,9 +206,10 @@ void MixedFilamentBadge::on_paint(wxPaintEvent&)
 
         double text_lum;
         if (m_is_gradient && m_gradient_colors.size() >= 2) {
-            double lum0 = m_gradient_colors[0].GetLuminance();
-            double lum1 = m_gradient_colors[1].GetLuminance();
-            text_lum = (lum0 + lum1) * 0.5;
+            text_lum = 0.0;
+            for (const wxColour& color : m_gradient_colors)
+                text_lum += color.GetLuminance();
+            text_lum /= double(m_gradient_colors.size());
         } else {
             text_lum = m_solid_color.GetLuminance();
         }
@@ -295,7 +317,8 @@ wxBitmap* get_color_block_bitmap_cached(const ColorBlockParams& params)
 wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, bool is_gradient,
                                         int width, int height, const wxString& label,
                                         const wxColour& lightBorderColor,
-                                        const CornerRadius& radius)
+                                        const CornerRadius& radius,
+                                        bool vertical_gradient)
 {
     wxASSERT(wxIsMainThread());
     static BitmapCache cache;
@@ -320,6 +343,8 @@ wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, boo
     const bool useGradient = is_gradient && drawColors.size() > 1;
     std::string key = useGradient ? "official-grad:" : "official-seg:";
     key += "h" + std::to_string(height) + ":w" + std::to_string(width) + ":" + label.ToStdString();
+    if (useGradient)
+        key += vertical_gradient ? ":vertical" : ":horizontal";
     for (const wxColour& color : drawColors)
     {
         key += ":";
@@ -362,16 +387,26 @@ wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, boo
     {
         dc.SetBrush(wxBrush(drawColors.front()));
         dc.DrawRectangle(0, 0, width, height);
-        const int segmentCount = static_cast<int>(drawColors.size()) - 1;
-        int left = 0;
-        for (int index = 0; index < segmentCount; ++index)
-        {
-            const int right = index == segmentCount - 1 ? width : width * (index + 1) / segmentCount;
-            const int segmentWidth = right - left;
-            if (segmentWidth > 0)
-                dc.GradientFillLinear(wxRect(left, 0, segmentWidth, height), drawColors[static_cast<size_t>(index)],
-                                      drawColors[static_cast<size_t>(index + 1)], wxEAST);
-            left = right;
+        if (vertical_gradient) {
+            for (int y = height - 1; y >= 0; --y) {
+                const double pos = double(height - 1 - y) / double(std::max(1, height - 1));
+                const wxColour color = interpolate_color(drawColors, pos);
+                dc.SetPen(wxPen(color));
+                dc.DrawLine(0, y, width, y);
+            }
+            dc.SetPen(*wxTRANSPARENT_PEN);
+        } else {
+            const int segmentCount = static_cast<int>(drawColors.size()) - 1;
+            int left = 0;
+            for (int index = 0; index < segmentCount; ++index)
+            {
+                const int right = index == segmentCount - 1 ? width : width * (index + 1) / segmentCount;
+                const int segmentWidth = right - left;
+                if (segmentWidth > 0)
+                    dc.GradientFillLinear(wxRect(left, 0, segmentWidth, height), drawColors[static_cast<size_t>(index)],
+                                          drawColors[static_cast<size_t>(index + 1)], wxEAST);
+                left = right;
+            }
         }
     }
     else
@@ -471,21 +506,11 @@ wxBitmap* create_mixed_filament_menu_bitmap(const MixedFilament&               m
     params.height = height;
     params.label  = label;
 
-    const bool is_gradient = is_simple_gradient(mf);
+    const std::vector<wxColour> gradient_colors = mixed_filament_gradient_colors(mf, ctx);
 
-    if (is_gradient) {
-        auto get_c = [&](unsigned fid) -> wxColour {
-            if (fid == 0 || fid > ctx.physical_colors.size())
-                return wxColour("#26A69A");
-            return parse_mixed_color(ctx.physical_colors[fid - 1]);
-        };
-        const wxColour ca = get_c(mf.component_a);
-        const wxColour cb = get_c(mf.component_b);
-        const bool a_to_b = mf.gradient_start >= mf.gradient_end;
-
+    if (gradient_colors.size() >= 2) {
         params.mode = ColorBlockParams::Gradient;
-        params.gradient_colors.push_back(a_to_b ? ca : cb);
-        params.gradient_colors.push_back(a_to_b ? cb : ca);
+        params.gradient_colors = gradient_colors;
     } else {
         params.mode = ColorBlockParams::Solid;
         params.solid_color = parse_mixed_color(mf.display_color.empty() ? "#808080" : mf.display_color);

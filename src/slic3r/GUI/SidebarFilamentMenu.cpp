@@ -86,6 +86,7 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
         } else {
             m_lbl_physical_counter->Show(false);
         }
+        m_lbl_physical_counter->GetParent()->Layout();
         m_physical_title_panel->Layout();
     }
 
@@ -168,6 +169,7 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
         } else {
             m_lbl_mixed_counter->Show(false);
         }
+        m_lbl_mixed_counter->GetParent()->Layout();
         m_mixed_title_panel->Layout();
     }
 
@@ -267,6 +269,11 @@ void SidebarFilamentMenu::update_physical_filaments()
 
 void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 {
+    const wxColour material_bg     = StateColor::darkModeColorFor(*wxWHITE);
+    const wxColour material_divider = StateColor::darkModeColorFor(wxColour("#CECECE"));
+    const wxColour material_title_chip_bg = StateColor::darkModeColorFor(wxColour("#F0F0F1"));
+    const wxColour material_title_fg = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
+
     m_main_sizer = new wxBoxSizer(wxVERTICAL);
 
     // ####################################
@@ -338,6 +345,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // 2. Content Panel
     // ####################################
     m_content_panel = new wxPanel(this);
+    m_content_panel->SetBackgroundColour(material_bg);
     m_content_sizer = new wxBoxSizer(wxVERTICAL);
     m_content_panel->SetSizer(m_content_sizer);
 
@@ -345,7 +353,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // 2.1 Physical Title Panel
     // ####################################
     m_physical_title_panel = new wxPanel(m_content_panel);
-    m_physical_title_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_physical_title_panel->SetBackgroundColour(material_bg);
 
     m_physical_title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_physical_title_sizer->SetMinSize({-1, FromDIP(30)});
@@ -355,22 +363,43 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // nested sizer enables following shrink order: divider->title->buttons
     wxBoxSizer* physical_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
+    auto make_title_chip = [this, material_bg, material_title_chip_bg, material_title_fg](
+                               wxWindow* parent, wxStaticText*& title_label, wxStaticText*& counter_label, const wxString& title) {
+        StaticBox* chip = new StaticBox(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+        chip->SetBackgroundColour(material_bg);
+        chip->SetBackgroundColor(material_title_chip_bg);
+        chip->SetBorderWidth(0);
+        chip->SetCornerRadius(FromDIP(4));
+
+        wxBoxSizer* chip_sizer = new wxBoxSizer(wxHORIZONTAL);
+        chip->SetSizer(chip_sizer);
+
+        title_label = new wxStaticText(chip, wxID_ANY, title, wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+        title_label->SetForegroundColour(material_title_fg);
+        title_label->SetBackgroundColour(material_title_chip_bg);
+        title_label->SetFont(::Label::Body_14);
+
+        counter_label = new wxStaticText(chip, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
+        counter_label->SetForegroundColour(material_title_fg);
+        counter_label->SetBackgroundColour(material_title_chip_bg);
+        counter_label->SetFont(::Label::Body_14);
+
+        chip_sizer->AddSpacer(FromDIP(4));
+        chip_sizer->Add(title_label, 0, wxALIGN_CENTER_VERTICAL | wxTOP | wxBOTTOM, FromDIP(2));
+        chip_sizer->Add(counter_label, 0, wxALIGN_CENTER_VERTICAL | wxTOP | wxBOTTOM, FromDIP(2));
+        chip_sizer->AddSpacer(FromDIP(4));
+        return chip;
+    };
+
     // Physical title
-    m_lbl_physical_title = new wxStaticText(m_physical_title_panel, wxID_ANY, _L("Filament"), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
-    m_lbl_physical_title->SetForegroundColour("#7e7e7e");
-    m_lbl_physical_title->SetFont(::Label::Body_14);
+    wxWindow* physical_title_chip = make_title_chip(m_physical_title_panel, m_lbl_physical_title, m_lbl_physical_counter, _L("Filament"));
 
-    m_lbl_physical_counter = new wxStaticText(m_physical_title_panel, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
-    m_lbl_physical_counter->SetForegroundColour("#7e7e7e");
-    m_lbl_physical_counter->SetFont(::Label::Body_14);
-
-    physical_title_and_divider_sizer->Add(m_lbl_physical_title, 0, wxALIGN_CENTER, FromDIP(SidebarProps::TitlebarMargin()));
-    physical_title_and_divider_sizer->Add(m_lbl_physical_counter, 0, wxALIGN_CENTER);
+    physical_title_and_divider_sizer->Add(physical_title_chip, 0, wxALIGN_CENTER);
     physical_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Physical title divider
     m_physical_divider = new wxPanel(m_physical_title_panel);
-    m_physical_divider->SetBackgroundColour("#CECECE");
+    m_physical_divider->SetBackgroundColour(material_divider);
     m_physical_divider->SetMinSize({-1, 1});
     m_physical_divider->SetMaxSize({-1, 1});
 
@@ -420,6 +449,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // TODO: cant scroll when mouse over physical combo box
 
     m_physical_panel = new wxScrolledWindow(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL);
+    m_physical_panel->SetBackgroundColour(material_bg);
     m_physical_panel->SetScrollRate(0, 5);
     m_physical_panel->SetMinSize({-1, -1});
     m_physical_panel->SetMaxSize({-1, m_scrollbar_threshold});
@@ -435,7 +465,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     // grap panel
     m_physical_grab_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(6)), wxBORDER_NONE);
-    m_physical_grab_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_physical_grab_panel->SetBackgroundColour(material_bg);
     m_physical_grab_panel->SetCursor(wxCursor(wxCURSOR_SIZENS));
 
     m_physical_grab_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
@@ -443,7 +473,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
         wxSize size = m_physical_grab_panel->GetClientSize();
         int thickness = m_physical_grab_line_thickness;
         int y = (size.y - thickness) / 2;
-        dc.SetBrush(wxBrush(wxColour("#CECECE")));
+        dc.SetBrush(wxBrush(StateColor::darkModeColorFor(wxColour("#CECECE"))));
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, y, size.x, thickness);
     });
@@ -508,7 +538,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // 2.4 Mixed Title Panel
     // ####################################
     m_mixed_title_panel = new wxPanel(m_content_panel);
-    m_mixed_title_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_mixed_title_panel->SetBackgroundColour(material_bg);
 
     m_mixed_title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_mixed_title_sizer->SetMinSize({-1, FromDIP(30)});
@@ -519,22 +549,14 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     wxBoxSizer* mixed_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
     // Mixed title
-    m_lbl_mixed_title = new wxStaticText(m_mixed_title_panel, wxID_ANY, _L("Mixed Filament"), wxDefaultPosition, wxDefaultSize,
-                                            wxST_ELLIPSIZE_END);
-    m_lbl_mixed_title->SetForegroundColour("#7e7e7e");
-    m_lbl_mixed_title->SetFont(::Label::Body_14);
+    wxWindow* mixed_title_chip = make_title_chip(m_mixed_title_panel, m_lbl_mixed_title, m_lbl_mixed_counter, _L("Mixed Filament"));
 
-    m_lbl_mixed_counter = new wxStaticText(m_mixed_title_panel, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
-    m_lbl_mixed_counter->SetForegroundColour("#7e7e7e");
-    m_lbl_mixed_counter->SetFont(::Label::Body_14);
-
-    mixed_title_and_divider_sizer->Add(m_lbl_mixed_title, 0, wxALIGN_CENTER, FromDIP(SidebarProps::TitlebarMargin()));
-    mixed_title_and_divider_sizer->Add(m_lbl_mixed_counter, 0, wxALIGN_CENTER);
+    mixed_title_and_divider_sizer->Add(mixed_title_chip, 0, wxALIGN_CENTER);
     mixed_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Mixed title divider
     m_mixed_divider = new wxPanel(m_mixed_title_panel);
-    m_mixed_divider->SetBackgroundColour("#CECECE");
+    m_mixed_divider->SetBackgroundColour(material_divider);
     m_mixed_divider->SetMinSize({-1, 1});
     m_mixed_divider->SetMaxSize({-1, 1});
 
@@ -701,6 +723,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // 2.5 Mixed Panel
     // ####################################
     m_mixed_panel = new wxScrolledWindow(m_content_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL);
+    m_mixed_panel->SetBackgroundColour(material_bg);
     m_mixed_panel->SetScrollRate(0, 5);
     m_mixed_panel->SetMinSize({-1, -1});
     m_mixed_panel->SetMaxSize({-1, m_scrollbar_threshold});
@@ -716,7 +739,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     
     // grap panel
     m_mixed_grab_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(6)), wxBORDER_NONE);
-    m_mixed_grab_panel->SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    m_mixed_grab_panel->SetBackgroundColour(material_bg);
     m_mixed_grab_panel->SetCursor(wxCursor(wxCURSOR_SIZENS));
 
     m_mixed_grab_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
@@ -724,7 +747,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
         wxSize size = m_mixed_grab_panel->GetClientSize();
         int thickness = m_mixed_grab_line_thickness;
         int y = (size.y - thickness) / 2;
-        dc.SetBrush(wxBrush(wxColour("#CECECE")));
+        dc.SetBrush(wxBrush(StateColor::darkModeColorFor(wxColour("#CECECE"))));
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, y, size.x, thickness);
     });
@@ -763,9 +786,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_content_panel->Layout();
 
     auto splitter_before_title = new ::StaticLine(this);
-    splitter_before_title->SetLineColour("#A6A9AA");
+    splitter_before_title->SetLineColour(StateColor::darkModeColorFor(wxColour("#A6A9AA")));
     auto splitter_after_title = new ::StaticLine(this);
-    splitter_after_title->SetLineColour("#CECECE");
+    splitter_after_title->SetLineColour(material_divider);
 
     m_main_sizer->Add(splitter_before_title, 0, wxEXPAND);
     m_main_sizer->Add(m_title_panel, 0, wxEXPAND);
@@ -785,6 +808,8 @@ void SidebarFilamentMenu::update_title(const wxString& label, const std::string&
         singular_label = _L("Pellet");
     }
     m_lbl_physical_title->SetLabel(singular_label);
+    m_lbl_physical_title->GetParent()->Layout();
+    m_physical_title_panel->Layout();
     m_btn_icon->SetBitmap_(icon_name);
 }
 

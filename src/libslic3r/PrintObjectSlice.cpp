@@ -1797,12 +1797,178 @@ static bool local_z_eligible_mixed_definition(const MixedFilamentDefinition &def
     return !definition.visibility.tombstoned && !definition.recipe.manual_pattern;
 }
 
+static bool local_z_gradient_mixed_definition(const MixedFilamentDefinition &definition)
+{
+    if (!local_z_eligible_mixed_definition(definition) || !definition.behavior.gradient.enabled)
+        return false;
+
+    const std::optional<MixedFilamentPrimaryPairView> pair = definition.recipe.blend.primary_pair();
+    return pair && pair->component_a.id != pair->component_b.id;
+}
+
+static std::vector<int> fill_continuous_layer_range(std::vector<int> layers)
+{
+    if (layers.empty())
+        return {};
+
+    std::sort(layers.begin(), layers.end());
+    layers.erase(std::unique(layers.begin(), layers.end()), layers.end());
+
+    std::vector<int> out;
+    out.reserve(size_t(layers.back() - layers.front() + 1));
+    for (int layer = layers.front(); layer <= layers.back(); ++layer)
+        out.emplace_back(layer);
+    return out;
+}
+
+static std::vector<double> build_local_z_gradient_stop_positions(const MixedFilamentDefinition &definition,
+                                                                 size_t                         num_physical,
+                                                                 size_t                         component_count)
+{
+    const size_t expected_stops = component_count >= 2 ? 2 * component_count - 1 : size_t(0);
+    if (expected_stops < 3)
+        return {};
+
+    std::vector<double> out;
+    const std::vector<float> &explicit_positions = definition.behavior.gradient.stop_positions;
+    if (explicit_positions.size() == expected_stops) {
+        out.reserve(expected_stops);
+        for (const float position : explicit_positions) {
+            if (!std::isfinite(position)) {
+                out.clear();
+                break;
+            }
+            out.emplace_back(std::clamp(double(position), 0.0, 1.0));
+        }
+    }
+
+    if (out.empty() && component_count >= 3) {
+        const std::vector<int> weights = definition.recipe.blend.component_percents(num_physical);
+        if (weights.size() == component_count) {
+            double total = 0.0;
+            for (const int weight : weights)
+                total += double(std::max(0, weight));
+            if (total > EPSILON) {
+                std::vector<double> boundaries(component_count + 1, 0.0);
+                for (size_t i = 0; i < component_count; ++i)
+                    boundaries[i + 1] = boundaries[i] + double(std::max(0, weights[i])) / total;
+                boundaries.front() = 0.0;
+                boundaries.back() = 1.0;
+
+                out.assign(expected_stops, 0.0);
+                out.front() = 0.0;
+                out.back() = 1.0;
+                for (size_t i = 0; i + 1 < component_count; ++i)
+                    out[2 * i + 1] = std::clamp(boundaries[i + 1], 0.0, 1.0);
+                for (size_t i = 1; i + 1 < component_count; ++i)
+                    out[2 * i] = std::clamp((boundaries[i] + boundaries[i + 1]) * 0.5, 0.0, 1.0);
+            }
+        }
+    }
+
+    if (out.size() != expected_stops)
+        return {};
+
+    out.front() = 0.0;
+    out.back() = 1.0;
+    constexpr double min_gap = 1e-6;
+    for (size_t i = 1; i < out.size(); ++i)
+        out[i] = std::max(out[i], out[i - 1] + min_gap);
+    out.back() = 1.0;
+    for (size_t i = out.size() - 1; i > 0; --i)
+        out[i - 1] = std::min(out[i - 1], out[i] - min_gap);
+    out.front() = 0.0;
+    for (double &position : out)
+        position = std::clamp(position, 0.0, 1.0);
+    return out;
+}
+
+static bool local_z_gradient_segment_for_progress(const std::vector<unsigned int> &ids,
+                                                  const std::vector<double>       &stop_positions,
+                                                  double                           t,
+                                                  size_t                          &segment_idx,
+                                                  double                          &segment_t)
+{
+    if (ids.size() < 2)
+        return false;
+
+    const size_t expected_stops = 2 * ids.size() - 1;
+    if (stop_positions.size() == expected_stops) {
+        const double progress = std::clamp(t, 0.0, std::nextafter(1.0, 0.0));
+        for (size_t idx = 0; idx + 1 < ids.size(); ++idx) {
+            const double p_start = std::clamp(stop_positions[2 * idx], 0.0, 1.0);
+            const double p_mid   = std::clamp(stop_positions[2 * idx + 1], p_start, 1.0);
+            const double p_end   = std::clamp(stop_positions[2 * idx + 2], p_mid, 1.0);
+            if (progress > p_end && idx + 2 < ids.size())
+                continue;
+
+            segment_idx = idx;
+            if (p_end <= p_start + EPSILON) {
+                segment_t = 0.0;
+            } else if (progress <= p_mid) {
+                const double denom = std::max(EPSILON, p_mid - p_start);
+                segment_t = 0.5 * std::clamp((progress - p_start) / denom, 0.0, 1.0);
+            } else {
+                const double denom = std::max(EPSILON, p_end - p_mid);
+                segment_t = 0.5 + 0.5 * std::clamp((progress - p_mid) / denom, 0.0, 1.0);
+            }
+            segment_t = std::clamp(segment_t, 0.0, 1.0);
+            return true;
+        }
+
+        segment_idx = ids.size() - 2;
+        segment_t = 1.0;
+        return true;
+    }
+
+    if (ids.size() < 3)
+        return false;
+
+    const size_t segment_count = ids.size() - 1;
+    const double scaled = std::clamp(t, 0.0, std::nextafter(1.0, 0.0)) * double(segment_count);
+    segment_idx = std::min<size_t>(segment_count - 1, size_t(std::floor(scaled)));
+    segment_t = std::clamp(scaled - double(segment_idx), 0.0, 1.0);
+    return true;
+}
+
+static double local_z_smoothstep(double t)
+{
+    t = std::clamp(t, 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+static bool local_z_use_secondary_overlap_pair(double share, int cadence_index)
+{
+    constexpr int cycle = 16;
+    const int threshold = std::clamp(int(std::lround(std::clamp(share, 0.0, 1.0) * double(cycle))), 0, cycle);
+    if (threshold <= 0)
+        return false;
+    if (threshold >= cycle)
+        return true;
+
+    int phase = (cadence_index * 5) % cycle;
+    if (phase < 0)
+        phase += cycle;
+    return phase < threshold;
+}
+
+static int local_z_gradient_stop_distance_ring(double progress,
+                                               double join,
+                                               double progress_step)
+{
+    if (progress_step <= EPSILON)
+        return 0;
+
+    const double distance_in_layers = std::abs(progress - join) / progress_step;
+    return std::max(0, int(std::floor(distance_in_layers + EPSILON)));
+}
+
 static bool local_z_direct_multicolor_definition(const MixedFilamentDefinition &definition,
                                                  size_t                         num_physical,
                                                  std::vector<unsigned int>     *component_ids = nullptr,
                                                  std::vector<int>              *component_weights = nullptr)
 {
-    if (!local_z_eligible_mixed_definition(definition))
+    if (!local_z_eligible_mixed_definition(definition) || definition.behavior.gradient.enabled)
         return false;
 
     const std::vector<unsigned int> ids = decode_blend_component_ids(definition, num_physical);
@@ -1826,14 +1992,116 @@ struct LocalZActivePair
     unsigned int component_b = 0;
     int          mix_b_percent = 50;
     bool         uses_layer_cycle_sequence = false;
+    bool         single_component = false;
 
     bool valid_pair(size_t num_physical) const
     {
         return component_a > 0 && component_a <= num_physical &&
                component_b > 0 && component_b <= num_physical &&
-               component_a != component_b;
+               (component_a != component_b || single_component);
     }
 };
+
+static int local_z_mix_b_percent_from_fraction(double b_fraction)
+{
+    return std::clamp(int(std::lround(100.0 * std::clamp(b_fraction, 0.0, 1.0))), 1, 99);
+}
+
+static void local_z_orient_pair_to_follow_previous(LocalZActivePair &pair, unsigned int previous_extruder)
+{
+    if (pair.single_component)
+        return;
+
+    // Gradient Local-Z rows use B/A pass order. If the previous emitted pass
+    // was B, flip the pair so the next nominal layer starts with the other
+    // component and does not create a doubled physical layer at the boundary.
+    if (previous_extruder != 0 && previous_extruder == pair.component_b && previous_extruder != pair.component_a) {
+        std::swap(pair.component_a, pair.component_b);
+        pair.mix_b_percent = std::clamp(100 - pair.mix_b_percent, 1, 99);
+    }
+}
+
+static bool local_z_gradient_active_pair_for_progress(const std::vector<unsigned int> &ids,
+                                                      const std::vector<double>       &stop_positions,
+                                                      double                           progress,
+                                                      double                           progress_step,
+                                                      int                              cadence_index,
+                                                      double                           join_overlap_fraction,
+                                                      LocalZActivePair                &pair_out)
+{
+    size_t segment_idx = 0;
+    double segment_t   = 0.0;
+    if (!local_z_gradient_segment_for_progress(ids, stop_positions, progress, segment_idx, segment_t) ||
+        segment_idx + 1 >= ids.size())
+        return false;
+
+    const size_t expected_stops = 2 * ids.size() - 1;
+    if (ids.size() >= 3 && stop_positions.size() == expected_stops) {
+        constexpr double max_pair_share        = 0.50;
+        constexpr double max_cross_mix         = 0.35;
+        const double t = std::clamp(progress, 0.0, 1.0);
+        join_overlap_fraction = std::clamp(join_overlap_fraction, -1.0, 1.0);
+        progress_step = std::clamp(progress_step, 0.0, 1.0);
+
+        for (size_t middle_idx = 1; middle_idx + 1 < ids.size(); ++middle_idx) {
+            const double join = std::clamp(stop_positions[2 * middle_idx], 0.0, 1.0);
+            const double left_anchor = std::clamp(stop_positions[2 * (middle_idx - 1)], 0.0, join);
+            const double right_anchor = std::clamp(stop_positions[2 * (middle_idx + 1)], join, 1.0);
+            const double anchor_half_width = std::min(join - left_anchor, right_anchor - join);
+            const int distance_ring =
+                local_z_gradient_stop_distance_ring(t, join, progress_step);
+            const int local_cadence_index = cadence_index + int(middle_idx * 31) + distance_ring;
+            if (join_overlap_fraction <= EPSILON) {
+                const double middle_half_width = std::max(0.5 * progress_step, -join_overlap_fraction * anchor_half_width);
+                if (std::abs(t - join) <= middle_half_width + EPSILON) {
+                    pair_out = LocalZActivePair{};
+                    pair_out.component_a = ids[middle_idx];
+                    pair_out.component_b = ids[middle_idx];
+                    pair_out.mix_b_percent = 50;
+                    pair_out.single_component = true;
+                    return true;
+                }
+                continue;
+            }
+
+            const double half_width = join_overlap_fraction * anchor_half_width;
+            if (half_width <= EPSILON)
+                continue;
+
+            const double ring_distance = progress_step > EPSILON ?
+                std::min(half_width, (double(distance_ring) + 0.5) * progress_step) :
+                std::abs(t - join);
+            const double ring_ramp = local_z_smoothstep(1.0 - ring_distance / half_width);
+            if (ring_ramp <= EPSILON)
+                continue;
+
+            if (t >= join - half_width && t <= join) {
+                if (local_z_use_secondary_overlap_pair(max_pair_share * ring_ramp, local_cadence_index)) {
+                    pair_out = LocalZActivePair{};
+                    pair_out.component_a = ids[middle_idx];
+                    pair_out.component_b = ids[middle_idx + 1];
+                    pair_out.mix_b_percent = local_z_mix_b_percent_from_fraction(max_cross_mix * ring_ramp);
+                    return true;
+                }
+            }
+            if (t >= join && t <= join + half_width) {
+                if (local_z_use_secondary_overlap_pair(max_pair_share * ring_ramp, local_cadence_index)) {
+                    pair_out = LocalZActivePair{};
+                    pair_out.component_a = ids[middle_idx - 1];
+                    pair_out.component_b = ids[middle_idx];
+                    pair_out.mix_b_percent = local_z_mix_b_percent_from_fraction(1.0 - max_cross_mix * ring_ramp);
+                    return true;
+                }
+            }
+        }
+    }
+
+    pair_out = LocalZActivePair{};
+    pair_out.component_a = ids[segment_idx];
+    pair_out.component_b = ids[segment_idx + 1];
+    pair_out.mix_b_percent = local_z_mix_b_percent_from_fraction(segment_t);
+    return true;
+}
 
 static void append_local_z_pair_option(std::vector<LocalZActivePair> &out,
                                        unsigned int                   component_a,
@@ -1861,7 +2129,8 @@ static std::vector<LocalZActivePair> build_local_z_pair_cycle_for_definition(con
 {
     std::vector<LocalZActivePair> pair_options;
     if (definition.visibility.tombstoned || num_physical == 0 ||
-        definition.behavior.distribution == MixedFilamentDistributionMode::Simple)
+        definition.behavior.distribution == MixedFilamentDistributionMode::Simple ||
+        definition.behavior.gradient.enabled)
         return pair_options;
 
     const std::vector<unsigned int> blend_ids = definition.recipe.blend.component_ids(num_physical);
@@ -1929,6 +2198,11 @@ static std::vector<double> build_local_z_direct_multicolor_pass_heights(const Mi
     if (max_passes == 0)
         return { base_height };
 
+    size_t pass_limit = max_passes;
+    if (definition.behavior.local_z.max_sublayers >= 2)
+        pass_limit = std::min(pass_limit, size_t(std::max(2, definition.behavior.local_z.max_sublayers)));
+    pass_limit = std::max(pass_limit, min_passes);
+
     std::vector<int> positive_weights;
     positive_weights.reserve(component_weights.size());
     for (const int weight : component_weights)
@@ -1946,11 +2220,6 @@ static std::vector<double> build_local_z_direct_multicolor_pass_heights(const Mi
         component_targets.emplace_back(target);
         ideal_passes += size_t(std::max<double>(1.0, std::ceil((target - EPSILON) / hi)));
     }
-
-    size_t pass_limit = max_passes;
-    if (definition.behavior.local_z.max_sublayers >= 2)
-        pass_limit = std::min(pass_limit, size_t(std::max(2, definition.behavior.local_z.max_sublayers)));
-    pass_limit = std::max(pass_limit, min_passes);
 
     size_t desired_passes = std::clamp(std::max(component_targets.size(), ideal_passes), min_passes, pass_limit);
 
@@ -2583,11 +2852,6 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
     const bool local_z_direct_multicolor =
         bool_from_full_config(full_cfg, "dithering_local_z_direct_multicolor",
                               print_cfg.dithering_local_z_direct_multicolor.value);
-    if (!local_z_mode) {
-        BOOST_LOG_TRIVIAL(debug) << "Local-Z plan skipped: mode disabled"
-                                 << " object=" << object_name;
-        return;
-    }
     coordf_t mixed_lower = float_from_full_config(full_cfg, "mixed_filament_height_lower_bound",
                                                   coordf_t(print_cfg.mixed_filament_height_lower_bound.value));
     coordf_t mixed_upper = float_from_full_config(full_cfg, "mixed_filament_height_upper_bound",
@@ -2596,10 +2860,16 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                                                   coordf_t(print_cfg.mixed_color_layer_height_a.value));
     coordf_t preferred_b = float_from_full_config(full_cfg, "mixed_color_layer_height_b",
                                                   coordf_t(print_cfg.mixed_color_layer_height_b.value));
+    coordf_t gradient_overlap_window = float_from_full_config(
+        full_cfg,
+        "dithering_local_z_gradient_overlap_window",
+        coordf_t(print_cfg.dithering_local_z_gradient_overlap_window.value));
     mixed_lower = std::max<coordf_t>(0.01f, mixed_lower);
     mixed_upper = std::max<coordf_t>(mixed_lower, mixed_upper);
     preferred_a = std::max<coordf_t>(0.f, preferred_a);
     preferred_b = std::max<coordf_t>(0.f, preferred_b);
+    gradient_overlap_window = std::clamp<coordf_t>(gradient_overlap_window, -100.f, 100.f);
+    const double gradient_overlap_fraction = double(gradient_overlap_window) / 100.0;
 
     const size_t num_physical = print_cfg.filament_colour.size();
     if (num_physical == 0) {
@@ -2610,6 +2880,27 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
 
     const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
     const std::vector<MixedFilamentDefinition> mixed_definitions = mixed_mgr.mixed_filament_definitions(num_physical);
+    if (!local_z_mode) {
+        BOOST_LOG_TRIVIAL(debug) << "Local-Z plan skipped: mode disabled"
+                                 << " object=" << object_name;
+        return;
+    }
+
+    std::vector<uint8_t> row_is_gradient_definition(mixed_definitions.size(), uint8_t(0));
+    for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
+        if (local_z_gradient_mixed_definition(mixed_definitions[row_idx]))
+            row_is_gradient_definition[row_idx] = uint8_t(1);
+    }
+    std::vector<std::vector<unsigned int>> row_gradient_component_ids(mixed_definitions.size());
+    std::vector<std::vector<double>>       row_gradient_stop_positions(mixed_definitions.size());
+    for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
+        if (row_is_gradient_definition[row_idx] == 0)
+            continue;
+        row_gradient_component_ids[row_idx] = decode_blend_component_ids(mixed_definitions[row_idx], num_physical);
+        row_gradient_stop_positions[row_idx] = build_local_z_gradient_stop_positions(mixed_definitions[row_idx],
+                                                                                    num_physical,
+                                                                                    row_gradient_component_ids[row_idx].size());
+    }
     std::vector<std::vector<unsigned int>> row_direct_component_ids(mixed_definitions.size());
     std::vector<std::vector<int>>          row_direct_component_weights(mixed_definitions.size());
     std::vector<std::vector<double>>       row_direct_component_error_mm(mixed_definitions.size());
@@ -2643,6 +2934,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                              << " preferred_a=" << preferred_a
                              << " preferred_b=" << preferred_b
                              << " direct_multicolor=" << (local_z_direct_multicolor ? 1 : 0)
+                             << " gradient_overlap_window=" << gradient_overlap_window
                              << " physical_filaments=" << num_physical;
 
     std::vector<LocalZInterval> intervals;
@@ -2675,6 +2967,142 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
     // instead syncs newly introduced painted rows to the dominant mixed cadence
     // so painted islands do not restart their phase at the boundary.
     std::vector<uint8_t> row_active_prev_layer(mixed_definitions.size(), uint8_t(0));
+    std::vector<unsigned int> row_last_gradient_extruder(mixed_definitions.size(), 0);
+
+    std::vector<std::vector<int>> per_row_gradient_layers(mixed_definitions.size());
+    for (size_t scan_layer = 0; scan_layer < segmentation.size(); ++scan_layer) {
+        std::vector<uint8_t> row_active_scan(mixed_definitions.size(), uint8_t(0));
+        for (size_t channel_idx = 0; channel_idx < segmentation[scan_layer].size(); ++channel_idx) {
+            if (segmentation[scan_layer][channel_idx].empty())
+                continue;
+            const unsigned int state_id = segmentation_channel_filament_id(channel_idx);
+            if (!mixed_mgr.is_mixed(state_id, num_physical))
+                continue;
+            const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+            if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_definitions.size())
+                continue;
+            row_active_scan[size_t(mixed_idx)] = uint8_t(1);
+        }
+        for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
+            if (row_is_gradient_definition[row_idx] == 0 || row_active_scan[row_idx] == 0)
+                continue;
+            per_row_gradient_layers[row_idx].push_back(int(scan_layer));
+        }
+    }
+
+    for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
+        if (row_is_gradient_definition[row_idx] == 0)
+            continue;
+        per_row_gradient_layers[row_idx] = fill_continuous_layer_range(std::move(per_row_gradient_layers[row_idx]));
+    }
+
+    auto gradient_progress_for_definition = [&](size_t row_idx, size_t layer_id) -> std::optional<double> {
+        if (row_idx >= mixed_definitions.size() || row_is_gradient_definition[row_idx] == 0)
+            return std::nullopt;
+        const auto &layers = per_row_gradient_layers[row_idx];
+        if (layers.empty())
+            return std::nullopt;
+
+        const int li = int(layer_id);
+        if (li < layers.front() || li > layers.back())
+            return std::nullopt;
+
+        const int    idx = li - layers.front();
+        const int    count = layers.back() - layers.front() + 1;
+        return count > 0 ? std::optional<double>((2.0 * double(idx) + 1.0) / (2.0 * double(count))) : std::optional<double>(0.5);
+    };
+
+    auto gradient_progress_step_for_definition = [&](size_t row_idx) -> double {
+        if (row_idx >= mixed_definitions.size() || row_is_gradient_definition[row_idx] == 0)
+            return 1.0;
+        const auto &layers = per_row_gradient_layers[row_idx];
+        if (layers.empty())
+            return 1.0;
+
+        const int count = layers.back() - layers.front() + 1;
+        return count > 0 ? 1.0 / double(count) : 1.0;
+    };
+
+    auto effective_gradient_active_pair_for_definition = [&](size_t row_idx, size_t layer_id, LocalZActivePair &pair_out) -> bool {
+        if (row_idx >= row_gradient_component_ids.size())
+            return false;
+
+        const std::vector<unsigned int> &ids = row_gradient_component_ids[row_idx];
+        const std::optional<double> progress = gradient_progress_for_definition(row_idx, layer_id);
+        static const std::vector<double> empty_stop_positions;
+        const std::vector<double> &stop_positions =
+            row_idx < row_gradient_stop_positions.size() ? row_gradient_stop_positions[row_idx] : empty_stop_positions;
+        if (!progress)
+            return false;
+
+        const int cadence_index = int(row_idx * 23);
+        if (!local_z_gradient_active_pair_for_progress(ids,
+                                                       stop_positions,
+                                                       *progress,
+                                                       gradient_progress_step_for_definition(row_idx),
+                                                       cadence_index,
+                                                       gradient_overlap_fraction,
+                                                       pair_out))
+            return false;
+        if (row_idx < row_last_gradient_extruder.size())
+            local_z_orient_pair_to_follow_previous(pair_out, row_last_gradient_extruder[row_idx]);
+        return pair_out.valid_pair(num_physical);
+    };
+
+    auto effective_gradient_heights_for_definition = [&](size_t row_idx, size_t layer_id, double base_height,
+                                                         double &h_a_out, double &h_b_out) -> bool {
+        if (row_idx >= mixed_definitions.size() || row_is_gradient_definition[row_idx] == 0 || base_height <= EPSILON)
+            return false;
+
+        LocalZActivePair active_pair;
+        if (effective_gradient_active_pair_for_definition(row_idx, layer_id, active_pair)) {
+            const double r_a = std::clamp(1.0 - double(active_pair.mix_b_percent) / 100.0, 0.01, 0.99);
+            h_a_out = r_a * base_height;
+            h_b_out = (1.0 - r_a) * base_height;
+            return true;
+        }
+
+        const std::optional<double> progress = gradient_progress_for_definition(row_idx, layer_id);
+        if (!progress)
+            return false;
+
+        const MixedFilamentGradientBehavior &gradient = mixed_definitions[row_idx].behavior.gradient;
+        double r_a = double(gradient.component_a_start) +
+                     (double(gradient.component_a_end) - double(gradient.component_a_start)) * *progress;
+        r_a = std::clamp(r_a, 0.01, 0.99);
+        h_a_out = r_a * base_height;
+        h_b_out = (1.0 - r_a) * base_height;
+        return true;
+    };
+
+    auto build_direct_pass_heights_for_definition = [&](size_t row_idx,
+                                                        size_t layer_id,
+                                                        double base_height) -> std::vector<double> {
+        if (row_idx >= mixed_definitions.size() || row_idx >= row_direct_component_ids.size())
+            return {};
+
+        (void)layer_id;
+        return build_local_z_direct_multicolor_pass_heights(mixed_definitions[row_idx],
+                                                             row_direct_component_weights[row_idx],
+                                                             base_height,
+                                                             mixed_lower,
+                                                             mixed_upper,
+                                                             row_direct_component_ids[row_idx].size());
+    };
+
+    auto build_direct_sequence_for_definition = [&](size_t row_idx,
+                                                   size_t layer_id,
+                                                   const std::vector<double> &pass_heights) -> std::vector<unsigned int> {
+        if (row_idx >= row_direct_component_ids.size() || pass_heights.empty())
+            return {};
+
+        (void)layer_id;
+        return build_local_z_direct_multicolor_sequence(row_direct_component_ids[row_idx],
+                                                        row_direct_component_weights[row_idx],
+                                                        pass_heights,
+                                                        row_direct_component_error_mm[row_idx]);
+    };
+
     for (size_t layer_id = 0; layer_id < print_object.layer_count(); ++layer_id) {
         throw_on_cancel();
 
@@ -2695,6 +3123,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
         double     dominant_gradient_h_a = 0.0;
         double     dominant_gradient_h_b = 0.0;
         bool       dominant_gradient_valid = false;
+        bool       dominant_is_gradient = false;
         for (size_t channel_idx = 0; channel_idx < segmentation[layer_id].size(); ++channel_idx) {
             const ExPolygons &state_masks = segmentation[layer_id][channel_idx];
             if (state_masks.empty())
@@ -2709,7 +3138,6 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
             const MixedFilamentDefinition &definition = mixed_definitions[size_t(mixed_idx)];
             if (!local_z_eligible_mixed_definition(definition))
                 continue;
-
             interval.has_mixed_paint = true;
             row_active_this_layer[size_t(mixed_idx)] = uint8_t(1);
             ++mixed_state_count;
@@ -2722,7 +3150,14 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
             }
         }
         for (size_t row_idx = 0; row_idx < row_active_this_layer.size(); ++row_idx) {
+            if (row_active_this_layer[row_idx] == 0) {
+                if (row_idx < row_last_gradient_extruder.size())
+                    row_last_gradient_extruder[row_idx] = 0;
+                continue;
+            }
             if (row_active_this_layer[row_idx] != 0 && row_active_prev_layer[row_idx] == 0) {
+                if (row_idx < row_last_gradient_extruder.size())
+                    row_last_gradient_extruder[row_idx] = 0;
                 if (row_uses_direct_multicolor_solver[row_idx] != 0 &&
                     row_direct_component_error_mm[row_idx].size() == row_direct_component_ids[row_idx].size()) {
                     std::fill(row_direct_component_error_mm[row_idx].begin(), row_direct_component_error_mm[row_idx].end(), 0.0);
@@ -2748,6 +3183,12 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
             if (row_uses_direct_multicolor_solver[row_idx] != 0)
                 continue;
 
+            LocalZActivePair gradient_pair;
+            if (effective_gradient_active_pair_for_definition(row_idx, layer_id, gradient_pair)) {
+                row_active_pairs[row_idx] = gradient_pair;
+                continue;
+            }
+
             const int cadence_index = row_uses_layer_cycle_pair[row_idx] != 0
                 ? row_layer_cycle_index[row_idx]
                 : row_cadence_index[row_idx];
@@ -2761,8 +3202,14 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                                                           mixed_definitions[dominant_mixed_idx]
                                                               .recipe.blend.primary_pair_or().component_b_percent;
             if (row_uses_direct_multicolor_solver[dominant_mixed_idx] == 0) {
-                compute_local_z_gradient_component_heights(dominant_mix_b_percent, mixed_lower, mixed_upper,
-                                                           dominant_gradient_h_a, dominant_gradient_h_b);
+                dominant_is_gradient = effective_gradient_heights_for_definition(dominant_mixed_idx,
+                                                                                layer_id,
+                                                                                interval.base_height,
+                                                                                dominant_gradient_h_a,
+                                                                                dominant_gradient_h_b);
+                if (!dominant_is_gradient)
+                    compute_local_z_gradient_component_heights(dominant_mix_b_percent, mixed_lower, mixed_upper,
+                                                               dominant_gradient_h_a, dominant_gradient_h_b);
                 dominant_gradient_valid = true;
             }
         }
@@ -2891,12 +3338,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
 
                 std::vector<double> row_passes;
                 if (row_uses_direct_multicolor_solver[row_idx] != 0) {
-                    row_passes = build_local_z_direct_multicolor_pass_heights(mixed_definitions[row_idx],
-                                                                             row_direct_component_weights[row_idx],
-                                                                             interval.base_height,
-                                                                             mixed_lower,
-                                                                             mixed_upper,
-                                                                             row_direct_component_ids[row_idx].size());
+                    row_passes = build_direct_pass_heights_for_definition(row_idx, layer_id, interval.base_height);
                 } else {
                     double row_h_a = 0.0;
                     double row_h_b = 0.0;
@@ -2905,8 +3347,13 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                         active_pair.valid_pair(num_physical) ? active_pair.mix_b_percent :
                                                                mixed_definitions[row_idx]
                                                                    .recipe.blend.primary_pair_or().component_b_percent;
-                    compute_local_z_gradient_component_heights(row_mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
-                    row_passes = active_pair.uses_layer_cycle_sequence
+                    const bool row_is_gradient =
+                        effective_gradient_heights_for_definition(row_idx, layer_id, interval.base_height, row_h_a, row_h_b);
+                    if (!row_is_gradient)
+                        compute_local_z_gradient_component_heights(row_mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
+                    if (row_is_gradient)
+                        std::swap(row_h_a, row_h_b);
+                    row_passes = (row_is_gradient || active_pair.uses_layer_cycle_sequence)
                         ? build_local_z_two_pass_heights(interval.base_height, mixed_lower, mixed_upper, row_h_a, row_h_b)
                         : build_local_z_alternating_pass_heights(interval.base_height,
                                                                  mixed_lower,
@@ -2939,25 +3386,28 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                         ++alternating_height_intervals;
                 } else if (dominant_mixed_idx < mixed_definitions.size() &&
                            row_uses_direct_multicolor_solver[dominant_mixed_idx] != 0) {
-                    pass_heights = build_local_z_direct_multicolor_pass_heights(mixed_definitions[dominant_mixed_idx],
-                                                                                row_direct_component_weights[dominant_mixed_idx],
-                                                                                interval.base_height,
-                                                                                mixed_lower,
-                                                                                mixed_upper,
-                                                                                row_direct_component_ids[dominant_mixed_idx].size());
+                    pass_heights = build_direct_pass_heights_for_definition(dominant_mixed_idx, layer_id, interval.base_height);
                     if (pass_heights.size() > 1)
                         ++alternating_height_intervals;
                 } else if (dominant_gradient_valid) {
-                    const bool dominant_uses_pair_cycle =
-                        dominant_mixed_idx < mixed_definitions.size() && row_active_pairs[dominant_mixed_idx].uses_layer_cycle_sequence;
-                    pass_heights = dominant_uses_pair_cycle
-                        ? build_local_z_two_pass_heights(interval.base_height, mixed_lower, mixed_upper,
-                                                         dominant_gradient_h_a, dominant_gradient_h_b)
-                        : build_local_z_alternating_pass_heights(interval.base_height,
-                                                                 mixed_lower,
-                                                                 mixed_upper,
-                                                                 dominant_gradient_h_a,
-                                                                 dominant_gradient_h_b);
+                    if (dominant_is_gradient) {
+                        pass_heights = build_local_z_two_pass_heights(interval.base_height,
+                                                                      mixed_lower,
+                                                                      mixed_upper,
+                                                                      dominant_gradient_h_b,
+                                                                      dominant_gradient_h_a);
+                    } else {
+                        const bool dominant_uses_pair_cycle =
+                            dominant_mixed_idx < mixed_definitions.size() && row_active_pairs[dominant_mixed_idx].uses_layer_cycle_sequence;
+                        pass_heights = dominant_uses_pair_cycle
+                            ? build_local_z_two_pass_heights(interval.base_height, mixed_lower, mixed_upper,
+                                                             dominant_gradient_h_a, dominant_gradient_h_b)
+                            : build_local_z_alternating_pass_heights(interval.base_height,
+                                                                     mixed_lower,
+                                                                     mixed_upper,
+                                                                     dominant_gradient_h_a,
+                                                                     dominant_gradient_h_b);
+                    }
                     if (pass_heights.size() > 1)
                         ++alternating_height_intervals;
                 } else {
@@ -2982,7 +3432,8 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
         // Keep auto local-Z 2-pass cadence order stable across layers even if the
         // dominant mixed row changes. Per-row phase assignment still controls
         // which filament gets pass-0 vs pass-1.
-        if (interval.has_mixed_paint &&
+        if (!dominant_is_gradient &&
+            interval.has_mixed_paint &&
             preferred_a <= EPSILON &&
             preferred_b <= EPSILON &&
             pass_heights.size() == 2 &&
@@ -3079,21 +3530,20 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                         ? row_layer_cycle_index[row_idx]
                         : row_cadence_index[row_idx];
                     const std::vector<unsigned int> direct_sequence = uses_direct_multicolor
-                        ? build_local_z_direct_multicolor_sequence(row_direct_component_ids[row_idx],
-                                                                   row_direct_component_weights[row_idx],
-                                                                   row_passes,
-                                                                   row_direct_component_error_mm[row_idx])
+                        ? build_direct_sequence_for_definition(row_idx, layer_id, row_passes)
                         : std::vector<unsigned int>();
 
                     bool start_with_a = true;
                     if (!uses_direct_multicolor && valid_pair && preferred_a <= EPSILON && preferred_b <= EPSILON) {
                         double row_h_a = 0.0;
                         double row_h_b = 0.0;
-                        compute_local_z_gradient_component_heights(active_pair.mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
-                        start_with_a = choose_local_z_start_with_component_a(row_passes,
-                                                                             row_h_a,
-                                                                             row_h_b,
-                                                                             orientation_cadence_index);
+                        const bool row_is_gradient =
+                            effective_gradient_heights_for_definition(row_idx, layer_id, interval.base_height, row_h_a, row_h_b);
+                        if (!row_is_gradient)
+                            compute_local_z_gradient_component_heights(active_pair.mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
+                        start_with_a = row_is_gradient
+                            ? false
+                            : choose_local_z_start_with_component_a(row_passes, row_h_a, row_h_b, orientation_cadence_index);
                     }
 
                     double z_cursor = interval.z_lo;
@@ -3152,6 +3602,11 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                             ++forced_height_resolve_invalid_target;
                         } else {
                             append(plan.painted_masks_by_extruder[target_extruder - 1], state_masks);
+                            if (!uses_direct_multicolor &&
+                                row_idx < row_is_gradient_definition.size() &&
+                                row_is_gradient_definition[row_idx] != 0 &&
+                                row_idx < row_last_gradient_extruder.size())
+                                row_last_gradient_extruder[row_idx] = target_extruder;
                             ++split_passes_with_painted_masks;
                             interval_has_split_painted_masks = true;
                         }
@@ -3241,10 +3696,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                             continue;
                         if (row_uses_direct_multicolor_solver[row_idx] != 0) {
                             row_direct_pass_sequences[row_idx] =
-                                build_local_z_direct_multicolor_sequence(row_direct_component_ids[row_idx],
-                                                                         row_direct_component_weights[row_idx],
-                                                                         pass_heights,
-                                                                         row_direct_component_error_mm[row_idx]);
+                                build_direct_sequence_for_definition(row_idx, layer_id, pass_heights);
                             continue;
                         }
 
@@ -3257,12 +3709,16 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                         const int orientation_cadence_index = active_pair.uses_layer_cycle_sequence
                             ? row_layer_cycle_index[row_idx]
                             : row_cadence_index[row_idx];
-                        compute_local_z_gradient_component_heights(active_pair.mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
-                        start_with_component_a[row_idx] =
-                            choose_local_z_start_with_component_a(pass_heights,
-                                                                  row_h_a,
-                                                                  row_h_b,
-                                                                  orientation_cadence_index) ? uint8_t(1) : uint8_t(0);
+                        const bool row_is_gradient =
+                            effective_gradient_heights_for_definition(row_idx, layer_id, interval.base_height, row_h_a, row_h_b);
+                        if (!row_is_gradient)
+                            compute_local_z_gradient_component_heights(active_pair.mix_b_percent, mixed_lower, mixed_upper, row_h_a, row_h_b);
+                        start_with_component_a[row_idx] = row_is_gradient
+                            ? uint8_t(0)
+                            : (choose_local_z_start_with_component_a(pass_heights,
+                                                                      row_h_a,
+                                                                      row_h_b,
+                                                                      orientation_cadence_index) ? uint8_t(1) : uint8_t(0));
                     }
                 }
 
@@ -3338,6 +3794,11 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                             continue;
                         }
                         append(plan.painted_masks_by_extruder[target_extruder - 1], state_masks);
+                        if (!uses_direct_multicolor &&
+                            row_idx < row_is_gradient_definition.size() &&
+                            row_is_gradient_definition[row_idx] != 0 &&
+                            row_idx < row_last_gradient_extruder.size())
+                            row_last_gradient_extruder[row_idx] = target_extruder;
                         pass_has_painted_masks = true;
                     }
                     for (ExPolygons &masks : plan.painted_masks_by_extruder)
@@ -3414,10 +3875,7 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                 unsigned int target_extruder = 0;
                 if (row_uses_direct_multicolor_solver[row_idx] != 0) {
                     const std::vector<unsigned int> direct_sequence =
-                        build_local_z_direct_multicolor_sequence(row_direct_component_ids[row_idx],
-                                                                 row_direct_component_weights[row_idx],
-                                                                 std::vector<double>{ interval.base_height },
-                                                                 row_direct_component_error_mm[row_idx]);
+                        build_direct_sequence_for_definition(row_idx, layer_id, std::vector<double>{ interval.base_height });
                     if (!direct_sequence.empty())
                         target_extruder = direct_sequence.front();
                 } else {
@@ -3437,6 +3895,10 @@ static void build_local_z_plan(PrintObject &print_object, const std::vector<std:
                     continue;
                 }
                 append(plan.painted_masks_by_extruder[target_extruder - 1], state_masks);
+                if (row_idx < row_is_gradient_definition.size() &&
+                    row_is_gradient_definition[row_idx] != 0 &&
+                    row_idx < row_last_gradient_extruder.size())
+                    row_last_gradient_extruder[row_idx] = target_extruder;
             }
             for (size_t extruder_idx = 0; extruder_idx < fixed_state_masks_by_extruder.size(); ++extruder_idx)
                 if (!fixed_state_masks_by_extruder[extruder_idx].empty())
@@ -3528,13 +3990,15 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
     const coordf_t            base_height = std::max<coordf_t>(0.01f, coordf_t(print_object.config().layer_height.value));
     const bool                collapse_mixed_regions =
         bool_from_full_config(full_cfg, "mixed_filament_region_collapse", print_cfg.mixed_filament_region_collapse.value);
+    const bool                local_z_mode =
+        bool_from_full_config(full_cfg, "dithering_local_z_mode", print_cfg.dithering_local_z_mode.value);
     const bool                bias_mode_enabled =
         bool_from_full_config(full_cfg, "mixed_filament_component_bias_enabled", print_cfg.mixed_filament_component_bias_enabled.value);
     const MixedFilamentManager &mixed_mgr = print_object.print()->mixed_filament_manager();
 
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, segmentation.size(), std::max(segmentation.size() / 128, size_t(1))),
-        [&print_object, &segmentation, &mixed_mgr, num_physical, preferred_a, preferred_b, base_height, collapse_mixed_regions, bias_mode_enabled, throw_on_cancel](const tbb::blocked_range<size_t> &range) {
+        [&print_object, &segmentation, &mixed_mgr, num_physical, preferred_a, preferred_b, base_height, collapse_mixed_regions, local_z_mode, bias_mode_enabled, throw_on_cancel](const tbb::blocked_range<size_t> &range) {
             const auto  &layer_ranges   = print_object.shared_regions()->layer_ranges;
             double       z              = print_object.get_layer(int(range.begin()))->slice_z;
             auto         it_layer_range = layer_range_first(layer_ranges, z);
@@ -3616,7 +4080,17 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                 }
                 for (size_t channel_idx = 1; channel_idx < num_channels; ++ channel_idx) {
                     const unsigned int channel_id = unsigned(channel_idx);
-                    const unsigned int effective_filament_id = collapse_mixed_regions ?
+                    bool collapse_this_channel = collapse_mixed_regions;
+                    if (collapse_this_channel && mixed_mgr.is_mixed(channel_id, num_physical)) {
+                        const std::optional<MixedFilamentDefinition> definition =
+                            mixed_mgr.mixed_filament_definition_from_id(channel_id, num_physical);
+                        if (definition &&
+                            local_z_mode &&
+                            local_z_eligible_mixed_definition(*definition)) {
+                            collapse_this_channel = false;
+                        }
+                    }
+                    const unsigned int effective_filament_id = collapse_this_channel ?
                         mixed_mgr.effective_painted_region_filament_id(channel_id,
                                                                        num_physical,
                                                                        int(layer_id),

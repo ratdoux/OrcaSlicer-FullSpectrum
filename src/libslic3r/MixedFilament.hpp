@@ -54,6 +54,9 @@ struct MixedFilamentLegacyRow
     // Optional explicit multi-color weights aligned with gradient_component_ids.
     // Compact integer list joined by '/': for example "50/25/25".
     std::string gradient_component_weights;
+    // Optional explicit gradient stop positions. Encoded as a '/'-joined list
+    // matching the UI stop curve: filament stop, midpoint, filament stop, ...
+    std::string gradient_stop_positions;
 
     // Legacy UI fields retained for dialogs and badges that still consume
     // mixed rows directly. Typed definitions remain the source of truth.
@@ -111,6 +114,7 @@ struct MixedFilamentLegacyRow
                manual_pattern == rhs.manual_pattern &&
                gradient_component_ids == rhs.gradient_component_ids &&
                gradient_component_weights == rhs.gradient_component_weights &&
+               gradient_stop_positions == rhs.gradient_stop_positions &&
                pointillism_all_filaments == rhs.pointillism_all_filaments &&
                gradient_enabled == rhs.gradient_enabled &&
                std::abs(gradient_start - rhs.gradient_start) <= 1e-4f &&
@@ -239,6 +243,15 @@ struct MixedFilamentLocalZBehavior
     int max_sublayers = 0;
 };
 
+struct MixedFilamentGradientBehavior
+{
+    bool  enabled = false;
+    float component_a_start = MixedFilamentLegacyRow::k_default_gradient_dominant;
+    float component_a_end   = MixedFilamentLegacyRow::k_default_gradient_minority;
+    // Normalized UI stop curve, length 2 * component_count - 1 when present.
+    std::vector<float> stop_positions;
+};
+
 struct MixedFilamentSurfaceBias
 {
     float component_a_offset_mm = 0.f;
@@ -250,6 +263,7 @@ struct MixedFilamentBehavior
     MixedFilamentDistributionMode distribution = MixedFilamentDistributionMode::Simple;
     MixedFilamentLayerCadence     layer_cadence;
     MixedFilamentLocalZBehavior   local_z;
+    MixedFilamentGradientBehavior gradient;
     MixedFilamentSurfaceBias      surface_bias;
 };
 

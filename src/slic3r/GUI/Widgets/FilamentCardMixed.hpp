@@ -43,7 +43,6 @@ public:
 
     void update_state(MixedFilamentDefinition* definition, bool refresh);
 
-    // TODO refactor other paint functions to take in DC too (->Backgroundcolor!)
     static void paint_clr_swatch(
         wxDC&           context, 
         const wxSize&   size, 
@@ -66,9 +65,9 @@ public:
         wxDC&                       context, 
         const wxSize&               size, 
         const wxColor&              background_color,
-        std::vector<unsigned int>   indices,
-        std::vector<int>&           percentages,
-        std::vector<wxColor>&       colors,
+        const std::vector<unsigned int>& indices,
+        const std::vector<int>&     percentages,
+        const std::vector<wxColor>& colors,
         bool                        is_dark,
         bool                        is_hovered,
         const wxSize&               swatch_size
@@ -78,8 +77,8 @@ public:
         wxDC&                       context, 
         const wxSize&               size, 
         const wxColor&              background_color,
-        std::vector<unsigned int>   indices,
-        std::vector<wxColor>&       colors,
+        const std::vector<unsigned int>& indices,
+        const std::vector<wxColor>& colors,
         bool                        is_dark,
         bool                        is_hovered,
         const wxSize&               swatch_size);
@@ -111,6 +110,9 @@ private:
 
     void build_ui();
     std::vector<wxColor> get_physical_filaments_colors(const std::vector<unsigned int>& filament_indices) const;
+    wxString display_id_text() const;
+    wxSize color_swatch_size_for_text(const wxString& text) const;
+    void update_color_swatch_size();
 
     wxBoxSizer*     m_main_sizer{nullptr};
 

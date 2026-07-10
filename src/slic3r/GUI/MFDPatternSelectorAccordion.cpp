@@ -9,6 +9,7 @@
 #include "GUI_App.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -40,6 +41,7 @@ void MFDPatternSelectorAccordion::build_ui()
     m_pattern_input = new wxTextCtrl(body, wxID_ANY, "12",
         wxDefaultPosition, wxSize(-1, this->FromDIP(30)), wxTE_PROCESS_ENTER);
     m_pattern_input->SetFont(::Label::Body_14);
+    MFDTheme::apply_input(m_pattern_input);
     m_pattern_input->Bind(wxEVT_TEXT, &MFDPatternSelectorAccordion::on_text_changed, this);
 
     wxPanel* bs_btn = new wxPanel(body, wxID_ANY, wxDefaultPosition,
@@ -52,7 +54,7 @@ void MFDPatternSelectorAccordion::build_ui()
 
     // Custom-painted backspace icon (chevron/backspace shape with X inside)
     auto paint_backspace = [this](wxGraphicsContext* gc, const wxSize& size, bool hovered) {
-        wxColour clr = hovered ? *wxWHITE : *wxBLACK;
+        wxColour clr = hovered ? *wxWHITE : MFDTheme::primary_text();
         gc->SetPen(wxPen(clr, this->FromDIP(1.5)));
         gc->SetBrush(*wxTRANSPARENT_BRUSH);
         double w = this->FromDIP(16), h = this->FromDIP(12);
@@ -106,7 +108,7 @@ void MFDPatternSelectorAccordion::build_ui()
     // --- Warning label (hidden until a parse error occurs) ---
     m_pattern_warning = new wxStaticText(body, wxID_ANY, wxEmptyString,
         wxDefaultPosition, wxDefaultSize, wxST_NO_AUTORESIZE);
-    m_pattern_warning->SetForegroundColour(*wxRED);
+    m_pattern_warning->SetForegroundColour(MFDTheme::error_text());
     m_pattern_warning->SetFont(::Label::Body_12);
     m_pattern_warning->Hide();
     sizer->Add(m_pattern_warning, 0, wxEXPAND);
@@ -114,7 +116,7 @@ void MFDPatternSelectorAccordion::build_ui()
     // --- Header summary text (shown when collapsed) ---
     m_title_preview_text = new wxStaticText(get_header_panel(), wxID_ANY, wxEmptyString);
     m_title_preview_text->SetFont(::Label::Body_14);
-    m_title_preview_text->SetForegroundColour("#333333");
+    MFDTheme::apply_text(m_title_preview_text, MFDTheme::primary_text(), MFDTheme::card_background());
     m_title_preview_text->Show(false);
     add_header_control(m_title_preview_text);
 }

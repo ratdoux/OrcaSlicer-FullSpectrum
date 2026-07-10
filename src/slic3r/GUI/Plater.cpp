@@ -3194,6 +3194,9 @@ std::vector<int> MixedFilamentConfigPanel::decode_gradient_weights(const std::st
 
 std::vector<int> MixedFilamentConfigPanel::normalize_gradient_weights(const std::vector<int> &w, size_t n)
 {
+    if (n == 0)
+        return {};
+
     std::vector<int> out = w;
     if (out.size() != n) out.assign(n, n > 0 ? int(100 / n) : 0);
     int sum = 0;
@@ -6799,21 +6802,11 @@ void Sidebar::update_printer_thumbnail()
     }
     png_name += "_cover.png";
 
-    boost::filesystem::path(resources_dir()) / "profile" / vendor / png_name;
-    std::string printer_type    = selected_preset.get_current_printer_type(preset_bundle);
-
     try {
         p->image_printer->SetBitmap(create_scaled_bitmap(png_name, this, 48));
-    }
-    catch (std::exception& e) {
+    } catch (const std::exception&) {
         p->image_printer->SetBitmap(create_scaled_bitmap("printer_placeholder", this, 48));
     }
-    
-
-    /*if (printer_thumbnails.find(printer_type) != printer_thumbnails.end())
-        p->image_printer->SetBitmap(create_scaled_bitmap(, this, 48));
-    else
-        p->image_printer->SetBitmap(create_scaled_bitmap("printer_placeholder", this, 48));*/
 }
 
 void Sidebar::auto_calc_flushing_volumes(const int modify_id)

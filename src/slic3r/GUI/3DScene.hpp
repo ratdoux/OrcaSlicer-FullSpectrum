@@ -137,6 +137,11 @@ public:
     ColorRGBA color;
     // Color used to render this volume.
     ColorRGBA render_color;
+    // Display-only vertical gradient used for mixed filament preview in Prepare view.
+    std::vector<ColorRGBA> preview_gradient_colors;
+    std::vector<double>    preview_gradient_positions;
+    std::vector<std::vector<ColorRGBA>> preview_gradient_colors_by_extruder;
+    std::vector<std::vector<double>>    preview_gradient_positions_by_extruder;
 
     struct CompositeID {
         CompositeID(int object_id, int volume_id, int instance_id) : object_id(object_id), volume_id(volume_id), instance_id(instance_id) {}
@@ -331,7 +336,8 @@ public:
     virtual void render_with_outline(const GUI::Size& cnv_size);
 
     //BBS: add simple render function for thumbnail
-    void simple_render(GLShaderProgram* shader, ModelObjectPtrs& model_objects, std::vector<ColorRGBA>& extruder_colors, bool ban_light =false);
+    void simple_render(GLShaderProgram* shader, ModelObjectPtrs& model_objects, std::vector<ColorRGBA>& extruder_colors,
+                       bool ban_light = false, const std::array<float, 2>* z_range = nullptr);
 
     void                set_bounding_boxes_as_dirty() {
         m_transformed_bounding_box.reset();

@@ -6431,6 +6431,7 @@ void GUI_App::load_current_presets(bool active_preset_combox/*= false*/, bool ch
             "dithering_z_step_size",
             "dithering_local_z_mode",
             "dithering_local_z_whole_objects",
+            "dithering_local_z_infill",
             "dithering_local_z_direct_multicolor",
             "dithering_step_painted_zones_only",
             "mixed_filament_definitions"

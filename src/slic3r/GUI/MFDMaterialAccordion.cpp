@@ -11,6 +11,7 @@
 #include "Widgets/Button.hpp"
 #include "wxExtensions.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -34,7 +35,7 @@ void MFDMaterialAccordion::build_ui()
     // Add/delete action buttons in the header.
     // They are registered as action controls so clicking them does NOT collapse the section.
     m_delete_btn = new ScalableButton(get_header_panel(), wxID_ANY, "delete_filament");
-    m_delete_btn->SetBackgroundColour(GetBackgroundColour());
+    m_delete_btn->SetBackgroundColour(MFDTheme::card_background());
     m_delete_btn->SetToolTip(_L("Remove last material"));
     m_delete_btn->Enable(false);
     m_delete_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
@@ -43,7 +44,7 @@ void MFDMaterialAccordion::build_ui()
     add_header_control(m_delete_btn, /*is_action_control=*/true);
 
     m_add_btn = new ScalableButton(get_header_panel(), wxID_ANY, "add_filament");
-    m_add_btn->SetBackgroundColour(GetBackgroundColour());
+    m_add_btn->SetBackgroundColour(MFDTheme::card_background());
     m_add_btn->SetToolTip(_L("Add material"));
     m_add_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
         if (m_on_add_filament) m_on_add_filament();
@@ -53,12 +54,13 @@ void MFDMaterialAccordion::build_ui()
     // Header summary panel (shown when collapsed)
     m_title_preview_panel = new wxPanel(get_header_panel(), wxID_ANY,
         wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_title_preview_panel->SetBackgroundColour(GetBackgroundColour());
+    m_title_preview_panel->SetBackgroundColour(MFDTheme::card_background());
     m_title_preview_panel->Show(false);
     add_header_control(m_title_preview_panel);
 
     // Body: the combobox container
     m_combobox_panel = new wxPanel(get_body_panel(), wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    m_combobox_panel->SetBackgroundColour(MFDTheme::card_background());
     m_combobox_sizer = new wxBoxSizer(wxVERTICAL);
     m_combobox_panel->SetSizer(m_combobox_sizer);
     get_body_sizer()->Add(m_combobox_panel, 0, wxEXPAND);
@@ -75,6 +77,7 @@ bool MFDMaterialAccordion::add_combobox_row(int selected_filament_index)
     const wxSize combobox_size(FromDIP(166), FromDIP(30));
 
     wxPanel*    row_panel = new wxPanel(m_combobox_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
+    row_panel->SetBackgroundColour(MFDTheme::card_background());
     wxBoxSizer* row_sizer = new wxBoxSizer(wxHORIZONTAL);
     row_panel->SetSizer(row_sizer);
 
@@ -82,6 +85,7 @@ bool MFDMaterialAccordion::add_combobox_row(int selected_filament_index)
     wxStaticText* label = new wxStaticText(row_panel, wxID_ANY,
         wxString::Format(_L("Filament %d"), new_count));
     label->SetFont(::Label::Body_12);
+    MFDTheme::apply_text(label, MFDTheme::primary_text(), row_panel->GetBackgroundColour());
 
     ComboBox* combobox = new ComboBox(row_panel, wxID_ANY, wxEmptyString,
         wxDefaultPosition, combobox_size, 0, nullptr, wxCB_READONLY);
@@ -91,6 +95,7 @@ bool MFDMaterialAccordion::add_combobox_row(int selected_filament_index)
     wxStaticText* weight_label = new wxStaticText(row_panel, wxID_ANY, "--%");
     weight_label->SetMinSize(wxSize(FromDIP(30), -1));
     weight_label->SetFont(::Label::Body_12);
+    MFDTheme::apply_text(weight_label, MFDTheme::secondary_text(), row_panel->GetBackgroundColour());
     weight_label->Show(m_show_percentages);
 
     row_sizer->Add(label,        0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
@@ -299,7 +304,7 @@ void MFDMaterialAccordion::update_title_preview(
                 wxString::Format("%d%%", percentages[i]));
             bind_header_events(pct_text);
             pct_text->SetFont(::Label::Body_14);
-            pct_text->SetForegroundColour("#333333");
+            MFDTheme::apply_text(pct_text, MFDTheme::primary_text(), m_title_preview_panel->GetBackgroundColour());
             pct_text->SetToolTip(wxString::FromUTF8(name.c_str()));
 
             sizer->Add(swatch,   0, wxALIGN_CENTER_VERTICAL);

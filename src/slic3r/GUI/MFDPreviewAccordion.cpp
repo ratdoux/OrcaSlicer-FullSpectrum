@@ -7,6 +7,7 @@
 
 #include "I18N.hpp"
 #include "GUI_App.hpp"
+#include "MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 
@@ -222,8 +223,8 @@ void MFDPreviewAccordion::draw_layer_stack_common(
     double             corner_radius)
 {
     // Grey contrasting background
-    gc->SetBrush(wxBrush(wxColour("#F0F0F0")));
-    gc->SetPen(wxPen(wxColour("#E0E0E0"), 1));
+    gc->SetBrush(wxBrush(MFDTheme::card_border()));
+    gc->SetPen(wxPen(StateColor::darkModeColorFor(wxColour("#E0E0E0")), 1));
     gc->DrawRoundedRectangle(0, 0, size.x, size.y, corner_radius);
 
     // Clip to the contrasting background area
@@ -431,7 +432,7 @@ void MFDPreviewAccordion::paint_color_panel(wxPaintEvent&)
     } else {
         // Solid color with a border
         gc->SetBrush(wxBrush(m_color_panel->GetBackgroundColour()));
-        gc->SetPen(wxPen(wxColour("#EBEBEB"), 1));
+        gc->SetPen(wxPen(MFDTheme::card_border(), 1));
         gc->DrawRectangle(0, 0, size.x, size.y);
     }
 }

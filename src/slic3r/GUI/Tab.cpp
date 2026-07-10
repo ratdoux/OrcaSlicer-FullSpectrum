@@ -1925,7 +1925,9 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     }
 
     const bool refresh_mixed_filament_panel =
-        m_type == Preset::TYPE_PRINT && opt_key == "mixed_filament_component_bias_enabled";
+        m_type == Preset::TYPE_PRINT &&
+        (opt_key == "mixed_filament_component_bias_enabled" ||
+         opt_key == "dithering_local_z_direct_multicolor");
 
     // Keep Mixed Filaments global settings in sync with project_config. In
     // full_fff_config(), project_config is applied last and would otherwise
@@ -1944,6 +1946,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "dithering_local_z_mode" ||
          opt_key == "dithering_local_z_whole_objects" ||
          opt_key == "dithering_local_z_direct_multicolor" ||
+         opt_key == "dithering_local_z_gradient_overlap_window" ||
          opt_key == "dithering_step_painted_zones_only" ||
          opt_key == "mixed_filament_definitions")) {
         DynamicPrintConfig &project_cfg = wxGetApp().preset_bundle->project_config;
@@ -2693,6 +2696,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_local_z_whole_objects");
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
+        optgroup->append_single_option_line("dithering_local_z_gradient_overlap_window");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");
 
         optgroup = page->new_optgroup(L("Fuzzy Skin"), L"fuzzy_skin");

@@ -583,25 +583,17 @@ std::vector<wxBitmap*> get_extruder_color_icons(bool thin_icon/* = false*/)
                 for (const auto &mf : mfs) {
                     if (mf.deleted || !mf.enabled) continue;
                     if (visible == mixed_idx) {
-                        const bool is_gradient = Slic3r::GUI::is_simple_gradient(mf);
-                        if (is_gradient) {
-                            auto get_c = [&](unsigned fid) -> wxColour {
-                                if (fid == 0 || fid > physical_colors.size())
-                                    return wxColour("#26A69A");
-                                wxColour parsed(physical_colors[fid - 1]);
-                                return parsed.IsOk() ? parsed : wxColour("#26A69A");
-                            };
-                            const wxColour ca = get_c(mf.component_a);
-                            const wxColour cb = get_c(mf.component_b);
-                            const bool a_to_b = mf.gradient_start >= mf.gradient_end;
-
+                        Slic3r::MixedFilamentDisplayContext icon_ctx;
+                        icon_ctx.num_physical = physical_colors.size();
+                        icon_ctx.physical_colors = physical_colors;
+                        const std::vector<wxColour> gradient_colors = Slic3r::GUI::mixed_filament_gradient_colors(mf, icon_ctx);
+                        if (gradient_colors.size() >= 2) {
                             Slic3r::GUI::ColorBlockParams params;
                             params.mode   = Slic3r::GUI::ColorBlockParams::Gradient;
                             params.width  = icon_width;
                             params.height = icon_height;
                             params.label  = label;
-                            params.gradient_colors.push_back(a_to_b ? ca : cb);
-                            params.gradient_colors.push_back(a_to_b ? cb : ca);
+                            params.gradient_colors = gradient_colors;
 
                             bmps.push_back(Slic3r::GUI::get_color_block_bitmap_cached(params));
                         }
