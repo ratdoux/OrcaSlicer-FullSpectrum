@@ -179,6 +179,96 @@ static ArchiveImportState import_state_from_plan(const PackageWritePlan &plan)
 
 } // namespace
 
+TEST_CASE("Mixed filament project optical metadata survives presets without calibration values", "[MixedFilament]")
+{
+    PresetBundle bundle;
+    const std::string selected_name = Preset::remove_suffix_modified(bundle.filaments.get_edited_preset().name);
+    bundle.filament_presets.assign(2, selected_name);
+    bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values = {"#FF0000", "#0000FF"};
+    bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values = {0.8, 1.6};
+    bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values = {
+        "fs_red_project", "fs_blue_project"};
+
+    ConfigOptionFloats *preset_tds =
+        bundle.filaments.get_edited_preset().config.option<ConfigOptionFloats>("filament_transmission_distance");
+    ConfigOptionStrings *preset_material_ids =
+        bundle.filaments.get_edited_preset().config.option<ConfigOptionStrings>("filament_full_spectrum_material_id");
+    REQUIRE(preset_tds != nullptr);
+    REQUIRE(preset_material_ids != nullptr);
+    preset_tds->values = {0.0};
+    preset_material_ids->values = {""};
+
+    bundle.update_multi_material_filament_presets();
+
+    CHECK(bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values ==
+          std::vector<double>{0.8, 1.6});
+    CHECK(bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values ==
+          std::vector<std::string>{"fs_red_project", "fs_blue_project"});
+}
+
+TEST_CASE("Mixed filament selected preset optical metadata overrides project fallbacks", "[MixedFilament]")
+{
+    PresetBundle bundle;
+    const std::string selected_name = Preset::remove_suffix_modified(bundle.filaments.get_edited_preset().name);
+    bundle.filament_presets.assign(2, selected_name);
+    bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values = {"#FF0000", "#0000FF"};
+    bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values = {0.8, 1.6};
+    bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values = {
+        "fs_red_project", "fs_blue_project"};
+
+    ConfigOptionFloats *preset_tds =
+        bundle.filaments.get_edited_preset().config.option<ConfigOptionFloats>("filament_transmission_distance");
+    ConfigOptionStrings *preset_material_ids =
+        bundle.filaments.get_edited_preset().config.option<ConfigOptionStrings>("filament_full_spectrum_material_id");
+    REQUIRE(preset_tds != nullptr);
+    REQUIRE(preset_material_ids != nullptr);
+    preset_tds->values = {2.4};
+    preset_material_ids->values = {"fs_selected_material"};
+
+    bundle.update_multi_material_filament_presets();
+
+    CHECK(bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values ==
+          std::vector<double>{2.4, 2.4});
+    CHECK(bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values ==
+          std::vector<std::string>{"fs_selected_material", "fs_selected_material"});
+}
+
+TEST_CASE("Mixed filament optical metadata stays slot aligned across delete and add", "[MixedFilament]")
+{
+    PresetBundle bundle;
+    const std::string selected_name = Preset::remove_suffix_modified(bundle.filaments.get_edited_preset().name);
+    bundle.filament_presets.assign(3, selected_name);
+    bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values = {
+        "#FF0000", "#00FF00", "#0000FF"};
+    bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values = {0.5, 1.5, 2.5};
+    bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values = {
+        "fs_red", "fs_green", "fs_blue"};
+
+    ConfigOptionFloats *preset_tds =
+        bundle.filaments.get_edited_preset().config.option<ConfigOptionFloats>("filament_transmission_distance");
+    ConfigOptionStrings *preset_material_ids =
+        bundle.filaments.get_edited_preset().config.option<ConfigOptionStrings>("filament_full_spectrum_material_id");
+    REQUIRE(preset_tds != nullptr);
+    REQUIRE(preset_material_ids != nullptr);
+    preset_tds->values = {0.0};
+    preset_material_ids->values = {""};
+
+    bundle.update_multi_material_filament_presets();
+    bundle.update_num_filaments(1);
+
+    CHECK(bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values ==
+          std::vector<double>{0.5, 2.5});
+    CHECK(bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values ==
+          std::vector<std::string>{"fs_red", "fs_blue"});
+
+    bundle.set_num_filaments(3);
+
+    CHECK(bundle.project_config.option<ConfigOptionFloats>("filament_transmission_distance")->values ==
+          std::vector<double>{0.5, 2.5, 0.0});
+    CHECK(bundle.project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values ==
+          std::vector<std::string>{"fs_red", "fs_blue", ""});
+}
+
 TEST_CASE("Mixed filament remap follows stable row ids when same-pair rows reorder", "[MixedFilament]")
 {
     PresetBundle bundle;

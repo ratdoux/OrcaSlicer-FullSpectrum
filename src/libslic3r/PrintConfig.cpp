@@ -2060,6 +2060,22 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionStrings{ "#F2754E" });
 
+    def = this->add("filament_transmission_distance", coFloats);
+    def->label = L("Transmission distance");
+    def->tooltip = L("Measured optical transmission distance for color calibration, in millimeters. "
+                     "Use 0 when unknown.");
+    def->sidetext = "mm";
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloats{ 0.0 });
+
+    def = this->add("filament_full_spectrum_material_id", coStrings);
+    def->label = L("FullSpectrum material ID");
+    def->tooltip = L("Stable material identifier from the FullSpectrum calibration database. "
+                     "Leave empty for uncalibrated filaments; color-only matching is used as a limited legacy fallback.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionStrings{ "" });
+
     def = this->add("filament_multi_colors", coStrings);
     def->label = L("Filament multi colors");
     def->tooltip = L("Serialized filament color sequence. Multiple colors are separated by '|'.");
@@ -6484,6 +6500,7 @@ void PrintConfigDef::init_filament_option_keys()
         "retraction_length", "z_hop", "z_hop_types", "retract_lift_above", "retract_lift_below", "retract_lift_enforce", "retraction_speed", "deretraction_speed",
         "retract_before_wipe", "retract_restart_extra", "retraction_minimum_travel", "wipe", "wipe_distance",
         "retract_when_changing_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "filament_colour",
+        "filament_transmission_distance", "filament_full_spectrum_material_id",
         "filament_multi_colors", "filament_colour_mode",
         "default_filament_profile","retraction_distances_when_cut","long_retractions_when_cut"/*,"filament_seam_gap"*/
     };

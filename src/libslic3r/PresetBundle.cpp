@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <set>
 #include <fstream>
@@ -161,6 +162,8 @@ static std::vector<std::string> s_project_options {
     "flush_volumes_matrix",
     // BBS
     "filament_colour",
+    "filament_transmission_distance",
+    "filament_full_spectrum_material_id",
     "filament_multi_colors",
     "filament_colour_mode",
     "wipe_tower_x",
@@ -3683,7 +3686,69 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
             };
 
             color_opt->values.resize(num_filaments, "#26A69A");
-            this->mixed_filaments.auto_generate(color_opt->values);
+
+            const Preset *edited_filament_preset = &this->filaments.get_edited_preset();
+            const std::string edited_filament_name = edited_filament_preset != nullptr ?
+                Preset::remove_suffix_modified(edited_filament_preset->name) :
+                std::string();
+
+            // Project TD values are the per-slot fallback for projects whose
+            // selected filament preset predates this setting (or is missing).
+            // Keep the fallback vector aligned when a physical filament is
+            // deleted before applying any values supplied by selected presets.
+            const ConfigOptionFloats *project_td_opt =
+                this->project_config.option<ConfigOptionFloats>("filament_transmission_distance");
+            std::vector<double> physical_tds = project_td_opt != nullptr ?
+                project_td_opt->values : std::vector<double>();
+            if (deleting_filament && to_delete_filament_id < physical_tds.size())
+                physical_tds.erase(physical_tds.begin() + ptrdiff_t(to_delete_filament_id));
+            physical_tds.resize(num_filaments, 0.0);
+            for (double &td : physical_tds) {
+                if (!std::isfinite(td) || td <= 0.0)
+                    td = 0.0;
+            }
+
+            const ConfigOptionStrings *project_material_id_opt =
+                this->project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id");
+            std::vector<std::string> physical_material_ids = project_material_id_opt != nullptr ?
+                project_material_id_opt->values : std::vector<std::string>();
+            if (deleting_filament && to_delete_filament_id < physical_material_ids.size())
+                physical_material_ids.erase(physical_material_ids.begin() + ptrdiff_t(to_delete_filament_id));
+            physical_material_ids.resize(num_filaments);
+
+            for (size_t i = 0; i < num_filaments && i < this->filament_presets.size(); ++i) {
+                const std::string selected_filament_name = Preset::remove_suffix_modified(this->filament_presets[i]);
+                const Preset *filament_preset =
+                    (!edited_filament_name.empty() && selected_filament_name == edited_filament_name) ?
+                    edited_filament_preset :
+                    this->filaments.find_preset(selected_filament_name, true);
+                const ConfigOptionFloats *td_opt = filament_preset != nullptr ?
+                    filament_preset->config.option<ConfigOptionFloats>("filament_transmission_distance") :
+                    nullptr;
+                if (td_opt != nullptr && !td_opt->values.empty()) {
+                    const double td = td_opt->get_at(0);
+                    if (std::isfinite(td) && td > 0.0)
+                        physical_tds[i] = td;
+                }
+                const ConfigOptionStrings *material_id_opt = filament_preset != nullptr ?
+                    filament_preset->config.option<ConfigOptionStrings>("filament_full_spectrum_material_id") :
+                    nullptr;
+                if (material_id_opt != nullptr && !material_id_opt->values.empty()) {
+                    const std::string &material_id = material_id_opt->get_at(0);
+                    if (!material_id.empty())
+                        physical_material_ids[i] = material_id;
+                }
+            }
+            if (ConfigOptionFloats *td_opt = this->project_config.option<ConfigOptionFloats>("filament_transmission_distance"))
+                td_opt->values = physical_tds;
+            else
+                this->project_config.set_key_value("filament_transmission_distance", new ConfigOptionFloats(physical_tds));
+            if (ConfigOptionStrings *material_id_opt =
+                    this->project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id"))
+                material_id_opt->values = physical_material_ids;
+            else
+                this->project_config.set_key_value(
+                    "filament_full_spectrum_material_id", new ConfigOptionStrings(physical_material_ids));
 
             int   gradient_mode = get_mixed_mode(false) ? 1 : 0;
             float lower_bound = get_mixed_float("mixed_filament_height_lower_bound", 0.04f);
@@ -3693,6 +3758,17 @@ void PresetBundle::update_multi_material_filament_presets(size_t to_delete_filam
             lower_bound = std::max(0.01f, lower_bound);
             upper_bound = std::max(lower_bound, upper_bound);
 
+            MixedFilamentDisplayContext context;
+            context.num_physical = num_filaments;
+            context.physical_colors = color_opt->values;
+            context.physical_tds = physical_tds;
+            context.physical_material_ids = physical_material_ids;
+            context.preview_settings.mixed_lower_bound = lower_bound;
+            context.preview_settings.mixed_upper_bound = upper_bound;
+            context.component_bias_enabled = get_mixed_bool("mixed_filament_component_bias_enabled", false);
+            this->mixed_filaments.set_display_context(context);
+
+            this->mixed_filaments.auto_generate(color_opt->values);
             this->mixed_filaments.clear_custom_entries();
             this->mixed_filaments.load_custom_entries(get_mixed_string("mixed_filament_definitions"), color_opt->values);
             this->mixed_filaments.apply_gradient_settings(gradient_mode, lower_bound, upper_bound, advanced_dithering);
