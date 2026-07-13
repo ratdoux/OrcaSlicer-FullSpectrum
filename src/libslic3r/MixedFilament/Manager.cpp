@@ -265,7 +265,7 @@ void MixedFilamentManager::auto_generate(const std::vector<std::string>& filamen
         custom_definitions.push_back(std::move(prev));
     }
 
-    if (true) {
+    if (n < 2 || !auto_generate_enabled()) {
         for (MixedFilamentDefinition& definition : custom_definitions)
             m_definitions.push_back(std::move(definition));
         refresh_display_colors(filament_colours);
