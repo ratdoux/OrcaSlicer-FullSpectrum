@@ -105,6 +105,8 @@ std::vector<unsigned int> build_effective_pair_preview_sequence(unsigned int com
                                                                 int          percent_b,
                                                                 bool         limit_cycle);
 std::string               blend_display_color_from_sequence(const std::vector<std::string>&  colors,
+                                                            const std::vector<double>&       tds,
+                                                            const std::vector<std::string>&  material_ids,
                                                             size_t                           num_physical,
                                                             const std::vector<unsigned int>& sequence,
                                                             const std::string&               fallback);

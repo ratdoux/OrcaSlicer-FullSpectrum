@@ -135,6 +135,8 @@ std::vector<unsigned int> build_effective_pair_preview_sequence(unsigned int com
 }
 
 std::string blend_display_color_from_sequence(const std::vector<std::string>&  colors,
+                                              const std::vector<double>&       tds,
+                                              const std::vector<std::string>&  material_ids,
                                               size_t                           num_physical,
                                               const std::vector<unsigned int>& sequence,
                                               const std::string&               fallback)
@@ -153,18 +155,25 @@ std::string blend_display_color_from_sequence(const std::vector<std::string>&  c
     if (total == 0)
         return fallback;
 
-    std::vector<std::pair<std::string, int>> color_percents;
+    std::vector<MixedFilamentColorInput> color_percents;
     color_percents.reserve(num_physical);
     for (size_t id = 1; id <= num_physical; ++id) {
         if (counts[id] == 0 || id > colors.size())
             continue;
-        color_percents.emplace_back(colors[id - 1], int(counts[id]));
+        std::optional<double> td;
+        if (MixedFilamentManager::use_td_for_color_prediction() && id <= tds.size() && std::isfinite(tds[id - 1]) &&
+            tds[id - 1] > EPSILON)
+            td = tds[id - 1];
+        std::optional<std::string> material_id;
+        if (id <= material_ids.size() && !material_ids[id - 1].empty())
+            material_id = material_ids[id - 1];
+        color_percents.push_back({colors[id - 1], int(counts[id]), td, material_id});
     }
     if (color_percents.empty())
         return fallback;
 
     if (color_percents.size() == 1)
-        return color_percents.front().first;
+        return color_percents.front().color_hex;
 
     return MixedFilamentManager::blend_color_multi(color_percents);
 }

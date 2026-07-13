@@ -43,6 +43,5 @@ deps_src/build/
 .omc
 nul
 .codex_tmp
-tests
 .hermes/
 CLAUDE.md

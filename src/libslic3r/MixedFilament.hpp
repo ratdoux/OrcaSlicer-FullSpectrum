@@ -11,6 +11,12 @@
 
 namespace Slic3r {
 
+enum class MixedFilamentColorEngine : uint8_t
+{
+    FilamentMixer = 0,
+    FullSpectrumKSPairResidual = 1
+};
+
 // Persisted compact row used by existing project settings and older 3MF
 // compatibility paths. New domain/UI code should use MixedFilamentDefinition;
 // this legacy row is a serialization adapter only.
@@ -304,6 +310,16 @@ struct MixedFilamentDisplayContext
     std::vector<double>          nozzle_diameters;
     MixedFilamentPreviewSettings preview_settings;
     bool                         component_bias_enabled { false };
+    std::vector<double>          physical_tds;
+    std::vector<std::string>     physical_material_ids;
+};
+
+struct MixedFilamentColorInput
+{
+    std::string                color_hex;
+    int                        percent = 0;
+    std::optional<double>      td_mm;
+    std::optional<std::string> material_id;
 };
 
 int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDefinition     &definition,
@@ -351,6 +367,12 @@ public:
 
     static void set_auto_generate_enabled(bool enabled);
     static bool auto_generate_enabled();
+    static void set_color_engine(MixedFilamentColorEngine engine);
+    static MixedFilamentColorEngine color_engine();
+    static MixedFilamentColorEngine color_engine_from_string(const std::string &value);
+    static const char *color_engine_to_string(MixedFilamentColorEngine engine);
+    static void set_use_td_for_color_prediction(bool enabled);
+    static bool use_td_for_color_prediction();
 
     // ---- Auto-generation ------------------------------------------------
 
@@ -452,17 +474,33 @@ public:
     // m_definitions. Virtual IDs enumerate non-deleted mixed rows only.
     int mixed_index_from_filament_id(unsigned int filament_id, size_t num_physical) const;
 
-    // Blend N colours using weighted FilamentMixer blending.
+    // Blend N colours using the selected display-color engine.
     // color_percents: vector of (hex_color, percent) where percents sum to 100.
     static std::string blend_color_multi(
         const std::vector<std::pair<std::string, int>> &color_percents);
+    static std::string blend_color_multi(
+        const std::vector<MixedFilamentColorInput> &color_percents);
 
     std::optional<MixedFilamentDefinition> mixed_filament_definition_from_id(unsigned int filament_id, size_t num_physical) const;
 
-    // Compute a display colour by blending two colours with FilamentMixer.
+    // Compute a display colour by blending two colours with the selected engine.
     static std::string blend_color(const std::string &color_a,
                                    const std::string &color_b,
                                    int ratio_a, int ratio_b);
+    static std::string blend_color(const std::string           &color_a,
+                                   const std::string           &color_b,
+                                   int                          ratio_a,
+                                   int                          ratio_b,
+                                   const std::optional<double> &td_a_mm,
+                                   const std::optional<double> &td_b_mm);
+    static std::string blend_color(const std::string                &color_a,
+                                   const std::string                &color_b,
+                                   int                               ratio_a,
+                                   int                               ratio_b,
+                                   const std::optional<double>      &td_a_mm,
+                                   const std::optional<double>      &td_b_mm,
+                                   const std::optional<std::string> &material_id_a,
+                                   const std::optional<std::string> &material_id_b);
     static float max_component_surface_offset_mm(float reference_width_mm = 0.4f);
     static float max_pair_bias_mm(float reference_width_mm = 0.4f);
     static std::pair<float, float> surface_offset_pair_from_signed_bias(float bias_mm,

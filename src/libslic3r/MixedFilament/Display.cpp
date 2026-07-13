@@ -1,4 +1,5 @@
 #include "../MixedFilament.hpp"
+#include "../FullSpectrumKSPairResidual.hpp"
 #include "Internal.hpp"
 #include "../filament_mixer.h"
 #include "../libslic3r.h"
@@ -10,6 +11,39 @@
 namespace Slic3r {
 
 using namespace MixedFilamentInternal;
+
+namespace {
+
+std::optional<double> physical_td_for_id(const MixedFilamentDisplayContext& context, unsigned int id)
+{
+    if (!MixedFilamentManager::use_td_for_color_prediction() || id == 0 || id > context.physical_tds.size())
+        return std::nullopt;
+
+    const double td = context.physical_tds[id - 1];
+    if (!std::isfinite(td) || td <= EPSILON)
+        return std::nullopt;
+    return td;
+}
+
+std::optional<std::string> physical_material_id_for_id(const MixedFilamentDisplayContext& context, unsigned int id)
+{
+    if (id == 0 || id > context.physical_material_ids.size() || context.physical_material_ids[id - 1].empty())
+        return std::nullopt;
+    return context.physical_material_ids[id - 1];
+}
+
+std::vector<FullSpectrumKSPairResidualColorInput> full_spectrum_inputs_from_mixed_inputs(
+    const std::vector<MixedFilamentColorInput>& color_percents)
+{
+    std::vector<FullSpectrumKSPairResidualColorInput> inputs;
+    inputs.reserve(color_percents.size());
+    const bool use_td = MixedFilamentManager::use_td_for_color_prediction();
+    for (const MixedFilamentColorInput& input : color_percents)
+        inputs.push_back({input.color_hex, input.percent, use_td ? input.td_mm : std::nullopt, input.material_id});
+    return inputs;
+}
+
+} // namespace
 
 int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDefinition&     definition,
                                                            const MixedFilamentPreviewSettings& preview_settings)
@@ -133,14 +167,18 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
                                                                                                context.nozzle_diameters,
                                                                                                context.component_bias_enabled);
         return MixedFilamentManager::blend_color(context.physical_colors[component_a - 1],
-                                                 context.physical_colors[component_b - 1], apparent_pct_a, apparent_pct_b);
+                                                 context.physical_colors[component_b - 1], apparent_pct_a, apparent_pct_b,
+                                                 physical_td_for_id(context, component_a), physical_td_for_id(context, component_b),
+                                                 physical_material_id_for_id(context, component_a),
+                                                 physical_material_id_for_id(context, component_b));
     }
 
     if (definition.recipe.manual_pattern) {
         const std::vector<unsigned int> sequence = mixed_filament_manual_pattern_preview_sequence(definition, context.num_physical,
                                                                                                   context.preview_settings.wall_loops);
         if (!sequence.empty())
-            return blend_display_color_from_sequence(context.physical_colors, context.num_physical, sequence, fallback);
+            return blend_display_color_from_sequence(
+                context.physical_colors, context.physical_tds, context.physical_material_ids, context.num_physical, sequence, fallback);
     }
 
     if (definition.behavior.distribution != MixedFilamentDistributionMode::Simple) {
@@ -148,7 +186,8 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
         if (blend_ids.size() >= 3) {
             const std::vector<unsigned int> sequence = mixed_filament_weighted_blend_sequence(definition, context.num_physical);
             if (!sequence.empty())
-                return blend_display_color_from_sequence(context.physical_colors, context.num_physical, sequence, fallback);
+                return blend_display_color_from_sequence(
+                    context.physical_colors, context.physical_tds, context.physical_material_ids, context.num_physical, sequence, fallback);
         }
     }
 
@@ -156,7 +195,8 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
     const std::vector<unsigned int> pair_sequence = build_effective_pair_preview_sequence(component_a, component_b,
                                                                                           effective_mix_b, false);
     if (!pair_sequence.empty())
-        return blend_display_color_from_sequence(context.physical_colors, context.num_physical, pair_sequence, fallback);
+        return blend_display_color_from_sequence(
+            context.physical_colors, context.physical_tds, context.physical_material_ids, context.num_physical, pair_sequence, fallback);
 
     if (component_a == 0 || component_b == 0 || component_a > context.num_physical ||
         component_b > context.num_physical || component_a > context.physical_colors.size() ||
@@ -166,7 +206,9 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
 
     const int mix_b = std::clamp(pair.component_b_percent, 0, 100);
     return MixedFilamentManager::blend_color(context.physical_colors[component_a - 1], context.physical_colors[component_b - 1],
-                                             100 - mix_b, mix_b);
+                                             100 - mix_b, mix_b, physical_td_for_id(context, component_a),
+                                             physical_td_for_id(context, component_b), physical_material_id_for_id(context, component_a),
+                                             physical_material_id_for_id(context, component_b));
 }
 
 std::string compute_mixed_filament_display_color(const MixedFilamentLegacyRow& row, const MixedFilamentDisplayContext& context)
@@ -174,13 +216,26 @@ std::string compute_mixed_filament_display_color(const MixedFilamentLegacyRow& r
     return compute_mixed_filament_display_color(mixed_filament_definition_from_legacy_row(row, context.num_physical), context);
 }
 
-// Blend N colours using weighted pairwise FilamentMixer blending.
 std::string MixedFilamentManager::blend_color_multi(const std::vector<std::pair<std::string, int>>& color_percents)
+{
+    std::vector<MixedFilamentColorInput> inputs;
+    inputs.reserve(color_percents.size());
+    for (const auto& [hex, percent] : color_percents)
+        inputs.push_back({hex, percent, std::nullopt, std::nullopt});
+    return blend_color_multi(inputs);
+}
+
+std::string MixedFilamentManager::blend_color_multi(const std::vector<MixedFilamentColorInput>& color_percents)
 {
     if (color_percents.empty())
         return "#000000";
     if (color_percents.size() == 1)
-        return color_percents.front().first;
+        return color_percents.front().color_hex;
+
+    if (color_engine() == MixedFilamentColorEngine::FullSpectrumKSPairResidual) {
+        if (const auto calibrated = full_spectrum_ks_blend_color_multi(full_spectrum_inputs_from_mixed_inputs(color_percents)))
+            return *calibrated;
+    }
 
     struct WeightedColor
     {
@@ -191,10 +246,11 @@ std::string MixedFilamentManager::blend_color_multi(const std::vector<std::pair<
     colors.reserve(color_percents.size());
 
     int total_pct = 0;
-    for (const auto& [hex, pct] : color_percents) {
+    for (const MixedFilamentColorInput& input : color_percents) {
+        const int pct = input.percent;
         if (pct <= 0)
             continue;
-        colors.push_back({parse_hex_color(hex), pct});
+        colors.push_back({parse_hex_color(input.color_hex), pct});
         total_pct += pct;
     }
     if (colors.empty() || total_pct <= 0)
@@ -221,6 +277,38 @@ std::string MixedFilamentManager::blend_color_multi(const std::vector<std::pair<
 
 std::string MixedFilamentManager::blend_color(const std::string& color_a, const std::string& color_b, int ratio_a, int ratio_b)
 {
+    return blend_color(color_a, color_b, ratio_a, ratio_b, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+}
+
+std::string MixedFilamentManager::blend_color(const std::string&           color_a,
+                                              const std::string&           color_b,
+                                              int                          ratio_a,
+                                              int                          ratio_b,
+                                              const std::optional<double>& td_a_mm,
+                                              const std::optional<double>& td_b_mm)
+{
+    return blend_color(color_a, color_b, ratio_a, ratio_b, td_a_mm, td_b_mm, std::nullopt, std::nullopt);
+}
+
+std::string MixedFilamentManager::blend_color(const std::string&                color_a,
+                                              const std::string&                color_b,
+                                              int                               ratio_a,
+                                              int                               ratio_b,
+                                              const std::optional<double>&      td_a_mm,
+                                              const std::optional<double>&      td_b_mm,
+                                              const std::optional<std::string>& material_id_a,
+                                              const std::optional<std::string>& material_id_b)
+{
+    const std::optional<double> active_td_a = use_td_for_color_prediction() ? td_a_mm : std::nullopt;
+    const std::optional<double> active_td_b = use_td_for_color_prediction() ? td_b_mm : std::nullopt;
+    if (color_engine() == MixedFilamentColorEngine::FullSpectrumKSPairResidual) {
+        if (const auto calibrated = full_spectrum_ks_blend_color_multi({
+                {color_a, std::max(0, ratio_a), active_td_a, material_id_a},
+                {color_b, std::max(0, ratio_b), active_td_b, material_id_b}
+            }))
+            return *calibrated;
+    }
+
     const int   safe_a = std::max(0, ratio_a);
     const int   safe_b = std::max(0, ratio_b);
     const int   total  = safe_a + safe_b;

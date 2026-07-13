@@ -14,6 +14,8 @@ namespace Slic3r {
 namespace {
 
 std::atomic_bool s_mixed_filament_auto_generate_enabled{true};
+std::atomic<MixedFilamentColorEngine> s_mixed_filament_color_engine{MixedFilamentColorEngine::FilamentMixer};
+std::atomic_bool s_mixed_filament_use_td_for_color_prediction{true};
 
 } // namespace
 
@@ -136,6 +138,44 @@ void MixedFilamentManager::set_auto_generate_enabled(bool enabled)
 }
 
 bool MixedFilamentManager::auto_generate_enabled() { return s_mixed_filament_auto_generate_enabled.load(std::memory_order_relaxed); }
+
+void MixedFilamentManager::set_color_engine(MixedFilamentColorEngine engine)
+{
+    s_mixed_filament_color_engine.store(engine, std::memory_order_relaxed);
+}
+
+MixedFilamentColorEngine MixedFilamentManager::color_engine()
+{
+    return s_mixed_filament_color_engine.load(std::memory_order_relaxed);
+}
+
+void MixedFilamentManager::set_use_td_for_color_prediction(bool enabled)
+{
+    s_mixed_filament_use_td_for_color_prediction.store(enabled, std::memory_order_relaxed);
+}
+
+bool MixedFilamentManager::use_td_for_color_prediction()
+{
+    return s_mixed_filament_use_td_for_color_prediction.load(std::memory_order_relaxed);
+}
+
+MixedFilamentColorEngine MixedFilamentManager::color_engine_from_string(const std::string& value)
+{
+    if (value == "ks_pair_residual" || value == "fullspectrum_ks_pair_residual")
+        return MixedFilamentColorEngine::FullSpectrumKSPairResidual;
+    return MixedFilamentColorEngine::FilamentMixer;
+}
+
+const char* MixedFilamentManager::color_engine_to_string(MixedFilamentColorEngine engine)
+{
+    switch (engine) {
+    case MixedFilamentColorEngine::FullSpectrumKSPairResidual:
+        return "ks_pair_residual";
+    case MixedFilamentColorEngine::FilamentMixer:
+    default:
+        return "filament_mixer";
+    }
+}
 
 std::vector<unsigned int> MixedFilamentManager::decode_gradient_component_ids(const std::string& components, size_t num_physical)
 {
@@ -773,6 +813,8 @@ void MixedFilamentManager::refresh_display_colors(const std::vector<std::string>
         context.preview_settings.wall_loops = 1;
     if (context.nozzle_diameters.size() < context.num_physical)
         context.nozzle_diameters.resize(context.num_physical, 0.4);
+    if (context.physical_tds.size() < context.num_physical)
+        context.physical_tds.resize(context.num_physical, 0.0);
 
     for (MixedFilamentDefinition& definition : m_definitions) {
         definition.presentation.display_color = compute_mixed_filament_display_color(definition, context);
@@ -889,6 +931,8 @@ void MixedFilamentManager::set_display_context(const MixedFilamentDisplayContext
         m_display_context.preview_settings.wall_loops = 1;
     if (m_display_context.nozzle_diameters.size() < m_display_context.num_physical)
         m_display_context.nozzle_diameters.resize(m_display_context.num_physical, 0.4);
+    if (m_display_context.physical_tds.size() < m_display_context.num_physical)
+        m_display_context.physical_tds.resize(m_display_context.num_physical, 0.0);
     if (!m_display_context.physical_colors.empty())
         refresh_display_colors(m_display_context.physical_colors);
 }
