@@ -11780,7 +11780,8 @@ void Plater::priv::on_select_preset(wxCommandEvent &evt)
         wxGetApp().plater()->update_project_dirty_from_presets();
         wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
         sidebar->update_dynamic_filament_list();
-        sidebar->update_mixed_filament_panel(false);
+        if (SidebarFilamentMenu *filament_menu = sidebar->filament_menu())
+            filament_menu->refresh_mixed_color_previews();
         bool flag_is_change = is_support_filament(idx);
         if (flag != flag_is_change) {
             sidebar->auto_calc_flushing_volumes(idx);

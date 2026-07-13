@@ -67,6 +67,7 @@ public:
     // Mixed specific
     int m_mixed_count() const { return static_cast<int>(m_mixed_cards.size()); }
     void update_mixed_states(std::vector<MixedFilamentDefinition>& mixed_filaments);
+    void refresh_mixed_color_previews();
     void edit_mixed_filament(int index, bool edit_by_color);
     void delete_mixed_filament(int index);
     void show_mixed_filament_menu(int index, const wxPoint& screen_pos, wxWindow* anchor);
@@ -157,6 +158,8 @@ private:
     wxStaticText*   m_lbl_mixed_title{nullptr};
     wxStaticText*   m_lbl_mixed_counter{nullptr};
     wxPanel*        m_mixed_divider{nullptr};
+    wxChoice*       m_choice_mixed_color_engine{nullptr};
+    wxCheckBox*     m_check_mixed_use_td{nullptr};
     Button*         m_btn_mixed_manage{nullptr};
     ScalableButton* m_btn_mixed_del{nullptr};
     ScalableButton* m_btn_mixed_add{nullptr};

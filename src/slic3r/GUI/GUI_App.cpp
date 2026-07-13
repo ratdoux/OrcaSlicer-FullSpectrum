@@ -2256,6 +2256,9 @@ void GUI_App::init_app_config()
 #endif // _WIN32
     }
     MixedFilamentManager::set_auto_generate_enabled(app_config->get_bool("auto_generate_gradients"));
+    MixedFilamentManager::set_color_engine(
+        MixedFilamentManager::color_engine_from_string(app_config->get("mixed_filament_color_engine")));
+    MixedFilamentManager::set_use_td_for_color_prediction(app_config->get_bool("mixed_filament_use_td_prediction"));
     set_logging_level(Slic3r::level_string_to_boost(app_config->get("log_severity_level")));
 
 }

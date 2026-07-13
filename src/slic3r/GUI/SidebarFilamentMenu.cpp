@@ -2,6 +2,7 @@
 #include "Widgets/Button.hpp"
 #include "wxExtensions.hpp"
 #include "GUI_App.hpp"
+#include "GLCanvas3D.hpp"
 #include "Plater.hpp"
 #include "Tab.hpp"
 #include "MainFrame.hpp"
@@ -17,6 +18,32 @@ namespace Slic3r::GUI {
 SidebarFilamentMenu::SidebarFilamentMenu(wxWindow* parent, const wxColour& title_bg) : ::wxPanel(parent, wxID_ANY)
 {
     build_ui(title_bg);
+}
+
+void SidebarFilamentMenu::refresh_mixed_color_previews()
+{
+    auto *preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle == nullptr)
+        return;
+
+    preset_bundle->update_multi_material_filament_presets();
+    std::vector<MixedFilamentDefinition> mixed =
+        preset_bundle->mixed_filaments.mixed_filament_definitions(m_physical_filaments.size());
+    on_mixed_change(mixed);
+
+    Plater *plater = wxGetApp().plater();
+    if (plater == nullptr)
+        return;
+
+    plater->update_filament_colors_in_full_config();
+    auto refresh_canvas = [](GLCanvas3D *canvas) {
+        if (canvas == nullptr || !canvas->is_initialized())
+            return;
+        canvas->update_volumes_colors_by_extruder();
+        canvas->render();
+    };
+    refresh_canvas(plater->get_view3D_canvas3D());
+    refresh_canvas(plater->get_assmeble_canvas3D());
 }
 
 void SidebarFilamentMenu::on_filaments_change(size_t physical_count, std::vector<MixedFilamentDefinition>& mixed_filaments)
@@ -564,6 +591,45 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     mixed_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::ElementSpacing()));
 
     m_mixed_title_sizer->Add(mixed_title_and_divider_sizer, 1, wxEXPAND);
+
+    m_choice_mixed_color_engine = new wxChoice(m_mixed_title_panel, wxID_ANY);
+    m_choice_mixed_color_engine->Append(_L("Mixer"));
+    m_choice_mixed_color_engine->Append(_L("KM/K-S"));
+    m_choice_mixed_color_engine->SetSelection(
+        MixedFilamentManager::color_engine() == MixedFilamentColorEngine::FullSpectrumKSPairResidual ? 1 : 0);
+    m_choice_mixed_color_engine->SetToolTip(_L("Choose the color prediction engine used for mixed-filament previews."));
+    m_choice_mixed_color_engine->SetMinSize({FromDIP(72), FromDIP(24)});
+    m_choice_mixed_color_engine->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+        const MixedFilamentColorEngine engine = m_choice_mixed_color_engine->GetSelection() == 1 ?
+            MixedFilamentColorEngine::FullSpectrumKSPairResidual : MixedFilamentColorEngine::FilamentMixer;
+        MixedFilamentManager::set_color_engine(engine);
+        if (wxGetApp().app_config != nullptr) {
+            wxGetApp().app_config->set("mixed_filament_color_engine", MixedFilamentManager::color_engine_to_string(engine));
+            wxGetApp().app_config->save();
+        }
+        if (m_check_mixed_use_td != nullptr) {
+            m_check_mixed_use_td->SetValue(MixedFilamentManager::use_td_for_color_prediction());
+            m_check_mixed_use_td->Enable(engine == MixedFilamentColorEngine::FullSpectrumKSPairResidual);
+        }
+        refresh_mixed_color_previews();
+    });
+    m_mixed_title_sizer->Add(m_choice_mixed_color_engine, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
+
+    m_check_mixed_use_td = new wxCheckBox(m_mixed_title_panel, wxID_ANY, _L("TD"));
+    m_check_mixed_use_td->SetValue(MixedFilamentManager::use_td_for_color_prediction());
+    m_check_mixed_use_td->Enable(
+        MixedFilamentManager::color_engine() == MixedFilamentColorEngine::FullSpectrumKSPairResidual);
+    m_check_mixed_use_td->SetToolTip(_L("Use each filament's transmission distance in KM/K-S color prediction."));
+    m_check_mixed_use_td->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) {
+        const bool enabled = m_check_mixed_use_td->GetValue();
+        MixedFilamentManager::set_use_td_for_color_prediction(enabled);
+        if (wxGetApp().app_config != nullptr) {
+            wxGetApp().app_config->set_bool("mixed_filament_use_td_prediction", enabled);
+            wxGetApp().app_config->save();
+        }
+        refresh_mixed_color_previews();
+    });
+    m_mixed_title_sizer->Add(m_check_mixed_use_td, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(5));
 
     // Manage button
     m_btn_mixed_manage = new Button(m_mixed_title_panel, _L("Manage"));

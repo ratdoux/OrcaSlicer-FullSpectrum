@@ -1925,9 +1925,12 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     }
 
     const bool refresh_mixed_filament_panel =
-        m_type == Preset::TYPE_PRINT &&
-        (opt_key == "mixed_filament_component_bias_enabled" ||
-         opt_key == "dithering_local_z_direct_multicolor");
+        (m_type == Preset::TYPE_PRINT &&
+         (opt_key == "mixed_filament_component_bias_enabled" ||
+          opt_key == "dithering_local_z_direct_multicolor")) ||
+        (m_type == Preset::TYPE_FILAMENT &&
+         (opt_key == "filament_type" || opt_key == "filament_transmission_distance" ||
+          opt_key == "filament_full_spectrum_material_id"));
 
     // Keep Mixed Filaments global settings in sync with project_config. In
     // full_fff_config(), project_config is applied last and would otherwise
@@ -1959,8 +1962,10 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
         m_active_page->update_visibility(m_mode, true);
     m_page_view->GetParent()->Layout();
 
-    if (refresh_mixed_filament_panel && wxGetApp().plater() != nullptr)
-        wxGetApp().sidebar().update_mixed_filament_panel(false);
+    if (refresh_mixed_filament_panel && wxGetApp().plater() != nullptr) {
+        if (SidebarFilamentMenu* filament_menu = wxGetApp().sidebar().filament_menu())
+            filament_menu->refresh_mixed_color_previews();
+    }
 }
 
 void Tab::show_timelapse_warning_dialog() {
@@ -3760,6 +3765,8 @@ void TabFilament::build()
         optgroup->append_single_option_line("required_nozzle_HRC");
         optgroup->append_single_option_line("default_filament_colour");
         optgroup->append_single_option_line("filament_diameter");
+        optgroup->append_single_option_line("filament_transmission_distance");
+        optgroup->append_single_option_line("filament_full_spectrum_material_id");
 
         optgroup->append_single_option_line("filament_density");
         optgroup->append_single_option_line("filament_shrink");

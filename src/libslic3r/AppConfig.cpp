@@ -325,6 +325,14 @@ void AppConfig::set_defaults()
         set_bool("auto_generate_gradients", true);
     }
 
+    if (get("mixed_filament_color_engine").empty()) {
+        set("mixed_filament_color_engine", "filament_mixer");
+    }
+
+    if (get("mixed_filament_use_td_prediction").empty()) {
+        set_bool("mixed_filament_use_td_prediction", true);
+    }
+
     if (get("show_home_page").empty()) {
         set_bool("show_home_page", true);
     }
