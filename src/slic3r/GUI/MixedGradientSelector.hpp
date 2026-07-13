@@ -9,11 +9,17 @@
 #include <wx/dcbuffer.h>
 
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 namespace Slic3r { namespace GUI {
 
 wxColour blend_pair_filament_mixer(const wxColour &left, const wxColour &right, float t);
+wxColour blend_pair_filament_mixer(const wxColour              &left,
+                                   const wxColour              &right,
+                                   float                        t,
+                                   const std::optional<double> &left_td,
+                                   const std::optional<double> &right_td);
 
 class MixedGradientSelector : public wxPanel
 {
@@ -56,6 +62,23 @@ public:
     {
         m_left  = left;
         m_right = right;
+        m_left_td.reset();
+        m_right_td.reset();
+        m_multi_mode = false;
+        m_multi_colors.clear();
+        m_multi_weights.clear();
+        Refresh();
+    }
+
+    void set_colors(const wxColour              &left,
+                    const wxColour              &right,
+                    const std::optional<double> &left_td,
+                    const std::optional<double> &right_td)
+    {
+        m_left     = left;
+        m_right    = right;
+        m_left_td  = left_td;
+        m_right_td = right_td;
         m_multi_mode = false;
         m_multi_colors.clear();
         m_multi_weights.clear();
@@ -91,6 +114,8 @@ private:
 
     wxColour              m_left;
     wxColour              m_right;
+    std::optional<double> m_left_td;
+    std::optional<double> m_right_td;
     bool                  m_multi_mode    {false};
     std::vector<wxColour> m_multi_colors;
     std::vector<int>      m_multi_weights;

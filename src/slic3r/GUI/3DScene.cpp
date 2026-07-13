@@ -7,6 +7,7 @@
 #include "Plater.hpp"
 #include "BitmapCache.hpp"
 #include "Camera.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/ExtrusionEntity.hpp"
@@ -315,100 +316,21 @@ ColorRGBA color_from_model_volume(const ModelVolume& model_volume)
     return color;
 }
 
-static std::vector<ColorRGBA> mixed_filament_preview_gradient_colors(const MixedFilamentDefinition& definition,
-                                                                     const std::vector<std::string>& physical_colors)
+static std::vector<ColorRGBA> mixed_filament_preview_gradient_colors(
+    const MixedFilamentDefinition&     definition,
+    const MixedFilamentDisplayContext& display_context)
 {
-    if (definition.visibility.tombstoned || !definition.behavior.gradient.enabled || physical_colors.empty())
-        return {};
-
-    std::vector<unsigned int> component_ids = definition.recipe.blend.component_ids(physical_colors.size());
-    if (component_ids.size() < 2)
-        return {};
-    if (component_ids.size() == 2 &&
-        definition.behavior.gradient.component_a_start < definition.behavior.gradient.component_a_end)
-        std::reverse(component_ids.begin(), component_ids.end());
-
+    const std::vector<wxColour> preview_colors =
+        GUI::build_mixed_filament_gradient_preview(definition, display_context).sampled_colors;
     std::vector<ColorRGBA> colors;
-    colors.reserve(component_ids.size());
-    for (const unsigned int component_id : component_ids) {
-        if (component_id < 1 || component_id > physical_colors.size())
-            continue;
-
-        ColorRGBA rgba;
-        if (decode_color(physical_colors[component_id - 1], rgba))
-            colors.emplace_back(rgba);
+    colors.reserve(preview_colors.size());
+    for (const wxColour& color : preview_colors) {
+        colors.emplace_back(float(color.Red()) / 255.f,
+                            float(color.Green()) / 255.f,
+                            float(color.Blue()) / 255.f,
+                            1.f);
     }
-
-    return colors.size() >= 2 ? colors : std::vector<ColorRGBA>();
-}
-
-static std::vector<double> mixed_filament_preview_gradient_positions(const MixedFilamentDefinition& definition,
-                                                                     size_t component_count,
-                                                                     size_t num_physical)
-{
-    const size_t expected_stops = component_count >= 2 ? 2 * component_count - 1 : size_t(0);
-    if (expected_stops < 3)
-        return {};
-
-    std::vector<double> positions;
-    const std::vector<float>& explicit_positions = definition.behavior.gradient.stop_positions;
-    if (explicit_positions.size() == expected_stops) {
-        positions.reserve(expected_stops);
-        for (const float position : explicit_positions) {
-            if (!std::isfinite(position)) {
-                positions.clear();
-                break;
-            }
-            positions.emplace_back(std::clamp(double(position), 0.0, 1.0));
-        }
-    }
-
-    if (positions.empty()) {
-        std::vector<int> weights = definition.recipe.blend.component_percents(num_physical);
-        if (weights.size() == 2 &&
-            definition.behavior.gradient.component_a_start < definition.behavior.gradient.component_a_end)
-            std::reverse(weights.begin(), weights.end());
-        if (weights.size() != component_count)
-            weights.assign(component_count, 1);
-
-        double total = 0.0;
-        for (const int weight : weights)
-            total += double(std::max(0, weight));
-        if (total <= EPSILON) {
-            weights.assign(component_count, 1);
-            total = double(component_count);
-        }
-
-        std::vector<double> boundaries(component_count + 1, 0.0);
-        for (size_t i = 0; i < component_count; ++i)
-            boundaries[i + 1] = boundaries[i] + double(std::max(0, weights[i])) / total;
-        boundaries.front() = 0.0;
-        boundaries.back() = 1.0;
-
-        positions.assign(expected_stops, 0.0);
-        positions.front() = 0.0;
-        positions.back() = 1.0;
-        for (size_t i = 0; i + 1 < component_count; ++i)
-            positions[2 * i + 1] = std::clamp(boundaries[i + 1], 0.0, 1.0);
-        for (size_t i = 1; i + 1 < component_count; ++i)
-            positions[2 * i] = std::clamp((boundaries[i] + boundaries[i + 1]) * 0.5, 0.0, 1.0);
-    }
-
-    if (positions.size() != expected_stops)
-        return {};
-
-    positions.front() = 0.0;
-    positions.back() = 1.0;
-    constexpr double min_gap = 1e-6;
-    for (size_t i = 1; i < positions.size(); ++i)
-        positions[i] = std::max(positions[i], positions[i - 1] + min_gap);
-    positions.back() = 1.0;
-    for (size_t i = positions.size() - 1; i > 0; --i)
-        positions[i - 1] = std::min(positions[i - 1], positions[i] - min_gap);
-    positions.front() = 0.0;
-    for (double& position : positions)
-        position = std::clamp(position, 0.0, 1.0);
-    return positions;
+    return colors;
 }
 
 static ColorRGBA interpolate_preview_gradient_color(const ColorRGBA& a, const ColorRGBA& b, double local)
@@ -1511,6 +1433,8 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
             return;
 
         const std::vector<std::string> physical_filament_colors = filament_colors;
+        const MixedFilamentDisplayContext gradient_display_context =
+            GUI::build_mixed_filament_display_context(physical_filament_colors);
         preview_gradient_colors.resize(filament_colors.size());
         preview_gradient_positions.resize(filament_colors.size());
 
@@ -1526,10 +1450,12 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
                     continue;
                 const std::string display_color =
                     visible_mixed_idx < mixed_colors.size() ? mixed_colors[visible_mixed_idx] : definition.presentation.display_color;
-                std::vector<ColorRGBA> gradient_colors = mixed_filament_preview_gradient_colors(definition, physical_filament_colors);
+                std::vector<ColorRGBA> gradient_colors =
+                    mixed_filament_preview_gradient_colors(definition, gradient_display_context);
                 filament_colors.emplace_back(display_color);
-                preview_gradient_positions.emplace_back(
-                    mixed_filament_preview_gradient_positions(definition, gradient_colors.size(), physical_filament_colors.size()));
+                // Engine-aware samples are uniformly spaced and already encode
+                // the original stop curve, so no second position transform is needed.
+                preview_gradient_positions.emplace_back();
                 preview_gradient_colors.emplace_back(std::move(gradient_colors));
                 ++visible_mixed_idx;
             }

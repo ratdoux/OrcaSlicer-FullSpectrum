@@ -1,9 +1,16 @@
 #include "MixedFilamentColorMapPanel.hpp"
 
+#include <cmath>
 #include <numeric>
 #include "MixedColorMatchHelpers.hpp"
 
 namespace Slic3r { namespace GUI {
+
+static std::string color_map_hex(const wxColour& color)
+{
+    const wxColour safe = color.IsOk() ? color : wxColour("#26A69A");
+    return wxString::Format("#%02X%02X%02X", safe.Red(), safe.Green(), safe.Blue()).ToStdString();
+}
 
 wxColour blend_multi_filament_mixer(const std::vector<wxColour>& colors, const std::vector<double>& weights)
 {
@@ -62,15 +69,37 @@ MixedFilamentColorMapPanel::MixedFilamentColorMapPanel(wxWindow*                
     SetMinSize(min_size);
     m_render_timer.SetOwner(this);
 
+    std::vector<std::string> palette_hex;
+    palette_hex.reserve(palette.size());
+    for (const wxColour& color : palette)
+        palette_hex.push_back(color_map_hex(color));
+    const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(palette_hex);
+
     m_colors.reserve(filament_ids.size());
+    m_color_hexes.reserve(filament_ids.size());
+    m_color_tds.reserve(filament_ids.size());
+    m_color_material_ids.reserve(filament_ids.size());
     for (const unsigned int filament_id : filament_ids) {
-        if (filament_id >= 1 && filament_id <= palette.size())
+        if (filament_id >= 1 && filament_id <= palette.size()) {
             m_colors.emplace_back(palette[filament_id - 1]);
-        else
+            m_color_hexes.emplace_back(palette_hex[filament_id - 1]);
+            m_color_tds.emplace_back(filament_id <= display_context.physical_tds.size() ?
+                                         display_context.physical_tds[filament_id - 1] : 0.0);
+            m_color_material_ids.emplace_back(filament_id <= display_context.physical_material_ids.size() ?
+                                                  display_context.physical_material_ids[filament_id - 1] : std::string());
+        } else {
             m_colors.emplace_back(wxColour("#26A69A"));
+            m_color_hexes.emplace_back("#26A69A");
+            m_color_tds.emplace_back(0.0);
+            m_color_material_ids.emplace_back();
+        }
     }
-    if (m_colors.empty())
+    if (m_colors.empty()) {
         m_colors.emplace_back(wxColour("#26A69A"));
+        m_color_hexes.emplace_back("#26A69A");
+        m_color_tds.emplace_back(0.0);
+        m_color_material_ids.emplace_back();
+    }
 
     set_normalized_weights(initial_weights, false);
 
@@ -97,7 +126,36 @@ wxColour MixedFilamentColorMapPanel::selected_color() const
     weights.reserve(m_weights.size());
     for (const int weight : m_weights)
         weights.emplace_back(double(std::max(0, weight)));
-    return blend_multi_filament_mixer(m_colors, weights);
+    return blend_selected_engine(weights);
+}
+
+wxColour MixedFilamentColorMapPanel::blend_selected_engine(const std::vector<double>& weights) const
+{
+    if (MixedFilamentManager::color_engine() == MixedFilamentColorEngine::FilamentMixer)
+        return blend_multi_filament_mixer(m_colors, weights);
+
+    std::vector<MixedFilamentColorInput> inputs;
+    const size_t count = std::min(m_color_hexes.size(), weights.size());
+    inputs.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const double weight = std::max(0.0, weights[i]);
+        if (!std::isfinite(weight) || weight <= 0.0)
+            continue;
+        std::optional<double> td_mm;
+        if (MixedFilamentManager::use_td_for_color_prediction() && i < m_color_tds.size() &&
+            std::isfinite(m_color_tds[i]) && m_color_tds[i] > 0.0)
+            td_mm = m_color_tds[i];
+        MixedFilamentColorInput input;
+        input.color_hex = m_color_hexes[i];
+        input.percent   = std::max(1, int(std::lround(weight * 1000.0)));
+        input.td_mm     = td_mm;
+        if (i < m_color_material_ids.size() && !m_color_material_ids[i].empty())
+            input.material_id = m_color_material_ids[i];
+        inputs.emplace_back(std::move(input));
+    }
+
+    const wxColour selected(MixedFilamentManager::blend_color_multi(inputs));
+    return selected.IsOk() ? selected : blend_multi_filament_mixer(m_colors, weights);
 }
 
 void MixedFilamentColorMapPanel::set_normalized_weights(const std::vector<int>& weights, bool notify)
@@ -515,7 +573,7 @@ void MixedFilamentColorMapPanel::render_cached_bitmap(const wxSize& size, const 
                     paint_pixel = point_in_triangle(make_vec(normalized_x, normalized_y), simplex_vertices());
 
                 const std::vector<double> raw_weights = raw_weights_from_pos(normalized_x, normalized_y);
-                wxColour                  color       = paint_pixel ? blend_multi_filament_mixer(m_colors, raw_weights) : background;
+                wxColour                  color       = paint_pixel ? blend_selected_engine(raw_weights) : background;
                 if (paint_pixel && m_min_component_percent > 0 &&
                     !color_match_raw_weights_within_range(raw_weights, m_min_component_percent)) {
                     const bool   stripe = (((x + y) / 8) % 2) == 0;

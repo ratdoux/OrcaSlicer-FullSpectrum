@@ -1,6 +1,15 @@
 #include "MixedGradientSelector.hpp"
+#include "libslic3r/MixedFilament.hpp"
+
+#include <cmath>
 
 namespace Slic3r { namespace GUI {
+
+static std::string gradient_color_hex(const wxColour& color)
+{
+    const wxColour safe = color.IsOk() ? color : wxColour("#26A69A");
+    return wxString::Format("#%02X%02X%02X", safe.Red(), safe.Green(), safe.Blue()).ToStdString();
+}
 
 wxColour blend_pair_filament_mixer(const wxColour &left, const wxColour &right, float t)
 {
@@ -20,6 +29,18 @@ wxColour blend_pair_filament_mixer(const wxColour &left, const wxColour &right, 
         std::clamp(t, 0.f, 1.f),
         &out_r, &out_g, &out_b);
     return wxColour(out_r, out_g, out_b);
+}
+
+wxColour blend_pair_filament_mixer(const wxColour              &left,
+                                   const wxColour              &right,
+                                   float                        t,
+                                   const std::optional<double> &left_td,
+                                   const std::optional<double> &right_td)
+{
+    const int right_percent = std::clamp(int(std::lround(std::clamp(t, 0.f, 1.f) * 1000.f)), 0, 1000);
+    const wxColour selected(MixedFilamentManager::blend_color(gradient_color_hex(left), gradient_color_hex(right),
+                                                               1000 - right_percent, right_percent, left_td, right_td));
+    return selected.IsOk() ? selected : blend_pair_filament_mixer(left, right, t);
 }
 
 wxRect MixedGradientSelector::gradient_rect() const
@@ -109,7 +130,7 @@ void MixedGradientSelector::on_paint(wxPaintEvent &)
         if (data != nullptr) {
             for (int x = 0; x < w; ++x) {
                 const float t   = (w > 1) ? float(x) / float(w - 1) : 0.5f;
-                const wxColour col = blend_pair_filament_mixer(m_left, m_right, t);
+                const wxColour col = blend_pair_filament_mixer(m_left, m_right, t, m_left_td, m_right_td);
                 const unsigned char r = static_cast<unsigned char>(col.Red());
                 const unsigned char g = static_cast<unsigned char>(col.Green());
                 const unsigned char b = static_cast<unsigned char>(col.Blue());

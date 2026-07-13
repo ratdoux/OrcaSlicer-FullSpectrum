@@ -493,11 +493,19 @@ void MixedColorMatchPanel::refresh_selected_recipe()
 
 void MixedColorMatchPanel::launch_recipe_match(size_t request_token, const wxColour &target)
 {
+    m_display_context = build_mixed_filament_display_context(m_physical_colors);
     const std::vector<std::string> physical_colors = m_physical_colors;
-    const int min_pct = m_min_component_percent;
-    auto destroyed = m_destroyed;
-    std::thread([this, destroyed, physical_colors, target, request_token, min_pct]() {
-        MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(physical_colors, target, min_pct);
+    const std::vector<double>      physical_tds    = m_display_context.physical_tds;
+    const std::vector<std::string> physical_material_ids = m_display_context.physical_material_ids;
+    const int                      min_pct         = m_min_component_percent;
+    const MixedFilamentColorEngine color_engine   = MixedFilamentManager::color_engine();
+    const bool                     use_td          = MixedFilamentManager::use_td_for_color_prediction();
+    auto                           destroyed       = m_destroyed;
+    std::thread([this, destroyed, physical_colors, physical_tds, physical_material_ids,
+                 target, request_token, min_pct, color_engine, use_td]() {
+        MixedColorMatchRecipeResult recipe =
+            build_best_color_match_recipe(
+                physical_colors, target, min_pct, physical_tds, physical_material_ids, color_engine, use_td);
         wxGetApp().CallAfter([this, destroyed, target, recipe = std::move(recipe), request_token]() mutable {
             if (destroyed->load()) return;
             handle_recipe_result(request_token, target, std::move(recipe));

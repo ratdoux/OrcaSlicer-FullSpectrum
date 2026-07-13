@@ -7,6 +7,7 @@
 #include <wx/timer.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 namespace Slic3r { namespace GUI {
@@ -79,6 +80,7 @@ private:
 
     void emit_changed();
     void update_from_mouse(const wxMouseEvent& evt, bool notify);
+    wxColour blend_selected_engine(const std::vector<double>& weights) const;
 
     wxColour canvas_background_color() const { return GetBackgroundColour().IsOk() ? GetBackgroundColour() : wxColour(245, 245, 245); }
 
@@ -98,6 +100,9 @@ private:
     void on_render_timer(wxTimerEvent&);
 
     std::vector<wxColour> m_colors;
+    std::vector<std::string> m_color_hexes;
+    std::vector<double>   m_color_tds;
+    std::vector<std::string> m_color_material_ids;
     std::vector<int>      m_weights;
     wxBitmap              m_cached_bitmap;
     wxSize                m_cached_bitmap_size;

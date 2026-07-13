@@ -91,6 +91,7 @@ private:
 
     // Physical filament catalog (name, hex color) — not owned by this dialog.
     std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
+    MixedFilamentDisplayContext                       m_display_context;
 
     // Currently selected blend of physical filaments.
     std::vector<int>     m_selected_filaments;
@@ -99,6 +100,8 @@ private:
 
     // Gradient state
     std::vector<double>  m_gradient_positions;
+    std::vector<double>  m_gradient_component_positions;
+    std::vector<wxColor> m_gradient_preview_colors;
     double               m_gradient_min_ratio{0.10};
 
     // -----------------------------------------------------------------------
@@ -197,10 +200,10 @@ private:
     };
     std::vector<MixPreset> m_mix_presets;
     void             generate_mix_presets();
-    static wxColor   compute_mixed_color(
+    wxColor          compute_mixed_color(
         const std::vector<std::pair<std::string, std::string>>& filaments,
         const std::vector<int>&    indices,
-        const std::vector<double>& weights);
+        const std::vector<double>& weights) const;
     const MixPreset* find_closest_mix(const wxColour& target) const;
     void             update_color_match(const wxColour& selected_color,
                                         bool update_active_mix = false);

@@ -7,6 +7,7 @@
 #include "MFDPreviewAccordion.hpp"
 #include "MFDGradientAccordion.hpp"
 #include "MFDTheme.hpp"
+#include "MixedColorMatchHelpers.hpp"
 #include "Widgets/Accordion.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 
@@ -56,6 +57,12 @@ MixedFilamentDialog::MixedFilamentDialog(
     m_clr_swatch_size   = this->wxWindow::FromDIP(20);
 
     SetBackgroundColour(MFDTheme::dialog_background());
+
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto &filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    m_display_context = build_mixed_filament_display_context(physical_colors);
 
     bool loaded_preset = false;
     auto* preset_bundle = wxGetApp().preset_bundle;
@@ -478,8 +485,8 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
             }
             FilamentCardMixed::paint_box_gradient(
                 context, size, background_color,
-                m_selected_filaments_colors,
-                m_gradient_positions,
+                m_gradient_preview_colors,
+                m_gradient_component_positions,
                 indices,
                 is_dark, m_is_list_preview_hovered, swatch_size
             );
@@ -1291,24 +1298,40 @@ void MixedFilamentDialog::update_preview()
             m_preview_accordion->clear_preview();
         }
     } else if (m_current_tab == Tab::Gradient) {
-        m_preview_accordion->update_preview_gradient(m_selected_filaments_colors, m_gradient_positions);
+        std::vector<unsigned int> component_ids;
+        component_ids.reserve(m_selected_filaments.size());
+        for (const int filament_index : m_selected_filaments) {
+            if (filament_index >= 0)
+                component_ids.emplace_back(unsigned(filament_index + 1));
+        }
+        const MixedFilamentGradientPreview preview =
+            build_mixed_filament_gradient_preview(component_ids, m_gradient_positions, m_display_context);
+        m_gradient_component_positions = preview.component_positions;
+        m_gradient_preview_colors       = preview.sampled_colors;
+        m_preview_accordion->update_preview_gradient(
+            m_selected_filaments_colors, m_gradient_positions, m_gradient_preview_colors);
     }
     if (m_list_preview_panel) m_list_preview_panel->Refresh();
 }
 
-// static
 wxColor MixedFilamentDialog::compute_mixed_color(
     const std::vector<std::pair<std::string, std::string>>& filaments,
-    const std::vector<int>& indices, const std::vector<double>& weights)
+    const std::vector<int>& indices, const std::vector<double>& weights) const
 {
-    double r = 0, g = 0, b = 0;
-    for (size_t i = 0; i < indices.size(); ++i) {
-        wxColor col(filaments[indices[i]].first);
-        r += weights[i] * col.Red();
-        g += weights[i] * col.Green();
-        b += weights[i] * col.Blue();
+    std::vector<unsigned int> component_ids;
+    std::vector<int>          component_weights;
+    const size_t count = std::min(indices.size(), weights.size());
+    component_ids.reserve(count);
+    component_weights.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const int filament_index = indices[index];
+        if (filament_index < 0 || filament_index >= int(filaments.size()) ||
+            !std::isfinite(weights[index]) || weights[index] <= 0.0)
+            continue;
+        component_ids.emplace_back(unsigned(filament_index + 1));
+        component_weights.emplace_back(std::max(1, int(std::lround(weights[index] * 1000000.0))));
     }
-    return wxColor(std::clamp((int)r, 0, 255), std::clamp((int)g, 0, 255), std::clamp((int)b, 0, 255));
+    return blend_mixed_filament_components(component_ids, component_weights, m_display_context);
 }
 
 void MixedFilamentDialog::generate_mix_presets()

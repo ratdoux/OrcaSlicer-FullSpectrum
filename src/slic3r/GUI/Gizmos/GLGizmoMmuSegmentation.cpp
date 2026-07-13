@@ -9,6 +9,7 @@
 #include "slic3r/GUI/format.hpp"
 #include "slic3r/GUI/GUI_ObjectList.hpp"
 #include "slic3r/GUI/NotificationManager.hpp"
+#include "slic3r/GUI/MixedColorMatchHelpers.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Model.hpp"
@@ -72,40 +73,19 @@ static bool very_light(ImU32 c)
         && ((c >> IM_COL32_B_SHIFT) & 0xFF) > 224;
 }
 
-static ImU32 physical_color_to_ImU32(const std::string& hex)
-{
-    unsigned char rgba[4] = {};
-    Slic3r::GUI::BitmapCache::parse_color4(hex, rgba);
-    ColorRGBA col(float(rgba[0]) / 255.f, float(rgba[1]) / 255.f, float(rgba[2]) / 255.f, float(rgba[3]) / 255.f);
-    return ImGuiWrapper::to_ImU32(col);
-}
-
 static std::vector<ImU32> mixed_filament_gradient_stops_ImU32(const MixedFilament& mf, const MixedFilamentDisplayContext& ctx)
 {
     const size_t num_physical = ctx.num_physical == 0 ? ctx.physical_colors.size() : ctx.num_physical;
-    auto get_color = [&](unsigned fid) -> ImU32 {
-        if (fid == 0 || fid > num_physical || fid > ctx.physical_colors.size())
-            return IM_COL32(0x26, 0xA6, 0x9A, 255);
-        return physical_color_to_ImU32(ctx.physical_colors[fid - 1]);
-    };
+    MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(mf, num_physical);
+    definition.behavior.gradient.enabled = mf.gradient_enabled || !mf.gradient_component_ids.empty();
+    const std::vector<wxColour> preview_colors =
+        build_mixed_filament_gradient_preview(definition, ctx).sampled_colors;
 
-    const std::vector<unsigned int> gradient_ids =
-        MixedFilamentManager::decode_gradient_component_ids(mf.gradient_component_ids, num_physical);
-    if (gradient_ids.size() >= 3) {
-        std::vector<ImU32> colors;
-        colors.reserve(gradient_ids.size());
-        for (const unsigned int id : gradient_ids)
-            colors.emplace_back(get_color(id));
-        return colors;
-    }
-
-    if (mf.component_a == 0 || mf.component_b == 0 || mf.component_a == mf.component_b)
-        return {};
-
-    const ImU32 phys_a = get_color(mf.component_a);
-    const ImU32 phys_b = get_color(mf.component_b);
-    const bool a_to_b = mf.gradient_start >= mf.gradient_end;
-    return { a_to_b ? phys_a : phys_b, a_to_b ? phys_b : phys_a };
+    std::vector<ImU32> colors;
+    colors.reserve(preview_colors.size());
+    for (const wxColour& color : preview_colors)
+        colors.emplace_back(IM_COL32(color.Red(), color.Green(), color.Blue(), 255));
+    return colors;
 }
 
 void GLGizmoMmuSegmentation::on_opening()
@@ -211,10 +191,9 @@ void GLGizmoMmuSegmentation::init_extruders_data(const std::vector<ColorRGBA> &e
     for (size_t i = 0; i < m_extruder_remap.size(); ++i)
         m_extruder_remap[i] = i;
 
-    // Build minimal display context for gradient rendering
+    // Keep gradient rendering on the same color engine, TDs, and preview settings as the mixed-filament UI.
     std::vector<std::string> physical_hex = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
-    // Only physical_colors is used for gradient rendering; other fields intentionally at defaults
-    m_mixed_display_context = MixedFilamentDisplayContext{physical_hex.size(), std::move(physical_hex), {}, {}, false};
+    m_mixed_display_context = build_mixed_filament_display_context(physical_hex);
 }
 
 void GLGizmoMmuSegmentation::init_extruders_data()

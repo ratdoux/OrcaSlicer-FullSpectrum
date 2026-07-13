@@ -1,7 +1,8 @@
 #pragma once
 
-// Shared declarations for color-match helpers used by both Plater.cpp and
-// MixedColorMatchPanel.cpp. Implementations live in Plater.cpp.
+// Shared declarations for color-match helpers used by Plater, the refactored
+// mixed-filament UI, and MixedColorMatchPanel. Implementations live in
+// MixedColorMatchHelpers.cpp.
 
 #include "libslic3r/MixedFilament.hpp"
 
@@ -90,11 +91,43 @@ CIELab blend_weighted_lab_accurate(const std::vector<wxColour>& palette,
 MixedColorMatchRecipeResult build_best_color_match_recipe(
     const std::vector<std::string> &physical_colors,
     const wxColour                 &target_color,
-    int                             min_component_percent = 0);
+    int                             min_component_percent,
+    const std::vector<double>      &physical_tds,
+    const std::vector<std::string> &physical_material_ids,
+    MixedFilamentColorEngine        color_engine,
+    bool                            use_td_prediction);
 
 // ---- display context helpers ----
 MixedFilamentDisplayContext build_mixed_filament_display_context(
     const std::vector<std::string> &physical_colors);
+
+struct MixedFilamentGradientPreview
+{
+    // Ordered physical filament ids (1-based) and their UI anchor positions.
+    std::vector<unsigned int> component_ids;
+    std::vector<double>       component_positions;
+
+    // Uniformly spaced display samples evaluated with the selected color
+    // engine. Keeping these samples uniform lets every GUI renderer share the
+    // same compact preview without having to duplicate stop-curve logic.
+    std::vector<wxColour> sampled_colors;
+};
+
+wxColour blend_mixed_filament_components(
+    const std::vector<unsigned int>     &component_ids,
+    const std::vector<int>              &component_percents,
+    const MixedFilamentDisplayContext   &context);
+
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
+    const std::vector<unsigned int>     &ordered_component_ids,
+    const std::vector<double>           &component_stop_positions,
+    const MixedFilamentDisplayContext   &context,
+    size_t                               sample_count = 17);
+
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
+    const MixedFilamentDefinition       &definition,
+    const MixedFilamentDisplayContext   &context,
+    size_t                               sample_count = 17);
 
 wxColour compute_color_match_recipe_display_color(
     const MixedColorMatchRecipeResult  &recipe,

@@ -10,6 +10,7 @@
 #include "Widgets/FilamentCardMixed.hpp"
 #include "GUI_App.hpp"
 #include "MFDTheme.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 namespace Slic3r::GUI {
 
@@ -19,6 +20,11 @@ MFDRecommendationsAccordion::MFDRecommendationsAccordion(
     : Accordion(parent, _L("Mix Recommendations"))
     , m_physical_filaments(physical_filaments)
 {
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    m_display_context = build_mixed_filament_display_context(physical_colors);
     build_ui();
 }
 
@@ -226,16 +232,19 @@ wxColor MFDRecommendationsAccordion::get_mixed_color(
     const std::vector<int>&    phys_indices,
     const std::vector<double>& weights) const
 {
-    double r = 0, g = 0, b = 0;
-    for (size_t i = 0; i < phys_indices.size(); ++i) {
-        wxColor col(m_physical_filaments[phys_indices[i]].first);
-        r += weights[i] * col.Red();
-        g += weights[i] * col.Green();
-        b += weights[i] * col.Blue();
+    const size_t count = std::min(phys_indices.size(), weights.size());
+    std::vector<unsigned int> component_ids;
+    std::vector<int>          component_weights;
+    component_ids.reserve(count);
+    component_weights.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        if (phys_indices[index] < 0 || phys_indices[index] >= int(m_physical_filaments.size()) ||
+            !std::isfinite(weights[index]) || weights[index] <= 0.0)
+            continue;
+        component_ids.emplace_back(unsigned(phys_indices[index] + 1));
+        component_weights.emplace_back(std::max(1, int(std::lround(weights[index] * 1000000.0))));
     }
-    return wxColor(std::clamp(static_cast<int>(r), 0, 255),
-                   std::clamp(static_cast<int>(g), 0, 255),
-                   std::clamp(static_cast<int>(b), 0, 255));
+    return blend_mixed_filament_components(component_ids, component_weights, m_display_context);
 }
 
 void MFDRecommendationsAccordion::update_recommendations(
@@ -277,10 +286,14 @@ wxPanel* MFDRecommendationsAccordion::create_gradient_tile(
 
     auto is_hovered = std::make_shared<bool>(false);
 
-    std::vector<wxColor> colors;
-    for (int idx : physical_indices) {
-        colors.push_back(wxColor(m_physical_filaments[idx].first));
+    std::vector<unsigned int> component_ids;
+    component_ids.reserve(physical_indices.size());
+    for (const int index : physical_indices) {
+        if (index >= 0 && index < int(m_physical_filaments.size()))
+            component_ids.emplace_back(unsigned(index + 1));
     }
+    const std::vector<wxColor> colors =
+        build_mixed_filament_gradient_preview(component_ids, {}, m_display_context).sampled_colors;
 
     tile->Bind(wxEVT_PAINT, [tile, colors, is_hovered](wxPaintEvent&) {
         wxPaintDC dc(tile);

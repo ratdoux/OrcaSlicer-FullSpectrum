@@ -2,6 +2,7 @@
 #define slic3r_GUI_MFDGradientAccordion_hpp_
 
 #include "Widgets/Accordion.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include "Widgets/ComboBox.hpp"
 #include <functional>
 #include <vector>
@@ -64,6 +65,7 @@ private:
     std::vector<double>&    m_gradient_positions;
     double&                 m_min_ratio;
     const std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
+    MixedFilamentDisplayContext                              m_display_context;
 
     // UI Controls
     wxPanel*        m_canvas{nullptr};

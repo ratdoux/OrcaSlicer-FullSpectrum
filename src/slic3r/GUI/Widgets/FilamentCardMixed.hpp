@@ -88,7 +88,7 @@ public:
         const wxSize&               size,
         const wxColor&              background_color,
         const std::vector<wxColor>& colors,
-        const std::vector<double>&  positions,
+        const std::vector<double>&  component_positions,
         const std::vector<unsigned int>& indices,
         bool                        is_dark,
         bool                        is_hovered,
@@ -102,6 +102,9 @@ private:
     std::vector<unsigned int>   m_physical_filaments_indices;     // 1-based, calculated in update_state()
     std::vector<wxColor>        m_physical_filaments_colors;      // calculated in update_state() using get_physical_filaments_colors()
     std::vector<int>            m_physical_filaments_percentages; // calculated in update_state() 
+    std::vector<wxColor>        m_gradient_preview_colors;
+    std::vector<double>         m_gradient_component_positions;
+    std::vector<unsigned int>   m_gradient_component_ids;
 
     std::function<void(bool edit_by_color)> m_on_box_edit;
     std::function<void(const wxPoint& screen_pos)> m_on_right_click;

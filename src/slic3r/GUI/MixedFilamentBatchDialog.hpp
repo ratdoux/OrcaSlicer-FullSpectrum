@@ -115,7 +115,9 @@ protected:
 private:
     // State
     const std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
-    std::vector<BatchMixItem> m_mix_items;
+    std::vector<double>                                      m_physical_tds;
+    std::vector<std::string>                                 m_physical_material_ids;
+    std::vector<BatchMixItem>                                m_mix_items;
 
     // UI elements
     wxScrolledWindow* m_scroll_win{ nullptr };

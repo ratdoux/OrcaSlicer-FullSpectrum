@@ -51,7 +51,8 @@ public:
 
     void update_preview_gradient(
         const std::vector<wxColor>&              colors,
-        const std::vector<double>&               positions);
+        const std::vector<double>&               positions,
+        const std::vector<wxColor>&              predicted_colors);
 
     void set_preview_mode(PreviewMode mode);
 
@@ -93,6 +94,7 @@ private:
     std::vector<MFDPreviewLayerEntry> m_layer_stack;
     std::vector<wxColor>              m_colors;
     std::vector<double>               m_gradient_positions;
+    std::vector<wxColor>              m_gradient_predicted_colors;
 };
 
 } // namespace Slic3r::GUI

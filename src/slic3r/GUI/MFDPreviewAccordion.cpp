@@ -106,11 +106,13 @@ void MFDPreviewAccordion::update_preview_pattern(
 
 void MFDPreviewAccordion::update_preview_gradient(
     const std::vector<wxColor>&              colors,
-    const std::vector<double>&               positions)
+    const std::vector<double>&               positions,
+    const std::vector<wxColor>&              predicted_colors)
 {
     m_preview_mode = PreviewMode::Gradient;
     m_colors = colors;
     m_gradient_positions = positions;
+    m_gradient_predicted_colors = predicted_colors;
 
     if (m_color_panel)
         m_color_panel->Refresh();
@@ -134,6 +136,8 @@ void MFDPreviewAccordion::clear_preview()
 {
     m_layer_stack.clear();
     m_colors.clear();
+    m_gradient_positions.clear();
+    m_gradient_predicted_colors.clear();
 
     if (m_color_panel) {
         m_color_panel->SetBackgroundColour(*wxLIGHT_GREY);
@@ -326,60 +330,35 @@ void MFDPreviewAccordion::draw_gradient_common(
     const wxSize&      size,
     bool               vertical)
 {
-    if (m_colors.empty() || m_gradient_positions.empty())
+    const std::vector<wxColor>& display_colors =
+        m_gradient_predicted_colors.size() >= 2 ? m_gradient_predicted_colors : m_colors;
+    if (display_colors.size() < 2)
         return;
 
-    int count = static_cast<int>(m_colors.size());
     double W = size.x;
     double H = size.y;
 
-    for (int i = 0; i < count - 1; ++i) {
-        double p_start = m_gradient_positions[2 * i];
-        double p_mid   = m_gradient_positions[2 * i + 1];
-        double p_end   = m_gradient_positions[2 * i + 2];
-
-        wxColor c_start = m_colors[i];
-        wxColor c_end   = m_colors[i + 1];
-        wxColor c_mid(
-            (c_start.Red() + c_end.Red()) / 2,
-            (c_start.Green() + c_end.Green()) / 2,
-            (c_start.Blue() + c_end.Blue()) / 2
-        );
+    const int segment_count = int(display_colors.size()) - 1;
+    for (int index = 0; index < segment_count; ++index) {
+        const double start = double(index) / double(segment_count);
+        const double end   = double(index + 1) / double(segment_count);
+        const wxColor& color_start = display_colors[size_t(index)];
+        const wxColor& color_end   = display_colors[size_t(index + 1)];
 
         if (vertical) {
-            double y_start = size.y - p_start * H;
-            double y_mid   = size.y - p_mid   * H;
-            double y_end   = size.y - p_end   * H;
-
-            if (y_start > y_mid) {
-                wxGraphicsBrush gb1 = gc->CreateLinearGradientBrush(0, y_start, 0, y_mid, c_start, c_mid);
-                gc->SetBrush(gb1);
-                gc->SetPen(*wxTRANSPARENT_PEN);
-                gc->DrawRectangle(0, y_mid - 0.5, W, y_start - y_mid + 0.5);
-            }
-            if (y_mid > y_end) {
-                wxGraphicsBrush gb2 = gc->CreateLinearGradientBrush(0, y_mid, 0, y_end, c_mid, c_end);
-                gc->SetBrush(gb2);
-                gc->SetPen(*wxTRANSPARENT_PEN);
-                gc->DrawRectangle(0, y_end, W, y_mid - y_end);
-            }
+            const double y_start = size.y - start * H;
+            const double y_end   = size.y - end * H;
+            wxGraphicsBrush brush = gc->CreateLinearGradientBrush(0, y_start, 0, y_end, color_start, color_end);
+            gc->SetBrush(brush);
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRectangle(0, y_end, W, y_start - y_end + 0.5);
         } else {
-            double x_start = p_start * W;
-            double x_mid   = p_mid   * W;
-            double x_end   = p_end   * W;
-
-            if (x_mid > x_start) {
-                wxGraphicsBrush gb1 = gc->CreateLinearGradientBrush(x_start, 0, x_mid, 0, c_start, c_mid);
-                gc->SetBrush(gb1);
-                gc->SetPen(*wxTRANSPARENT_PEN);
-                gc->DrawRectangle(x_start, 0, x_mid - x_start + 0.5, H);
-            }
-            if (x_end > x_mid) {
-                wxGraphicsBrush gb2 = gc->CreateLinearGradientBrush(x_mid, 0, x_end, 0, c_mid, c_end);
-                gc->SetBrush(gb2);
-                gc->SetPen(*wxTRANSPARENT_PEN);
-                gc->DrawRectangle(x_mid, 0, x_end - x_mid, H);
-            }
+            const double x_start = start * W;
+            const double x_end   = end * W;
+            wxGraphicsBrush brush = gc->CreateLinearGradientBrush(x_start, 0, x_end, 0, color_start, color_end);
+            gc->SetBrush(brush);
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRectangle(x_start, 0, x_end - x_start + 0.5, H);
         }
     }
 }

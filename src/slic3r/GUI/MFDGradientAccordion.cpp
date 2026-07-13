@@ -12,6 +12,7 @@
 #include "Widgets/Label.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 #include "MFDTheme.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 namespace Slic3r::GUI {
 
@@ -30,6 +31,11 @@ MFDGradientAccordion::MFDGradientAccordion(
     , m_min_ratio(min_ratio)
     , m_physical_filaments(physical_filaments)
 {
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    m_display_context = build_mixed_filament_display_context(physical_colors);
     build_ui();
 }
 
@@ -423,36 +429,27 @@ void MFDGradientAccordion::on_canvas_paint(wxPaintEvent&)
     const double sx = margin;
     const double sy = margin;
 
-    // Draw background gradient bar
-    for (int i = 0; i < count - 1; ++i) {
-        double p_start = m_gradient_positions[2 * i];
-        double p_mid   = m_gradient_positions[2 * i + 1];
-        double p_end   = m_gradient_positions[2 * i + 2];
+    std::vector<unsigned int> component_ids;
+    component_ids.reserve(m_selected_filaments.size());
+    for (const int filament_index : m_selected_filaments) {
+        if (filament_index >= 0)
+            component_ids.emplace_back(unsigned(filament_index + 1));
+    }
+    const MixedFilamentGradientPreview preview =
+        build_mixed_filament_gradient_preview(component_ids, m_gradient_positions, m_display_context);
 
-        double x_start = sx + p_start * w;
-        double x_mid   = sx + p_mid * w;
-        double x_end   = sx + p_end * w;
-
-        wxColor c_start = m_filament_colors[i];
-        wxColor c_end   = m_filament_colors[i + 1];
-        wxColor c_mid(
-            (c_start.Red() + c_end.Red()) / 2,
-            (c_start.Green() + c_end.Green()) / 2,
-            (c_start.Blue() + c_end.Blue()) / 2
-        );
-
-        if (x_mid > x_start) {
-            wxGraphicsBrush gb1 = gc->CreateLinearGradientBrush(x_start, sy, x_mid, sy, c_start, c_mid);
-            gc->SetBrush(gb1);
-            gc->SetPen(*wxTRANSPARENT_PEN);
-            gc->DrawRectangle(x_start, sy, x_mid - x_start + 0.5, h);
-        }
-        if (x_end > x_mid) {
-            wxGraphicsBrush gb2 = gc->CreateLinearGradientBrush(x_mid, sy, x_end, sy, c_mid, c_end);
-            gc->SetBrush(gb2);
-            gc->SetPen(*wxTRANSPARENT_PEN);
-            gc->DrawRectangle(x_mid, sy, x_end - x_mid, h);
-        }
+    // The sampled colors already encode the user stop positions and the
+    // selected prediction engine. Draw piecewise-linear samples so KM/K-S
+    // curvature is retained instead of replacing it with an RGB midpoint.
+    const int sample_segments = std::max(0, int(preview.sampled_colors.size()) - 1);
+    for (int index = 0; index < sample_segments; ++index) {
+        const double x_start = sx + w * double(index) / double(sample_segments);
+        const double x_end   = sx + w * double(index + 1) / double(sample_segments);
+        wxGraphicsBrush brush = gc->CreateLinearGradientBrush(
+            x_start, sy, x_end, sy, preview.sampled_colors[size_t(index)], preview.sampled_colors[size_t(index + 1)]);
+        gc->SetBrush(brush);
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        gc->DrawRectangle(x_start, sy, x_end - x_start + 0.5, h);
     }
 
     // Outline gradient bar

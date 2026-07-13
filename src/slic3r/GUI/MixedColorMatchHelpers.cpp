@@ -3,10 +3,12 @@
 #include <unordered_set>
 #include <ColorSpaceConvert.hpp>
 #include "MixedFilamentColorMapPanel.hpp"
+#include "libslic3r/FullSpectrumKSPairResidual.hpp"
 #include "GUI_App.hpp"
 #include "PresetBundle.hpp"
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <fstream>
 #include <queue>
 #include <sstream>
@@ -348,7 +350,11 @@ double color_delta_e00(const wxColour& lhs, const wxColour& rhs)
 
 MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std::string>& physical_colors,
                                                           const wxColour&                 target_color,
-                                                          int                             min_component_percent)
+                                                          int                             min_component_percent,
+                                                          const std::vector<double>&      physical_tds,
+                                                          const std::vector<std::string>& physical_material_ids,
+                                                          MixedFilamentColorEngine        color_engine,
+                                                          bool                            use_td_prediction)
 {
     MixedColorMatchRecipeResult best;
     if (!target_color.IsOk() || physical_colors.size() < 2)
@@ -366,6 +372,41 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
         palette_lab.emplace_back(sRGB_to_CIELab(c));
     }
     const CIELab target_lab = sRGB_to_CIELab(target_color);
+
+    const bool use_full_spectrum = color_engine == MixedFilamentColorEngine::FullSpectrumKSPairResidual;
+    auto selected_engine_preview = [&](const std::vector<unsigned int>& ids, const std::vector<int>& weights) {
+        std::vector<FullSpectrumKSPairResidualColorInput> inputs;
+        std::vector<wxColour>                             fallback_colors;
+        std::vector<double>                               fallback_weights;
+        const size_t                                      count = std::min(ids.size(), weights.size());
+        inputs.reserve(count);
+        fallback_colors.reserve(count);
+        fallback_weights.reserve(count);
+
+        for (size_t i = 0; i < count; ++i) {
+            const unsigned int id = ids[i];
+            const int          weight = std::max(0, weights[i]);
+            if (id == 0 || id > physical_colors.size() || weight == 0)
+                continue;
+
+            std::optional<double> td_mm;
+            if (use_td_prediction && id <= physical_tds.size()) {
+                const double value = physical_tds[id - 1];
+                if (std::isfinite(value) && value > 0.0)
+                    td_mm = value;
+            }
+            std::optional<std::string> material_id;
+            if (id <= physical_material_ids.size() && !physical_material_ids[id - 1].empty())
+                material_id = physical_material_ids[id - 1];
+            inputs.push_back({physical_colors[id - 1], weight, td_mm, material_id});
+            fallback_colors.push_back(palette[id - 1]);
+            fallback_weights.push_back(double(weight));
+        }
+
+        if (const std::optional<std::string> prediction = full_spectrum_ks_blend_color_multi(inputs))
+            return parse_mixed_color(*prediction);
+        return blend_multi_filament_mixer(fallback_colors, fallback_weights);
+    };
 
     const int  loop_min_weight      = std::max(1, std::clamp(min_component_percent, 0, 50));
     const auto compat                = build_compatibility_matrix(n);
@@ -392,13 +433,14 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
     if (lut.empty()) return best;
 
     // ---- helper: update best from a pair candidate ----
-    auto update_best_pair = [&](unsigned int a, unsigned int b, int pct, double de) {
+    auto update_best_pair = [&](unsigned int a, unsigned int b, int pct, double de, const wxColour* selected_preview = nullptr) {
         if (!best.valid || de + 1e-6 < best.delta_e) {
             best.valid         = true;
             best.component_a   = a;
             best.component_b   = b;
             best.mix_b_percent = pct;
-            best.preview_color = blend_pair_filament_mixer(palette[a - 1], palette[b - 1], float(pct) / 100.f);
+            best.preview_color = selected_preview != nullptr ? *selected_preview :
+                blend_pair_filament_mixer(palette[a - 1], palette[b - 1], float(pct) / 100.f);
             best.delta_e       = de;
             best.gradient_component_ids.clear();
             best.gradient_component_weights.clear();
@@ -419,9 +461,16 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
         for (size_t b = a + 1; b < n; ++b) {
             if (!compat[a][b]) continue;
             for (int pct = loop_min_weight; pct <= 100 - loop_min_weight; pct += k_coarse_step) {
-                const CIELab& blended_lab = lut.get(a, b, pct);
-                double de = delta_e_lab(target_lab, blended_lab);
-                update_best_pair(unsigned(a + 1), unsigned(b + 1), pct, de);
+                double de = 0.0;
+                if (use_full_spectrum) {
+                    const wxColour preview = selected_engine_preview(
+                        {unsigned(a + 1), unsigned(b + 1)}, {100 - pct, pct});
+                    de = delta_e_lab(target_lab, sRGB_to_CIELab(preview));
+                    update_best_pair(unsigned(a + 1), unsigned(b + 1), pct, de, &preview);
+                } else {
+                    de = delta_e_lab(target_lab, lut.get(a, b, pct));
+                    update_best_pair(unsigned(a + 1), unsigned(b + 1), pct, de);
+                }
                 if (heap.size() < k_top_coarse) {
                     heap.emplace(de, unsigned(a + 1), unsigned(b + 1), pct);
                 } else if (de < std::get<0>(heap.top())) {
@@ -440,8 +489,12 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
         int fine_max = std::min(100 - loop_min_weight, coarse_pct + k_coarse_step - 1);
         for (int pct = fine_min; pct <= fine_max; ++pct) {
             if ((pct - loop_min_weight) % k_coarse_step == 0) continue; // already evaluated in coarse
-            const CIELab& blended_lab = lut.get(a - 1, b - 1, pct);
-            update_best_pair(a, b, pct, delta_e_lab(target_lab, blended_lab));
+            if (use_full_spectrum) {
+                const wxColour preview = selected_engine_preview({a, b}, {100 - pct, pct});
+                update_best_pair(a, b, pct, delta_e_lab(target_lab, sRGB_to_CIELab(preview)), &preview);
+            } else {
+                update_best_pair(a, b, pct, delta_e_lab(target_lab, lut.get(a - 1, b - 1, pct)));
+            }
         }
     }
 
@@ -496,8 +549,11 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
                     for (int wb = loop_min_weight; wa + wb <= 100 - loop_min_weight; wb += k_triple_coarse_step) {
                         int wc = 100 - wa - wb;
                         if (wc < loop_min_weight) continue;
-                        CIELab blended = blend_weighted_lab_accurate(palette, {a, b, c}, {wa, wb, wc});
-                        double  de      = delta_e_lab(target_lab, blended);
+                        const wxColour selected_preview = use_full_spectrum ?
+                            selected_engine_preview({a, b, c}, {wa, wb, wc}) : wxColour();
+                        const CIELab blended = use_full_spectrum ? sRGB_to_CIELab(selected_preview) :
+                            blend_weighted_lab_accurate(palette, {a, b, c}, {wa, wb, wc});
+                        double de = delta_e_lab(target_lab, blended);
                         // Update best triple
                         if (!best.valid || de + 1e-6 < best.delta_e) {
                             best.valid     = true;
@@ -506,9 +562,9 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
                             best.mix_b_percent = wa + wb > 0 ? int(std::lround(100.0 * double(wb) / double(wa + wb))) : 50;
                             best.gradient_component_ids     = encode_gradient_ids({a, b, c});
                             best.gradient_component_weights = encode_gradient_weights({wa, wb, wc});
-                            best.preview_color = blend_multi_filament_mixer(
-                                {palette[a - 1], palette[b - 1], palette[c - 1]},
-                                {double(wa), double(wb), double(wc)});
+                            best.preview_color = use_full_spectrum ? selected_preview :
+                                blend_multi_filament_mixer({palette[a - 1], palette[b - 1], palette[c - 1]},
+                                                           {double(wa), double(wb), double(wc)});
                             best.delta_e = de;
                             best.manual_pattern.clear();
                         }
@@ -538,8 +594,11 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
                 if ((wb - loop_min_weight) % k_triple_coarse_step == 0) continue;
                 int wc = 100 - wa - wb;
                 if (wc < loop_min_weight) continue;
-                CIELab blended = blend_weighted_lab_accurate(palette, {te.a, te.b, te.c}, {wa, wb, wc});
-                double  de2    = delta_e_lab(target_lab, blended);
+                const wxColour selected_preview = use_full_spectrum ?
+                    selected_engine_preview({te.a, te.b, te.c}, {wa, wb, wc}) : wxColour();
+                const CIELab blended = use_full_spectrum ? sRGB_to_CIELab(selected_preview) :
+                    blend_weighted_lab_accurate(palette, {te.a, te.b, te.c}, {wa, wb, wc});
+                double de2 = delta_e_lab(target_lab, blended);
                 if (!best.valid || de2 + 1e-6 < best.delta_e) {
                     best.valid     = true;
                     best.component_a = te.a;
@@ -547,9 +606,9 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
                     best.mix_b_percent = wa + wb > 0 ? int(std::lround(100.0 * double(wb) / double(wa + wb))) : 50;
                     best.gradient_component_ids     = encode_gradient_ids({te.a, te.b, te.c});
                     best.gradient_component_weights = encode_gradient_weights({wa, wb, wc});
-                    best.preview_color = blend_multi_filament_mixer(
-                        {palette[te.a - 1], palette[te.b - 1], palette[te.c - 1]},
-                        {double(wa), double(wb), double(wc)});
+                    best.preview_color = use_full_spectrum ? selected_preview :
+                        blend_multi_filament_mixer({palette[te.a - 1], palette[te.b - 1], palette[te.c - 1]},
+                                                   {double(wa), double(wb), double(wc)});
                     best.delta_e = de2;
                     best.manual_pattern.clear();
                 }
@@ -577,12 +636,99 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
     return best;
 }
 
+static std::vector<double> selected_filament_transmission_distances(PresetBundle *preset_bundle, size_t count)
+{
+    std::vector<double> tds(count, 0.0);
+    if (preset_bundle == nullptr)
+        return tds;
+
+    const Preset *edited_filament_preset = &preset_bundle->filaments.get_edited_preset();
+    const std::string edited_filament_name = edited_filament_preset != nullptr ?
+        Preset::remove_suffix_modified(edited_filament_preset->name) :
+        std::string();
+
+    for (size_t i = 0; i < count && i < preset_bundle->filament_presets.size(); ++i) {
+        const std::string selected_filament_name = Preset::remove_suffix_modified(preset_bundle->filament_presets[i]);
+        const Preset *filament_preset =
+            (!edited_filament_name.empty() && selected_filament_name == edited_filament_name) ?
+            edited_filament_preset :
+            preset_bundle->filaments.find_preset(selected_filament_name, true);
+
+        const ConfigOptionFloats *td_opt = filament_preset != nullptr ?
+            filament_preset->config.option<ConfigOptionFloats>("filament_transmission_distance") :
+            nullptr;
+        if (td_opt != nullptr && !td_opt->values.empty()) {
+            const double td = td_opt->get_at(0);
+            if (std::isfinite(td) && td > 0.0)
+                tds[i] = td;
+        }
+    }
+
+    const ConfigOptionFloats *opt = preset_bundle->project_config.option<ConfigOptionFloats>("filament_transmission_distance");
+    if (opt == nullptr || opt->values.empty())
+        return tds;
+
+    const size_t opt_count = opt->values.size();
+    for (size_t i = 0; i < count && i < opt_count; ++i) {
+        if (tds[i] > 0.0)
+            continue;
+        const double td = opt->get_at(unsigned(i));
+        tds[i] = (std::isfinite(td) && td > 0.0) ? td : 0.0;
+    }
+
+    return tds;
+}
+
+static std::vector<std::string> selected_filament_full_spectrum_material_ids(PresetBundle* preset_bundle, size_t count)
+{
+    std::vector<std::string> material_ids(count);
+    if (preset_bundle == nullptr)
+        return material_ids;
+
+    const Preset* edited_filament_preset = &preset_bundle->filaments.get_edited_preset();
+    const std::string edited_filament_name = edited_filament_preset != nullptr ?
+        Preset::remove_suffix_modified(edited_filament_preset->name) :
+        std::string();
+
+    for (size_t index = 0; index < count && index < preset_bundle->filament_presets.size(); ++index) {
+        const std::string selected_filament_name = Preset::remove_suffix_modified(preset_bundle->filament_presets[index]);
+        const Preset* filament_preset =
+            (!edited_filament_name.empty() && selected_filament_name == edited_filament_name) ?
+            edited_filament_preset :
+            preset_bundle->filaments.find_preset(selected_filament_name, true);
+
+        const ConfigOptionStrings* material_id_opt = filament_preset != nullptr ?
+            filament_preset->config.option<ConfigOptionStrings>("filament_full_spectrum_material_id") :
+            nullptr;
+        if (material_id_opt != nullptr && !material_id_opt->values.empty()) {
+            const std::string& material_id = material_id_opt->get_at(0);
+            if (!material_id.empty())
+                material_ids[index] = material_id;
+        }
+    }
+
+    const ConfigOptionStrings* project_opt =
+        preset_bundle->project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id");
+    if (project_opt == nullptr || project_opt->values.empty())
+        return material_ids;
+
+    const size_t project_count = project_opt->values.size();
+    for (size_t index = 0; index < count && index < project_count; ++index) {
+        if (!material_ids[index].empty())
+            continue;
+        material_ids[index] = project_opt->get_at(unsigned(index));
+    }
+    return material_ids;
+}
+
 MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vector<std::string>& physical_colors)
 {
     MixedFilamentDisplayContext context;
     context.num_physical    = physical_colors.size();
     context.physical_colors = physical_colors;
     context.nozzle_diameters.assign(context.num_physical, 0.4);
+    context.physical_tds.assign(context.num_physical, 0.0);
+    context.physical_material_ids.assign(context.num_physical, std::string());
 
     auto* preset_bundle = wxGetApp().preset_bundle;
     if (preset_bundle == nullptr)
@@ -596,6 +742,8 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
                 context.nozzle_diameters[i] = std::max(0.05, opt->get_at(unsigned(std::min(i, opt_count - 1))));
         }
     }
+    context.physical_tds = selected_filament_transmission_distances(preset_bundle, context.num_physical);
+    context.physical_material_ids = selected_filament_full_spectrum_material_ids(preset_bundle, context.num_physical);
 
     auto get_mixed_bool = [preset_bundle, print_cfg](const std::string& key, bool fallback) {
         if (const ConfigOptionBool* opt = preset_bundle->project_config.option<ConfigOptionBool>(key))
@@ -635,6 +783,213 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
     context.component_bias_enabled = get_mixed_bool("mixed_filament_component_bias_enabled", false);
 
     return context;
+}
+
+namespace {
+
+std::optional<double> gradient_preview_td(const MixedFilamentDisplayContext& context, unsigned int component_id)
+{
+    if (component_id == 0 || component_id > context.physical_tds.size())
+        return std::nullopt;
+
+    const double value = context.physical_tds[component_id - 1];
+    return std::isfinite(value) && value > 0.0 ? std::optional<double>(value) : std::nullopt;
+}
+
+std::optional<std::string> gradient_preview_material_id(const MixedFilamentDisplayContext& context, unsigned int component_id)
+{
+    if (component_id == 0 || component_id > context.physical_material_ids.size())
+        return std::nullopt;
+    const std::string& material_id = context.physical_material_ids[component_id - 1];
+    return material_id.empty() ? std::nullopt : std::optional<std::string>(material_id);
+}
+
+std::vector<double> normalized_gradient_stop_positions(const std::vector<double>& positions, size_t component_count)
+{
+    const size_t expected_stops = component_count >= 2 ? 2 * component_count - 1 : size_t(0);
+    if (expected_stops < 3)
+        return {};
+
+    std::vector<double> normalized;
+    if (positions.size() == expected_stops) {
+        normalized.reserve(expected_stops);
+        for (const double position : positions) {
+            if (!std::isfinite(position)) {
+                normalized.clear();
+                break;
+            }
+            normalized.emplace_back(std::clamp(position, 0.0, 1.0));
+        }
+    }
+
+    if (normalized.empty()) {
+        normalized.resize(expected_stops);
+        for (size_t index = 0; index < expected_stops; ++index)
+            normalized[index] = double(index) / double(expected_stops - 1);
+    }
+
+    normalized.front() = 0.0;
+    normalized.back()  = 1.0;
+    for (size_t index = 1; index < normalized.size(); ++index)
+        normalized[index] = std::max(normalized[index], normalized[index - 1]);
+    for (size_t index = normalized.size() - 1; index > 0; --index)
+        normalized[index - 1] = std::min(normalized[index - 1], normalized[index]);
+    return normalized;
+}
+
+std::vector<double> gradient_positions_from_definition(const MixedFilamentDefinition& definition,
+                                                       size_t                         component_count,
+                                                       size_t                         num_physical,
+                                                       bool                           reverse_pair)
+{
+    const size_t expected_stops = component_count >= 2 ? 2 * component_count - 1 : size_t(0);
+    if (expected_stops < 3)
+        return {};
+
+    if (definition.behavior.gradient.stop_positions.size() == expected_stops) {
+        std::vector<double> explicit_positions;
+        explicit_positions.reserve(expected_stops);
+        for (const float position : definition.behavior.gradient.stop_positions)
+            explicit_positions.emplace_back(double(position));
+        return normalized_gradient_stop_positions(explicit_positions, component_count);
+    }
+
+    std::vector<int> weights = definition.recipe.blend.component_percents(num_physical);
+    if (reverse_pair && weights.size() == 2)
+        std::reverse(weights.begin(), weights.end());
+    if (weights.size() != component_count)
+        weights.assign(component_count, 1);
+
+    double total = 0.0;
+    for (const int weight : weights)
+        total += double(std::max(0, weight));
+    if (total <= EPSILON) {
+        weights.assign(component_count, 1);
+        total = double(component_count);
+    }
+
+    std::vector<double> boundaries(component_count + 1, 0.0);
+    for (size_t index = 0; index < component_count; ++index)
+        boundaries[index + 1] = boundaries[index] + double(std::max(0, weights[index])) / total;
+    boundaries.back() = 1.0;
+
+    std::vector<double> positions(expected_stops, 0.0);
+    positions.back() = 1.0;
+    for (size_t index = 0; index + 1 < component_count; ++index)
+        positions[2 * index + 1] = boundaries[index + 1];
+    for (size_t index = 1; index + 1 < component_count; ++index)
+        positions[2 * index] = 0.5 * (boundaries[index] + boundaries[index + 1]);
+    return normalized_gradient_stop_positions(positions, component_count);
+}
+
+} // namespace
+
+wxColour blend_mixed_filament_components(const std::vector<unsigned int>&   component_ids,
+                                         const std::vector<int>&            component_percents,
+                                         const MixedFilamentDisplayContext& context)
+{
+    const size_t count = std::min(component_ids.size(), component_percents.size());
+    if (count == 0)
+        return wxColour("#26A69A");
+
+    std::vector<int> normalized = normalize_color_match_weights(component_percents, count);
+    std::vector<MixedFilamentColorInput> inputs;
+    inputs.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const unsigned int component_id = component_ids[index];
+        if (component_id == 0 || component_id > context.physical_colors.size() || normalized[index] <= 0)
+            continue;
+
+        MixedFilamentColorInput input;
+        input.color_hex = context.physical_colors[component_id - 1];
+        input.percent   = normalized[index];
+        input.td_mm     = gradient_preview_td(context, component_id);
+        input.material_id = gradient_preview_material_id(context, component_id);
+        inputs.emplace_back(std::move(input));
+    }
+
+    if (inputs.empty())
+        return wxColour("#26A69A");
+    if (inputs.size() == 1)
+        return parse_mixed_color(inputs.front().color_hex);
+    return parse_mixed_color(MixedFilamentManager::blend_color_multi(inputs));
+}
+
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
+    const std::vector<unsigned int>&   ordered_component_ids,
+    const std::vector<double>&         component_stop_positions,
+    const MixedFilamentDisplayContext& context,
+    size_t                             sample_count)
+{
+    MixedFilamentGradientPreview preview;
+    if (ordered_component_ids.size() < 2 || context.physical_colors.empty())
+        return preview;
+    for (const unsigned int component_id : ordered_component_ids) {
+        if (component_id == 0 || component_id > context.physical_colors.size())
+            return preview;
+    }
+
+    preview.component_ids       = ordered_component_ids;
+    preview.component_positions = normalized_gradient_stop_positions(component_stop_positions, ordered_component_ids.size());
+    if (preview.component_positions.empty())
+        return {};
+
+    sample_count = std::max<size_t>(2, sample_count);
+    preview.sampled_colors.reserve(sample_count);
+    for (size_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+        const double t = double(sample_index) / double(sample_count - 1);
+        size_t segment = ordered_component_ids.size() - 2;
+        for (size_t index = 0; index + 1 < ordered_component_ids.size(); ++index) {
+            if (t <= preview.component_positions[2 * index + 2] || index + 2 == ordered_component_ids.size()) {
+                segment = index;
+                break;
+            }
+        }
+
+        const double start = preview.component_positions[2 * segment];
+        const double mid   = preview.component_positions[2 * segment + 1];
+        const double end   = preview.component_positions[2 * segment + 2];
+        double       weight_b;
+        if (t <= start)
+            weight_b = 0.0;
+        else if (t >= end)
+            weight_b = 1.0;
+        else if (t <= mid)
+            weight_b = 0.5 * (t - start) / std::max(EPSILON, mid - start);
+        else
+            weight_b = 0.5 + 0.5 * (t - mid) / std::max(EPSILON, end - mid);
+
+        const int percent_b = std::clamp(int(std::lround(100.0 * weight_b)), 0, 100);
+        preview.sampled_colors.emplace_back(blend_mixed_filament_components(
+            {ordered_component_ids[segment], ordered_component_ids[segment + 1]},
+            {100 - percent_b, percent_b},
+            context));
+    }
+    return preview;
+}
+
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(const MixedFilamentDefinition&     definition,
+                                                                   const MixedFilamentDisplayContext& context,
+                                                                   size_t                             sample_count)
+{
+    if (definition.visibility.tombstoned || !definition.behavior.gradient.enabled)
+        return {};
+
+    const size_t num_physical = context.num_physical == 0 ? context.physical_colors.size() : context.num_physical;
+    std::vector<unsigned int> component_ids = definition.recipe.blend.component_ids(num_physical);
+    if (component_ids.size() < 2)
+        return {};
+
+    const bool reverse_pair = component_ids.size() == 2 &&
+                              definition.behavior.gradient.component_a_start < definition.behavior.gradient.component_a_end;
+    if (reverse_pair)
+        std::reverse(component_ids.begin(), component_ids.end());
+
+    return build_mixed_filament_gradient_preview(
+        component_ids,
+        gradient_positions_from_definition(definition, component_ids.size(), num_physical, reverse_pair),
+        context,
+        sample_count);
 }
 
 wxColour compute_color_match_recipe_display_color(const MixedColorMatchRecipeResult& recipe, const MixedFilamentDisplayContext& context)

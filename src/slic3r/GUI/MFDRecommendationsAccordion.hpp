@@ -20,6 +20,7 @@
 //   on_preset_selected callback -> dialog adjusts its state.
 
 #include "Widgets/Accordion.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include <functional>
 #include <vector>
 #include <string>
@@ -79,6 +80,7 @@ private:
     static bool is_color_in_between(const wxColor& c1, const wxColor& c2, const wxColor& c3, double max_dev = 60.0);
 
     const std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
+    MixedFilamentDisplayContext                              m_display_context;
 
     std::function<void(const std::vector<int>&, const std::vector<double>&)> m_on_preset_selected;
 

@@ -5,12 +5,12 @@
 #include "slic3r/GUI/GUI_Factories.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/MixedFilamentBadge.hpp"
+#include "slic3r/GUI/MixedColorMatchHelpers.hpp"
 #include "libslic3r/MixedFilament.hpp"
 
 #include <wx/wx.h>
 #include <wx/graphics.h>
 #include <string>
-#include <numeric>
 
 namespace Slic3r::GUI {
 
@@ -22,93 +22,6 @@ bool is_gradient_definition(const MixedFilamentDefinition* definition)
            definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend &&
            definition->behavior.gradient.enabled &&
            definition->recipe.blend.components.size() >= 2;
-}
-
-std::vector<wxColor> gradient_display_colors(const MixedFilamentDefinition* definition, const std::vector<wxColor>& colors)
-{
-    if (!is_gradient_definition(definition) || colors.size() < 2)
-        return colors;
-
-    if (colors.size() != 2)
-        return colors;
-
-    const bool a_to_b = definition->behavior.gradient.component_a_start >= definition->behavior.gradient.component_a_end;
-    return a_to_b ? std::vector<wxColor>{ colors[0], colors[1] } : std::vector<wxColor>{ colors[1], colors[0] };
-}
-
-std::vector<unsigned int> gradient_display_indices(const MixedFilamentDefinition* definition, const std::vector<unsigned int>& indices)
-{
-    if (!is_gradient_definition(definition) || indices.size() < 2)
-        return indices;
-
-    if (indices.size() != 2)
-        return indices;
-
-    const bool a_to_b = definition->behavior.gradient.component_a_start >= definition->behavior.gradient.component_a_end;
-    return a_to_b ? std::vector<unsigned int>{ indices[0], indices[1] } : std::vector<unsigned int>{ indices[1], indices[0] };
-}
-
-std::vector<int> gradient_display_percentages(const MixedFilamentDefinition* definition, const std::vector<int>& percentages)
-{
-    if (!is_gradient_definition(definition) || percentages.size() < 2)
-        return percentages;
-
-    if (percentages.size() != 2)
-        return percentages;
-
-    const bool a_to_b = definition->behavior.gradient.component_a_start >= definition->behavior.gradient.component_a_end;
-    return a_to_b ? std::vector<int>{ percentages[0], percentages[1] } : std::vector<int>{ percentages[1], percentages[0] };
-}
-
-std::vector<double> gradient_positions_from_percentages(const std::vector<int>& percentages, size_t color_count)
-{
-    if (color_count < 2)
-        return {};
-
-    std::vector<double> weights(color_count, 1.0);
-    if (percentages.size() == color_count) {
-        double sum = 0.0;
-        for (size_t i = 0; i < color_count; ++i) {
-            weights[i] = double(std::max(0, percentages[i]));
-            sum += weights[i];
-        }
-        if (sum <= 1e-9)
-            weights.assign(color_count, 1.0);
-    }
-
-    const double sum = std::accumulate(weights.begin(), weights.end(), 0.0);
-    std::vector<double> boundaries(color_count + 1, 0.0);
-    for (size_t i = 0; i < color_count; ++i)
-        boundaries[i + 1] = boundaries[i] + weights[i] / sum;
-    boundaries.front() = 0.0;
-    boundaries.back() = 1.0;
-
-    std::vector<double> positions(2 * color_count - 1, 0.0);
-    positions.front() = 0.0;
-    positions.back() = 1.0;
-    for (size_t i = 0; i + 1 < color_count; ++i)
-        positions[2 * i + 1] = std::clamp(boundaries[i + 1], 0.0, 1.0);
-    for (size_t i = 1; i + 1 < color_count; ++i)
-        positions[2 * i] = std::clamp((boundaries[i] + boundaries[i + 1]) * 0.5, 0.0, 1.0);
-
-    return positions;
-}
-
-std::vector<double> gradient_positions_from_definition(const MixedFilamentDefinition* definition,
-                                                       const std::vector<int>& percentages,
-                                                       size_t color_count)
-{
-    const size_t expected_stops = color_count >= 2 ? 2 * color_count - 1 : size_t(0);
-    if (definition != nullptr && expected_stops >= 3 &&
-        definition->behavior.gradient.stop_positions.size() == expected_stops) {
-        std::vector<double> out;
-        out.reserve(expected_stops);
-        for (const float position : definition->behavior.gradient.stop_positions)
-            out.emplace_back(std::clamp(double(position), 0.0, 1.0));
-        return out;
-    }
-
-    return gradient_positions_from_percentages(percentages, color_count);
 }
 
 } // namespace
@@ -174,7 +87,7 @@ void FilamentCardMixed::build_ui()
             paint_clr_swatch_gradient(
                 context,
                 size,
-                gradient_display_colors(m_definition, m_physical_filaments_colors),
+                m_gradient_preview_colors,
                 display_id_text(),
                 wxGetApp().dark_mode()
             );
@@ -243,14 +156,11 @@ void FilamentCardMixed::build_ui()
         const bool highlight = m_is_box_panel_hovered || m_is_dialog_open;
 
         if (is_gradient_definition(m_definition)) {
-            const std::vector<wxColor> gradient_colors = gradient_display_colors(m_definition, m_physical_filaments_colors);
-            const std::vector<unsigned int> gradient_indices = gradient_display_indices(m_definition, m_physical_filaments_indices);
-            const std::vector<int> gradient_percentages = gradient_display_percentages(m_definition, m_physical_filaments_percentages);
             paint_box_gradient(
                 context, size, background_color,
-                gradient_colors,
-                gradient_positions_from_definition(m_definition, gradient_percentages, gradient_colors.size()),
-                gradient_indices,
+                m_gradient_preview_colors,
+                m_gradient_component_positions,
+                m_gradient_component_ids,
                 wxGetApp().dark_mode(), highlight, wxSize(swatch_size, swatch_size)
             );
         } else if (m_definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) {
@@ -656,6 +566,10 @@ void FilamentCardMixed::paint_box_pattern(
 
 void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool refresh)
 {
+    m_gradient_preview_colors.clear();
+    m_gradient_component_positions.clear();
+    m_gradient_component_ids.clear();
+
     if (definition == nullptr) {
         m_definition = nullptr;
         m_physical_filaments_indices.clear();
@@ -688,6 +602,18 @@ void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool r
 
     m_definition = definition;
 
+    if (is_gradient_definition(definition)) {
+        std::vector<std::string> physical_colors;
+        physical_colors.reserve(m_physical_filaments.size());
+        for (const auto& filament : m_physical_filaments)
+            physical_colors.emplace_back(filament.first);
+        const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(
+            *definition, build_mixed_filament_display_context(physical_colors));
+        m_gradient_preview_colors      = preview.sampled_colors;
+        m_gradient_component_positions = preview.component_positions;
+        m_gradient_component_ids       = preview.component_ids;
+    }
+
     update_color_swatch_size();
 
     if (refresh)
@@ -700,22 +626,24 @@ void FilamentCardMixed::paint_box_gradient(
     const wxSize&               size,
     const wxColor&              background_color,
     const std::vector<wxColor>& colors,
-    const std::vector<double>&  positions,
+    const std::vector<double>&  component_positions,
     const std::vector<unsigned int>& indices,
     bool                        is_dark,
     bool                        is_hovered,
     const wxSize&               swatch_size)
 {
+    wxUnusedVar(is_dark);
+
     // background
     context.SetBrush(wxBrush(background_color));
     context.SetPen(*wxTRANSPARENT_PEN);
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 
-    if (colors.empty() || positions.empty() || colors.size() != indices.size() || positions.size() != (2 * colors.size() - 1)) {
+    if (colors.size() < 2 || indices.size() < 2 || component_positions.size() != (2 * indices.size() - 1)) {
         return;
     }
 
-    const int count = static_cast<int>(colors.size());
+    const int count = static_cast<int>(indices.size());
     const int padding = (size.y - swatch_size.y) / 2;
     const double w = std::max(1.0, (double)size.x - 2.0 * padding);
     const double h = swatch_size.y;
@@ -726,36 +654,17 @@ void FilamentCardMixed::paint_box_gradient(
     std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::CreateFromUnknownDC(context));
     if (!gc) return;
 
-    // Draw the gradient bar
-    for (int i = 0; i < count - 1; ++i) {
-        double p_start = positions[2 * i];
-        double p_mid   = positions[2 * i + 1];
-        double p_end   = positions[2 * i + 2];
-
-        double x_start = sx + p_start * w;
-        double x_mid   = sx + p_mid * w;
-        double x_end   = sx + p_end * w;
-
-        wxColor c_start = colors[i];
-        wxColor c_end   = colors[i + 1];
-        wxColor c_mid(
-            (c_start.Red() + c_end.Red()) / 2,
-            (c_start.Green() + c_end.Green()) / 2,
-            (c_start.Blue() + c_end.Blue()) / 2
-        );
-
-        if (x_mid > x_start) {
-            wxGraphicsBrush gb1 = gc->CreateLinearGradientBrush(x_start, sy, x_mid, sy, c_start, c_mid);
-            gc->SetBrush(gb1);
-            gc->SetPen(*wxTRANSPARENT_PEN);
-            gc->DrawRectangle(x_start, sy, x_mid - x_start + 0.5, h);
-        }
-        if (x_end > x_mid) {
-            wxGraphicsBrush gb2 = gc->CreateLinearGradientBrush(x_mid, sy, x_end, sy, c_mid, c_end);
-            gc->SetBrush(gb2);
-            gc->SetPen(*wxTRANSPARENT_PEN);
-            gc->DrawRectangle(x_mid, sy, x_end - x_mid, h);
-        }
+    // Draw the uniformly sampled, engine-aware preview. The samples already
+    // encode the user stop curve, including asymmetric midpoint placement.
+    const int sample_segments = int(colors.size()) - 1;
+    for (int index = 0; index < sample_segments; ++index) {
+        const double x_start = sx + w * double(index) / double(sample_segments);
+        const double x_end   = sx + w * double(index + 1) / double(sample_segments);
+        wxGraphicsBrush brush = gc->CreateLinearGradientBrush(
+            x_start, sy, x_end, sy, colors[size_t(index)], colors[size_t(index + 1)]);
+        gc->SetBrush(brush);
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        gc->DrawRectangle(x_start, sy, x_end - x_start + 0.5, h);
     }
 
     // Now draw the filament numbers over their positions.
@@ -768,7 +677,7 @@ void FilamentCardMixed::paint_box_gradient(
     context.SetFont(::Label::Body_14);
 
     for (int i = 0; i < count; ++i) {
-        x_pos[i] = sx + positions[2 * i] * w;
+        x_pos[i] = sx + component_positions[2 * i] * w;
         labels[i] = wxString::Format("%u", indices[i]);
         wxSize text_size = context.GetTextExtent(labels[i]);
         text_widths[i] = text_size.x;
@@ -824,7 +733,7 @@ void FilamentCardMixed::paint_box_gradient(
 
     // Draw the text
     for (int i = 0; i < count; ++i) {
-        wxColor fill_color = colors[i];
+        wxColor fill_color = interpolate_color(colors, component_positions[2 * i]);
         wxColor text_color = fill_color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE;
         
         context.SetTextForeground(text_color);

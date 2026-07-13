@@ -45,28 +45,10 @@ std::vector<wxColour> mixed_filament_gradient_colors(const MixedFilament& mf, co
 {
     if (!is_simple_gradient(mf))
         return {};
-
     const size_t num_physical = ctx.num_physical == 0 ? ctx.physical_colors.size() : ctx.num_physical;
-    auto get_color = [&](unsigned fid) -> wxColour {
-        if (fid == 0 || fid > num_physical || fid > ctx.physical_colors.size())
-            return wxColour("#26A69A");
-        return parse_mixed_color(ctx.physical_colors[fid - 1]);
-    };
-
-    const std::vector<unsigned int> gradient_ids =
-        MixedFilamentManager::decode_gradient_component_ids(mf.gradient_component_ids, num_physical);
-    if (gradient_ids.size() >= 3) {
-        std::vector<wxColour> colors;
-        colors.reserve(gradient_ids.size());
-        for (const unsigned int id : gradient_ids)
-            colors.emplace_back(get_color(id));
-        return colors;
-    }
-
-    const wxColour ca = get_color(mf.component_a);
-    const wxColour cb = get_color(mf.component_b);
-    const bool a_to_b = mf.gradient_start >= mf.gradient_end;
-    return { a_to_b ? ca : cb, a_to_b ? cb : ca };
+    MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(mf, num_physical);
+    definition.behavior.gradient.enabled = true;
+    return build_mixed_filament_gradient_preview(definition, ctx).sampled_colors;
 }
 
 // Check whether a pixel lies inside a rounded rectangle.

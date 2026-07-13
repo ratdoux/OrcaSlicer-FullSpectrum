@@ -9,6 +9,7 @@
 #include "Tab.hpp"
 #include "I18N.hpp"
 #include "MFDTheme.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 #include <wx/dcgraph.h>
 #include <algorithm>
@@ -34,6 +35,14 @@ MixedFilamentBatchDialog::MixedFilamentBatchDialog(
         m_resize_timer.Start(100, wxTIMER_ONE_SHOT);
         event.Skip();
     });
+
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto &filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(physical_colors);
+    m_physical_tds         = display_context.physical_tds;
+    m_physical_material_ids = display_context.physical_material_ids;
 
     generate_items();
     build_ui();
@@ -288,19 +297,34 @@ BatchMixKey MixedFilamentBatchDialog::make_mix_key(const MixedFilamentDefinition
 
 wxColor MixedFilamentBatchDialog::compute_mixed_color(const std::vector<int>& physical_indices, const std::vector<int>& percentages) const
 {
-    double r = 0, g = 0, b = 0;
-    for (size_t i = 0; i < physical_indices.size(); ++i) {
-        if (physical_indices[i] < 0 || physical_indices[i] >= (int)m_physical_filaments.size())
+    std::vector<MixedFilamentColorInput> inputs;
+    const size_t count = std::min(physical_indices.size(), percentages.size());
+    inputs.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const int index = physical_indices[i];
+        if (index < 0 || index >= int(m_physical_filaments.size()) || percentages[i] <= 0)
             continue;
-        wxColor col(m_physical_filaments[physical_indices[i]].first);
-        double w = percentages[i] / 100.0;
-        r += w * col.Red();
-        g += w * col.Green();
-        b += w * col.Blue();
+
+        std::optional<double> td_mm;
+        if (index < int(m_physical_tds.size())) {
+            const double value = m_physical_tds[size_t(index)];
+            if (std::isfinite(value) && value > 0.0)
+                td_mm = value;
+        }
+        std::optional<std::string> material_id;
+        if (index < int(m_physical_material_ids.size()) && !m_physical_material_ids[size_t(index)].empty())
+            material_id = m_physical_material_ids[size_t(index)];
+
+        MixedFilamentColorInput input;
+        input.color_hex  = m_physical_filaments[size_t(index)].first;
+        input.percent    = percentages[i];
+        input.td_mm      = td_mm;
+        input.material_id = material_id;
+        inputs.emplace_back(std::move(input));
     }
-    return wxColor(std::clamp(static_cast<int>(r), 0, 255),
-                   std::clamp(static_cast<int>(g), 0, 255),
-                   std::clamp(static_cast<int>(b), 0, 255));
+
+    const wxColor color(MixedFilamentManager::blend_color_multi(inputs));
+    return color.IsOk() ? color : wxColor("#26A69A");
 }
 
 wxString MixedFilamentBatchDialog::format_tooltip(const std::vector<int>& physical_indices, const std::vector<int>& percentages, const wxColor& mixed_color) const
