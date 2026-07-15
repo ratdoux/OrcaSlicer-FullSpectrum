@@ -259,12 +259,11 @@ void FilamentColorMapBox::onPaint(wxPaintEvent&)
 
     // ---- 7. Dropdown arrow (SVG, only when Below enabled) ----
     if (m_bBelowEnabled) {
-        const wxBitmap& arrowBmp = getDropdownArrowBitmap(FromDIP(g_arrowSize));
+        const int arrowSz = FromDIP(g_arrowSize);
+        const wxBitmap& arrowBmp = getDropdownArrowBitmap(arrowSz);
         if (arrowBmp.IsOk()) {
-            const int arrowW = arrowBmp.GetWidth();
-            const int arrowH = arrowBmp.GetHeight();
-            const int ax     = (w - arrowW) / 2;
-            const int ay     = splitY + bodyH - arrowH - FromDIP(g_arrowBotMargin);
+            const int ax = (w - arrowSz) / 2;
+            const int ay = splitY + bodyH - arrowSz - FromDIP(g_arrowBotMargin);
             gdc.DrawBitmap(arrowBmp, ax, ay);
         }
     }
