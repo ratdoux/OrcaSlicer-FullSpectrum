@@ -178,242 +178,92 @@ std::string blend_display_color_from_sequence(const std::vector<std::string>&  c
     return MixedFilamentManager::blend_color_multi(color_percents);
 }
 
-std::vector<double> build_local_z_preview_pass_heights(double nominal_layer_height,
-                                                       double lower_bound,
-                                                       double upper_bound,
-                                                       double preferred_a_height,
-                                                       double preferred_b_height,
-                                                       int    mix_b_percent,
-                                                       int    max_sublayers_limit)
+}} // namespace Slic3r::MixedFilamentInternal
+
+namespace Slic3r {
+
+std::vector<double> mixed_filament_local_z_preview_pass_heights(double nominal_layer_height,
+                                                                 double min_sublayer_height,
+                                                                 double preferred_a_height,
+                                                                 double preferred_b_height,
+                                                                 int    mix_b_percent,
+                                                                 int    max_sublayers_limit)
 {
     if (nominal_layer_height <= EPSILON)
         return {};
 
-    const double base_height      = nominal_layer_height;
-    const double lo               = std::max<double>(0.01, lower_bound);
-    const double hi               = std::max<double>(lo, upper_bound);
-    const size_t max_passes_limit = max_sublayers_limit >= 2 ? size_t(max_sublayers_limit) : size_t(0);
+    const double height  = nominal_layer_height;
+    const double minimum = std::max(0.01, min_sublayer_height);
+    const double maximum = std::max(minimum, height);
+    const size_t pass_limit = max_sublayers_limit >= 2 ? size_t(max_sublayers_limit) : size_t(0);
 
-    auto fit_pass_heights_to_interval = [](std::vector<double>& passes, double total_height, double local_lo, double local_hi) {
-        if (passes.empty() || total_height <= EPSILON)
+    auto fit_to_height = [height, minimum, maximum](std::vector<double>& passes) {
+        if (passes.empty())
             return false;
 
-        const auto within = [local_lo, local_hi](double value) { return value >= local_lo - 1e-6 && value <= local_hi + 1e-6; };
-
-        double sum = 0.0;
-        for (const double h : passes)
-            sum += h;
-
-        double delta = total_height - sum;
-        if (std::abs(delta) > 1e-6) {
-            if (delta > 0.0) {
-                for (double& h : passes) {
-                    if (delta <= 1e-6)
-                        break;
-                    const double room = local_hi - h;
-                    if (room <= 1e-6)
-                        continue;
-                    const double take = std::min(room, delta);
-                    h += take;
+        double delta = height - std::accumulate(passes.begin(), passes.end(), 0.0);
+        if (delta > EPSILON) {
+            for (double& pass : passes) {
+                const double take = std::min(maximum - pass, delta);
+                if (take > 0.0) {
+                    pass += take;
                     delta -= take;
                 }
-            } else {
-                for (auto it = passes.rbegin(); it != passes.rend() && delta < -1e-6; ++it) {
-                    const double room = *it - local_lo;
-                    if (room <= 1e-6)
-                        continue;
-                    const double take = std::min(room, -delta);
+                if (delta <= EPSILON)
+                    break;
+            }
+        } else if (delta < -EPSILON) {
+            for (auto it = passes.rbegin(); it != passes.rend() && delta < -EPSILON; ++it) {
+                const double take = std::min(*it - minimum, -delta);
+                if (take > 0.0) {
                     *it -= take;
                     delta += take;
                 }
             }
         }
 
-        if (std::abs(delta) > 1e-6)
-            return false;
-        return std::all_of(passes.begin(), passes.end(), within);
+        return std::abs(delta) <= 1e-6 &&
+               std::all_of(passes.begin(), passes.end(), [minimum, maximum](double pass) {
+                   return pass >= minimum - 1e-6 && pass <= maximum + 1e-6;
+               });
     };
 
-    auto build_uniform = [&fit_pass_heights_to_interval, base_height, lo, hi, max_passes_limit]() {
-        std::vector<double> out;
-        size_t              min_passes = size_t(std::max<double>(1.0, std::ceil((base_height - EPSILON) / hi)));
-        size_t              max_passes = size_t(std::max<double>(1.0, std::floor((base_height + EPSILON) / lo)));
-        size_t              pass_count = min_passes;
+    auto build_pair = [height, minimum](double target_a, double target_b) {
+        if (target_a <= EPSILON || target_b <= EPSILON || height < 2.0 * minimum - EPSILON)
+            return std::vector<double>{height};
 
-        if (max_passes >= min_passes) {
-            const double target_step   = 0.5 * (lo + hi);
-            const size_t target_passes = size_t(std::max<double>(1.0, std::llround(base_height / std::max<double>(target_step, EPSILON))));
-            pass_count                 = std::clamp(target_passes, min_passes, max_passes);
-        }
-
-        if (max_passes_limit > 0 && pass_count > max_passes_limit)
-            pass_count = max_passes_limit;
-
-        if (pass_count == 1 && base_height >= 2.0 * lo - EPSILON && max_passes >= 2)
-            pass_count = 2;
-
-        if (pass_count <= 1) {
-            out.emplace_back(base_height);
-            return out;
-        }
-
-        out.assign(pass_count, base_height / double(pass_count));
-        double accumulated = 0.0;
-        for (size_t i = 0; i + 1 < out.size(); ++i)
-            accumulated += out[i];
-        out.back() = std::max<double>(EPSILON, base_height - accumulated);
-        if (!fit_pass_heights_to_interval(out, base_height, lo, hi) && max_passes_limit == 0) {
-            out.assign(pass_count, base_height / double(pass_count));
-            accumulated = 0.0;
-            for (size_t i = 0; i + 1 < out.size(); ++i)
-                accumulated += out[i];
-            out.back() = std::max<double>(EPSILON, base_height - accumulated);
-        }
-        return out;
-    };
-
-    auto build_alternating = [&build_uniform, &fit_pass_heights_to_interval, base_height, lo, hi, max_passes_limit](double gradient_h_a,
-                                                                                                                    double gradient_h_b) {
-        if (base_height < 2.0 * lo - EPSILON)
-            return std::vector<double>{base_height};
-
-        const double cycle_h = std::max<double>(EPSILON, gradient_h_a + gradient_h_b);
-        const double ratio_a = std::clamp(gradient_h_a / cycle_h, 0.0, 1.0);
-
-        size_t min_passes = size_t(std::max<double>(2.0, std::ceil((base_height - EPSILON) / hi)));
-        if ((min_passes % 2) != 0)
-            ++min_passes;
-
-        size_t max_passes = size_t(std::max<double>(2.0, std::floor((base_height + EPSILON) / lo)));
-        if ((max_passes % 2) != 0)
-            --max_passes;
-        if (max_passes_limit > 0) {
-            size_t capped_limit = std::max<size_t>(2, max_passes_limit);
-            if ((capped_limit % 2) != 0)
-                --capped_limit;
-            if (capped_limit >= 2)
-                max_passes = std::min(max_passes, capped_limit);
-        }
-        if (max_passes < 2)
-            return build_uniform();
-        if (min_passes > max_passes)
-            min_passes = max_passes;
-        if (min_passes < 2)
-            min_passes = 2;
-        if ((min_passes % 2) != 0)
-            ++min_passes;
-        if (min_passes > max_passes)
-            return build_uniform();
-
-        const double target_step   = 0.5 * (lo + hi);
-        size_t       target_passes = size_t(std::max<double>(2.0, std::llround(base_height / std::max<double>(target_step, EPSILON))));
-        if ((target_passes % 2) != 0) {
-            const size_t round_up   = (target_passes < max_passes) ? (target_passes + 1) : max_passes;
-            const size_t round_down = (target_passes > min_passes) ? (target_passes - 1) : min_passes;
-            if (round_up > max_passes)
-                target_passes = round_down;
-            else if (round_down < min_passes)
-                target_passes = round_up;
-            else
-                target_passes = ((round_up - target_passes) <= (target_passes - round_down)) ? round_up : round_down;
-        }
-        target_passes = std::clamp(target_passes, min_passes, max_passes);
-
-        bool                has_best = false;
-        std::vector<double> best_passes;
-        double              best_ratio_error   = 0.0;
-        size_t              best_pass_distance = 0;
-        double              best_max_height    = 0.0;
-        size_t              best_pass_count    = 0;
-
-        for (size_t pass_count = min_passes; pass_count <= max_passes; pass_count += 2) {
-            const size_t pair_count = pass_count / 2;
-            if (pair_count == 0)
-                continue;
-            const double pair_h = base_height / double(pair_count);
-
-            const double h_a_min = std::max(lo, pair_h - hi);
-            const double h_a_max = std::min(hi, pair_h - lo);
-            if (h_a_min > h_a_max + EPSILON)
-                continue;
-
-            const double h_a = std::clamp(pair_h * ratio_a, h_a_min, h_a_max);
-            const double h_b = pair_h - h_a;
-
-            std::vector<double> out;
-            out.reserve(pass_count);
-            for (size_t pair_idx = 0; pair_idx < pair_count; ++pair_idx) {
-                out.emplace_back(h_a);
-                out.emplace_back(h_b);
-            }
-            if (!fit_pass_heights_to_interval(out, base_height, lo, hi))
-                continue;
-
-            const double ratio_actual  = (h_a + h_b > EPSILON) ? (h_a / (h_a + h_b)) : 0.5;
-            const double ratio_error   = std::abs(ratio_actual - ratio_a);
-            const size_t pass_distance = (pass_count > target_passes) ? (pass_count - target_passes) : (target_passes - pass_count);
-            const double max_height    = std::max(h_a, h_b);
-
-            const bool better_ratio       = !has_best || (ratio_error + 1e-6 < best_ratio_error);
-            const bool similar_ratio      = has_best && std::abs(ratio_error - best_ratio_error) <= 1e-6;
-            const bool better_distance    = similar_ratio && (pass_distance < best_pass_distance);
-            const bool similar_distance   = similar_ratio && (pass_distance == best_pass_distance);
-            const bool better_max_height  = similar_distance && (max_height + 1e-6 < best_max_height);
-            const bool similar_max_height = similar_distance && std::abs(max_height - best_max_height) <= 1e-6;
-            const bool better_pass_count  = similar_max_height && (pass_count > best_pass_count);
-
-            if (better_ratio || better_distance || better_max_height || better_pass_count) {
-                has_best           = true;
-                best_passes        = std::move(out);
-                best_ratio_error   = ratio_error;
-                best_pass_distance = pass_distance;
-                best_max_height    = max_height;
-                best_pass_count    = pass_count;
-            }
-        }
-
-        return has_best ? best_passes : build_uniform();
+        const double ratio_a = target_a / (target_a + target_b);
+        const double height_a = std::clamp(height * ratio_a, minimum, height - minimum);
+        return std::vector<double>{height_a, height - height_a};
     };
 
     if (preferred_a_height > EPSILON || preferred_b_height > EPSILON) {
-        std::vector<double> cadence_unit;
+        std::vector<double> cadence;
         if (preferred_a_height > EPSILON)
-            cadence_unit.push_back(std::clamp(preferred_a_height, lo, hi));
+            cadence.push_back(std::clamp(preferred_a_height, minimum, maximum));
         if (preferred_b_height > EPSILON)
-            cadence_unit.push_back(std::clamp(preferred_b_height, lo, hi));
+            cadence.push_back(std::clamp(preferred_b_height, minimum, maximum));
 
-        if (!cadence_unit.empty()) {
-            std::vector<double> out;
-            out.reserve(size_t(std::ceil(base_height / lo)) + 2);
-
-            double z_used = 0.0;
-            size_t idx    = 0;
-            size_t guard  = 0;
-            while (z_used + cadence_unit[idx] < base_height - EPSILON && guard++ < 100000) {
-                out.push_back(cadence_unit[idx]);
-                z_used += cadence_unit[idx];
-                idx = (idx + 1) % cadence_unit.size();
-            }
-
-            const double remainder = base_height - z_used;
-            if (remainder > EPSILON)
-                out.push_back(remainder);
-
-            if (fit_pass_heights_to_interval(out, base_height, lo, hi) && (max_passes_limit == 0 || out.size() <= max_passes_limit))
-                return out;
+        std::vector<double> passes;
+        double used = 0.0;
+        size_t index = 0;
+        while (!cadence.empty() && used + cadence[index] < height - EPSILON) {
+            passes.push_back(cadence[index]);
+            used += cadence[index];
+            index = (index + 1) % cadence.size();
         }
+        if (height - used > EPSILON)
+            passes.push_back(height - used);
 
+        if (fit_to_height(passes) && (pass_limit == 0 || passes.size() <= pass_limit))
+            return passes;
         if (preferred_a_height > EPSILON && preferred_b_height > EPSILON)
-            return build_alternating(preferred_a_height, preferred_b_height);
-        return build_uniform();
+            return build_pair(preferred_a_height, preferred_b_height);
+        return height >= 2.0 * minimum - EPSILON ? std::vector<double>{0.5 * height, 0.5 * height} : std::vector<double>{height};
     }
 
-    const int    mix_b        = std::clamp(mix_b_percent, 0, 100);
-    const double pct_b        = double(mix_b) / 100.0;
-    const double pct_a        = 1.0 - pct_b;
-    const double gradient_h_a = lo + pct_a * (hi - lo);
-    const double gradient_h_b = lo + pct_b * (hi - lo);
-    return build_alternating(gradient_h_a, gradient_h_b);
+    const auto targets = mixed_filament_local_z_pair_heights(height, minimum, mix_b_percent);
+    return build_pair(targets.first, targets.second);
 }
 
-}} // namespace Slic3r::MixedFilamentInternal
+} // namespace Slic3r

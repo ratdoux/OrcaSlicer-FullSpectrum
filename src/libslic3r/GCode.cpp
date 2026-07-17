@@ -4606,7 +4606,6 @@ LayerResult GCode::process_layer(const Print& print,
     constexpr double LOCAL_Z_BASE_MASK_EXPAND_MM      = 0.04;
     const float      local_z_perimeter_mask_expand    = float(scale_(LOCAL_Z_PERIMETER_MASK_EXPAND_MM));
     const float      local_z_base_mask_expand         = float(scale_(LOCAL_Z_BASE_MASK_EXPAND_MM));
-    const bool       local_z_whole_objects_enabled    = print.full_print_config().opt_bool("dithering_local_z_whole_objects");
 
     struct LocalZPassBucket {
         const SubLayerPlan*                                   plan { nullptr };
@@ -4705,7 +4704,7 @@ LayerResult GCode::process_layer(const Print& print,
                     ExPolygons compensated;
                     if (!mixed_raw_masks.empty()) {
                         ExPolygons compensated_mixed = local_z_compensate_masks(mixed_raw_masks, local_z_perimeter_mask_expand, true);
-                        if (local_z_whole_objects_enabled && !fixed_compensated_guard.empty())
+                        if (!fixed_compensated_guard.empty())
                             compensated_mixed = diff_ex(compensated_mixed, fixed_compensated_guard);
                         if (!compensated_mixed.empty())
                             append(compensated, compensated_mixed);

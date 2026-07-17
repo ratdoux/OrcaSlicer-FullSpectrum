@@ -950,6 +950,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "dithering_z_step_size"
             || opt_key == "dithering_local_z_mode"
             || opt_key == "dithering_local_z_whole_objects"
+            || opt_key == "dithering_local_z_preserve_first_layer"
             || opt_key == "dithering_local_z_direct_multicolor"
             || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mixed_filament_component_bias_enabled"
@@ -974,7 +975,6 @@ bool PrintObject::invalidate_state_by_config_options(
         } else if (
                opt_key == "mixed_filament_gradient_mode"
             || opt_key == "mixed_filament_height_lower_bound"
-            || opt_key == "mixed_filament_height_upper_bound"
             || opt_key == "mixed_filament_advanced_dithering"
             || opt_key == "mixed_filament_component_bias_enabled"
             || opt_key == "mixed_filament_surface_indentation"
@@ -3691,8 +3691,8 @@ static t_layer_config_ranges layer_ranges_with_dithering(const t_layer_config_ra
 static bool mixed_state_heights(const MixedFilamentManager &mixed_mgr,
                                 size_t                     num_physical,
                                 size_t                     state_id,
-                                coordf_t                   lower_bound,
-                                coordf_t                   upper_bound,
+                                coordf_t                   nominal_layer_height,
+                                coordf_t                   min_sublayer_height,
                                 coordf_t                  &height_a,
                                 coordf_t                  &height_b)
 {
@@ -3703,14 +3703,12 @@ static bool mixed_state_heights(const MixedFilamentManager &mixed_mgr,
     if (!definition)
         return false;
 
-    const int mix_b = definition->recipe.blend.primary_pair_or().component_b_percent;
-    const coordf_t pct_b = coordf_t(mix_b) / coordf_t(100.f);
-    const coordf_t pct_a = coordf_t(1.f) - pct_b;
-    const coordf_t lo = std::max<coordf_t>(0.01f, lower_bound);
-    const coordf_t hi = std::max<coordf_t>(lo, upper_bound);
-
-    height_a = std::max<coordf_t>(0.01f, lo + pct_a * (hi - lo));
-    height_b = std::max<coordf_t>(0.01f, lo + pct_b * (hi - lo));
+    const auto heights = mixed_filament_local_z_pair_heights(
+        nominal_layer_height,
+        min_sublayer_height,
+        definition->recipe.blend.primary_pair_or().component_b_percent);
+    height_a = coordf_t(heights.first);
+    height_b = coordf_t(heights.second);
     return true;
 }
 
@@ -3752,8 +3750,7 @@ static t_layer_config_ranges layer_ranges_with_height_weighted_mixed(
     const std::vector<MixedStateZRanges> &mixed_state_ranges,
     const MixedFilamentManager  &mixed_mgr,
     size_t                       num_physical,
-    coordf_t                     lower_bound,
-    coordf_t                     upper_bound)
+    coordf_t                     min_sublayer_height)
 {
     if (object_height <= EPSILON || mixed_state_ranges.empty())
         return base_ranges_map;
@@ -3765,7 +3762,13 @@ static t_layer_config_ranges layer_ranges_with_height_weighted_mixed(
     for (const MixedStateZRanges &state_ranges : mixed_state_ranges) {
         coordf_t height_a = 0.f;
         coordf_t height_b = 0.f;
-        if (!mixed_state_heights(mixed_mgr, num_physical, state_ranges.state_id, lower_bound, upper_bound, height_a, height_b))
+        if (!mixed_state_heights(mixed_mgr,
+                                 num_physical,
+                                 state_ranges.state_id,
+                                 default_layer_height,
+                                 min_sublayer_height,
+                                 height_a,
+                                 height_b))
             continue;
         states.push_back({ state_ranges.state_id, height_a, height_b, state_ranges.ranges });
     }
@@ -3872,14 +3875,10 @@ bool PrintObject::update_layer_height_profile(const ModelObject          &model_
                 height_weighted_mode = (opt->value != 0);
         }
 
-        coordf_t mixed_lower = coordf_t(print_cfg.mixed_filament_height_lower_bound.value);
-        coordf_t mixed_upper = coordf_t(print_cfg.mixed_filament_height_upper_bound.value);
+        coordf_t min_sublayer_height = coordf_t(print_cfg.mixed_filament_height_lower_bound.value);
         if (full_cfg.has("mixed_filament_height_lower_bound"))
-            mixed_lower = coordf_t(full_cfg.opt_float("mixed_filament_height_lower_bound"));
-        if (full_cfg.has("mixed_filament_height_upper_bound"))
-            mixed_upper = coordf_t(full_cfg.opt_float("mixed_filament_height_upper_bound"));
-        mixed_lower = std::max<coordf_t>(0.01f, mixed_lower);
-        mixed_upper = std::max<coordf_t>(mixed_lower, mixed_upper);
+            min_sublayer_height = coordf_t(full_cfg.opt_float("mixed_filament_height_lower_bound"));
+        min_sublayer_height = std::max<coordf_t>(0.01f, min_sublayer_height);
 
         if (height_weighted_mode) {
             const coordf_t object_height = slicing_parameters.object_print_z_uncompensated_height();
@@ -3891,8 +3890,7 @@ bool PrintObject::update_layer_height_profile(const ModelObject          &model_
                                                                                 mixed_states,
                                                                                 print_object->print()->mixed_filament_manager(),
                                                                                 print_cfg.filament_colour.size(),
-                                                                                mixed_lower,
-                                                                                mixed_upper);
+                                                                                min_sublayer_height);
                 ranges_to_use = &mixed_gradient_ranges;
             }
         }

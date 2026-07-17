@@ -784,7 +784,12 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     const bool local_z_dithering_enabled =
         config->has("dithering_local_z_mode") && config->option("dithering_local_z_mode") != nullptr &&
         config->opt_bool("dithering_local_z_mode");
+    const bool local_z_full_domain_enabled =
+        local_z_dithering_enabled &&
+        config->has("dithering_local_z_whole_objects") && config->option("dithering_local_z_whole_objects") != nullptr &&
+        config->opt_bool("dithering_local_z_whole_objects");
     toggle_line("dithering_local_z_whole_objects", local_z_dithering_enabled);
+    toggle_line("dithering_local_z_preserve_first_layer", local_z_full_domain_enabled);
     toggle_line("dithering_local_z_direct_multicolor", local_z_dithering_enabled);
     toggle_line("local_z_wipe_tower_purge_lines", have_prime_tower && !is_BBL_Printer && local_z_dithering_enabled);
 

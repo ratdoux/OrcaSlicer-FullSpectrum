@@ -294,8 +294,7 @@ struct MixedFilamentDefinition
 struct MixedFilamentPreviewSettings
 {
     double nominal_layer_height { 0.2 };
-    double mixed_lower_bound { 0.04 };
-    double mixed_upper_bound { 0.16 };
+    double min_sublayer_height { 0.06 };
     double preferred_a_height { 0.0 };
     double preferred_b_height { 0.0 };
     bool   local_z_mode { false };
@@ -322,6 +321,24 @@ struct MixedFilamentColorInput
     std::optional<std::string> material_id;
 };
 
+std::pair<double, double> mixed_filament_local_z_pair_heights(double nominal_layer_height,
+                                                               double min_sublayer_height,
+                                                               int    mix_b_percent);
+bool mixed_filament_definition_uses_local_z(const MixedFilamentDefinition &definition,
+                                             bool                           global_local_z_enabled);
+bool mixed_filament_local_z_uses_full_domain(bool global_full_domain_enabled,
+                                              bool mixed_filament_assigned_to_region);
+bool mixed_filament_local_z_painted_override_uses_planner(bool painted_state_is_mixed,
+                                                           bool painted_mixed_row_uses_local_z);
+bool mixed_filament_local_z_should_subdivide_layer(size_t layer_id,
+                                                    bool   whole_object_mode,
+                                                    bool   preserve_first_layer);
+std::vector<double> mixed_filament_local_z_preview_pass_heights(double nominal_layer_height,
+                                                                 double min_sublayer_height,
+                                                                 double preferred_a_height,
+                                                                 double preferred_b_height,
+                                                                 int    mix_b_percent,
+                                                                 int    max_sublayers_limit = 0);
 int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDefinition     &definition,
                                                            const MixedFilamentPreviewSettings &preview_settings);
 bool mixed_filament_supports_bias_apparent_color(const MixedFilamentDefinition     &definition,
@@ -397,8 +414,8 @@ public:
     // Recompute cadence ratios from gradient settings.
     // gradient_mode: 0 = Layer cycle weighted, 1 = Height weighted.
     void apply_gradient_settings(int   gradient_mode,
-                                 float lower_bound,
-                                 float upper_bound,
+                                 float nominal_layer_height,
+                                 float min_sublayer_height,
                                  bool  advanced_dithering = false);
 
     // Persist mixed rows, including auto/deleted state, into the compact
@@ -568,9 +585,9 @@ private:
     mutable std::vector<MixedFilamentLegacyRow>   m_legacy_cache;
     mutable bool                         m_legacy_cache_dirty = true;
     mutable bool                         m_legacy_cache_mutable_borrowed = false;
-    int                                  m_gradient_mode       = 0;
-    float                                m_height_lower_bound  = 0.04f;
-    float                                m_height_upper_bound  = 0.16f;
+    int                                  m_gradient_mode          = 0;
+    float                                m_nominal_layer_height   = 0.2f;
+    float                                m_min_sublayer_height    = 0.06f;
     bool                                 m_advanced_dithering  = false;
     uint64_t                             m_next_stable_id      = 1;
     MixedFilamentDisplayContext m_display_context;

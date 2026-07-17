@@ -73,11 +73,16 @@ static bool very_light(ImU32 c)
         && ((c >> IM_COL32_B_SHIFT) & 0xFF) > 224;
 }
 
-static std::vector<ImU32> mixed_filament_gradient_stops_ImU32(const MixedFilament& mf, const MixedFilamentDisplayContext& ctx)
+static bool is_gradient_definition(const MixedFilamentDefinition& definition)
 {
-    const size_t num_physical = ctx.num_physical == 0 ? ctx.physical_colors.size() : ctx.num_physical;
-    MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(mf, num_physical);
-    definition.behavior.gradient.enabled = mf.gradient_enabled || !mf.gradient_component_ids.empty();
+    return definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend &&
+           definition.behavior.gradient.enabled &&
+           definition.recipe.blend.components.size() >= 2;
+}
+
+static std::vector<ImU32> mixed_filament_gradient_stops_ImU32(const MixedFilamentDefinition& definition,
+                                                              const MixedFilamentDisplayContext& ctx)
+{
     const std::vector<wxColour> preview_colors =
         build_mixed_filament_gradient_preview(definition, ctx).sampled_colors;
 
@@ -539,18 +544,18 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             ImGui::SameLine(button_offset);
         }
 
-        const MixedFilament* mf_data =
+        // Multi-component blends also occupy legacy gradient fields, so the typed behavior flag is authoritative here.
+        const std::optional<MixedFilamentDefinition> mixed_definition =
             wxGetApp().preset_bundle != nullptr ?
-                wxGetApp().preset_bundle->mixed_filaments.mixed_filament_from_id(actual_filament_id,
-                                                                                 m_mixed_display_context.num_physical) :
-                nullptr;
-        const bool is_gradient = mf_data != nullptr &&
-                                 (mf_data->gradient_enabled || !mf_data->gradient_component_ids.empty()) &&
-                                 mf_data->component_a != mf_data->component_b;
+                wxGetApp().preset_bundle->mixed_filaments.mixed_filament_definition_from_id(
+                    actual_filament_id, m_mixed_display_context.num_physical) :
+                std::nullopt;
+        const bool is_gradient = mixed_definition && is_gradient_definition(*mixed_definition);
 
         if (is_gradient) {
             // --- Gradient path: ColorButton for sizing + interaction, then draw gradient on top ---
-            const std::vector<ImU32> gradient_stops = mixed_filament_gradient_stops_ImU32(*mf_data, m_mixed_display_context);
+            const std::vector<ImU32> gradient_stops =
+                mixed_filament_gradient_stops_ImU32(*mixed_definition, m_mixed_display_context);
 
             int avg_r = 0;
             int avg_g = 0;

@@ -930,6 +930,7 @@ static std::vector<std::string> s_Preset_print_options {
      "interlocking_beam", "interlocking_orientation", "interlocking_beam_layer_count", "interlocking_depth", "interlocking_boundary_avoidance", "interlocking_beam_width",
      "dithering_local_z_mode",
      "dithering_local_z_whole_objects",
+     "dithering_local_z_preserve_first_layer",
      "dithering_local_z_infill",
      "calib_flowrate_topinfill_special_order",
 };

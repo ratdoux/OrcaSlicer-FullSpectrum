@@ -167,7 +167,6 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
     int                                       start_extruder)
 {
     std::vector<LocalZWipeTowerPassRef> pass_refs;
-    const bool  local_z_whole_objects_enabled = print.full_print_config().opt_bool("dithering_local_z_whole_objects");
     const float local_z_perimeter_mask_expand = float(scale_(LOCAL_Z_PERIMETER_MASK_EXPAND_MM));
 
     for (size_t layer_to_print_idx = 0; layer_to_print_idx < layers.size(); ++layer_to_print_idx) {
@@ -228,7 +227,7 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
                 if (!mixed_raw_masks.empty()) {
                     ExPolygons compensated_mixed =
                         local_z_compensate_masks_for_wipe_tower(mixed_raw_masks, local_z_perimeter_mask_expand, true);
-                    if (local_z_whole_objects_enabled && !fixed_compensated_guard.empty())
+                    if (!fixed_compensated_guard.empty())
                         compensated_mixed = diff_ex(compensated_mixed, fixed_compensated_guard);
                     if (!compensated_mixed.empty())
                         append(compensated, compensated_mixed);
@@ -690,11 +689,11 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "dithering_z_step_size"
             || opt_key == "dithering_local_z_mode"
             || opt_key == "dithering_local_z_whole_objects"
+            || opt_key == "dithering_local_z_preserve_first_layer"
             || opt_key == "dithering_local_z_direct_multicolor"
             || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mixed_filament_gradient_mode"
             || opt_key == "mixed_filament_height_lower_bound"
-            || opt_key == "mixed_filament_height_upper_bound"
             || opt_key == "mixed_filament_advanced_dithering"
             || opt_key == "mixed_filament_component_bias_enabled"
             || opt_key == "mixed_filament_surface_indentation"
@@ -3327,7 +3326,7 @@ void Print::_make_wipe_tower()
 
                 bool first_layer = &layer_tools == &m_wipe_tower_data.tool_ordering.front();
 
-                if (m_config.dithering_local_z_mode && layers_with_same_print_z != nullptr) {
+                if (layers_with_same_print_z != nullptr) {
                     const std::vector<LocalZWipeTowerToolchange> local_z_toolchanges =
                         collect_local_z_wipe_tower_toolchanges(*this, *layers_with_same_print_z, int(current_extruder_id));
                     if (!local_z_toolchanges.empty()) {

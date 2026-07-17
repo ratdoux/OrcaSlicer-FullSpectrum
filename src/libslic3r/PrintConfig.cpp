@@ -2072,7 +2072,7 @@ void PrintConfigDef::init_fff_params()
     def = this->add("filament_full_spectrum_material_id", coStrings);
     def->label = L("FullSpectrum material ID");
     def->tooltip = L("Stable material identifier from the FullSpectrum calibration database. "
-                     "Leave empty for uncalibrated filaments; color-only matching is used as a limited legacy fallback.");
+                     "Leave empty for uncalibrated filaments; only the primary measured color may be inferred.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionStrings{ "" });
 
@@ -4275,26 +4275,15 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("mixed_filament_height_lower_bound", coFloat);
-    def->label = L("Local-Z lower height bound");
+    def->label = L("Local-Z minimum sublayer height");
     def->category = L("Others");
-    def->tooltip = L("Lower bound used when Local-Z mixed-filament dithering chooses per-color sublayer heights.\n\n"
-                     "Smaller values let Local-Z use thinner sublayers for a color when needed.\n\n"
+    def->tooltip = L("Smallest sublayer height Local-Z may assign to an active filament. "
+                     "Requested blend percentages are applied directly to the nominal layer height and clamped to this minimum.\n\n"
                      "Detailed mixed filament setting explanations will be published once the project wiki is available.");
     def->sidetext = "mm";
     def->min = 0.01;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.04));
-
-    def = this->add("mixed_filament_height_upper_bound", coFloat);
-    def->label = L("Local-Z upper height bound");
-    def->category = L("Others");
-    def->tooltip = L("Upper bound used when Local-Z mixed-filament dithering chooses per-color sublayer heights.\n\n"
-                     "Larger values let Local-Z use thicker sublayers for a color when needed.\n\n"
-                     "Detailed mixed filament setting explanations will be published once the project wiki is available.");
-    def->sidetext = "mm";
-    def->min = 0.01;
-    def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.16));
+    def->set_default_value(new ConfigOptionFloat(0.06));
 
     def = this->add("mixed_filament_advanced_dithering", coBool);
     def->label = L("Advanced dithering");
@@ -4357,21 +4346,29 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionFloat(0.0));
 
     def = this->add("dithering_local_z_mode", coBool);
-    def->label = L("Subdivide Mix Layer");
+    def->label = L("Subdivide all mix layers");
     def->category = L("Others");
-    def->tooltip = L("Enable \"Subdivide Mix Layer\" for mixing areas. Layer height will be subdivided for better color mixing results.\n\n"
-                     "Blend colors by varying layer heights instead of using a fixed ratio of equal-height layers. This only affects blended color zones; non-blended areas keep their nominal layer height and cadence when possible.\n\n"
+    def->tooltip = L("Gradients automatically subdivide their mixed layers. Enable this override to also subdivide non-gradient mixed filaments.\n\n"
+                     "Subdivision blends colors by varying layer heights instead of using a fixed ratio of equal-height layers. This only affects blended color zones; non-blended areas keep their nominal layer height and cadence when possible.\n\n"
                      "This setting increases color blending smoothness by splitting each blended layer according to the blend ratio. For example, a 66/33 blend at 0.12 mm layer height will print as one 0.08 mm layer and one 0.04 mm layer. At 0.20 mm layer height, a 75/25 blend will print as one 0.15 mm layer and one 0.05 mm layer.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("dithering_local_z_whole_objects", coBool);
-    def->label = L("Full domain");
+    def->label = L("Full domain for all mixes");
     def->category = L("Others");
-    def->tooltip = L("Experimental. Extend Subdivide Mix Layer beyond painted mixed zones so mixed wall regions can use it across the full object domain.\n\n"
+    def->tooltip = L("A mixed filament assigned to an entire object or volume automatically uses the full domain when it uses layer subdivision. Enable this override to extend full-domain subdivision to all eligible mixed wall regions.\n\n"
                      "This also lets subdivision continue through default mixed walls around painted areas instead of limiting the effect strictly to painted masks.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("dithering_local_z_preserve_first_layer", coBool);
+    def->label = L("Keep first layer unsplit");
+    def->category = L("Others");
+    def->tooltip = L("When Subdivide Mix Layer and Full domain are enabled, keep the first object layer at its nominal layer height.\n\n"
+                     "This prevents the first layer from being divided into very thin sublayers that may not adhere reliably.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("dithering_local_z_infill", coBool);
     def->label = L("Apply subdivision to infill");
@@ -7316,6 +7313,7 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         "extruder_type",
         "internal_bridge_support_thickness","extruder_clearance_max_radius", "top_area_threshold", "reduce_wall_solid_infill","filament_load_time","filament_unload_time",
         "smooth_coefficient", "overhang_totally_speed", "silent_mode",
+        "mixed_filament_height_upper_bound",
     };
 
     if (ignore.find(opt_key) != ignore.end()) {

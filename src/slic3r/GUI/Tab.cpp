@@ -1938,7 +1938,6 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     if (m_type == Preset::TYPE_PRINT &&
         (opt_key == "mixed_filament_gradient_mode" ||
          opt_key == "mixed_filament_height_lower_bound" ||
-         opt_key == "mixed_filament_height_upper_bound" ||
          opt_key == "mixed_color_layer_height_a" ||
          opt_key == "mixed_color_layer_height_b" ||
          opt_key == "mixed_filament_advanced_dithering" ||
@@ -1948,6 +1947,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "dithering_z_step_size" ||
          opt_key == "dithering_local_z_mode" ||
          opt_key == "dithering_local_z_whole_objects" ||
+         opt_key == "dithering_local_z_preserve_first_layer" ||
          opt_key == "dithering_local_z_direct_multicolor" ||
          opt_key == "dithering_local_z_gradient_overlap_window" ||
          opt_key == "dithering_step_painted_zones_only" ||
@@ -2654,6 +2654,7 @@ void TabPrint::build()
         optgroup = page->new_optgroup(L("Color Mixing (Experimental)"), L"param_mixed_color");
         optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_local_z_whole_objects");
+        optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");
         optgroup->append_single_option_line("dithering_local_z_infill");
 
     page = add_options_page(L("Others"), "custom-gcode_other"); // ORCA: icon only visible on placeholders
@@ -2692,7 +2693,6 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         // Height-weighted cadence is no longer exposed in the Others tab.
         // optgroup->append_single_option_line("mixed_filament_gradient_mode");
         optgroup->append_single_option_line("mixed_filament_height_lower_bound");
-        optgroup->append_single_option_line("mixed_filament_height_upper_bound");
         optgroup->append_single_option_line("mixed_filament_advanced_dithering");
         optgroup->append_single_option_line("mixed_filament_component_bias_enabled");
         optgroup->append_single_option_line("mixed_filament_surface_indentation");
@@ -2700,6 +2700,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("dithering_z_step_size");
         optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_local_z_whole_objects");
+        optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_gradient_overlap_window");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");

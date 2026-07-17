@@ -8,7 +8,58 @@
 #include <numeric>
 #include <sstream>
 
-namespace Slic3r { namespace MixedFilamentInternal {
+namespace Slic3r {
+
+std::pair<double, double> mixed_filament_local_z_pair_heights(double nominal_layer_height,
+                                                               double min_sublayer_height,
+                                                               int    mix_b_percent)
+{
+    const double height = std::max(0.0, nominal_layer_height);
+    if (height <= EPSILON)
+        return {0.0, 0.0};
+
+    const int mix_b = std::clamp(mix_b_percent, 0, 100);
+    if (mix_b <= 0)
+        return {height, 0.0};
+    if (mix_b >= 100)
+        return {0.0, height};
+
+    const double minimum = std::max(0.01, min_sublayer_height);
+    if (height < 2.0 * minimum - EPSILON)
+        return mix_b < 50 ? std::pair<double, double>{height, 0.0} : std::pair<double, double>{0.0, height};
+
+    const double height_b = std::clamp(height * double(mix_b) / 100.0, minimum, height - minimum);
+    return {height - height_b, height_b};
+}
+
+bool mixed_filament_definition_uses_local_z(const MixedFilamentDefinition &definition,
+                                             bool                           global_local_z_enabled)
+{
+    if (definition.visibility.tombstoned || definition.recipe.manual_pattern)
+        return false;
+    return global_local_z_enabled || definition.behavior.gradient.enabled;
+}
+
+bool mixed_filament_local_z_uses_full_domain(bool global_full_domain_enabled,
+                                              bool mixed_filament_assigned_to_region)
+{
+    return global_full_domain_enabled || mixed_filament_assigned_to_region;
+}
+
+bool mixed_filament_local_z_painted_override_uses_planner(bool painted_state_is_mixed,
+                                                           bool painted_mixed_row_uses_local_z)
+{
+    return painted_state_is_mixed && painted_mixed_row_uses_local_z;
+}
+
+bool mixed_filament_local_z_should_subdivide_layer(size_t layer_id,
+                                                    bool   whole_object_mode,
+                                                    bool   preserve_first_layer)
+{
+    return !(layer_id == 0 && whole_object_mode && preserve_first_layer);
+}
+
+namespace MixedFilamentInternal {
 
 uint64_t canonical_pair_key(unsigned int a, unsigned int b)
 {
@@ -81,16 +132,15 @@ int safe_ratio_from_height(float h, float unit)
     return std::max(0, int(std::lround(h / unit)));
 }
 
-void compute_gradient_heights_from_mix(int mix_b_percent, float lower_bound, float upper_bound, float& h_a, float& h_b)
+void compute_gradient_heights_from_mix(int mix_b_percent,
+                                       float nominal_layer_height,
+                                       float min_sublayer_height,
+                                       float& h_a,
+                                       float& h_b)
 {
-    const int   mix_b = clamp_int(mix_b_percent, 0, 100);
-    const float pct_b = float(mix_b) / 100.f;
-    const float pct_a = 1.f - pct_b;
-    const float lo    = std::max(0.01f, lower_bound);
-    const float hi    = std::max(lo, upper_bound);
-
-    h_a = lo + pct_a * (hi - lo);
-    h_b = lo + pct_b * (hi - lo);
+    const auto heights = mixed_filament_local_z_pair_heights(nominal_layer_height, min_sublayer_height, mix_b_percent);
+    h_a                = float(heights.first);
+    h_b                = float(heights.second);
 }
 
 void normalize_ratio_pair(int& a, int& b)
@@ -110,20 +160,30 @@ void normalize_ratio_pair(int& a, int& b)
     }
 }
 
-std::pair<int, int> gradient_ratios_from_mix(int mix_b_percent, int gradient_mode, float lower_bound, float upper_bound)
+std::pair<int, int> gradient_ratios_from_mix(int mix_b_percent,
+                                             int gradient_mode,
+                                             float nominal_layer_height,
+                                             float min_sublayer_height)
 {
     int ratio_a = 1;
     int ratio_b = 1;
     if (gradient_mode == 1) {
         // Height-weighted mode:
-        // map blend to [lower, upper], then convert relative heights to an integer cadence.
+        // Convert the direct nominal-layer thickness split into an integer cadence.
         float h_a = 0.f;
         float h_b = 0.f;
-        compute_gradient_heights_from_mix(mix_b_percent, lower_bound, upper_bound, h_a, h_b);
-        // Use lower-bound as quantization unit so this mode differs clearly from layer-cycle mode.
-        const float unit = std::max(0.01f, std::min(h_a, h_b));
-        ratio_a          = std::max(1, safe_ratio_from_height(h_a, unit));
-        ratio_b          = std::max(1, safe_ratio_from_height(h_b, unit));
+        compute_gradient_heights_from_mix(mix_b_percent, nominal_layer_height, min_sublayer_height, h_a, h_b);
+        if (h_a <= EPSILON) {
+            ratio_a = 0;
+            ratio_b = 1;
+        } else if (h_b <= EPSILON) {
+            ratio_a = 1;
+            ratio_b = 0;
+        } else {
+            const float unit = std::max(0.01f, std::min(h_a, h_b));
+            ratio_a          = std::max(1, safe_ratio_from_height(h_a, unit));
+            ratio_b          = std::max(1, safe_ratio_from_height(h_b, unit));
+        }
     } else {
         // Layer-cycle mode:
         // derive a gradual integer cadence directly from the blend ratio

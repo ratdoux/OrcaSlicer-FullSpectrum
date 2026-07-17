@@ -410,12 +410,15 @@ int MixedFilamentManager::mix_percent_from_manual_pattern(const std::string& pat
     return mix_percent_from_normalized_pattern(normalize_manual_pattern(pattern));
 }
 
-void MixedFilamentManager::apply_gradient_settings(int gradient_mode, float lower_bound, float upper_bound, bool advanced_dithering)
+void MixedFilamentManager::apply_gradient_settings(int   gradient_mode,
+                                                   float nominal_layer_height,
+                                                   float min_sublayer_height,
+                                                   bool  advanced_dithering)
 {
-    m_gradient_mode      = (gradient_mode != 0) ? 1 : 0;
-    m_height_lower_bound = std::max(0.01f, lower_bound);
-    m_height_upper_bound = std::max(m_height_lower_bound, upper_bound);
-    m_advanced_dithering = advanced_dithering;
+    m_gradient_mode        = (gradient_mode != 0) ? 1 : 0;
+    m_nominal_layer_height = std::max(0.01f, nominal_layer_height);
+    m_min_sublayer_height  = std::max(0.01f, min_sublayer_height);
+    m_advanced_dithering   = advanced_dithering;
 
     for (MixedFilamentDefinition& definition : m_definitions) {
         if (definition.source.kind != MixedFilamentSourceKind::Custom) {
@@ -426,8 +429,8 @@ void MixedFilamentManager::apply_gradient_settings(int gradient_mode, float lowe
         const std::pair<int, int> ratios =
             gradient_ratios_from_mix(definition.recipe.blend.primary_pair_or().component_b_percent,
                                      m_gradient_mode,
-                                     m_height_lower_bound,
-                                     m_height_upper_bound);
+                                     m_nominal_layer_height,
+                                     m_min_sublayer_height);
         definition.behavior.layer_cadence.component_a_layers = ratios.first;
         definition.behavior.layer_cadence.component_b_layers = ratios.second;
     }

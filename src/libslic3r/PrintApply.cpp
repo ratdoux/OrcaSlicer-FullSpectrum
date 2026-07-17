@@ -1194,12 +1194,12 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     new_full_config.option("dithering_z_step_size", true);
     new_full_config.option("dithering_local_z_mode", true);
     new_full_config.option("dithering_local_z_whole_objects", true);
+    new_full_config.option("dithering_local_z_preserve_first_layer", true);
     new_full_config.option("dithering_local_z_infill", true);
     new_full_config.option("dithering_local_z_direct_multicolor", true);
     new_full_config.option("dithering_step_painted_zones_only", true);
     new_full_config.option("mixed_filament_gradient_mode", true);
     new_full_config.option("mixed_filament_height_lower_bound", true);
-    new_full_config.option("mixed_filament_height_upper_bound", true);
     new_full_config.option("mixed_filament_advanced_dithering", true);
     new_full_config.option("mixed_filament_component_bias_enabled", true);
     new_full_config.option("mixed_filament_surface_indentation", true);
@@ -1208,12 +1208,12 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_config.option("dithering_z_step_size", true);
     m_config.option("dithering_local_z_mode", true);
     m_config.option("dithering_local_z_whole_objects", true);
+    m_config.option("dithering_local_z_preserve_first_layer", true);
     m_config.option("dithering_local_z_infill", true);
     m_config.option("dithering_local_z_direct_multicolor", true);
     m_config.option("dithering_step_painted_zones_only", true);
     m_config.option("mixed_filament_gradient_mode", true);
     m_config.option("mixed_filament_height_lower_bound", true);
-    m_config.option("mixed_filament_height_upper_bound", true);
     m_config.option("mixed_filament_advanced_dithering", true);
     m_config.option("mixed_filament_component_bias_enabled", true);
     m_config.option("mixed_filament_surface_indentation", true);
@@ -1222,12 +1222,12 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_default_object_config.option("dithering_z_step_size", true);
     m_default_object_config.option("dithering_local_z_mode", true);
     m_default_object_config.option("dithering_local_z_whole_objects", true);
+    m_default_object_config.option("dithering_local_z_preserve_first_layer", true);
     m_default_object_config.option("dithering_local_z_infill", true);
     m_default_object_config.option("dithering_local_z_direct_multicolor", true);
     m_default_object_config.option("dithering_step_painted_zones_only", true);
     m_default_object_config.option("mixed_filament_gradient_mode", true);
     m_default_object_config.option("mixed_filament_height_lower_bound", true);
-    m_default_object_config.option("mixed_filament_height_upper_bound", true);
     m_default_object_config.option("mixed_filament_advanced_dithering", true);
     m_default_object_config.option("mixed_filament_component_bias_enabled", true);
     m_default_object_config.option("mixed_filament_surface_indentation", true);
@@ -1331,8 +1331,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     }
 
     int   mixed_gradient_mode   = 0;
-    float mixed_height_lower    = 0.04f;
-    float mixed_height_upper    = 0.16f;
+    float min_sublayer_height   = 0.06f;
     bool  mixed_advanced_dither = false;
     float mixed_surface_indentation    = 0.f;
     std::string mixed_custom_definitions;
@@ -1343,9 +1342,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
             mixed_gradient_mode = new_full_config.opt_int("mixed_filament_gradient_mode");
     }
     if (new_full_config.has("mixed_filament_height_lower_bound"))
-        mixed_height_lower = float(new_full_config.opt_float("mixed_filament_height_lower_bound"));
-    if (new_full_config.has("mixed_filament_height_upper_bound"))
-        mixed_height_upper = float(new_full_config.opt_float("mixed_filament_height_upper_bound"));
+        min_sublayer_height = float(new_full_config.opt_float("mixed_filament_height_lower_bound"));
     if (new_full_config.has("mixed_filament_advanced_dithering")) {
         if (const ConfigOptionBool *opt = new_full_config.option<ConfigOptionBool>("mixed_filament_advanced_dithering"))
             mixed_advanced_dither = opt->value;
@@ -1358,14 +1355,16 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
         mixed_custom_definitions = new_full_config.opt_string("mixed_filament_definitions");
 
     mixed_gradient_mode = std::clamp(mixed_gradient_mode, 0, 1);
-    mixed_height_lower  = std::max(0.01f, mixed_height_lower);
-    mixed_height_upper  = std::max(mixed_height_lower, mixed_height_upper);
+    min_sublayer_height = std::max(0.01f, min_sublayer_height);
+    const float nominal_layer_height = std::max(
+        0.01f,
+        new_full_config.has("layer_height") ? float(new_full_config.opt_float("layer_height")) : 0.2f);
     mixed_surface_indentation    = std::clamp(mixed_surface_indentation, -2.f, 2.f);
 
     BOOST_LOG_TRIVIAL(info) << "Print::apply mixed settings"
                             << ", gradient_mode=" << mixed_gradient_mode
-                            << ", lower=" << mixed_height_lower
-                            << ", upper=" << mixed_height_upper
+                            << ", nominal_layer_height=" << nominal_layer_height
+                            << ", min_sublayer_height=" << min_sublayer_height
                             << ", advanced_dither=" << (mixed_advanced_dither ? 1 : 0)
                             << ", surface_indentation=" << mixed_surface_indentation
                             << ", custom_definitions_len=" << mixed_custom_definitions.size()
@@ -1379,8 +1378,8 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_mixed_filament_mgr.auto_generate(physical_filament_colors);
     m_mixed_filament_mgr.load_custom_entries(mixed_custom_definitions, physical_filament_colors);
     m_mixed_filament_mgr.apply_gradient_settings(mixed_gradient_mode,
-                                                 mixed_height_lower,
-                                                 mixed_height_upper,
+                                                 nominal_layer_height,
+                                                 min_sublayer_height,
                                                  mixed_advanced_dither);
     size_t mixed_custom_count = 0;
     for (const MixedFilamentDefinition &definition : m_mixed_filament_mgr.mixed_filament_definitions(num_extruders)) {
