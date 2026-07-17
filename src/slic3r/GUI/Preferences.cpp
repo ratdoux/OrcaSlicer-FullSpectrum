@@ -694,13 +694,14 @@ wxBoxSizer* PreferencesDialog::create_item_darkmode_checkbox(wxString title, wxW
         app_config->set(param, checkbox->GetValue() ? "1" : "0");
         app_config->save();
         wxGetApp().Update_dark_mode_flag();
+        wxGetApp().init_label_colours();
 
-        //dark mode
-#ifdef _MSW_DARK_MODE
+        // Refresh both the open Preferences dialog and the main application with the new palette.
         wxGetApp().force_colors_update();
         wxGetApp().update_ui_from_settings();
         set_dark_mode();
-#endif
+        Refresh();
+        Update();
         SimpleEvent evt = SimpleEvent(EVT_GLCANVAS_COLOR_MODE_CHANGED);
         wxPostEvent(wxGetApp().plater(), evt);
         e.Skip();
