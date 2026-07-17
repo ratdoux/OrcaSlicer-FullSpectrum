@@ -528,6 +528,9 @@ Mapping from current fields:
 | `manual_pattern` | `manual_pattern.groups` |
 | `gradient_component_ids` | `gradient.component_refs` |
 | `gradient_component_weights` | `gradient.weights` |
+| `gradient_enabled` | `gradient.enabled` plus required feature `fs.mixed-gradient.v1` |
+| `gradient_start`, `gradient_end` | `gradient.component_a_start`, `gradient.component_a_end` |
+| `gradient_stop_positions` | `gradient.stop_positions` |
 | `component_a_surface_offset` | `surface_bias.component_a_offset_mm` |
 | `component_b_surface_offset` | `surface_bias.component_b_offset_mm` |
 | Local-Z max sublayers | optional `local_z.max_sublayers` |
@@ -552,7 +555,10 @@ Gradient conversion:
 
 - Decode current compact component IDs into physical filament stable refs.
 - Decode and normalize weights.
-- Omit `gradient` when fewer than three valid components remain.
+- Preserve spatial-gradient enablement, endpoints, and normalized stop positions.
+- A spatial gradient may contain two or more valid components; a static canonical
+  multi-component blend still requires at least three.
+- Declare `fs.mixed-gradient.v1` as required whenever spatial-gradient behavior is enabled.
 
 Private preset files and slice/build summaries are outside FullSpectrum vNext standard data. During the migration window they may remain in the legacy BBS projection for current application compatibility, but canonical FullSpectrum readers must not depend on them for FullSpectrum material semantics.
 
@@ -578,9 +584,12 @@ Used during the migration window:
 
 1. Treat canonical `PackageModel` as authority.
 2. Generate `mixed_filament_definitions` from canonical mixed rows through the bridge.
-3. Generate current BBS config files from current in-memory config.
-4. Omit legacy data that would cause old consumers to misinterpret mixed materials.
-5. Declare the legacy projection in `manifest.json`.
+3. Before GUI project export builds its config snapshot, serialize the live
+   `MixedFilamentManager` back into `mixed_filament_definitions` so the canonical
+   part and legacy project entry are derived from the same state.
+4. Generate current BBS config files from current in-memory config.
+5. Omit legacy data that would cause old consumers to misinterpret mixed materials.
+6. Declare the legacy projection in `manifest.json`.
 
 This write direction is compatibility output only. Readers must prefer canonical parts when both are present.
 
@@ -678,6 +687,8 @@ Unit tests:
 - `Fs3mfLegacyBridge` converts canonical mixed rows back to the current legacy row string.
 - Manual pattern groups round-trip through canonical JSON.
 - Gradient component refs and weights round-trip through canonical JSON.
+- Spatial multi-filament gradient endpoints and stop positions dual-write to
+  canonical JSON and the legacy compact project entry.
 - Tombstoned auto rows remain tombstoned after canonical round-trip.
 - Surface bias offsets remain in millimeters and preserve sign.
 - Local-Z row caps are emitted only when `fs.local-z.v1` is declared.

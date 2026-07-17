@@ -93,6 +93,15 @@ bool has_local_z(const std::optional<MixedFilaments> &mixed_filaments)
                        [](const VirtualFilament &vf) { return vf.local_z.has_value(); });
 }
 
+bool has_mixed_gradient(const std::optional<MixedFilaments> &mixed_filaments)
+{
+    if (!mixed_filaments)
+        return false;
+    return std::any_of(mixed_filaments->virtual_filaments.begin(),
+                       mixed_filaments->virtual_filaments.end(),
+                       [](const VirtualFilament &vf) { return vf.gradient && vf.gradient->enabled; });
+}
+
 ManifestPart make_manifest_part(const PackagePartPlan &part)
 {
     ManifestPart manifest_part;
@@ -146,6 +155,7 @@ std::vector<std::string> known_required_features()
         FEATURE_MATERIALS_CORE,
         FEATURE_ASSIGNMENTS,
         FEATURE_MIXED_FILAMENTS,
+        FEATURE_MIXED_GRADIENT,
         FEATURE_LOCAL_Z,
         FEATURE_LEGACY_PROJECTION
     };
@@ -304,6 +314,8 @@ PackageModel build_package_model(const DynamicPrintConfig &config,
     };
     if (model.mixed_filaments)
         model.manifest.required_features.emplace_back(FEATURE_MIXED_FILAMENTS);
+    if (has_mixed_gradient(model.mixed_filaments))
+        model.manifest.required_features.emplace_back(FEATURE_MIXED_GRADIENT);
     if (has_local_z(model.mixed_filaments))
         model.manifest.optional_features.emplace_back(FEATURE_LOCAL_Z);
     if (write_legacy_projection)

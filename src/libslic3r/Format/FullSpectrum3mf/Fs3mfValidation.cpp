@@ -1,5 +1,6 @@
 #include "Fs3mfValidation.hpp"
 
+#include <cmath>
 #include <set>
 #include <utility>
 
@@ -66,8 +67,9 @@ ValidationResult validate_package_model(const PackageModel &model)
                 result.fail("mixed filament " + vf.id + " has invalid distribution mode " + vf.distribution.mode);
 
             if (vf.gradient) {
-                if (vf.gradient->component_refs.size() < 3)
-                    result.fail("mixed filament " + vf.id + " gradient has fewer than three components");
+                const size_t minimum_components = vf.gradient->enabled ? 2 : 3;
+                if (vf.gradient->component_refs.size() < minimum_components)
+                    result.fail("mixed filament " + vf.id + " gradient has too few components");
                 if (!vf.gradient->weights.empty() && vf.gradient->weights.size() != vf.gradient->component_refs.size())
                     result.fail("mixed filament " + vf.id + " gradient weights do not match component refs");
                 std::set<std::string> gradient_refs;
@@ -80,6 +82,45 @@ ValidationResult validate_package_model(const PackageModel &model)
                 for (int weight : vf.gradient->weights) {
                     if (weight < 0)
                         result.fail("mixed filament " + vf.id + " gradient has negative weight");
+                }
+                if (vf.gradient->enabled) {
+                    if (vf.distribution.mode != "layer_cycle" && vf.distribution.mode != "height_weighted")
+                        result.fail("mixed filament " + vf.id + " spatial gradient requires gradient distribution");
+                    if (!std::isfinite(vf.gradient->component_a_start) || vf.gradient->component_a_start < 0.01 ||
+                        vf.gradient->component_a_start > 0.99 || !std::isfinite(vf.gradient->component_a_end) ||
+                        vf.gradient->component_a_end < 0.01 || vf.gradient->component_a_end > 0.99)
+                        result.fail("mixed filament " + vf.id + " spatial gradient endpoints are outside 0.01..0.99");
+
+                    const size_t expected_stops = 2 * vf.gradient->component_refs.size() - 1;
+                    if (!vf.gradient->stop_positions.empty() && vf.gradient->stop_positions.size() != expected_stops) {
+                        result.fail("mixed filament " + vf.id + " spatial gradient stop count does not match components");
+                    } else {
+                        double previous = 0.0;
+                        for (size_t stop_idx = 0; stop_idx < vf.gradient->stop_positions.size(); ++stop_idx) {
+                            const double position = vf.gradient->stop_positions[stop_idx];
+                            if (!std::isfinite(position) || position < 0.0 || position > 1.0)
+                                result.fail("mixed filament " + vf.id + " spatial gradient stop is outside 0..1");
+                            if (stop_idx != 0 && position < previous)
+                                result.fail("mixed filament " + vf.id + " spatial gradient stops are not ordered");
+                            previous = position;
+                        }
+                    }
+                }
+            }
+
+            if (!vf.surface_bias.component_refs.empty() || !vf.surface_bias.component_offsets_mm.empty()) {
+                if (vf.surface_bias.component_refs.size() != vf.surface_bias.component_offsets_mm.size())
+                    result.fail("mixed filament " + vf.id + " surface bias offsets do not match component refs");
+                std::set<std::string> bias_refs;
+                for (const std::string &component_ref : vf.surface_bias.component_refs) {
+                    if (physical_refs.count(component_ref) == 0)
+                        result.fail("mixed filament " + vf.id + " surface bias references missing physical filament " + component_ref);
+                    if (!bias_refs.insert(component_ref).second)
+                        result.fail("mixed filament " + vf.id + " surface bias has duplicate component ref " + component_ref);
+                }
+                for (const double offset_mm : vf.surface_bias.component_offsets_mm) {
+                    if (!std::isfinite(offset_mm) || offset_mm < -2.0 || offset_mm > 2.0)
+                        result.fail("mixed filament " + vf.id + " surface bias offset is outside -2..2 mm");
                 }
             }
 

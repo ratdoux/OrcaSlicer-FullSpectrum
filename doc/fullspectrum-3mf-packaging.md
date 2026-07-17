@@ -166,8 +166,7 @@ The main keys currently defined in `src/libslic3r/PrintConfig.cpp` are:
 - `mixed_color_layer_height_a`
 - `mixed_color_layer_height_b`
 - `mixed_filament_gradient_mode`
-- `mixed_filament_height_lower_bound`
-- `mixed_filament_height_upper_bound`
+- `mixed_filament_height_lower_bound` (the minimum Local-Z sublayer height)
 - `mixed_filament_advanced_dithering`
 - `mixed_filament_pointillism_pixel_size`
 - `mixed_filament_pointillism_line_gap`
@@ -178,6 +177,7 @@ The main keys currently defined in `src/libslic3r/PrintConfig.cpp` are:
 - `dithering_z_step_size`
 - `dithering_local_z_mode`
 - `dithering_local_z_whole_objects`
+- `dithering_local_z_preserve_first_layer`
 - `dithering_local_z_direct_multicolor`
 - `dithering_step_painted_zones_only`
 

@@ -164,10 +164,18 @@ struct Gradient
 {
     std::vector<std::string> component_refs;
     std::vector<int>         weights;
+    bool                     enabled = false;
+    double                   component_a_start = 0.99;
+    double                   component_a_end = 0.01;
+    std::vector<double>      stop_positions;
 };
 
 struct SurfaceBias
 {
+    // Explicit per-component form. Refs and offsets are parallel arrays.
+    std::vector<std::string> component_refs;
+    std::vector<double>      component_offsets_mm;
+    // Pair fields remain for Profile v1 and older readers.
     double component_a_offset_mm = 0.0;
     double component_b_offset_mm = 0.0;
 };

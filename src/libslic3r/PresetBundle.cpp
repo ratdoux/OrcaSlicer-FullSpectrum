@@ -2406,6 +2406,15 @@ DynamicPrintConfig PresetBundle::full_config_secure() const
     return config;
 }
 
+void PresetBundle::sync_mixed_filament_definitions_to_project_config()
+{
+    const std::string serialized = this->mixed_filaments.serialize_custom_entries();
+    if (ConfigOptionString *opt = this->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+        opt->value = serialized;
+    else
+        this->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
+}
+
 const std::set<std::string> ignore_settings_list ={
     "inherits",
     "print_settings_id", "filament_settings_id", "printer_settings_id"

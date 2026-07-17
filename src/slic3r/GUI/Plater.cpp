@@ -8703,13 +8703,13 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                     "mixed_filament_definitions",
                                     "mixed_filament_gradient_mode",
                                     "mixed_filament_height_lower_bound",
-                                    "mixed_filament_height_upper_bound",
                                     "mixed_filament_advanced_dithering",
                                     "mixed_filament_component_bias_enabled",
                                     "mixed_filament_surface_indentation",
                                     "dithering_z_step_size",
                                     "dithering_local_z_mode",
                                     "dithering_local_z_whole_objects",
+                                    "dithering_local_z_preserve_first_layer",
                                     "dithering_local_z_direct_multicolor",
                                     "dithering_step_painted_zones_only"
                                 };
@@ -17672,7 +17672,9 @@ int Plater::export_3mf(const boost::filesystem::path& output_path, SaveStrategy 
     // modify model
     publish(p->model, strategy);
 
-    DynamicPrintConfig cfg = wxGetApp().preset_bundle->full_config_secure();
+    PresetBundle& preset_bundle = *wxGetApp().preset_bundle;
+    preset_bundle.sync_mixed_filament_definitions_to_project_config();
+    DynamicPrintConfig cfg = preset_bundle.full_config_secure();
     const std::string path_u8 = into_u8(path);
     wxBusyCursor wait;
 
@@ -17768,7 +17770,6 @@ int Plater::export_3mf(const boost::filesystem::path& output_path, SaveStrategy 
     p->partplate_list.store_to_3mf_structure(plate_data_list, (strategy & SaveStrategy::WithGcode || strategy & SaveStrategy::WithSliceInfo), export_plate_idx);
 
     // BBS: backup
-    PresetBundle& preset_bundle = *wxGetApp().preset_bundle;
     std::vector<Preset*> project_presets = preset_bundle.get_current_project_embedded_presets();
 
     StoreParams store_params;

@@ -43,6 +43,7 @@ inline constexpr const char *FEATURE_IDENTITY_MAP    = "fs.identity-map.v1";
 inline constexpr const char *FEATURE_MATERIALS_CORE  = "fs.materials.core.v1";
 inline constexpr const char *FEATURE_ASSIGNMENTS     = "fs.assignments.v1";
 inline constexpr const char *FEATURE_MIXED_FILAMENTS = "fs.mixed-filaments.v1";
+inline constexpr const char *FEATURE_MIXED_GRADIENT  = "fs.mixed-gradient.v1";
 inline constexpr const char *FEATURE_LOCAL_Z         = "fs.local-z.v1";
 inline constexpr const char *FEATURE_LEGACY_PROJECTION = "fs.legacy-projection.v1";
 

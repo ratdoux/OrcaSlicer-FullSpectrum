@@ -1344,6 +1344,70 @@ TEST_CASE("FullSpectrum writer emits core package parts and mixed assignments", 
     CHECK(assignments.paint_state_bindings.front().material_ref == "mix_9001");
 }
 
+TEST_CASE("FullSpectrum writer dual-writes spatial multi-filament gradients", "[FullSpectrum3mf]")
+{
+    const std::vector<std::string> colors = {"#FF0000", "#00FF00", "#0000FF"};
+    MixedAutoGenerateGuard guard(false);
+    PresetBundle bundle = make_bundle_with_filaments(colors);
+
+    MixedFilamentDefinition definition;
+    definition.identity.stable_id = 9301;
+    definition.source.kind = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components = {
+        {{1}, 45},
+        {{2}, 30},
+        {{3}, 25}
+    };
+    definition.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;
+    definition.behavior.gradient.enabled = true;
+    definition.behavior.gradient.component_a_start = 0.90f;
+    definition.behavior.gradient.component_a_end = 0.10f;
+    definition.behavior.gradient.stop_positions = {0.0f, 0.20f, 0.45f, 0.70f, 1.0f};
+    bundle.mixed_filaments.add_custom_filament_definition(definition, colors);
+
+    bundle.sync_mixed_filament_definitions_to_project_config();
+    const std::string legacy = bundle.project_config.opt_string("mixed_filament_definitions");
+    CHECK(legacy.find("g123") != std::string::npos);
+    CHECK(legacy.find("w45/30/25") != std::string::npos);
+    CHECK(legacy.find(",p") != std::string::npos);
+    CHECK(legacy.find(",r1/0.9000/0.1000") != std::string::npos);
+
+    const PackageWritePlan plan = build_write_plan(bundle.project_config, {}, true);
+    const Manifest manifest = parse_json<Manifest>(find_fullspectrum_part(plan, PATH_MANIFEST)->bytes);
+    CHECK(std::find(manifest.required_features.begin(),
+                    manifest.required_features.end(),
+                    std::string(FEATURE_MIXED_GRADIENT)) != manifest.required_features.end());
+
+    const MixedFilaments canonical = parse_json<MixedFilaments>(find_fullspectrum_part(plan, PATH_MIXED_FILAMENTS)->bytes);
+    REQUIRE(canonical.virtual_filaments.size() == 1);
+    REQUIRE(canonical.virtual_filaments.front().gradient);
+    const Gradient &gradient = *canonical.virtual_filaments.front().gradient;
+    CHECK(gradient.component_refs.size() == 3);
+    CHECK(gradient.weights == std::vector<int>{45, 30, 25});
+    CHECK(gradient.enabled);
+    CHECK(gradient.component_a_start == Approx(0.90));
+    CHECK(gradient.component_a_end == Approx(0.10));
+    REQUIRE(gradient.stop_positions.size() == 5);
+    CHECK(gradient.stop_positions[2] == Approx(0.45));
+
+    DynamicPrintConfig imported_config = bundle.project_config;
+    imported_config.option<ConfigOptionString>("mixed_filament_definitions")->value.clear();
+    REQUIRE(apply_canonical_mixed_filaments_to_config(fullspectrum_part_map(plan), imported_config));
+
+    MixedFilamentManager imported_manager;
+    imported_manager.load_custom_entries(imported_config.opt_string("mixed_filament_definitions"), colors);
+    const std::vector<MixedFilamentDefinition> imported = imported_manager.mixed_filament_definitions(colors.size());
+    REQUIRE(imported.size() == 1);
+    CHECK(imported.front().behavior.gradient.enabled);
+    CHECK(imported.front().behavior.gradient.component_a_start == Approx(0.90f));
+    CHECK(imported.front().behavior.gradient.component_a_end == Approx(0.10f));
+    REQUIRE(imported.front().behavior.gradient.stop_positions.size() == 5);
+    CHECK(imported.front().behavior.gradient.stop_positions[3] == Approx(0.70f));
+    CHECK(imported.front().recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(imported.front().recipe.blend.component_percents(colors.size()) == std::vector<int>{45, 30, 25});
+}
+
 TEST_CASE("FullSpectrum writer keeps material ids unique for duplicate filament sources", "[FullSpectrum3mf]")
 {
     PresetBundle bundle = make_bundle_with_filaments({"#FF0000", "#0000FF", "#00FF00"});

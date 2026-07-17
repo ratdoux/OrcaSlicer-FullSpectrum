@@ -108,7 +108,10 @@ std::optional<ManualPattern> manual_pattern_from_definition(const MixedFilamentD
 std::optional<Gradient> gradient_from_definition(const MixedFilamentDefinition &definition,
                                                  const std::vector<std::string> &physical_refs)
 {
-    if (definition.recipe.blend.components.size() < 3 || definition.behavior.distribution != MixedFilamentDistributionMode::LayerCycle)
+    const bool spatial_gradient = definition.behavior.gradient.enabled;
+    const size_t minimum_components = spatial_gradient ? 2 : 3;
+    if (definition.recipe.blend.components.size() < minimum_components ||
+        (spatial_gradient && definition.behavior.distribution != MixedFilamentDistributionMode::LayerCycle))
         return std::nullopt;
 
     Gradient out;
@@ -120,10 +123,18 @@ std::optional<Gradient> gradient_from_definition(const MixedFilamentDefinition &
         out.weights.emplace_back(std::max(0, component.percent));
     }
 
-    if (out.component_refs.size() < 3)
+    if (out.component_refs.size() < minimum_components)
         return std::nullopt;
     if (out.weights.size() != out.component_refs.size())
         out.weights.assign(out.component_refs.size(), 1);
+    out.enabled = spatial_gradient;
+    if (spatial_gradient) {
+        out.component_a_start = std::clamp(double(definition.behavior.gradient.component_a_start), 0.01, 0.99);
+        out.component_a_end = std::clamp(double(definition.behavior.gradient.component_a_end), 0.01, 0.99);
+        out.stop_positions.reserve(definition.behavior.gradient.stop_positions.size());
+        for (const float position : definition.behavior.gradient.stop_positions)
+            out.stop_positions.emplace_back(std::clamp(double(position), 0.0, 1.0));
+    }
     return out;
 }
 
@@ -163,7 +174,8 @@ std::optional<MixedFilamentWeightedBlend> definition_gradient_from_canonical(
     int                                component_b_percent,
     const std::vector<std::string>    &physical_refs)
 {
-    if (!gradient || gradient->component_refs.size() < 3)
+    const size_t minimum_components = gradient && gradient->enabled ? 2 : 3;
+    if (!gradient || gradient->component_refs.size() < minimum_components)
         return std::nullopt;
 
     MixedFilamentWeightedBlend out;
@@ -191,7 +203,7 @@ std::optional<MixedFilamentWeightedBlend> definition_gradient_from_canonical(
     for (const std::string &ref : gradient->component_refs)
         add_index(physical_index_from_ref(ref, physical_refs), 0);
 
-    return out.components.size() < 3 ? std::nullopt : std::optional<MixedFilamentWeightedBlend>(std::move(out));
+    return out.components.size() < minimum_components ? std::nullopt : std::optional<MixedFilamentWeightedBlend>(std::move(out));
 }
 
 std::string distribution_mode_from_definition(MixedFilamentDistributionMode mode)
@@ -199,11 +211,11 @@ std::string distribution_mode_from_definition(MixedFilamentDistributionMode mode
     return mode == MixedFilamentDistributionMode::LayerCycle ? "layer_cycle" : "simple";
 }
 
-MixedFilamentDistributionMode definition_distribution_mode(const std::string &mode, bool has_gradient)
+MixedFilamentDistributionMode definition_distribution_mode(const std::string &mode, bool)
 {
     if (mode == "layer_cycle" || mode == "height_weighted")
         return MixedFilamentDistributionMode::LayerCycle;
-    return has_gradient ? MixedFilamentDistributionMode::LayerCycle : MixedFilamentDistributionMode::Simple;
+    return MixedFilamentDistributionMode::Simple;
 }
 
 } // namespace
@@ -290,8 +302,19 @@ MixedFilaments mixed_filaments_from_manager(const MixedFilamentManager    &manag
         vf.distribution.mode = distribution_mode_from_definition(definition.behavior.distribution);
         vf.manual_pattern = manual_pattern_from_definition(definition, physical_refs);
         vf.gradient = gradient_from_definition(definition, physical_refs);
-        vf.surface_bias.component_a_offset_mm = definition.behavior.surface_bias.component_a_offset_mm;
-        vf.surface_bias.component_b_offset_mm = definition.behavior.surface_bias.component_b_offset_mm;
+        const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
+        for (size_t component_idx = 0;
+             component_idx < definition.recipe.blend.components.size() && component_idx < component_offsets.size();
+             ++component_idx) {
+            const std::string component_ref =
+                physical_ref_from_index(definition.recipe.blend.components[component_idx].filament.id, physical_refs);
+            if (component_ref.empty())
+                continue;
+            vf.surface_bias.component_refs.emplace_back(component_ref);
+            vf.surface_bias.component_offsets_mm.emplace_back(component_offsets[component_idx]);
+        }
+        vf.surface_bias.component_a_offset_mm = component_offsets.empty() ? 0.0 : component_offsets[0];
+        vf.surface_bias.component_b_offset_mm = component_offsets.size() < 2 ? 0.0 : component_offsets[1];
         if (definition.behavior.local_z.max_sublayers > 0)
             vf.local_z = LocalZ{definition.behavior.local_z.max_sublayers, "standard-pair-split"};
         mixed.virtual_filaments.emplace_back(std::move(vf));
@@ -348,9 +371,38 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
                 definition.recipe.blend = *gradient;
         }
         definition.behavior.distribution = definition_distribution_mode(vf.distribution.mode, gradient.has_value());
+        if (vf.gradient) {
+            definition.behavior.gradient.enabled = vf.gradient->enabled;
+            definition.behavior.gradient.component_a_start = float(std::clamp(vf.gradient->component_a_start, 0.01, 0.99));
+            definition.behavior.gradient.component_a_end = float(std::clamp(vf.gradient->component_a_end, 0.01, 0.99));
+            definition.behavior.gradient.stop_positions.clear();
+            definition.behavior.gradient.stop_positions.reserve(vf.gradient->stop_positions.size());
+            for (const double position : vf.gradient->stop_positions)
+                definition.behavior.gradient.stop_positions.emplace_back(float(std::clamp(position, 0.0, 1.0)));
+        }
         definition.behavior.local_z.max_sublayers = vf.local_z ? std::max(0, vf.local_z->max_sublayers) : 0;
         definition.behavior.surface_bias.component_a_offset_mm = float(vf.surface_bias.component_a_offset_mm);
         definition.behavior.surface_bias.component_b_offset_mm = float(vf.surface_bias.component_b_offset_mm);
+        if (!vf.surface_bias.component_refs.empty() &&
+            vf.surface_bias.component_refs.size() == vf.surface_bias.component_offsets_mm.size()) {
+            std::vector<float> component_offsets(definition.recipe.blend.components.size(), 0.f);
+            bool complete = true;
+            for (size_t component_idx = 0; component_idx < definition.recipe.blend.components.size(); ++component_idx) {
+                const std::string component_ref =
+                    physical_ref_from_index(definition.recipe.blend.components[component_idx].filament.id, physical_refs);
+                const auto ref_it = std::find(vf.surface_bias.component_refs.begin(),
+                                              vf.surface_bias.component_refs.end(),
+                                              component_ref);
+                if (ref_it == vf.surface_bias.component_refs.end()) {
+                    complete = false;
+                    break;
+                }
+                const size_t offset_idx = size_t(std::distance(vf.surface_bias.component_refs.begin(), ref_it));
+                component_offsets[component_idx] = float(vf.surface_bias.component_offsets_mm[offset_idx]);
+            }
+            if (complete)
+                set_mixed_filament_component_surface_offsets(definition, component_offsets);
+        }
         definitions.emplace_back(std::move(definition));
     }
 

@@ -276,6 +276,7 @@ Conditional standard modules:
 
 - `fs.plates.v1`
 - `fs.mixed-filaments.v1`
+- `fs.mixed-gradient.v1`
 
 Optional FullSpectrum modules:
 
@@ -754,6 +755,8 @@ The standard mixed row state should cover the semantics currently hidden inside 
 | trailing manual pattern | `manual_pattern.groups` |
 | `g<ids>` | `gradient.component_refs` |
 | `w<weights>` | `gradient.weights` |
+| `r1/<start>/<end>` | `gradient.enabled`, `gradient.component_a_start`, and `gradient.component_a_end` |
+| `p<positions>` | `gradient.stop_positions` |
 | `xa`, `xb` | `surface_bias.component_a_offset_mm`, `surface_bias.component_b_offset_mm` |
 
 Local-Z row caps such as the current `z<max>` token belong to optional `fs.local-z.v1`, not the required mixed-filament core.
@@ -827,7 +830,11 @@ Use explicit component references and numeric weights:
       "fil_2",
       "fil_3"
     ],
-    "weights": [50, 25, 25]
+    "weights": [50, 25, 25],
+    "enabled": true,
+    "component_a_start": 0.9,
+    "component_a_end": 0.1,
+    "stop_positions": [0.0, 0.2, 0.45, 0.7, 1.0]
   }
 }
 ```
@@ -836,6 +843,14 @@ Use explicit component references and numeric weights:
 also provides `origin.component_refs`, readers preserve that origin pair as the
 first two in-memory weighted components and append the remaining gradient refs
 after it.
+
+The component references and weights may describe a static multi-component blend
+without enabling a spatial gradient. When `gradient.enabled` is true, the package
+must declare required feature `fs.mixed-gradient.v1`. The endpoints describe the
+component-A share at the beginning and end of a two-component gradient. For a
+multi-component gradient, `stop_positions` contains `2 * component_count - 1`
+ordered normalized positions: a component anchor followed by the transition
+midpoint to the next component, ending with the final component anchor.
 
 ### Tombstones
 

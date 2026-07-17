@@ -359,12 +359,22 @@ void from_json(const nlohmann::json &j, ManualPattern &v)
 void to_json(nlohmann::json &j, const Gradient &v)
 {
     j = nlohmann::json{{"component_refs", v.component_refs}, {"weights", v.weights}};
+    if (v.enabled) {
+        j["enabled"] = true;
+        j["component_a_start"] = v.component_a_start;
+        j["component_a_end"] = v.component_a_end;
+        j["stop_positions"] = v.stop_positions;
+    }
 }
 
 void from_json(const nlohmann::json &j, Gradient &v)
 {
     get_if_present(j, "component_refs", v.component_refs);
     get_if_present(j, "weights", v.weights);
+    get_if_present(j, "enabled", v.enabled);
+    get_if_present(j, "component_a_start", v.component_a_start);
+    get_if_present(j, "component_a_end", v.component_a_end);
+    get_if_present(j, "stop_positions", v.stop_positions);
 }
 
 void to_json(nlohmann::json &j, const SurfaceBias &v)
@@ -373,12 +383,18 @@ void to_json(nlohmann::json &j, const SurfaceBias &v)
         {"component_a_offset_mm", v.component_a_offset_mm},
         {"component_b_offset_mm", v.component_b_offset_mm}
     };
+    if (!v.component_refs.empty())
+        j["component_refs"] = v.component_refs;
+    if (!v.component_offsets_mm.empty())
+        j["component_offsets_mm"] = v.component_offsets_mm;
 }
 
 void from_json(const nlohmann::json &j, SurfaceBias &v)
 {
     get_if_present(j, "component_a_offset_mm", v.component_a_offset_mm);
     get_if_present(j, "component_b_offset_mm", v.component_b_offset_mm);
+    get_if_present(j, "component_refs", v.component_refs);
+    get_if_present(j, "component_offsets_mm", v.component_offsets_mm);
 }
 
 void to_json(nlohmann::json &j, const LocalZ &v)

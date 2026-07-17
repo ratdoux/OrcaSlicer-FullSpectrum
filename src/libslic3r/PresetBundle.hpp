@@ -208,6 +208,8 @@ public:
     DynamicPrintConfig          full_config() const;
     // full_config() with the some "useless" config removed.
     DynamicPrintConfig          full_config_secure() const;
+    // Snapshot the live mixed-filament registry into the legacy project key before dual-write export.
+    void                        sync_mixed_filament_definitions_to_project_config();
 
     // Load user configuration and store it into the user profiles.
     // This method is called by the configuration wizard.
