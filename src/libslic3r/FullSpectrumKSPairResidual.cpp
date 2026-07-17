@@ -1,4 +1,5 @@
 #include "FullSpectrumKSPairResidual.hpp"
+#include "FullSpectrumICCPolynomialEstimator.hpp"
 #include "FullSpectrumMaterialDatabaseProfile.h"
 
 #include <algorithm>
@@ -17,6 +18,21 @@ namespace MaterialDatabaseData = FullSpectrumMaterialDatabaseProfileData;
 
 using Spectrum = std::array<double, MaterialDatabaseData::SPECTRUM_SIZE>;
 
+constexpr bool material_database_grid_matches_estimator()
+{
+    if (MaterialDatabaseData::SPECTRUM_SIZE != FullSpectrumICCPolynomialEstimator::SPECTRUM_SIZE)
+        return false;
+    for (size_t i = 0; i < MaterialDatabaseData::SPECTRUM_SIZE; ++i) {
+        const int expected_wavelength = FullSpectrumICCPolynomialEstimator::FIRST_WAVELENGTH_NM +
+                                        static_cast<int>(i) * FullSpectrumICCPolynomialEstimator::WAVELENGTH_STEP_NM;
+        if (MaterialDatabaseData::WAVELENGTH_NM[i] != expected_wavelength)
+            return false;
+    }
+    return MaterialDatabaseData::WAVELENGTH_NM.back() == FullSpectrumICCPolynomialEstimator::LAST_WAVELENGTH_NM;
+}
+
+static_assert(material_database_grid_matches_estimator());
+
 constexpr double EPSILON                        = 1e-9;
 constexpr double DEFAULT_REFERENCE_TD_MM        = 6.0;
 constexpr double MIN_INFERRED_TD_TOLERANCE_MM   = 0.75;
@@ -34,13 +50,6 @@ struct CieObserverSample
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
-};
-
-struct LinearRgb
-{
-    double r = 0.0;
-    double g = 0.0;
-    double b = 0.0;
 };
 
 struct MaterialKS
@@ -71,14 +80,14 @@ static std::optional<std::string> normalize_hex_color(const std::string &hex)
     return normalized;
 }
 
-static bool is_generic_color_alias(const std::string &normalized)
+static bool is_generic_ui_color(const std::string &normalized)
 {
-    static constexpr std::array<const char *, 8> generic_aliases {{
+    static constexpr std::array<const char *, 8> generic_colors {{
         "#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#00FFFF", "#FF00FF", "#FFFF00"
     }};
-    return std::find_if(generic_aliases.begin(), generic_aliases.end(), [&normalized](const char *alias) {
-        return normalized == alias;
-    }) != generic_aliases.end();
+    return std::find_if(generic_colors.begin(), generic_colors.end(), [&normalized](const char *color) {
+        return normalized == color;
+    }) != generic_colors.end();
 }
 
 static std::optional<size_t> material_index_for_id(const std::optional<std::string> &material_id)
@@ -112,29 +121,26 @@ static std::optional<size_t> material_index_for_color(const std::string &hex,
     std::optional<size_t> closest_td_match;
     double                closest_td_distance = std::numeric_limits<double>::max();
     for (size_t material = 0; material < MaterialDatabaseData::MATERIAL_COUNT; ++material) {
-        const size_t hex_count = MaterialDatabaseData::MATERIAL_HEX_COUNT[material];
-        for (size_t hex_index = 0; hex_index < hex_count; ++hex_index) {
-            if (*normalized != MaterialDatabaseData::MATERIAL_HEX[material][hex_index])
-                continue;
+        if (*normalized != MaterialDatabaseData::MATERIAL_HEX[material])
+            continue;
 
-            // Pure UI colors are too common to identify a calibrated material.
-            // They remain usable with an exact MATERIAL_ID, but never by color inference.
-            if (is_generic_color_alias(*normalized))
-                continue;
+        // Pure UI colors are too common to identify a calibrated material.
+        // They remain usable with an exact MATERIAL_ID, but never by color inference.
+        if (is_generic_ui_color(*normalized))
+            continue;
 
-            if (!first_match)
-                first_match = material;
-            if (!valid_td)
-                continue;
+        if (!first_match)
+            first_match = material;
+        if (!valid_td)
+            continue;
 
-            const double native_td = MaterialDatabaseData::MATERIAL_TD_MM[material];
-            const double distance  = std::abs(*td_mm - native_td);
-            const double tolerance = std::max(MIN_INFERRED_TD_TOLERANCE_MM,
-                                              INFERRED_TD_TOLERANCE_FRACTION * native_td);
-            if (distance <= tolerance && distance < closest_td_distance) {
-                closest_td_distance = distance;
-                closest_td_match    = material;
-            }
+        const double native_td = MaterialDatabaseData::MATERIAL_TD_MM[material];
+        const double distance  = std::abs(*td_mm - native_td);
+        const double tolerance = std::max(MIN_INFERRED_TD_TOLERANCE_MM,
+                                          INFERRED_TD_TOLERANCE_FRACTION * native_td);
+        if (distance <= tolerance && distance < closest_td_distance) {
+            closest_td_distance = distance;
+            closest_td_match    = material;
         }
     }
     return valid_td ? closest_td_match : first_match;
@@ -150,40 +156,6 @@ static double material_td_mm(size_t material_index)
     return MaterialDatabaseData::MATERIAL_TD_MM[material_index];
 }
 
-static double srgb_to_linear(unsigned char value)
-{
-    const double srgb = double(value) / 255.0;
-    return srgb <= 0.04045 ? srgb / 12.92 : std::pow((srgb + 0.055) / 1.055, 2.4);
-}
-
-static std::optional<LinearRgb> linear_rgb_from_hex(const std::string &hex)
-{
-    const std::optional<std::string> normalized = normalize_hex_color(hex);
-    if (!normalized)
-        return std::nullopt;
-
-    const auto decode = [](char hi, char lo) -> unsigned char {
-        const auto nibble = [](char ch) -> int {
-            if (ch >= '0' && ch <= '9')
-                return ch - '0';
-            return 10 + ch - 'A';
-        };
-        return static_cast<unsigned char>((nibble(hi) << 4) | nibble(lo));
-    };
-
-    return LinearRgb {
-        srgb_to_linear(decode((*normalized)[1], (*normalized)[2])),
-        srgb_to_linear(decode((*normalized)[3], (*normalized)[4])),
-        srgb_to_linear(decode((*normalized)[5], (*normalized)[6]))
-    };
-}
-
-static double gaussian(double wavelength_nm, double center_nm, double sigma_nm)
-{
-    const double x = (wavelength_nm - center_nm) / sigma_nm;
-    return std::exp(-0.5 * x * x);
-}
-
 static double ks_from_reflectance(double reflectance)
 {
     const double r = std::clamp(reflectance, 0.001, 0.999);
@@ -192,30 +164,16 @@ static double ks_from_reflectance(double reflectance)
 
 static Spectrum estimated_ks_from_hex(const std::string &hex)
 {
-    const std::optional<LinearRgb> rgb = linear_rgb_from_hex(hex);
     Spectrum ks {};
-    if (!rgb) {
+    const std::optional<FullSpectrumICCPolynomialEstimator::Spectrum> reflectance =
+        FullSpectrumICCPolynomialEstimator::estimate_reflectance_from_srgb_hex(hex);
+    if (!reflectance) {
         ks.fill(ks_from_reflectance(0.02));
         return ks;
     }
 
-    const double neutral = std::min({rgb->r, rgb->g, rgb->b});
-    const double red     = rgb->r - neutral;
-    const double green   = rgb->g - neutral;
-    const double blue    = rgb->b - neutral;
-    const double average = (rgb->r + rgb->g + rgb->b) / 3.0;
-    const double floor   = 0.015 + 0.035 * average;
-
-    for (size_t i = 0; i < ks.size(); ++i) {
-        const double wavelength = double(MaterialDatabaseData::WAVELENGTH_NM[i]);
-        const double red_basis = std::max(gaussian(wavelength, 610.0, 58.0),
-                                          0.58 * gaussian(wavelength, 680.0, 48.0));
-        const double green_basis = gaussian(wavelength, 540.0, 48.0);
-        const double blue_basis  = gaussian(wavelength, 455.0, 42.0);
-        const double reflectance = std::clamp(floor + 0.90 * (neutral + red * red_basis + green * green_basis + blue * blue_basis),
-                                              0.003, 0.985);
-        ks[i] = ks_from_reflectance(reflectance);
-    }
+    for (size_t i = 0; i < ks.size(); ++i)
+        ks[i] = ks_from_reflectance((*reflectance)[i]);
 
     return ks;
 }

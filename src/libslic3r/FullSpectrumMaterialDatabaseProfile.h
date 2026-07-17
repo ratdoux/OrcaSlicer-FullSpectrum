@@ -11,7 +11,6 @@ namespace Slic3r::FullSpectrumMaterialDatabaseProfileData {
 static constexpr std::size_t SPECTRUM_SIZE = 31;
 static constexpr std::size_t MATERIAL_COUNT = 16;
 static constexpr std::size_t PAIR_COUNT = 24;
-static constexpr std::size_t MAX_HEX_PER_MATERIAL = 2;
 
 static constexpr const char* PROFILE_ID = "fullspectrum_material_database_4profiles_lh0p08_sce_black_d65_10_20260701";
 static constexpr const char* SPECULAR_MODE = "SCE";
@@ -61,42 +60,25 @@ static constexpr std::array<double, MATERIAL_COUNT> MATERIAL_TD_MM = {{
     6.1
 }};
 
-static constexpr std::array<std::size_t, MATERIAL_COUNT> MATERIAL_HEX_COUNT = {{
-    2,
-    2,
-    2,
-    2,
-    1,
-    1,
-    1,
-    2,
-    1,
-    1,
-    1,
-    2,
-    2,
-    2,
-    1,
-    1
-}};
-
-static constexpr std::array<std::array<const char*, MAX_HEX_PER_MATERIAL>, MATERIAL_COUNT> MATERIAL_HEX = {{
-    {{ "#008BB3", "#0091B3" }},
-    {{ "#AD4A76", "#AE537F" }},
-    {{ "#EBBE00", "#C8AA0F" }},
-    {{ "#7B7F80", "#868787" }},
-    {{ "#00A0CC", "" }},
-    {{ "#C34C7E", "" }},
-    {{ "#FFB717", "" }},
-    {{ "#E4E5E1", "#FFFFFF" }},
-    {{ "#0091B8", "" }},
-    {{ "#C64D7A", "" }},
-    {{ "#FFB81B", "" }},
-    {{ "#494340", "#000000" }},
-    {{ "#0050A3", "#0000FF" }},
-    {{ "#B93C41", "#C91818" }},
-    {{ "#E9BF00", "" }},
-    {{ "#E3E4E0", "" }}
+// Primary measured display color only. Calibrated identity is represented by
+// MATERIAL_ID; alternate display-color aliases are intentionally unsupported.
+static constexpr std::array<const char*, MATERIAL_COUNT> MATERIAL_HEX = {{
+    "#008BB3",
+    "#AD4A76",
+    "#EBBE00",
+    "#7B7F80",
+    "#00A0CC",
+    "#C34C7E",
+    "#FFB717",
+    "#E4E5E1",
+    "#0091B8",
+    "#C64D7A",
+    "#FFB81B",
+    "#494340",
+    "#0050A3",
+    "#B93C41",
+    "#E9BF00",
+    "#E3E4E0"
 }};
 
 static constexpr std::array<std::array<double, SPECTRUM_SIZE>, MATERIAL_COUNT> MATERIAL_KS = {{
