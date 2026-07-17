@@ -524,6 +524,35 @@ TEST_CASE("Local-Z preview reports the effective direct thickness ratio", "[Mixe
     CHECK_FALSE(mixed_filament_supports_bias_apparent_color(gradient, settings, true));
 }
 
+TEST_CASE("Imported model filament IDs remap physical overflow to virtual colors", "[MixedFilament][Import]")
+{
+    Model model;
+    ModelObject *object = model.add_object();
+    object->add_instance();
+    object->config.set("extruder", 5);
+    ModelVolume *volume = object->add_volume(make_cube(1., 1., 1.));
+    volume->config.set("extruder", 6);
+
+    TriangleSelector selector(volume->mesh());
+    selector.set_facet(0, EnforcerBlockerType::Extruder7);
+    REQUIRE(volume->mmu_segmentation_facets.set(selector));
+
+    std::vector<unsigned int> remap(8, 0);
+    for (unsigned int id = 1; id <= 4; ++id)
+        remap[id] = id;
+    remap[5] = 7;
+    remap[6] = 6;
+    remap[7] = 5;
+    remap_model_filament_ids(model, remap, 7);
+
+    CHECK(object->config.extruder() == 7);
+    CHECK(volume->config.extruder() == 6);
+    const std::vector<bool> &used_states = volume->mmu_segmentation_facets.get_data().used_states;
+    REQUIRE(used_states.size() > 7);
+    CHECK(used_states[5]);
+    CHECK_FALSE(used_states[7]);
+}
+
 TEST_CASE("Mixed filament bias helper maps signed bias to a one-sided safe offset pair", "[MixedFilament]")
 {
     const auto [offset_a, offset_b] = MixedFilamentManager::surface_offset_pair_from_signed_bias(0.06f, 0.4f);

@@ -3144,6 +3144,42 @@ bool Model::obj_import_face_color_deal(const std::vector<unsigned char> &face_fi
     return false;
 }
 
+void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &filament_id_map, size_t total_filaments)
+{
+    const size_t safe_total = std::max<size_t>(1, std::min<size_t>(total_filaments, size_t(EnforcerBlockerType::ExtruderMax)));
+    auto remap_id = [&filament_id_map, safe_total](int old_id) {
+        if (old_id <= 0)
+            return old_id;
+        const unsigned int mapped = size_t(old_id) < filament_id_map.size() ? filament_id_map[size_t(old_id)] : 0u;
+        return int(mapped >= 1 && mapped <= safe_total ? mapped : 1u);
+    };
+
+    EnforcerBlockerStateMap state_map;
+    for (size_t state = 0; state < state_map.size(); ++state)
+        state_map[state] = EnforcerBlockerType(state <= safe_total ? state : 0);
+    for (size_t old_id = 1; old_id < filament_id_map.size() && old_id < state_map.size(); ++old_id) {
+        const unsigned int mapped = filament_id_map[old_id];
+        state_map[old_id] = EnforcerBlockerType(mapped >= 1 && mapped <= safe_total ? mapped : 1u);
+    }
+
+    for (ModelObject *object : model.objects) {
+        if (object == nullptr)
+            continue;
+        if (object->config.has("extruder"))
+            object->config.set("extruder", remap_id(object->config.extruder()));
+
+        for (ModelVolume *volume : object->volumes) {
+            if (volume == nullptr)
+                continue;
+            if (volume->config.has("extruder"))
+                volume->config.set("extruder", remap_id(volume->config.extruder()));
+            if (!volume->mmu_segmentation_facets.empty())
+                volume->mmu_segmentation_facets.remap_enforcer_block_types(
+                    *volume, EnforcerBlockerType(safe_total), state_map);
+        }
+    }
+}
+
 // update the maxSpeed of an object if it is different from the global configuration
 double Model::findMaxSpeed(const ModelObject* object) {
     auto objectKeys = object->config.keys();

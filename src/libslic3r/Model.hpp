@@ -1727,6 +1727,12 @@ private:
 // ordered in the same order. In that case it is not necessary to kill the background processing.
 bool model_object_list_equal(const Model &model_old, const Model &model_new);
 
+// Remap object, volume and multi-material paint filament IDs. The mapping is
+// indexed by the old 1-based filament ID; zero or missing targets fall back to
+// filament 1. Used when imported physical colors are represented by virtual
+// mixed filaments in the current project.
+void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &filament_id_map, size_t total_filaments);
+
 // Test whether the new model is just an extension of the old model (new objects were added
 // to the end of the original list. In that case it is not necessary to kill the background processing.
 bool model_object_list_extended(const Model &model_old, const Model &model_new);

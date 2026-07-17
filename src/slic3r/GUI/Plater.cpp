@@ -5192,6 +5192,78 @@ MixedColorMatchRecipeResult prompt_best_color_match_recipe(wxWindow *parent,
         selected.cancelled = true;
     return selected;
 }
+
+namespace {
+
+constexpr size_t k_import_physical_filament_limit = 4;
+constexpr size_t k_import_total_filament_limit    = 16;
+
+size_t map_imported_colors_to_mixed_filaments(Model                           &model,
+                                               const std::vector<std::string> &imported_colors,
+                                               bool                            preserve_leading_physical_ids,
+                                               bool                            reserve_import_capacity)
+{
+    PresetBundle *preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle == nullptr || imported_colors.size() <= k_import_physical_filament_limit)
+        return 0;
+
+    ConfigOptionStrings *color_opt = preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
+    if (color_opt == nullptr || color_opt->values.size() < 2)
+        return 0;
+
+    const size_t physical_count = std::min(color_opt->values.size(), k_import_physical_filament_limit);
+    std::vector<std::string> physical_colors(color_opt->values.begin(), color_opt->values.begin() + physical_count);
+
+    auto &manager = preset_bundle->mixed_filaments;
+    if (reserve_import_capacity) {
+        const size_t required_overflow_slots = std::min(imported_colors.size() - physical_count,
+                                                        k_import_total_filament_limit - physical_count);
+        const size_t retained_capacity = k_import_total_filament_limit - physical_count - required_overflow_slots;
+        std::vector<MixedFilamentDefinition> retained;
+        for (MixedFilamentDefinition definition : manager.mixed_filament_definitions(physical_count)) {
+            if (definition.visibility.tombstoned || definition.source.kind != MixedFilamentSourceKind::Custom)
+                continue;
+            const bool components_valid = std::all_of(
+                definition.recipe.blend.components.begin(), definition.recipe.blend.components.end(),
+                [physical_count](const MixedFilamentWeightedComponent &component) {
+                    return component.filament.id >= 1 && component.filament.id <= physical_count;
+                });
+            if (components_valid && retained.size() < retained_capacity)
+                retained.emplace_back(std::move(definition));
+        }
+        manager.set_mixed_filament_definitions(std::move(retained), physical_colors);
+    }
+
+    std::vector<unsigned int> filament_id_map(imported_colors.size() + 1, 0);
+    size_t generated_count = 0;
+    for (size_t imported_index = 0; imported_index < imported_colors.size(); ++imported_index) {
+        const unsigned int old_id = unsigned(imported_index + 1);
+        if (preserve_leading_physical_ids && imported_index < physical_count) {
+            filament_id_map[old_id] = old_id;
+            continue;
+        }
+
+        const wxColour target = parse_mixed_color(imported_colors[imported_index]);
+        const MixedColorMatchCreationResult match = create_mixed_filament_color_match(
+            target, physical_colors, 15, k_import_total_filament_limit);
+        filament_id_map[old_id] = match.valid ? match.filament_id : 1u;
+        generated_count += match.created ? 1u : 0u;
+    }
+
+    const size_t total_filaments = manager.total_filaments(physical_count);
+    remap_model_filament_ids(model, filament_id_map, total_filaments);
+    preset_bundle->sync_mixed_filament_definitions_to_project_config();
+
+    BOOST_LOG_TRIVIAL(info) << "3MF overflow colors mapped to mixed filaments"
+                            << " imported_colors=" << imported_colors.size()
+                            << " physical_colors=" << physical_count
+                            << " generated_mixes=" << generated_count
+                            << " total_filaments=" << total_filaments;
+    return generated_count;
+}
+
+} // namespace
+
 void Sidebar::update_mixed_filament_panel(bool sync_manager)
 {
 #if 0
@@ -8612,6 +8684,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             if (type_3mf) {
                 DynamicPrintConfig config;
                 Semver             file_version;
+                std::vector<std::string> imported_filament_colors;
+                size_t                   imported_physical_filaments = 0;
+                bool                     overflow_color_mapping_applied = false;
                 {
                     DynamicPrintConfig config_loaded;
 
@@ -8651,8 +8726,6 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         return 0;
                     };
 
-                    std::vector<std::string> imported_filament_colors;
-                    size_t imported_physical_filaments = 0;
                     if (const auto *filament_colors_opt = config_loaded.option<ConfigOptionStrings>("filament_colour")) {
                         imported_filament_colors = filament_colors_opt->values;
                         imported_physical_filaments = imported_filament_colors.size();
@@ -8678,9 +8751,12 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                             }
                         }
                         int size = extruderIds.size() == 0 ? 0 : *(extruderIds.rbegin());
-                        const bool geometry_only_project_import = load_model && !load_config && imported_physical_filaments > 0;
+                        const bool geometry_only_project_import =
+                            load_model && (!load_config || en_3mf_file_type == En3mfType::From_Prusa) && imported_physical_filaments > 0;
                         const size_t desired_physical_filaments = geometry_only_project_import ?
-                            std::min(imported_physical_filaments, size_t(MAXIMUM_EXTRUDER_NUMBER)) : 0;
+                            std::min(imported_physical_filaments,
+                                     imported_physical_filaments > k_import_physical_filament_limit ?
+                                         k_import_physical_filament_limit : size_t(MAXIMUM_EXTRUDER_NUMBER)) : 0;
                         BOOST_LOG_TRIVIAL(info) << "3MF geometry import filament detection"
                                                 << " imported_physical=" << imported_physical_filaments
                                                 << " imported_colors=" << imported_filament_colors.size()
@@ -8733,6 +8809,13 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                 q->confirm_auto_generated_gradients(desired_physical_filaments);
                                 preset_bundle->set_num_filaments(unsigned(desired_physical_filaments), new_colors);
                                 wxGetApp().plater()->on_filaments_change(desired_physical_filaments);
+                            }
+
+                            if (imported_physical_filaments > k_import_physical_filament_limit) {
+                                map_imported_colors_to_mixed_filaments(
+                                    model, imported_filament_colors, current_project_empty, current_project_empty);
+                                q->on_filaments_change(preset_bundle->filament_presets.size());
+                                overflow_color_mapping_applied = true;
                             }
                         }
 
@@ -9010,6 +9093,14 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                 file_wipe_tower_y = *wipe_tower_y_opt;
 
                             preset_bundle->load_config_model(filename.string(), std::move(config), file_version);
+
+                            if (!overflow_color_mapping_applied &&
+                                imported_physical_filaments > k_import_physical_filament_limit &&
+                                imported_filament_colors.size() >= imported_physical_filaments) {
+                                preset_bundle->set_num_filaments(unsigned(k_import_physical_filament_limit));
+                                map_imported_colors_to_mixed_filaments(model, imported_filament_colors, true, true);
+                                overflow_color_mapping_applied = true;
+                            }
 
                             ConfigOption* bed_type_opt = preset_bundle->project_config.option("curr_bed_type");
                             if (bed_type_opt != nullptr) {
