@@ -1,4 +1,21 @@
 <svg width="140" height="140" viewBox="0 0 140 140" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="140" height="140" rx="20" fill="#171717"/>
-<path d="M90.5728 33.8729C84.6131 32.6457 79.7444 33.4086 75.955 36.1392C72.1657 38.8699 69.5591 43.4469 68.1467 49.859L63.7143 69.8692H63.7258L59.7642 87.7458C59.0178 91.1287 57.8925 93.4946 56.3997 94.8544C54.9069 96.2142 52.8285 96.6122 50.176 96.0705C48.4535 95.7167 46.6163 95.0755 44.6412 94.1468L42.4824 103.831C44.3886 104.804 46.7081 105.567 49.4411 106.12C55.4007 107.347 60.2694 106.584 64.0588 103.853C67.8481 101.123 70.4547 96.5459 71.8671 90.1337L76.2995 70.1235H76.2881L80.2496 52.2469C80.996 48.864 82.1214 46.4981 83.6141 45.1383C85.1069 43.7785 87.1853 43.3805 89.8379 43.9222C91.5603 44.276 93.3976 44.9172 95.3726 45.8459L97.5199 36.1503C95.6252 35.1995 93.3057 34.4367 90.5728 33.8729Z" fill="white"/>
+  <defs>
+    <linearGradient id="fullSpectrum" x1="16" y1="12" x2="126" y2="130" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3427D7"/>
+      <stop offset="0.28" stop-color="#8B19DB"/>
+      <stop offset="0.52" stop-color="#D000D9"/>
+      <stop offset="0.73" stop-color="#E52965"/>
+      <stop offset="0.88" stop-color="#FF7A00"/>
+      <stop offset="1" stop-color="#2DBF4A"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="25" y1="16" x2="112" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.22"/>
+      <stop offset="0.55" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="140" height="140" rx="22" fill="url(#fullSpectrum)"/>
+  <rect x="1" y="1" width="138" height="138" rx="21" fill="url(#highlight)"/>
+  <rect x="1" y="1" width="138" height="138" rx="21" stroke="white" stroke-opacity="0.2" stroke-width="2"/>
+  <path d="M25 32H67V47H43V62H64V77H43V108H25V32Z" fill="white"/>
+  <path d="M111 47C103 37 94 32 82 32C68 32 59 40 59 52C59 65 68 70 82 73C93 76 97 79 97 85C97 92 92 96 83 96C74 96 67 92 61 86L52 98C60 107 71 112 83 112C101 112 113 101 113 85C113 71 102 65 87 62C77 60 73 57 73 52C73 47 78 44 85 44C92 44 98 47 103 53L111 47Z" fill="white" transform="translate(14 0)"/>
 </svg>

@@ -409,6 +409,7 @@ public:
 		// ORCA scale all fonts with monitor scale
         scale_font(m_constant_text.titleFont,       m_scale * 1.5f);
         scale_font(m_constant_text.versionFont,     m_scale * 1.5f);
+        scale_font(m_constant_text.bannerFont,      m_scale * 1.5f);
         scale_font(m_constant_text.loadingFont,     m_scale * 1.5f);
 
         // this font will be used for the action string
@@ -468,44 +469,65 @@ public:
         if (logoBmp != nullptr)
             memDc.DrawBitmap(*logoBmp, logoX, logoY, true);
 
-        // Brand name: "Snapmaker Orca"
+        // FullSpectrum product name, centered below the icon.
         memDc.SetFont(m_constant_text.titleFont);
         memDc.SetTextForeground(wxColour(23, 23, 23));
         wxSize brandExt = memDc.GetTextExtent(m_constant_text.title);
+        int brandY      = scaleY(238);
+        wxRect brandRect(wxPoint(0, brandY), wxPoint(width, brandY + brandExt.GetHeight()));
+        memDc.DrawLabel(m_constant_text.title, brandRect, wxALIGN_CENTER);
 
-        // Version tag: "V" + current app version
+        // FullSpectrum release number on its own line.
         memDc.SetFont(m_constant_text.versionFont);
-        memDc.SetTextForeground(wxColour(143, 143, 143));
+        memDc.SetTextForeground(wxColour(94, 43, 255));
         wxSize versionExt = memDc.GetTextExtent(m_constant_text.version);
+        int versionY      = scaleY(276);
+        wxRect versionRect(wxPoint(0, versionY), wxPoint(width, versionY + versionExt.GetHeight()));
+        memDc.DrawLabel(m_constant_text.version, versionRect, wxALIGN_CENTER);
 
-        // Center brand + gap + tag as a group.
-        int gap    = scaleX(10);
-        int totalW = brandExt.GetWidth() + gap + versionExt.GetWidth();
-        int startX = (width - totalW) / 2;
-        int brandY = scaleY(241);
-        int tagY   = scaleY(251);
-
-        memDc.SetFont(m_constant_text.titleFont);
-        memDc.SetTextForeground(wxColour(23, 23, 23));
-        memDc.DrawText(m_constant_text.title, startX, brandY);
-
-        memDc.SetFont(m_constant_text.versionFont);
-        memDc.SetTextForeground(wxColour(143, 143, 143));
-        memDc.DrawText(m_constant_text.version,
-                       startX + brandExt.GetWidth() + gap,
-                       tagY);
-
-        // Beta text below brand, centered
-        int betaY = scaleY(279);
+        // Preserve the upstream version provenance without competing with the fork version.
         memDc.SetFont(m_constant_text.versionFont);
         memDc.SetTextForeground(wxColour(143, 143, 143));
         wxSize betaExt = memDc.GetTextExtent(m_constant_text.betaText);
+        int betaY      = scaleY(299);
         wxRect betaRect(wxPoint(0, betaY),
-                        wxPoint(width, betaY + betaExt.GetHeight()));
+                         wxPoint(width, betaY + betaExt.GetHeight()));
         memDc.DrawLabel(m_constant_text.betaText, betaRect, wxALIGN_CENTER);
 
+        // Release highlight banner.
+        const int bannerW = scaleX(318);
+        const int bannerH = scaleY(42);
+        const int bannerX = (width - bannerW) / 2;
+        const int bannerY = scaleY(330);
+        memDc.SetPen(*wxTRANSPARENT_PEN);
+        memDc.SetBrush(wxBrush(wxColour(23, 23, 23)));
+        memDc.DrawRoundedRectangle(bannerX, bannerY, bannerW, bannerH, scaleX(12));
+
+        const wxColour spectrumColors[] = {
+            wxColour(94, 43, 255),
+            wxColour(208, 0, 217),
+            wxColour(229, 41, 101),
+            wxColour(255, 122, 0),
+            wxColour(45, 191, 74)
+        };
+        const int accentW   = scaleX(4);
+        const int accentGap = scaleX(3);
+        const int accentH   = scaleY(18);
+        const int accentX   = bannerX + scaleX(14);
+        const int accentY   = bannerY + (bannerH - accentH) / 2;
+        for (size_t i = 0; i < std::size(spectrumColors); ++i) {
+            memDc.SetBrush(wxBrush(spectrumColors[i]));
+            memDc.DrawRoundedRectangle(accentX + static_cast<int>(i) * (accentW + accentGap), accentY, accentW, accentH, scaleX(2));
+        }
+
+        memDc.SetFont(m_constant_text.bannerFont);
+        memDc.SetTextForeground(*wxWHITE);
+        wxRect bannerTextRect(wxPoint(bannerX + scaleX(48), bannerY),
+                              wxPoint(bannerX + bannerW - scaleX(12), bannerY + bannerH));
+        memDc.DrawLabel(m_constant_text.bannerText, bannerTextRect, wxALIGN_CENTER);
+
         // Dynamic text y position (for SetText)
-        m_action_line_y_position = scaleY(384);
+        m_action_line_y_position = scaleY(401);
     }
 
     static wxBitmap MakeBitmap()
@@ -581,19 +603,23 @@ private:
         wxString title;
         wxString version;
         wxString betaText;
+        wxString bannerText;
 
         wxFont   titleFont;
         wxFont   versionFont;
+        wxFont   bannerFont;
         wxFont   loadingFont;
 
         void init()
         {
-            title    = "Snapmaker Orca";
-            version  = std::string("V") + Snapmaker_VERSION;
-            betaText = _L("Beta version");
+            title      = "Snapmaker Orca FullSpectrum";
+            version    = std::string("V") + FULLSPECTRUM_VERSION;
+            betaText   = std::string("Built on Snapmaker Orca V") + Snapmaker_VERSION;
+            bannerText = "Now with Xipit's UI rework!";
 
-            titleFont   = Label::sysFont(20, false);
+            titleFont   = Label::sysFont(17, false);
             versionFont = Label::Body_13;
+            bannerFont  = Label::sysFont(11, true);
             loadingFont = Label::Body_11;
         }
     }
