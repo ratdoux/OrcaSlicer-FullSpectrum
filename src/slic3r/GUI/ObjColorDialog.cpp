@@ -269,12 +269,12 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
     // BBS
     m_sizer_simple->AddSpacer(FromDIP(10));
     if (is_image_map) {
-        auto *description = new wxStaticText(
-            m_page_simple,
-            wxID_ANY,
+        auto* description = new wxStaticText(
+            m_page_simple, wxID_ANY,
             wxString::Format(_L("The OBJ image texture was sampled into %llu printable surface regions.\n"
-                                  "Generated mixes share one equal-cadence filament order; per-filament surface bias reproduces each color.\n"
-                                  "Creating these mixes enables Mixed Filament Bias and disables Subdivide Mix Layer."),
+                                "Each quantized color first uses the closest physical filament or normal weighted mix.\n"
+                                "A small per-filament surface-bias correction is added only when it improves the remaining color error; "
+                                "Subdivide Mix Layer is disabled only when such a correction is needed."),
                              static_cast<unsigned long long>(input_colors.size())));
         description->Wrap(FromDIP(PANEL_WIDTH - 30));
         m_sizer_simple->Add(description, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(20));

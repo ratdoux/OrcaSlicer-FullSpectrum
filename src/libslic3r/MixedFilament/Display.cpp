@@ -475,9 +475,26 @@ std::vector<float> mixed_filament_surface_offsets_for_apparent_percentages(
     const std::vector<int> &target_apparent_percents,
     float                   reference_width_mm)
 {
+    std::vector<double> target_weights;
+    target_weights.reserve(target_apparent_percents.size());
+    for (const int percent : target_apparent_percents)
+        target_weights.emplace_back(double(percent));
+    return mixed_filament_surface_offsets_for_apparent_weights(component_percents, target_weights, reference_width_mm);
+}
+
+std::vector<float> mixed_filament_surface_offsets_for_apparent_weights(const std::vector<int>&    component_percents,
+                                                                       const std::vector<double>& target_apparent_weights,
+                                                                       float                      reference_width_mm)
+{
     const std::vector<int> normalized = normalize_weight_vector_to_percent(component_percents);
-    const std::vector<int> target     = normalize_weight_vector_to_percent(target_apparent_percents);
-    if (normalized.size() < 2 || normalized.size() != target.size())
+    if (normalized.size() < 2 || normalized.size() != target_apparent_weights.size())
+        return {};
+
+    double target_sum = 0.0;
+    for (const double weight : target_apparent_weights)
+        if (std::isfinite(weight) && weight > 0.0)
+            target_sum += weight;
+    if (target_sum <= EPSILON)
         return {};
 
     const double safe_reference = std::max(0.05, double(std::abs(reference_width_mm)));
@@ -485,7 +502,11 @@ std::vector<float> mixed_filament_surface_offsets_for_apparent_percentages(
     const double offset_limit    = MixedFilamentManager::max_component_surface_offset_mm(float(safe_reference));
     std::vector<float> offsets(normalized.size(), 0.f);
     for (size_t component_idx = 0; component_idx < normalized.size(); ++component_idx) {
-        const double adjustment = (double(target[component_idx]) - double(normalized[component_idx])) / component_scale;
+        const double target_percent = std::isfinite(target_apparent_weights[component_idx]) &&
+                                              target_apparent_weights[component_idx] > 0.0 ?
+                                          100.0 * target_apparent_weights[component_idx] / target_sum :
+                                          0.0;
+        const double adjustment     = (target_percent - double(normalized[component_idx])) / component_scale;
         offsets[component_idx] = float(std::clamp(-adjustment * safe_reference / 100.0, -offset_limit, offset_limit));
     }
     return offsets;

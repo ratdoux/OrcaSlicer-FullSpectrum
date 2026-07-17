@@ -753,6 +753,17 @@ TEST_CASE("Surface-bias encoding reproduces requested apparent component percent
         CHECK(MixedFilamentManager::apparent_component_percentages(actual, offsets, 0.4f) == target);
     }
 
+    SECTION("fractional residual keeps the normal cadence")
+    {
+        const std::vector<int>   base    = {60, 40};
+        const std::vector<float> offsets = mixed_filament_surface_offsets_for_apparent_weights(base, {59.4, 40.6}, 0.4f);
+        REQUIRE(offsets.size() == 2);
+        CHECK(offsets[0] == Approx(0.0012f));
+        CHECK(offsets[1] == Approx(-0.0012f));
+        CHECK(std::abs(offsets[0]) < 0.01f);
+        CHECK(std::abs(offsets[1]) < 0.01f);
+    }
+
     CHECK(mixed_filament_surface_offsets_for_apparent_percentages({50, 50}, {100}, 0.4f).empty());
 }
 

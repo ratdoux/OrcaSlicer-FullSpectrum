@@ -277,12 +277,8 @@ Model Model::read_from_file(const std::string&                                  
             if (obj_info.has_uv_png && !model.objects.empty() && !model.objects.front()->volumes.empty()) {
                 ObjImageMapSamplePlan image_map_plan;
                 std::string image_map_warning;
-                const bool image_map_built = build_obj_image_map_sample_plan(model.objects.front()->volumes.front()->mesh(),
-                                                                              obj_info,
-                                                                              1.f,
-                                                                              120000,
-                                                                              image_map_plan,
-                                                                              &image_map_warning);
+                const bool image_map_built = build_obj_image_map_sample_plan(model.objects.front()->volumes.front()->mesh(), obj_info, 0.4f,
+                                                                             200000, image_map_plan, &image_map_warning);
                 if (image_map_built) {
                     handled_image_map = true;
                     std::vector<unsigned char> image_map_filament_ids;

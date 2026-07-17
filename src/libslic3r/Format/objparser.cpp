@@ -245,7 +245,7 @@ static bool obj_parseline(const char *line, ObjData &data)
             else
 				-- vertex.normalIdx;
 			if (vertex.textureCoordIdx < 0)
-                vertex.textureCoordIdx += (int)data.textureCoordinates.size() / 3;
+                vertex.textureCoordIdx += (int) data.textureCoordinates.size() / 2;
             else
 				-- vertex.textureCoordIdx;
 			data.vertices.push_back(vertex);
@@ -262,12 +262,8 @@ static bool obj_parseline(const char *line, ObjData &data)
 				}
                 face_index_count++;
             }
-            if (face_index_count == 3) {//tri
-                data.usemtls.back().face_end++;
-			} else if (face_index_count == 4) {//quad
-                data.usemtls.back().face_end++;
-                data.usemtls.back().face_end++;
-			}
+            if (face_index_count >= 3)
+                data.usemtls.back().face_end += face_index_count - 2;
         }
 		vertex.coordIdx			= -1;
 		vertex.normalIdx		= -1;

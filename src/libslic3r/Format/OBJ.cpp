@@ -1,12 +1,19 @@
 #include "../libslic3r.h"
 #include "../Model.hpp"
 #include "../TriangleMesh.hpp"
+#include "../Triangulation.hpp"
 
 #include "OBJ.hpp"
 #include "objparser.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdlib>
+#include <set>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include <boost/log/trivial.hpp>
 
@@ -21,6 +28,73 @@
 #define _L(s) Slic3r::I18N::translate(s)
 
 namespace Slic3r {
+
+namespace {
+
+std::vector<std::string> tokenize_mtl_map_path(const std::string& value)
+{
+    std::vector<std::string> tokens;
+    std::string              token;
+    char                     quote = 0;
+    for (const char ch : value) {
+        if (quote != 0) {
+            if (ch == quote)
+                quote = 0;
+            else
+                token += ch;
+        } else if (ch == '\'' || ch == '"') {
+            quote = ch;
+        } else if (std::isspace(static_cast<unsigned char>(ch))) {
+            if (!token.empty()) {
+                tokens.emplace_back(std::move(token));
+                token.clear();
+            }
+        } else {
+            token += ch;
+        }
+    }
+    if (!token.empty())
+        tokens.emplace_back(std::move(token));
+    return tokens;
+}
+
+bool is_mtl_number(const std::string& value)
+{
+    if (value.empty())
+        return false;
+    char* end = nullptr;
+    std::strtod(value.c_str(), &end);
+    return end != value.c_str() && end != nullptr && *end == '\0';
+}
+
+std::string mtl_map_texture_filename(const std::string& map_value)
+{
+    const std::vector<std::string> tokens = tokenize_mtl_map_path(map_value);
+    size_t                         index  = 0;
+    while (index < tokens.size() && !tokens[index].empty() && tokens[index][0] == '-') {
+        std::string option = tokens[index++];
+        std::transform(option.begin(), option.end(), option.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
+        if (option == "-o" || option == "-s" || option == "-t") {
+            for (size_t count = 0; count < 3 && index < tokens.size() && is_mtl_number(tokens[index]); ++count)
+                ++index;
+        } else {
+            const size_t argument_count = option == "-mm" ? 2 : 1;
+            index                       = std::min(tokens.size(), index + argument_count);
+        }
+    }
+    if (index >= tokens.size())
+        return {};
+
+    std::ostringstream filename;
+    for (; index < tokens.size(); ++index) {
+        if (filename.tellp() > 0)
+            filename << ' ';
+        filename << tokens[index];
+    }
+    return filename.str();
+}
+
+} // namespace
 
 bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::string &message)
 {
@@ -58,7 +132,10 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
                     const std::shared_ptr<ObjParser::ObjNewMtl> &material = material_entry.second;
                     if (!material || material->map_Kd.empty() || material_texture_paths.count(material.get()) != 0)
                         continue;
-                    const boost::filesystem::path raw_texture_path(material->map_Kd);
+                    const std::string texture_filename = mtl_map_texture_filename(material->map_Kd);
+                    if (texture_filename.empty())
+                        continue;
+                    const boost::filesystem::path raw_texture_path(texture_filename);
                     const boost::filesystem::path texture_path = raw_texture_path.is_absolute() ?
                         raw_texture_path : mtl_path.parent_path() / raw_texture_path;
                     material_texture_paths.emplace(material.get(), texture_path.lexically_normal().string());
@@ -68,28 +145,21 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
             }
         }
     }
-    // Count the faces and verify, that all faces are triangular.
-    size_t num_faces = 0;
-    size_t num_quads = 0;
+    // Count the generated triangles. Textured OBJ exporters commonly emit
+    // n-gons, so triangulate them during import instead of rejecting the model.
+    size_t num_triangles = 0;
     for (size_t i = 0; i < data.vertices.size(); ++ i) {
         // Find the end of face.
         size_t j = i;
         for (; j < data.vertices.size() && data.vertices[j].coordIdx != -1; ++ j) ;
         if (size_t num_face_vertices = j - i; num_face_vertices > 0) {
-            if (num_face_vertices > 4) {
-                // Non-triangular and non-quad faces are not supported as of now.
-                BOOST_LOG_TRIVIAL(error) << "load_obj: failed to parse " << path << ". The file contains polygons with more than 4 vertices.";
-                message = _L("The file contains polygons with more than 4 vertices.");
-                return false;
-            } else if (num_face_vertices < 3) {
-                // Non-triangular and non-quad faces are not supported as of now.
-                BOOST_LOG_TRIVIAL(error) << "load_obj: failed to parse " << path << ". The file contains polygons with less than 2 vertices.";
-                message = _L("The file contains polygons with less than 2 vertices.");
+            if (num_face_vertices < 3) {
+                BOOST_LOG_TRIVIAL(error) << "load_obj: failed to parse " << path
+                                         << ". The file contains polygons with less than 3 vertices.";
+                message = _L("The file contains polygons with less than 3 vertices.");
                 return false;
             }
-            if (num_face_vertices == 4)
-                ++ num_quads;
-            ++ num_faces;
+            num_triangles += num_face_vertices - 2;
             i = j;
         }
     }
@@ -97,15 +167,14 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
     indexed_triangle_set its;
     size_t               num_vertices = data.coordinates.size() / OBJ_VERTEX_LENGTH;
     its.vertices.reserve(num_vertices);
-    its.indices.reserve(num_faces + num_quads);
-    obj_info.triangle_uvs.reserve(num_faces + num_quads);
-    obj_info.triangle_uvs_valid.reserve(num_faces + num_quads);
-    obj_info.triangle_texture_files.reserve(num_faces + num_quads);
+    its.indices.reserve(num_triangles);
+    obj_info.triangle_uvs.reserve(num_triangles);
+    obj_info.triangle_uvs_valid.reserve(num_triangles);
+    obj_info.triangle_texture_files.reserve(num_triangles);
     if (exist_mtl) {
         obj_info.is_single_mtl = data.usemtls.size() == 1 && mtl_data.new_mtl_unmap.size() == 1;
-        obj_info.face_colors.reserve(num_faces + num_quads);
+        obj_info.face_colors.reserve(num_triangles);
     }
-    bool has_color = data.has_vertex_color;
     for (size_t i = 0; i < num_vertices; ++ i) {
         size_t j = i * OBJ_VERTEX_LENGTH;
         its.vertices.emplace_back(data.coordinates[j], data.coordinates[j + 1], data.coordinates[j + 2]);
@@ -124,10 +193,10 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
         out_uv = Vec2f(data.textureCoordinates[offset], data.textureCoordinates[offset + 1]);
         return true;
     };
-    auto material_for_face = [&data, &mtl_data](int generated_face_index) -> const ObjParser::ObjNewMtl * {
+    auto material_for_face = [&data, &mtl_data](size_t face_vertex_index) -> const ObjParser::ObjNewMtl* {
         for (const ObjParser::ObjUseMtl &use_mtl : data.usemtls) {
-            if (generated_face_index < use_mtl.face_start ||
-                (use_mtl.face_end >= 0 && generated_face_index > use_mtl.face_end))
+            if (face_vertex_index < size_t(std::max(0, use_mtl.vertexIdxFirst)) ||
+                (use_mtl.vertexIdxEnd >= 0 && face_vertex_index >= size_t(use_mtl.vertexIdxEnd)))
                 continue;
             const auto material_it = mtl_data.new_mtl_unmap.find(use_mtl.name);
             if (material_it != mtl_data.new_mtl_unmap.end() && material_it->second)
@@ -160,8 +229,9 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
         obj_info.triangle_uvs_valid.emplace_back(valid_uv ? uint8_t(1) : uint8_t(0));
 
         const auto texture_path_it = material_texture_paths.find(material);
-        const std::string texture_name = texture_path_it != material_texture_paths.end() ?
-            texture_path_it->second : (material != nullptr ? material->map_Kd : std::string());
+        const std::string texture_name    = texture_path_it != material_texture_paths.end() ?
+                                                texture_path_it->second :
+                                                (material != nullptr ? mtl_map_texture_filename(material->map_Kd) : std::string());
         obj_info.triangle_texture_files.emplace_back(texture_name);
         if (!texture_name.empty()) {
             obj_info.has_uv_png = true;
@@ -171,47 +241,106 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
                 obj_info.uvs.emplace_back(triangle_uv);
         }
     };
+    struct FaceCorner
+    {
+        int coordinate_index;
+        int uv_index;
+    };
+    auto face_normal = [&its](const std::vector<FaceCorner>& face) {
+        Vec3f normal = Vec3f::Zero();
+        for (size_t index = 0; index < face.size(); ++index) {
+            const Vec3f& current = its.vertices[size_t(face[index].coordinate_index)];
+            const Vec3f& next    = its.vertices[size_t(face[(index + 1) % face.size()].coordinate_index)];
+            normal.x() += (current.y() - next.y()) * (current.z() + next.z());
+            normal.y() += (current.z() - next.z()) * (current.x() + next.x());
+            normal.z() += (current.x() - next.x()) * (current.y() + next.y());
+        }
+        return normal;
+    };
+    auto projected_point = [&its](const FaceCorner& corner, const Vec3f& normal) {
+        const Vec3f& point = its.vertices[size_t(corner.coordinate_index)];
+        const float  ax    = std::abs(normal.x());
+        const float  ay    = std::abs(normal.y());
+        const float  az    = std::abs(normal.z());
+        if (ax >= ay && ax >= az)
+            return Point(scale_(point.y()), scale_(point.z()));
+        if (ay >= ax && ay >= az)
+            return Point(scale_(point.x()), scale_(point.z()));
+        return Point(scale_(point.x()), scale_(point.y()));
+    };
+    auto append_triangle = [&its, &append_triangle_metadata, &material_color, &obj_info,
+                            exist_mtl](const std::vector<FaceCorner>& face, size_t first, size_t second, size_t third, const Vec3f& normal,
+                                       const ObjParser::ObjNewMtl* material) {
+        if (first >= face.size() || second >= face.size() || third >= face.size())
+            return false;
+        const FaceCorner* corners[3] = {&face[first], &face[second], &face[third]};
+        if (normal.squaredNorm() > EPSILON) {
+            const Vec3f triangle_normal = (its.vertices[size_t(corners[1]->coordinate_index)] -
+                                           its.vertices[size_t(corners[0]->coordinate_index)])
+                                              .cross(its.vertices[size_t(corners[2]->coordinate_index)] -
+                                                     its.vertices[size_t(corners[0]->coordinate_index)]);
+            if (triangle_normal.squaredNorm() > EPSILON && triangle_normal.dot(normal) < 0.f)
+                std::swap(corners[1], corners[2]);
+        }
+        its.indices.emplace_back(corners[0]->coordinate_index, corners[1]->coordinate_index, corners[2]->coordinate_index);
+        const int generated_face_index = int(its.indices.size()) - 1;
+        append_triangle_metadata(generated_face_index, {corners[0]->uv_index, corners[1]->uv_index, corners[2]->uv_index}, material);
+        if (exist_mtl)
+            obj_info.face_colors.emplace_back(material_color(material));
+        return true;
+    };
+    auto append_face = [&append_triangle, &face_normal, &projected_point, &message, path](const std::vector<FaceCorner>& face,
+                                                                                          const ObjParser::ObjNewMtl*    material) {
+        const Vec3f normal = face_normal(face);
+        if (face.size() == 3)
+            return append_triangle(face, 0, 1, 2, normal, material);
+        if (face.size() == 4)
+            return append_triangle(face, 0, 1, 2, normal, material) && append_triangle(face, 0, 2, 3, normal, material);
 
-    int indices[ONE_FACE_SIZE];
-    int uv_indices[ONE_FACE_SIZE];
+        Polygon projected;
+        projected.points.reserve(face.size());
+        for (const FaceCorner& corner : face)
+            projected.points.emplace_back(projected_point(corner, normal));
+        std::set<Point> unique_points(projected.points.begin(), projected.points.end());
+        if (unique_points.size() != face.size()) {
+            BOOST_LOG_TRIVIAL(error) << "load_obj: failed to triangulate degenerate polygon in " << path;
+            message = _L("The file contains a polygon that could not be triangulated.");
+            return false;
+        }
+
+        const Triangulation::Indices triangles = Triangulation::triangulate(projected);
+        if (triangles.empty()) {
+            BOOST_LOG_TRIVIAL(error) << "load_obj: failed to triangulate polygon in " << path;
+            message = _L("The file contains a polygon that could not be triangulated.");
+            return false;
+        }
+        for (const Vec3i32& triangle : triangles)
+            if (!append_triangle(face, size_t(triangle.x()), size_t(triangle.y()), size_t(triangle.z()), normal, material))
+                return false;
+        return true;
+    };
+
     for (size_t i = 0; i < data.vertices.size();)
         if (data.vertices[i].coordIdx == -1)
             ++ i;
         else {
-            int cnt = 0;
+            const size_t            face_vertex_index = i;
+            std::vector<FaceCorner> face;
             while (i < data.vertices.size())
                 if (const ObjParser::ObjVertex &vertex = data.vertices[i ++]; vertex.coordIdx == -1) {
                     break;
                 } else {
-                    assert(cnt < OBJ_VERTEX_LENGTH);
                     if (vertex.coordIdx < 0 || vertex.coordIdx >= int(its.vertices.size())) {
                         BOOST_LOG_TRIVIAL(error) << "load_obj: failed to parse " << path << ". The file contains invalid vertex index.";
                         message = _L("The file contains invalid vertex index.");
                         return false;
                     }
-                    indices[cnt] = vertex.coordIdx;
-                    uv_indices[cnt] = vertex.textureCoordIdx;
-                    cnt++;
+                    face.push_back({vertex.coordIdx, vertex.textureCoordIdx});
                 }
-            if (cnt) {
-                assert(cnt == 3 || cnt == 4);
-                const int generated_face_index = int(its.indices.size());
-                const ObjParser::ObjNewMtl *material = material_for_face(generated_face_index);
-                const RGBA face_color = material_color(material);
-                // Insert one or two faces (triangulate a quad).
-                its.indices.emplace_back(indices[0], indices[1], indices[2]);
-                int face_index = int(its.indices.size()) - 1;
-                append_triangle_metadata(face_index, {uv_indices[0], uv_indices[1], uv_indices[2]}, material);
-                if (exist_mtl)
-                    obj_info.face_colors.emplace_back(face_color);
-                if (cnt == 4) {
-                    its.indices.emplace_back(indices[0], indices[2], indices[3]);
-                    face_index = int(its.indices.size()) - 1;
-                    append_triangle_metadata(face_index, {uv_indices[0], uv_indices[2], uv_indices[3]}, material);
-                    if (exist_mtl)
-                        obj_info.face_colors.emplace_back(face_color);
-                }
-            }
+            while (face.size() > 3 && face.front().coordinate_index == face.back().coordinate_index)
+                face.pop_back();
+            if (face.size() >= 3 && !append_face(face, material_for_face(face_vertex_index)))
+                return false;
         }
 
     *meshptr = TriangleMesh(std::move(its));

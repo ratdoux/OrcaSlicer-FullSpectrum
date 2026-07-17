@@ -9,6 +9,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 
+#include <algorithm>
+
 using namespace Slic3r;
 
 TEST_CASE("OBJ texture metadata stays aligned when material ranges contain quads", "[ObjImageMap]")
@@ -47,6 +49,44 @@ TEST_CASE("OBJ texture metadata stays aligned when material ranges contain quads
     CHECK(info.triangle_uvs_valid == std::vector<uint8_t>{1, 1, 1});
     CHECK(info.face_colors.size() == 3);
     CHECK(info.obj_directory == directory.string());
+
+    boost::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Textured OBJ import triangulates n-gons and resolves MTL texture options", "[ObjImageMap]")
+{
+    const boost::filesystem::path directory = boost::filesystem::temp_directory_path() /
+                                              boost::filesystem::unique_path("fs-obj-textured-ngon-%%%%-%%%%");
+    REQUIRE(boost::filesystem::create_directories(directory));
+    const boost::filesystem::path mtl_path = directory / "material.mtl";
+    const boost::filesystem::path obj_path = directory / "model.obj";
+    {
+        boost::nowide::ofstream output(mtl_path.string());
+        REQUIRE(output.is_open());
+        output << "newmtl textured\nKd 1 1 1\n"
+                  "map_Kd -clamp on -s 1 1 1 \"texture with spaces.png\"\n";
+    }
+    {
+        boost::nowide::ofstream output(obj_path.string());
+        REQUIRE(output.is_open());
+        output << "mtllib material.mtl\n"
+                  "v 0 0 0\nv 2 0 0\nv 2 2 0\nv 1 1 0\nv 0 2 0\n"
+                  "vt 0 0\nvt 1 0\nvt 1 1\nvt 0.5 0.5\nvt 0 1\n"
+                  "usemtl textured\n"
+                  "f 1/-5 2/-4 3/-3 4/-2 5/-1\n";
+    }
+
+    TriangleMesh mesh;
+    ObjInfo      info;
+    std::string  message;
+    REQUIRE(load_obj(obj_path.string().c_str(), &mesh, info, message));
+    REQUIRE(mesh.its.indices.size() == 3);
+    REQUIRE(info.triangle_texture_files.size() == 3);
+    const std::string expected_texture_path = (directory / "texture with spaces.png").string();
+    CHECK(std::all_of(info.triangle_texture_files.begin(), info.triangle_texture_files.end(),
+                      [&expected_texture_path](const std::string& path) { return path == expected_texture_path; }));
+    CHECK(info.triangle_uvs_valid == std::vector<uint8_t>{1, 1, 1});
+    CHECK(info.face_colors.size() == 3);
 
     boost::filesystem::remove_all(directory);
 }

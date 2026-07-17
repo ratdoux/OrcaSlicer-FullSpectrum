@@ -55,6 +55,10 @@ struct MixedColorMatchRecipeResult
     std::string  manual_pattern;
     std::string  gradient_component_ids;
     std::string  gradient_component_weights;
+    // Optional continuous apparent weights, aligned with the recipe components.
+    // The integer recipe remains the printable layer cadence; these weights are
+    // only used to encode a small surface-bias residual around that cadence.
+    std::vector<double> apparent_component_weights;
     wxColour     preview_color = wxColour("#26A69A");
     double       delta_e       = std::numeric_limits<double>::infinity();
 };
@@ -63,6 +67,7 @@ struct MixedColorMatchCreationResult
 {
     bool         valid       = false;
     bool         created     = false;
+    bool         used_surface_bias = false;
     unsigned int filament_id = 1;
     double       delta_e     = std::numeric_limits<double>::infinity();
 };
