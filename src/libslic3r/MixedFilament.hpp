@@ -85,6 +85,9 @@ struct MixedFilamentLegacyRow
     // contract inward; negative values expand outward.
     float component_a_surface_offset = 0.f;
     float component_b_surface_offset = 0.f;
+    // Slash-separated offsets aligned with gradient_component_ids. Empty
+    // means the legacy A/B fields are authoritative.
+    std::string component_surface_offsets;
 
     // Legacy availability bit kept so old project settings and 3MF rows keep
     // their column layout. Runtime treats every non-deleted row as available.
@@ -129,6 +132,7 @@ struct MixedFilamentLegacyRow
                local_z_max_sublayers == rhs.local_z_max_sublayers &&
                std::abs(component_a_surface_offset - rhs.component_a_surface_offset) <= k_surface_offset_epsilon &&
                std::abs(component_b_surface_offset - rhs.component_b_surface_offset) <= k_surface_offset_epsilon &&
+               component_surface_offsets == rhs.component_surface_offsets &&
                deleted      == rhs.deleted &&
                custom       == rhs.custom &&
                origin_auto  == rhs.origin_auto &&
@@ -260,6 +264,10 @@ struct MixedFilamentGradientBehavior
 
 struct MixedFilamentSurfaceBias
 {
+    // Signed offsets aligned with recipe.blend.components. Positive values
+    // contract inward and negative values expand outward. When empty, the
+    // legacy A/B fields below are expanded as A, B, B, ... for compatibility.
+    std::vector<float> component_offsets_mm;
     float component_a_offset_mm = 0.f;
     float component_b_offset_mm = 0.f;
 };
@@ -350,6 +358,8 @@ std::pair<int, int> mixed_filament_apparent_pair_percentages(const MixedFilament
                                                              bool                                bias_mode_enabled);
 std::string compute_mixed_filament_display_color(const MixedFilamentDefinition &definition, const MixedFilamentDisplayContext &context);
 std::string compute_mixed_filament_display_color(const MixedFilamentLegacyRow &row, const MixedFilamentDisplayContext &context);
+std::vector<float> mixed_filament_component_surface_offsets(const MixedFilamentDefinition &definition);
+void set_mixed_filament_component_surface_offsets(MixedFilamentDefinition &definition, const std::vector<float> &offsets_mm);
 
 MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFilamentLegacyRow &row, size_t num_physical = 0);
 void                    apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition &definition,
@@ -529,6 +539,13 @@ public:
                                       float component_a_surface_offset,
                                       float component_b_surface_offset,
                                       float reference_width_mm = 0.4f);
+    static std::vector<int> apparent_component_percentages(const std::vector<int> &component_percents,
+                                                            float                   component_a_surface_offset,
+                                                            float                   component_b_surface_offset,
+                                                            float                   reference_width_mm = 0.4f);
+    static std::vector<int> apparent_component_percentages(const std::vector<int>   &component_percents,
+                                                            const std::vector<float> &component_surface_offsets,
+                                                            float                    reference_width_mm = 0.4f);
 
     // ---- Accessors ------------------------------------------------------
 

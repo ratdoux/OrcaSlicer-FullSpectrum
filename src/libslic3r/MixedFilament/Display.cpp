@@ -43,13 +43,28 @@ std::vector<FullSpectrumKSPairResidualColorInput> full_spectrum_inputs_from_mixe
     return inputs;
 }
 
+double mixed_filament_definition_reference_nozzle_mm(const MixedFilamentDefinition &definition,
+                                                      const std::vector<double>      &nozzle_diameters)
+{
+    double total = 0.0;
+    size_t count = 0;
+    for (const MixedFilamentWeightedComponent &component : definition.recipe.blend.components) {
+        const unsigned int component_id = component.filament.id;
+        if (component_id < 1 || component_id > nozzle_diameters.size())
+            continue;
+        total += std::max(0.05, nozzle_diameters[component_id - 1]);
+        ++count;
+    }
+    return count > 0 ? total / double(count) : 0.4;
+}
+
 } // namespace
 
 int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDefinition&     definition,
                                                            const MixedFilamentPreviewSettings& preview_settings)
 {
     const int mix_b_percent = definition.recipe.blend.primary_pair_or().component_b_percent;
-    if (!preview_settings.local_z_mode)
+    if (!mixed_filament_definition_uses_local_z(definition, preview_settings.local_z_mode))
         return std::clamp(mix_b_percent, 0, 100);
 
     if (definition.recipe.manual_pattern)
@@ -58,24 +73,23 @@ int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDe
     if (definition.recipe.blend.components.size() >= 3)
         return std::clamp(mix_b_percent, 0, 100);
 
-    const std::vector<double> pass_heights = build_local_z_preview_pass_heights(preview_settings.nominal_layer_height,
-                                                                                preview_settings.mixed_lower_bound,
-                                                                                preview_settings.mixed_upper_bound,
-                                                                                preview_settings.preferred_a_height,
-                                                                                preview_settings.preferred_b_height, mix_b_percent, 0);
+    const std::vector<double> pass_heights = mixed_filament_local_z_preview_pass_heights(preview_settings.nominal_layer_height,
+                                                                                         preview_settings.min_sublayer_height,
+                                                                                         preview_settings.preferred_a_height,
+                                                                                         preview_settings.preferred_b_height,
+                                                                                         mix_b_percent,
+                                                                                         0);
     if (pass_heights.empty())
         return std::clamp(mix_b_percent, 0, 100);
 
     double expected_h_a = preview_settings.preferred_a_height;
     double expected_h_b = preview_settings.preferred_b_height;
     if (expected_h_a <= EPSILON && expected_h_b <= EPSILON) {
-        const int    mix_b = std::clamp(mix_b_percent, 0, 100);
-        const double pct_b = double(mix_b) / 100.0;
-        const double pct_a = 1.0 - pct_b;
-        const double lo    = std::max<double>(0.01, preview_settings.mixed_lower_bound);
-        const double hi    = std::max<double>(lo, preview_settings.mixed_upper_bound);
-        expected_h_a       = lo + pct_a * (hi - lo);
-        expected_h_b       = lo + pct_b * (hi - lo);
+        const auto targets = mixed_filament_local_z_pair_heights(preview_settings.nominal_layer_height,
+                                                                  preview_settings.min_sublayer_height,
+                                                                  mix_b_percent);
+        expected_h_a       = targets.first;
+        expected_h_b       = targets.second;
     }
 
     auto choose_start_with_component_a = [](const std::vector<double>& passes, double local_expected_h_a, double local_expected_h_b) {
@@ -118,14 +132,18 @@ bool mixed_filament_supports_bias_apparent_color(const MixedFilamentDefinition& 
 {
     if (!bias_mode_enabled)
         return false;
-    if (preview_settings.local_z_mode)
+    if (mixed_filament_definition_uses_local_z(definition, preview_settings.local_z_mode))
         return false;
-    if (definition.recipe.kind != MixedFilamentRecipeKind::WeightedBlend || !definition.recipe.blend.is_pair())
+    if (definition.recipe.kind != MixedFilamentRecipeKind::WeightedBlend || definition.recipe.blend.components.size() < 2)
         return false;
-    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
-    const unsigned int component_a = pair.component_a.id;
-    const unsigned int component_b = pair.component_b.id;
-    return component_a >= 1 && component_b >= 1 && component_a != component_b;
+    const unsigned int component_a = definition.recipe.blend.components.front().filament.id;
+    if (component_a < 1)
+        return false;
+    return std::any_of(definition.recipe.blend.components.begin() + 1,
+                       definition.recipe.blend.components.end(),
+                       [component_a](const MixedFilamentWeightedComponent &component) {
+                           return component.filament.id >= 1 && component.filament.id != component_a;
+                       });
 }
 
 std::pair<int, int> mixed_filament_apparent_pair_percentages(const MixedFilamentDefinition&      definition,
@@ -133,19 +151,19 @@ std::pair<int, int> mixed_filament_apparent_pair_percentages(const MixedFilament
                                                              const std::vector<double>&          nozzle_diameters,
                                                              bool                                bias_mode_enabled)
 {
-    const int base_b = mixed_filament_effective_local_z_preview_mix_b_percent(definition, preview_settings);
+    std::vector<int> base_percents = normalize_weight_vector_to_percent(definition.recipe.blend.component_percents());
+    if (base_percents.size() == 2) {
+        const int base_b = mixed_filament_effective_local_z_preview_mix_b_percent(definition, preview_settings);
+        base_percents = {100 - base_b, base_b};
+    }
+    const int base_b = base_percents.empty() ? 0 : std::accumulate(base_percents.begin() + 1, base_percents.end(), 0);
     if (!mixed_filament_supports_bias_apparent_color(definition, preview_settings, bias_mode_enabled))
         return {100 - base_b, base_b};
 
-    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
-    const unsigned int component_a = pair.component_a.id;
-    const unsigned int component_b = pair.component_b.id;
-    const double reference_nozzle_mm = mixed_filament_reference_nozzle_mm(component_a, component_b, nozzle_diameters);
-    const int    apparent_b          = MixedFilamentManager::apparent_mix_b_percent(
-        base_b,
-        definition.behavior.surface_bias.component_a_offset_mm,
-        definition.behavior.surface_bias.component_b_offset_mm,
-        float(reference_nozzle_mm));
+    const double reference_nozzle_mm = mixed_filament_definition_reference_nozzle_mm(definition, nozzle_diameters);
+    const std::vector<int> apparent = MixedFilamentManager::apparent_component_percentages(
+        base_percents, mixed_filament_component_surface_offsets(definition), float(reference_nozzle_mm));
+    const int apparent_b = apparent.empty() ? base_b : std::accumulate(apparent.begin() + 1, apparent.end(), 0);
     return {100 - apparent_b, apparent_b};
 }
 
@@ -159,7 +177,33 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
     const unsigned int component_a = pair.component_a.id;
     const unsigned int component_b = pair.component_b.id;
 
-    if (mixed_filament_supports_bias_apparent_color(definition, context.preview_settings, context.component_bias_enabled) &&
+    const bool supports_bias =
+        mixed_filament_supports_bias_apparent_color(definition, context.preview_settings, context.component_bias_enabled);
+    if (supports_bias && definition.recipe.blend.components.size() >= 3) {
+        const std::vector<unsigned int> component_ids = definition.recipe.blend.component_ids(context.num_physical);
+        const std::vector<int> apparent_percents = MixedFilamentManager::apparent_component_percentages(
+            definition.recipe.blend.component_percents(context.num_physical),
+            mixed_filament_component_surface_offsets(definition),
+            float(mixed_filament_definition_reference_nozzle_mm(definition, context.nozzle_diameters)));
+        std::vector<MixedFilamentColorInput> inputs;
+        inputs.reserve(std::min(component_ids.size(), apparent_percents.size()));
+        for (size_t component_idx = 0;
+             component_idx < component_ids.size() && component_idx < apparent_percents.size();
+             ++component_idx) {
+            const unsigned int component_id = component_ids[component_idx];
+            if (component_id < 1 || component_id > context.num_physical || component_id > context.physical_colors.size() ||
+                apparent_percents[component_idx] <= 0)
+                continue;
+            inputs.push_back({context.physical_colors[component_id - 1],
+                              apparent_percents[component_idx],
+                              physical_td_for_id(context, component_id),
+                              physical_material_id_for_id(context, component_id)});
+        }
+        if (!inputs.empty())
+            return MixedFilamentManager::blend_color_multi(inputs);
+    }
+
+    if (supports_bias && definition.recipe.blend.components.size() == 2 &&
         component_a >= 1 && component_b >= 1 && component_a <= context.num_physical &&
         component_b <= context.num_physical && component_a <= context.physical_colors.size() &&
         component_b <= context.physical_colors.size()) {
@@ -181,14 +225,12 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition& 
                 context.physical_colors, context.physical_tds, context.physical_material_ids, context.num_physical, sequence, fallback);
     }
 
-    if (definition.behavior.distribution != MixedFilamentDistributionMode::Simple) {
-        const std::vector<unsigned int> blend_ids = definition.recipe.blend.component_ids(context.num_physical);
-        if (blend_ids.size() >= 3) {
-            const std::vector<unsigned int> sequence = mixed_filament_weighted_blend_sequence(definition, context.num_physical);
-            if (!sequence.empty())
-                return blend_display_color_from_sequence(
-                    context.physical_colors, context.physical_tds, context.physical_material_ids, context.num_physical, sequence, fallback);
-        }
+    const std::vector<unsigned int> blend_ids = definition.recipe.blend.component_ids(context.num_physical);
+    if (blend_ids.size() >= 3) {
+        const std::vector<unsigned int> sequence = mixed_filament_weighted_blend_sequence(definition, context.num_physical);
+        if (!sequence.empty())
+            return blend_display_color_from_sequence(
+                context.physical_colors, context.physical_tds, context.physical_material_ids, context.num_physical, sequence, fallback);
     }
 
     const int effective_mix_b                     = mixed_filament_effective_local_z_preview_mix_b_percent(definition, context.preview_settings);
@@ -364,6 +406,68 @@ int MixedFilamentManager::apparent_mix_b_percent(int   mix_b_percent,
                                        -max_pair_bias_mm(reference_width_mm), max_pair_bias_mm(reference_width_mm)) /
                             safe_reference;
     return clamp_int(int(std::lround(float(clamp_int(mix_b_percent, 0, 100)) + shift_pct)), 0, 100);
+}
+
+std::vector<int> MixedFilamentManager::apparent_component_percentages(const std::vector<int> &component_percents,
+                                                                       float component_a_surface_offset,
+                                                                       float component_b_surface_offset,
+                                                                       float reference_width_mm)
+{
+    std::vector<float> component_offsets(component_percents.size(), component_b_surface_offset);
+    if (!component_offsets.empty())
+        component_offsets.front() = component_a_surface_offset;
+    return apparent_component_percentages(component_percents, component_offsets, reference_width_mm);
+}
+
+std::vector<int> MixedFilamentManager::apparent_component_percentages(const std::vector<int>   &component_percents,
+                                                                       const std::vector<float> &component_surface_offsets,
+                                                                       float                    reference_width_mm)
+{
+    const std::vector<int> normalized = normalize_weight_vector_to_percent(component_percents);
+    if (normalized.size() < 2)
+        return normalized;
+    if (component_surface_offsets.size() != normalized.size())
+        return normalized;
+
+    const double safe_reference = std::max(0.05, double(std::abs(reference_width_mm)));
+    const double component_scale = double(normalized.size()) / double(normalized.size() - 1);
+    std::vector<double> adjustments(normalized.size(), 0.0);
+    double mean_adjustment = 0.0;
+    for (size_t component_idx = 0; component_idx < normalized.size(); ++component_idx) {
+        adjustments[component_idx] = -100.0 * double(component_surface_offsets[component_idx]) / safe_reference;
+        mean_adjustment += adjustments[component_idx];
+    }
+    mean_adjustment /= double(normalized.size());
+
+    std::vector<double> apparent_exact(normalized.size(), 0.0);
+    double apparent_sum = 0.0;
+    for (size_t component_idx = 0; component_idx < normalized.size(); ++component_idx) {
+        apparent_exact[component_idx] = std::max(0.0,
+            double(normalized[component_idx]) + (adjustments[component_idx] - mean_adjustment) * component_scale);
+        apparent_sum += apparent_exact[component_idx];
+    }
+    if (apparent_sum <= EPSILON)
+        return normalized;
+
+    std::vector<int> apparent(normalized.size(), 0);
+    std::vector<double> remainders(normalized.size(), 0.0);
+    int assigned = 0;
+    for (size_t component_idx = 0; component_idx < normalized.size(); ++component_idx) {
+        const double exact_percent = 100.0 * apparent_exact[component_idx] / apparent_sum;
+        apparent[component_idx] = int(std::floor(exact_percent));
+        remainders[component_idx] = exact_percent - double(apparent[component_idx]);
+        assigned += apparent[component_idx];
+    }
+
+    for (int missing = 100 - assigned; missing > 0; --missing) {
+        size_t best_idx = 0;
+        for (size_t component_idx = 1; component_idx < remainders.size(); ++component_idx)
+            if (remainders[component_idx] > remainders[best_idx])
+                best_idx = component_idx;
+        ++apparent[best_idx];
+        remainders[best_idx] = -1.0;
+    }
+    return apparent;
 }
 
 } // namespace Slic3r

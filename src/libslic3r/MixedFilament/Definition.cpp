@@ -58,6 +58,39 @@ std::vector<int> MixedFilamentWeightedBlend::component_percents(size_t num_physi
 
 namespace {
 
+std::vector<float> decode_component_surface_offsets(const std::string &encoded, size_t expected_count)
+{
+    if (encoded.empty() || expected_count == 0)
+        return {};
+
+    std::vector<float> offsets;
+    std::stringstream stream(encoded);
+    std::string token;
+    while (std::getline(stream, token, '/')) {
+        try {
+            size_t consumed = 0;
+            const float value = std::stof(token, &consumed);
+            if (consumed != token.size() || !std::isfinite(value))
+                return {};
+            offsets.emplace_back(clamp_surface_offset(value));
+        } catch (...) {
+            return {};
+        }
+    }
+    return offsets.size() == expected_count ? offsets : std::vector<float>{};
+}
+
+std::string encode_component_surface_offsets(const std::vector<float> &offsets)
+{
+    std::ostringstream stream;
+    for (size_t index = 0; index < offsets.size(); ++index) {
+        if (index != 0)
+            stream << '/';
+        stream << format_surface_offset_token(clamp_surface_offset(offsets[index]));
+    }
+    return stream.str();
+}
+
 size_t expected_gradient_stop_count(size_t component_count, bool gradient_enabled)
 {
     if (component_count >= 3)
@@ -131,6 +164,40 @@ MixedFilamentWeightedBlend aggregate_blend_from_manual_pattern(const MixedFilame
 
 } // namespace
 
+std::vector<float> mixed_filament_component_surface_offsets(const MixedFilamentDefinition &definition)
+{
+    const size_t component_count = definition.recipe.blend.components.size();
+    if (component_count == 0)
+        return {};
+
+    if (definition.behavior.surface_bias.component_offsets_mm.size() == component_count) {
+        std::vector<float> offsets = definition.behavior.surface_bias.component_offsets_mm;
+        for (float &offset : offsets)
+            offset = clamp_surface_offset(offset);
+        return offsets;
+    }
+
+    std::vector<float> offsets(component_count, definition.behavior.surface_bias.component_b_offset_mm);
+    offsets.front() = definition.behavior.surface_bias.component_a_offset_mm;
+    for (float &offset : offsets)
+        offset = clamp_surface_offset(offset);
+    return offsets;
+}
+
+void set_mixed_filament_component_surface_offsets(MixedFilamentDefinition &definition, const std::vector<float> &offsets_mm)
+{
+    const size_t component_count = definition.recipe.blend.components.size();
+    std::vector<float> normalized(component_count, 0.f);
+    for (size_t index = 0; index < std::min(component_count, offsets_mm.size()); ++index)
+        normalized[index] = clamp_surface_offset(offsets_mm[index]);
+
+    definition.behavior.surface_bias.component_offsets_mm = std::move(normalized);
+    definition.behavior.surface_bias.component_a_offset_mm =
+        definition.behavior.surface_bias.component_offsets_mm.empty() ? 0.f : definition.behavior.surface_bias.component_offsets_mm[0];
+    definition.behavior.surface_bias.component_b_offset_mm =
+        definition.behavior.surface_bias.component_offsets_mm.size() < 2 ? 0.f : definition.behavior.surface_bias.component_offsets_mm[1];
+}
+
 MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFilamentLegacyRow& row, size_t num_physical)
 {
     MixedFilamentDefinition definition;
@@ -172,6 +239,10 @@ MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFil
                                                                     definition.behavior.gradient.enabled));
     definition.behavior.surface_bias.component_a_offset_mm = row.component_a_surface_offset;
     definition.behavior.surface_bias.component_b_offset_mm = row.component_b_surface_offset;
+    const std::vector<float> component_offsets =
+        decode_component_surface_offsets(row.component_surface_offsets, definition.recipe.blend.components.size());
+    if (!component_offsets.empty())
+        set_mixed_filament_component_surface_offsets(definition, component_offsets);
 
     definition.presentation.display_color = row.display_color;
 
@@ -200,8 +271,10 @@ void apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition
     if (std::abs(row.gradient_start - row.gradient_end) < MixedFilamentLegacyRow::k_min_gradient_difference)
         row.gradient_enabled = false;
     row.ui_mode                    = row.gradient_enabled ? 3 : -1;
-    row.component_a_surface_offset = definition.behavior.surface_bias.component_a_offset_mm;
-    row.component_b_surface_offset = definition.behavior.surface_bias.component_b_offset_mm;
+    const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
+    row.component_a_surface_offset = component_offsets.empty() ? 0.f : component_offsets[0];
+    row.component_b_surface_offset = component_offsets.size() < 2 ? 0.f : component_offsets[1];
+    row.component_surface_offsets = component_offsets.size() >= 3 ? encode_component_surface_offsets(component_offsets) : std::string();
     row.deleted                    = definition.visibility.tombstoned;
     row.enabled                    = !row.deleted;
     row.custom        = definition.source.kind == MixedFilamentSourceKind::Custom;

@@ -166,21 +166,26 @@ private:
     wxColor compute_preview_mixed_color() const;
 
     // -----------------------------------------------------------------------
-    // Pair bias controls
+    // Per-component bias controls
     // -----------------------------------------------------------------------
+    struct BiasControlRow {
+        wxPanel*    panel{nullptr};
+        wxPanel*    swatch{nullptr};
+        wxSlider*   slider{nullptr};
+        wxTextCtrl* value_input{nullptr};
+    };
     void build_bias_ui();
+    void rebuild_bias_rows();
     void sync_bias_controls();
-    void refresh_bias_target_swatch();
-    void apply_bias_value(double value);
+    void sync_bias_values_size();
+    void apply_bias_value(size_t component_idx, double value);
     bool mixed_filament_bias_enabled() const;
     bool bias_supported() const;
     std::vector<double> nozzle_diameters() const;
-    double bias_reference_nozzle_mm(unsigned int component_a, unsigned int component_b) const;
-    double current_bias_limit_mm() const;
-    std::pair<float, float> current_bias_surface_offsets(double value) const;
-    double bias_value_from_definition(const MixedFilamentDefinition& def) const;
-    wxColour bias_target_color() const;
-    wxString bias_target_label() const;
+    double bias_reference_nozzle_mm(const std::vector<unsigned int>& component_ids) const;
+    double current_bias_reference_nozzle_mm() const;
+    double current_bias_limit_mm(size_t component_idx) const;
+    std::vector<double> current_bias_preview_scales() const;
 
     // -----------------------------------------------------------------------
     // Gradient result helpers
@@ -267,10 +272,9 @@ private:
     MFDPreviewAccordion*          m_preview_accordion{nullptr};
     MFDGradientAccordion*         m_gradient_accordion{nullptr};
     Accordion*                    m_bias_accordion{nullptr};
-    wxPanel*                      m_bias_target_swatch{nullptr};
-    wxSlider*                     m_bias_slider{nullptr};
-    wxTextCtrl*                   m_bias_value_input{nullptr};
-    double                        m_bias_value_mm{0.0};
+    wxBoxSizer*                   m_bias_rows_sizer{nullptr};
+    std::vector<BiasControlRow>   m_bias_controls;
+    std::vector<double>           m_bias_values_mm;
 
 
 

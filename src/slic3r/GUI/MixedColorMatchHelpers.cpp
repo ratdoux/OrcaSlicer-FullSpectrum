@@ -766,9 +766,8 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
         return fallback;
     };
 
-    context.preview_settings.mixed_lower_bound    = std::max(0.01, double(get_mixed_float("mixed_filament_height_lower_bound", 0.04f)));
-    context.preview_settings.mixed_upper_bound    = std::max(context.preview_settings.mixed_lower_bound,
-                                                             double(get_mixed_float("mixed_filament_height_upper_bound", 0.16f)));
+    context.preview_settings.min_sublayer_height =
+        std::max(0.01, double(get_mixed_float("mixed_filament_height_lower_bound", 0.06f)));
     context.preview_settings.preferred_a_height   = std::max(0.0, double(get_mixed_float("mixed_color_layer_height_a", 0.f)));
     context.preview_settings.preferred_b_height   = std::max(0.0, double(get_mixed_float("mixed_color_layer_height_b", 0.f)));
     context.preview_settings.nominal_layer_height = 0.2;

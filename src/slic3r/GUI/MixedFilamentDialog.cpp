@@ -187,7 +187,8 @@ MixedFilamentDialog::MixedFilamentDialog(
                 }
             }
 
-            m_bias_value_mm = bias_value_from_definition(def);
+            const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(def);
+            m_bias_values_mm.assign(component_offsets.begin(), component_offsets.end());
             loaded_preset = true;
         }
     }
@@ -201,6 +202,7 @@ MixedFilamentDialog::MixedFilamentDialog(
         }
         m_selected_filaments_weights = get_default_weights(2);
     }
+    sync_bias_values_size();
     m_selected_filaments_colors = get_selected_filaments_colors(m_selected_filaments);
 
     build_ui(parent);
@@ -598,101 +600,135 @@ void MixedFilamentDialog::build_bias_ui()
 
     wxPanel* body = m_bias_accordion->get_body_panel();
     wxBoxSizer* body_sizer = m_bias_accordion->get_body_sizer();
-    const wxColour card_bg = MFDTheme::card_background();
-    body->SetBackgroundColour(card_bg);
-
-    const wxString bias_tooltip =
-        _L("Positive bias recesses the second filament in the pair; negative bias recesses the first filament.\n\n"
-           "The color chip shows which filament the current value affects.\n\n"
-           "Grouped wall patterns and Local-Z dithering ignore it.");
-
-    wxPanel* row_panel = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    row_panel->SetBackgroundColour(card_bg);
-    wxBoxSizer* row_sizer = new wxBoxSizer(wxHORIZONTAL);
-    row_panel->SetSizer(row_sizer);
-
-    wxStaticText* label = new wxStaticText(row_panel, wxID_ANY, _L("Bias"));
-    label->SetFont(::Label::Body_14);
-    label->SetToolTip(bias_tooltip);
-    MFDTheme::apply_text(label, MFDTheme::primary_text(), card_bg);
-
-    m_bias_target_swatch = new wxPanel(row_panel, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(34), FromDIP(24)), wxBORDER_NONE);
-    m_bias_target_swatch->SetMinSize(wxSize(FromDIP(34), FromDIP(24)));
-    m_bias_target_swatch->SetBackgroundColour(card_bg);
-    m_bias_target_swatch->SetBackgroundStyle(wxBG_STYLE_PAINT);
-    m_bias_target_swatch->SetToolTip(bias_tooltip);
-    m_bias_target_swatch->Bind(wxEVT_ERASE_BACKGROUND, [](wxEraseEvent&) {});
-    m_bias_target_swatch->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
-        wxAutoBufferedPaintDC dc(m_bias_target_swatch);
-        const wxSize size = m_bias_target_swatch->GetClientSize();
-        const wxColour bg = m_bias_target_swatch->GetBackgroundColour();
-        dc.SetPen(*wxTRANSPARENT_PEN);
-        dc.SetBrush(wxBrush(bg));
-        dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
-
-        if (!bias_supported()) {
-            dc.SetPen(wxPen(MFDTheme::input_border(), 1));
-            dc.SetBrush(wxBrush(MFDTheme::input_background()));
-            dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
-            return;
-        }
-
-        FilamentCardMixed::paint_clr_swatch(dc, size, bias_target_color(), bias_target_label(), wxGetApp().dark_mode(), 0);
-    });
-
-    const double initial_limit = current_bias_limit_mm();
-    m_bias_value_mm = std::clamp(m_bias_value_mm, -initial_limit, initial_limit);
-    const int initial_slider_limit = std::max(1, static_cast<int>(std::round(initial_limit * 1000.0)));
-    m_bias_slider = new wxSlider(row_panel, wxID_ANY,
-                                 static_cast<int>(std::round(m_bias_value_mm * 1000.0)),
-                                 -initial_slider_limit,
-                                 initial_slider_limit);
-    m_bias_slider->SetTickFreq(std::max(1, initial_slider_limit / 4));
-    m_bias_slider->SetToolTip(bias_tooltip);
-
-    m_bias_value_input = new wxTextCtrl(row_panel, wxID_ANY,
-                                        wxString::Format("%.3f", m_bias_value_mm),
-                                        wxDefaultPosition,
-                                        wxDefaultSize,
-                                        wxTE_PROCESS_ENTER | wxTE_RIGHT);
-    m_bias_value_input->SetFont(::Label::Body_14);
-    m_bias_value_input->SetMinSize(wxSize(FromDIP(58), -1));
-    m_bias_value_input->SetToolTip(bias_tooltip);
-    MFDTheme::apply_input(m_bias_value_input);
-
-    wxStaticText* unit_label = new wxStaticText(row_panel, wxID_ANY, _L("mm"));
-    unit_label->SetFont(::Label::Body_14);
-    unit_label->SetToolTip(bias_tooltip);
-    MFDTheme::apply_text(unit_label, MFDTheme::primary_text(), card_bg);
-
-    m_bias_slider->Bind(wxEVT_SLIDER, [this](wxCommandEvent&) {
-        if (!m_bias_slider)
-            return;
-
-        apply_bias_value(double(m_bias_slider->GetValue()) / 1000.0);
-    });
-
-    auto apply_bias_text = [this](wxEvent& event) {
-        if (m_bias_value_input) {
-            double value = 0.0;
-            if (m_bias_value_input->GetValue().ToDouble(&value))
-                apply_bias_value(value);
-            else
-                m_bias_value_input->ChangeValue(wxString::Format("%.3f", m_bias_value_mm));
-        }
-        event.Skip();
-    };
-    m_bias_value_input->Bind(wxEVT_TEXT_ENTER, apply_bias_text);
-    m_bias_value_input->Bind(wxEVT_KILL_FOCUS, apply_bias_text);
-
-    row_sizer->Add(label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
-    row_sizer->Add(m_bias_target_swatch, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
-    row_sizer->Add(m_bias_slider, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
-    row_sizer->Add(m_bias_value_input, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
-    row_sizer->Add(unit_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
-
-    body_sizer->Add(row_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    body->SetBackgroundColour(MFDTheme::card_background());
+    m_bias_rows_sizer = new wxBoxSizer(wxVERTICAL);
+    body_sizer->Add(m_bias_rows_sizer, 0, wxEXPAND);
+    rebuild_bias_rows();
     sync_bias_controls();
+}
+
+void MixedFilamentDialog::rebuild_bias_rows()
+{
+    if (!m_bias_rows_sizer || !m_bias_accordion)
+        return;
+
+    sync_bias_values_size();
+    m_bias_rows_sizer->Clear(true);
+    m_bias_controls.clear();
+
+    wxPanel* body = m_bias_accordion->get_body_panel();
+    const wxColour card_bg = MFDTheme::card_background();
+    const wxString bias_tooltip =
+        _L("Set the XY surface offset for this filament independently. Positive values contract it inward; negative values expand it outward.\n\n"
+           "Grouped wall patterns and Local-Z dithering ignore these offsets.");
+
+    m_bias_controls.reserve(m_selected_filaments.size());
+    for (size_t component_idx = 0; component_idx < m_selected_filaments.size(); ++component_idx) {
+        BiasControlRow controls;
+        controls.panel = new wxPanel(body, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+        controls.panel->SetBackgroundColour(card_bg);
+        wxBoxSizer* row_sizer = new wxBoxSizer(wxHORIZONTAL);
+        controls.panel->SetSizer(row_sizer);
+
+        wxStaticText* label = new wxStaticText(controls.panel, wxID_ANY, _L("Bias"));
+        label->SetFont(::Label::Body_14);
+        label->SetToolTip(bias_tooltip);
+        MFDTheme::apply_text(label, MFDTheme::primary_text(), card_bg);
+
+        controls.swatch = new wxPanel(controls.panel, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(34), FromDIP(24)), wxBORDER_NONE);
+        controls.swatch->SetMinSize(wxSize(FromDIP(34), FromDIP(24)));
+        controls.swatch->SetBackgroundColour(card_bg);
+        controls.swatch->SetBackgroundStyle(wxBG_STYLE_PAINT);
+        controls.swatch->SetToolTip(bias_tooltip);
+        controls.swatch->Bind(wxEVT_ERASE_BACKGROUND, [](wxEraseEvent&) {});
+
+        const double limit = current_bias_limit_mm(component_idx);
+        m_bias_values_mm[component_idx] = std::clamp(m_bias_values_mm[component_idx], -limit, limit);
+        const int slider_limit = std::max(1, static_cast<int>(std::round(limit * 1000.0)));
+        controls.slider = new wxSlider(controls.panel,
+                                       wxID_ANY,
+                                       static_cast<int>(std::round(m_bias_values_mm[component_idx] * 1000.0)),
+                                       -slider_limit,
+                                       slider_limit);
+        controls.slider->SetTickFreq(std::max(1, slider_limit / 4));
+        controls.slider->SetToolTip(bias_tooltip);
+
+        controls.value_input = new wxTextCtrl(controls.panel,
+                                              wxID_ANY,
+                                              wxString::Format("%.3f", m_bias_values_mm[component_idx]),
+                                              wxDefaultPosition,
+                                              wxDefaultSize,
+                                              wxTE_PROCESS_ENTER | wxTE_RIGHT);
+        controls.value_input->SetFont(::Label::Body_14);
+        controls.value_input->SetMinSize(wxSize(FromDIP(58), -1));
+        controls.value_input->SetToolTip(bias_tooltip);
+        MFDTheme::apply_input(controls.value_input);
+
+        wxStaticText* unit_label = new wxStaticText(controls.panel, wxID_ANY, _L("mm"));
+        unit_label->SetFont(::Label::Body_14);
+        unit_label->SetToolTip(bias_tooltip);
+        MFDTheme::apply_text(unit_label, MFDTheme::primary_text(), card_bg);
+
+        row_sizer->Add(label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        row_sizer->Add(controls.swatch, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        row_sizer->Add(controls.slider, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        row_sizer->Add(controls.value_input, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
+        row_sizer->Add(unit_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        m_bias_rows_sizer->Add(controls.panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+
+        m_bias_controls.emplace_back(controls);
+        controls.swatch->Bind(wxEVT_PAINT, [this, component_idx](wxPaintEvent&) {
+            if (component_idx >= m_bias_controls.size())
+                return;
+            wxPanel* swatch = m_bias_controls[component_idx].swatch;
+            wxAutoBufferedPaintDC dc(swatch);
+            const wxSize size = swatch->GetClientSize();
+            dc.SetPen(*wxTRANSPARENT_PEN);
+            dc.SetBrush(wxBrush(swatch->GetBackgroundColour()));
+            dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+            if (!bias_supported() || component_idx >= m_selected_filaments_colors.size() ||
+                component_idx >= m_selected_filaments.size()) {
+                dc.SetPen(wxPen(MFDTheme::input_border(), 1));
+                dc.SetBrush(wxBrush(MFDTheme::input_background()));
+                dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+                return;
+            }
+            FilamentCardMixed::paint_clr_swatch(dc,
+                                                size,
+                                                m_selected_filaments_colors[component_idx],
+                                                wxString::Format("%d", m_selected_filaments[component_idx] + 1),
+                                                wxGetApp().dark_mode(),
+                                                0);
+        });
+        controls.slider->Bind(wxEVT_SLIDER, [this, component_idx](wxCommandEvent&) {
+            if (component_idx < m_bias_controls.size() && m_bias_controls[component_idx].slider)
+                apply_bias_value(component_idx, double(m_bias_controls[component_idx].slider->GetValue()) / 1000.0);
+        });
+        auto apply_bias_text = [this, component_idx](wxEvent& event) {
+            if (component_idx < m_bias_controls.size() && m_bias_controls[component_idx].value_input) {
+                double value = 0.0;
+                if (m_bias_controls[component_idx].value_input->GetValue().ToDouble(&value))
+                    apply_bias_value(component_idx, value);
+                else if (component_idx < m_bias_values_mm.size())
+                    m_bias_controls[component_idx].value_input->ChangeValue(wxString::Format("%.3f", m_bias_values_mm[component_idx]));
+            }
+            event.Skip();
+        };
+        controls.value_input->Bind(wxEVT_TEXT_ENTER, apply_bias_text);
+        controls.value_input->Bind(wxEVT_KILL_FOCUS, apply_bias_text);
+    }
+
+    body->Layout();
+    m_bias_accordion->Layout();
+    if (m_content_panel && m_content_panel->GetSizer()) {
+        m_content_panel->Layout();
+        m_content_panel->FitInside();
+    }
+}
+
+void MixedFilamentDialog::sync_bias_values_size()
+{
+    m_bias_values_mm.resize(m_selected_filaments.size(), 0.0);
 }
 
 void MixedFilamentDialog::sync_bias_controls()
@@ -702,60 +738,48 @@ void MixedFilamentDialog::sync_bias_controls()
 
     m_bias_accordion->Show(m_current_tab == Tab::Mix && mixed_filament_bias_enabled());
 
-    const double limit = current_bias_limit_mm();
-    m_bias_value_mm = std::clamp(m_bias_value_mm, -limit, limit);
-    const int slider_limit = std::max(1, static_cast<int>(std::round(limit * 1000.0)));
-    const int slider_value = std::clamp(static_cast<int>(std::round(m_bias_value_mm * 1000.0)),
-                                        -slider_limit,
-                                        slider_limit);
+    sync_bias_values_size();
+    if (m_bias_controls.size() != m_selected_filaments.size())
+        rebuild_bias_rows();
 
-    if (m_bias_slider) {
-        m_bias_slider->SetRange(-slider_limit, slider_limit);
-        m_bias_slider->SetTickFreq(std::max(1, slider_limit / 4));
-        if (m_bias_slider->GetValue() != slider_value)
-            m_bias_slider->SetValue(slider_value);
-        m_bias_slider->Enable(bias_supported());
+    const bool supported = bias_supported();
+    for (size_t component_idx = 0; component_idx < m_bias_controls.size(); ++component_idx) {
+        BiasControlRow& controls = m_bias_controls[component_idx];
+        const double limit = current_bias_limit_mm(component_idx);
+        m_bias_values_mm[component_idx] = std::clamp(m_bias_values_mm[component_idx], -limit, limit);
+        const int slider_limit = std::max(1, static_cast<int>(std::round(limit * 1000.0)));
+        const int slider_value = std::clamp(static_cast<int>(std::round(m_bias_values_mm[component_idx] * 1000.0)),
+                                             -slider_limit,
+                                             slider_limit);
+        if (controls.slider) {
+            controls.slider->SetRange(-slider_limit, slider_limit);
+            controls.slider->SetTickFreq(std::max(1, slider_limit / 4));
+            if (controls.slider->GetValue() != slider_value)
+                controls.slider->SetValue(slider_value);
+            controls.slider->Enable(supported);
+        }
+        if (controls.value_input) {
+            const wxString formatted = wxString::Format("%.3f", m_bias_values_mm[component_idx]);
+            if (controls.value_input->GetValue() != formatted)
+                controls.value_input->ChangeValue(formatted);
+            controls.value_input->Enable(supported);
+        }
+        if (controls.swatch) {
+            controls.swatch->Enable(supported);
+            controls.swatch->Refresh();
+        }
     }
-
-    if (m_bias_value_input) {
-        const wxString formatted = wxString::Format("%.3f", m_bias_value_mm);
-        if (m_bias_value_input->GetValue() != formatted)
-            m_bias_value_input->ChangeValue(formatted);
-        m_bias_value_input->Enable(bias_supported());
-    }
-
-    refresh_bias_target_swatch();
 }
 
-void MixedFilamentDialog::refresh_bias_target_swatch()
+void MixedFilamentDialog::apply_bias_value(size_t component_idx, double value)
 {
-    if (m_bias_target_swatch) {
-        m_bias_target_swatch->Enable(bias_supported());
-        m_bias_target_swatch->Refresh();
-    }
-}
+    sync_bias_values_size();
+    if (component_idx >= m_bias_values_mm.size())
+        return;
 
-void MixedFilamentDialog::apply_bias_value(double value)
-{
-    const double limit = current_bias_limit_mm();
-    m_bias_value_mm = std::clamp(value, -limit, limit);
-
-    const int slider_limit = std::max(1, static_cast<int>(std::round(limit * 1000.0)));
-    const int slider_value = std::clamp(static_cast<int>(std::round(m_bias_value_mm * 1000.0)),
-                                        -slider_limit,
-                                        slider_limit);
-
-    if (m_bias_slider) {
-        if (m_bias_slider->GetMin() != -slider_limit || m_bias_slider->GetMax() != slider_limit)
-            m_bias_slider->SetRange(-slider_limit, slider_limit);
-        if (m_bias_slider->GetValue() != slider_value)
-            m_bias_slider->SetValue(slider_value);
-    }
-
-    if (m_bias_value_input)
-        m_bias_value_input->ChangeValue(wxString::Format("%.3f", m_bias_value_mm));
-
-    refresh_bias_target_swatch();
+    const double limit = current_bias_limit_mm(component_idx);
+    m_bias_values_mm[component_idx] = std::clamp(value, -limit, limit);
+    sync_bias_controls();
     update_preview();
 }
 
@@ -784,8 +808,10 @@ bool MixedFilamentDialog::bias_supported() const
 {
     return mixed_filament_bias_enabled() &&
            m_current_tab == Tab::Mix &&
-           m_selected_filaments.size() == 2 &&
-           m_selected_filaments[0] != m_selected_filaments[1];
+           m_selected_filaments.size() >= 2 &&
+           std::all_of(m_selected_filaments.begin() + 1,
+                       m_selected_filaments.end(),
+                       [this](int filament) { return filament != m_selected_filaments.front(); });
 }
 
 std::vector<double> MixedFilamentDialog::nozzle_diameters() const
@@ -806,80 +832,40 @@ std::vector<double> MixedFilamentDialog::nozzle_diameters() const
     return values;
 }
 
-double MixedFilamentDialog::bias_reference_nozzle_mm(unsigned int component_a, unsigned int component_b) const
+double MixedFilamentDialog::bias_reference_nozzle_mm(const std::vector<unsigned int>& component_ids) const
 {
     const std::vector<double> diameters = nozzle_diameters();
     double sum = 0.0;
-    int count = 0;
-
-    auto append_if_valid = [&diameters, &sum, &count](unsigned int component_id) {
+    size_t count = 0;
+    for (const unsigned int component_id : component_ids) {
         if (component_id >= 1 && component_id <= diameters.size()) {
             sum += std::max(0.05, diameters[size_t(component_id - 1)]);
             ++count;
         }
-    };
-
-    append_if_valid(component_a);
-    append_if_valid(component_b);
+    }
     return count > 0 ? sum / double(count) : 0.4;
 }
 
-double MixedFilamentDialog::current_bias_limit_mm() const
+double MixedFilamentDialog::current_bias_reference_nozzle_mm() const
 {
-    if (m_selected_filaments.size() < 2)
-        return MixedFilamentManager::max_pair_bias_mm(0.4f);
-
-    const double reference_nozzle_mm = bias_reference_nozzle_mm(static_cast<unsigned int>(m_selected_filaments[0] + 1),
-                                                                static_cast<unsigned int>(m_selected_filaments[1] + 1));
-    return MixedFilamentManager::max_pair_bias_mm(float(reference_nozzle_mm));
+    std::vector<unsigned int> component_ids;
+    component_ids.reserve(m_selected_filaments.size());
+    for (const int filament : m_selected_filaments)
+        if (filament >= 0)
+            component_ids.emplace_back(unsigned(filament + 1));
+    return bias_reference_nozzle_mm(component_ids);
 }
 
-std::pair<float, float> MixedFilamentDialog::current_bias_surface_offsets(double value) const
+double MixedFilamentDialog::current_bias_limit_mm(size_t component_idx) const
 {
-    if (m_selected_filaments.size() < 2)
-        return MixedFilamentManager::surface_offset_pair_from_signed_bias(float(value), 0.4f);
-
-    const double reference_nozzle_mm = bias_reference_nozzle_mm(static_cast<unsigned int>(m_selected_filaments[0] + 1),
-                                                                static_cast<unsigned int>(m_selected_filaments[1] + 1));
-    return MixedFilamentManager::surface_offset_pair_from_signed_bias(float(value), float(reference_nozzle_mm));
-}
-
-double MixedFilamentDialog::bias_value_from_definition(const MixedFilamentDefinition& def) const
-{
-    if (def.recipe.kind != MixedFilamentRecipeKind::WeightedBlend || !def.recipe.blend.is_pair())
-        return 0.0;
-
-    const MixedFilamentPrimaryPairView pair = def.recipe.blend.primary_pair_or();
-    const double reference_nozzle_mm = bias_reference_nozzle_mm(pair.component_a.id, pair.component_b.id);
-    return MixedFilamentManager::bias_ui_value_from_surface_offsets(def.behavior.surface_bias.component_a_offset_mm,
-                                                                    def.behavior.surface_bias.component_b_offset_mm,
-                                                                    float(reference_nozzle_mm));
-}
-
-wxColour MixedFilamentDialog::bias_target_color() const
-{
-    if (m_selected_filaments_colors.size() < 2)
-        return MFDTheme::input_background();
-
-    if (m_bias_value_mm < -0.0005)
-        return m_selected_filaments_colors[0];
-    if (m_bias_value_mm > 0.0005)
-        return m_selected_filaments_colors[1];
-
-    return compute_mixed_color(m_physical_filaments, m_selected_filaments, m_selected_filaments_weights);
-}
-
-wxString MixedFilamentDialog::bias_target_label() const
-{
-    if (m_selected_filaments.size() < 2)
-        return wxEmptyString;
-
-    if (m_bias_value_mm < -0.0005)
-        return wxString::Format("%d", m_selected_filaments[0] + 1);
-    if (m_bias_value_mm > 0.0005)
-        return wxString::Format("%d", m_selected_filaments[1] + 1);
-
-    return _L("0");
+    double reference_nozzle_mm = current_bias_reference_nozzle_mm();
+    if (component_idx < m_selected_filaments.size()) {
+        const int filament_idx = m_selected_filaments[component_idx];
+        const std::vector<double> diameters = nozzle_diameters();
+        if (filament_idx >= 0 && size_t(filament_idx) < diameters.size())
+            reference_nozzle_mm = diameters[size_t(filament_idx)];
+    }
+    return MixedFilamentManager::max_component_surface_offset_mm(float(reference_nozzle_mm));
 }
 
 std::vector<int> MixedFilamentDialog::gradient_component_percents() const
@@ -1249,18 +1235,20 @@ wxColor MixedFilamentDialog::compute_preview_mixed_color() const
     if (!bias_supported())
         return compute_mixed_color(m_physical_filaments, m_selected_filaments, m_selected_filaments_weights);
 
-    const int base_b_percent = std::clamp(static_cast<int>(std::round(m_selected_filaments_weights[1] * 100.0)), 0, 100);
-    const auto [component_a_offset, component_b_offset] = current_bias_surface_offsets(m_bias_value_mm);
-    const double reference_nozzle_mm = bias_reference_nozzle_mm(static_cast<unsigned int>(m_selected_filaments[0] + 1),
-                                                                static_cast<unsigned int>(m_selected_filaments[1] + 1));
-    const int apparent_b_percent = MixedFilamentManager::apparent_mix_b_percent(base_b_percent,
-                                                                                component_a_offset,
-                                                                                component_b_offset,
-                                                                                float(reference_nozzle_mm));
-    std::vector<double> apparent_weights = {
-        double(100 - apparent_b_percent) / 100.0,
-        double(apparent_b_percent) / 100.0
-    };
+    std::vector<int> base_percents;
+    base_percents.reserve(m_selected_filaments_weights.size());
+    for (const double weight : m_selected_filaments_weights)
+        base_percents.emplace_back(std::max(0, int(std::lround(weight * 1000.0))));
+    std::vector<float> component_offsets;
+    component_offsets.reserve(m_bias_values_mm.size());
+    for (const double offset : m_bias_values_mm)
+        component_offsets.emplace_back(float(offset));
+    const std::vector<int> apparent_percents = MixedFilamentManager::apparent_component_percentages(
+        base_percents, component_offsets, float(current_bias_reference_nozzle_mm()));
+    std::vector<double> apparent_weights;
+    apparent_weights.reserve(apparent_percents.size());
+    for (const int percent : apparent_percents)
+        apparent_weights.emplace_back(double(percent) / 100.0);
     return compute_mixed_color(m_physical_filaments, m_selected_filaments, apparent_weights);
 }
 
@@ -1271,7 +1259,10 @@ void MixedFilamentDialog::update_preview()
 
     if (m_current_tab == Tab::Mix) {
         wxColor mixed_color = compute_preview_mixed_color();
-        m_preview_accordion->update_preview_mix(m_selected_filaments_weights, m_selected_filaments_colors, mixed_color);
+        m_preview_accordion->update_preview_mix(m_selected_filaments_weights,
+                                                m_selected_filaments_colors,
+                                                mixed_color,
+                                                current_bias_preview_scales());
     } else if (m_current_tab == Tab::Pattern) {
         wxString pattern_str = m_pattern_selector_accordion->get_pattern_string();
         std::vector<int> pattern_indices;
@@ -1332,6 +1323,26 @@ wxColor MixedFilamentDialog::compute_mixed_color(
         component_weights.emplace_back(std::max(1, int(std::lround(weights[index] * 1000000.0))));
     }
     return blend_mixed_filament_components(component_ids, component_weights, m_display_context);
+}
+
+std::vector<double> MixedFilamentDialog::current_bias_preview_scales() const
+{
+    std::vector<double> scales(m_selected_filaments.size(), 1.0);
+    if (!bias_supported())
+        return scales;
+
+    // This is a schematic object cross-section, not a single extrusion line. Normalizing a
+    // two-sided inset against one nozzle diameter makes a valid bias look catastrophically
+    // narrow, so show it over a representative ten-nozzle-wide preview span instead.
+    constexpr double preview_nozzle_widths = 10.0;
+    constexpr double min_preview_scale     = 0.75;
+    constexpr double max_preview_scale     = 1.25;
+    const double preview_width = std::max(0.5, preview_nozzle_widths * current_bias_reference_nozzle_mm());
+    for (size_t component_idx = 0; component_idx < m_selected_filaments.size(); ++component_idx) {
+        const double offset = component_idx < m_bias_values_mm.size() ? m_bias_values_mm[component_idx] : 0.0;
+        scales[component_idx] = std::clamp(1.0 - 2.0 * offset / preview_width, min_preview_scale, max_preview_scale);
+    }
+    return scales;
 }
 
 void MixedFilamentDialog::generate_mix_presets()
@@ -1606,16 +1617,12 @@ MixedFilamentDefinition MixedFilamentDialog::get_result() const
             def.recipe.blend.components.push_back({{phys_id}, percent});
         }
 
-        if (def.recipe.blend.is_pair()) {
-            const MixedFilamentPrimaryPairView pair = def.recipe.blend.primary_pair_or();
-            const double reference_nozzle_mm = bias_reference_nozzle_mm(pair.component_a.id, pair.component_b.id);
-            const double bias_limit = MixedFilamentManager::max_pair_bias_mm(float(reference_nozzle_mm));
-            const auto surface_offsets = MixedFilamentManager::surface_offset_pair_from_signed_bias(
-                float(std::clamp(m_bias_value_mm, -bias_limit, bias_limit)),
-                float(reference_nozzle_mm));
-            def.behavior.surface_bias.component_a_offset_mm = surface_offsets.first;
-            def.behavior.surface_bias.component_b_offset_mm = surface_offsets.second;
-        }
+        std::vector<float> component_offsets(def.recipe.blend.components.size(), 0.f);
+        for (size_t component_idx = 0; component_idx < component_offsets.size() && component_idx < m_bias_values_mm.size(); ++component_idx)
+            component_offsets[component_idx] = float(std::clamp(m_bias_values_mm[component_idx],
+                                                                 -current_bias_limit_mm(component_idx),
+                                                                 current_bias_limit_mm(component_idx)));
+        set_mixed_filament_component_surface_offsets(def, component_offsets);
     } else if (m_current_tab == Tab::Pattern) {
         def.recipe.kind = MixedFilamentRecipeKind::ManualPattern;
         def.behavior.distribution = MixedFilamentDistributionMode::Simple;

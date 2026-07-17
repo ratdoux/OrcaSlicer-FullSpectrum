@@ -31,8 +31,15 @@ int         clamp_int(int v, int lo, int hi);
 float       clamp_surface_offset(float v);
 float       canonical_signed_bias_value(float component_a_surface_offset, float component_b_surface_offset);
 std::string format_surface_offset_token(float value);
-void        compute_gradient_heights_from_mix(int mix_b_percent, float lower_bound, float upper_bound, float& h_a, float& h_b);
-std::pair<int, int> gradient_ratios_from_mix(int mix_b_percent, int gradient_mode, float lower_bound, float upper_bound);
+void compute_gradient_heights_from_mix(int mix_b_percent,
+                                       float nominal_layer_height,
+                                       float min_sublayer_height,
+                                       float& h_a,
+                                       float& h_b);
+std::pair<int, int> gradient_ratios_from_mix(int mix_b_percent,
+                                             int gradient_mode,
+                                             float nominal_layer_height,
+                                             float min_sublayer_height);
 int         safe_mod(int x, int m);
 bool        use_component_b_advanced_dither(int layer_index, int ratio_a, int ratio_b);
 double mixed_filament_reference_nozzle_mm(unsigned int component_a, unsigned int component_b, const std::vector<double>& nozzle_diameters);
@@ -54,6 +61,7 @@ bool                          parse_row_definition(const std::string& row,
                                                    int&               local_z_max_sublayers,
                                                    float&             component_a_surface_offset,
                                                    float&             component_b_surface_offset,
+                                                   std::string&       component_surface_offsets,
                                                    bool&              deleted,
                                                    bool&              gradient_enabled,
                                                    float&             gradient_start,
@@ -110,14 +118,6 @@ std::string               blend_display_color_from_sequence(const std::vector<st
                                                             size_t                           num_physical,
                                                             const std::vector<unsigned int>& sequence,
                                                             const std::string&               fallback);
-std::vector<double>       build_local_z_preview_pass_heights(double nominal_layer_height,
-                                                             double lower_bound,
-                                                             double upper_bound,
-                                                             double preferred_a_height,
-                                                             double preferred_b_height,
-                                                             int    mix_b_percent,
-                                                             int    max_sublayers_limit);
-
 }} // namespace Slic3r::MixedFilamentInternal
 
 #endif /* slic3r_MixedFilament_Internal_hpp_ */

@@ -319,22 +319,17 @@ void FilamentCardMixed::paint_clr_swatch_gradient(
     context.DrawRectangle(0, 0, size.x, size.y);
 
     wxUnusedVar(is_dark);
-    const int radius = int(std::round(std::max(2.0, std::min(w, h) * 0.20)));
     const wxColor border_color(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar());
     wxBitmap* gradient_bitmap = get_color_block_bitmap_cached(colors, true, w, h, text,
                                                               wxColour(130, 130, 128),
-                                                              CornerRadius::Uniform(radius),
+                                                              {},
                                                               true);
     if (gradient_bitmap != nullptr)
         context.DrawBitmap(*gradient_bitmap, x, y, true);
 
-    std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::CreateFromUnknownDC(context));
-    if (!gc)
-        return;
-
-    gc->SetPen(wxPen(border_color, 1));
-    gc->SetBrush(*wxTRANSPARENT_BRUSH);
-    gc->DrawRoundedRectangle(x + 0.5, y + 0.5, std::max(1, w - 1), std::max(1, h - 1), radius);
+    context.SetPen(wxPen(border_color, 1));
+    context.SetBrush(*wxTRANSPARENT_BRUSH);
+    context.DrawRectangle(x, y, w, h);
 }
 
 // static

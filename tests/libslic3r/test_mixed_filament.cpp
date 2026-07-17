@@ -368,7 +368,7 @@ TEST_CASE("Mixed filament grouped manual patterns normalize and round-trip", "[M
     CHECK(loaded.mixed_filament_legacy_rows().front().mix_b_percent == 13);
 }
 
-TEST_CASE("Mixed filament component surface offsets round-trip and bias the second layer component", "[MixedFilament]")
+TEST_CASE("Mixed filament component surface offsets round-trip and apply independently", "[MixedFilament]")
 {
     const std::vector<std::string> colors = {"#FF0000", "#FFFF00"};
 
@@ -394,8 +394,8 @@ TEST_CASE("Mixed filament component surface offsets round-trip and bias the seco
     const MixedFilamentLegacyRow &loaded_row = loaded.mixed_filament_legacy_rows().front();
     CHECK(loaded_row.component_a_surface_offset == Approx(0.02f));
     CHECK(loaded_row.component_b_surface_offset == Approx(-0.01f));
-    CHECK(loaded.component_surface_offset(3, 2, 0) == Approx(0.01f));
-    CHECK(loaded.component_surface_offset(3, 2, 1) == Approx(0.0f));
+    CHECK(loaded.component_surface_offset(3, 2, 0) == Approx(0.02f));
+    CHECK(loaded.component_surface_offset(3, 2, 1) == Approx(-0.01f));
 }
 
 TEST_CASE("Mixed filament apparent mix percent follows the signed bias target", "[MixedFilament]")
@@ -405,6 +405,123 @@ TEST_CASE("Mixed filament apparent mix percent follows the signed bias target", 
     CHECK(MixedFilamentManager::apparent_mix_b_percent(50, 0.02f, 0.00f, 0.4f) == 55);
     CHECK(MixedFilamentManager::apparent_mix_b_percent(50, -0.02f, 0.00f, 0.4f) == 45);
     CHECK(MixedFilamentManager::apparent_mix_b_percent(50, 0.00f, -0.02f, 0.4f) == 55);
+}
+
+TEST_CASE("Local-Z minimum sublayer height clamps direct nominal-layer ratios", "[MixedFilament][LocalZ]")
+{
+    const auto quarter_b = mixed_filament_local_z_pair_heights(0.20, 0.04, 25);
+    CHECK(quarter_b.first == Approx(0.15));
+    CHECK(quarter_b.second == Approx(0.05));
+
+    const auto clamped_b = mixed_filament_local_z_pair_heights(0.20, 0.04, 10);
+    CHECK(clamped_b.first == Approx(0.16));
+    CHECK(clamped_b.second == Approx(0.04));
+
+    const auto all_a = mixed_filament_local_z_pair_heights(0.20, 0.04, 0);
+    CHECK(all_a.first == Approx(0.20));
+    CHECK(all_a.second == Approx(0.0));
+
+    const auto all_b = mixed_filament_local_z_pair_heights(0.20, 0.04, 100);
+    CHECK(all_b.first == Approx(0.0));
+    CHECK(all_b.second == Approx(0.20));
+}
+
+TEST_CASE("Local-Z upper height bound is retired as a legacy setting", "[MixedFilament][LocalZ]")
+{
+    CHECK(print_config_def.has("mixed_filament_height_lower_bound"));
+    CHECK_FALSE(print_config_def.has("mixed_filament_height_upper_bound"));
+
+    const ConfigOptionDef *minimum_def = print_config_def.get("mixed_filament_height_lower_bound");
+    REQUIRE(minimum_def != nullptr);
+    REQUIRE(bool(minimum_def->default_value));
+    CHECK(static_cast<const ConfigOptionFloat *>(minimum_def->default_value.get())->value == Approx(0.06));
+
+    std::string key   = "mixed_filament_height_upper_bound";
+    std::string value = "0.24";
+    PrintConfigDef::handle_legacy(key, value);
+    CHECK(key.empty());
+}
+
+TEST_CASE("Local-Z can preserve the first Full-domain layer", "[MixedFilament][LocalZ]")
+{
+    const ConfigOptionDef *option_def = print_config_def.get("dithering_local_z_preserve_first_layer");
+    REQUIRE(option_def != nullptr);
+    REQUIRE(bool(option_def->default_value));
+    CHECK(static_cast<const ConfigOptionBool *>(option_def->default_value.get())->value);
+
+    CHECK_FALSE(mixed_filament_local_z_should_subdivide_layer(0, true, true));
+    CHECK(mixed_filament_local_z_should_subdivide_layer(1, true, true));
+    CHECK(mixed_filament_local_z_should_subdivide_layer(0, false, true));
+    CHECK(mixed_filament_local_z_should_subdivide_layer(0, true, false));
+}
+
+TEST_CASE("Gradients opt into Local-Z without enabling the global override", "[MixedFilament][LocalZ]")
+{
+    MixedFilamentDefinition ordinary;
+    ordinary.recipe.blend.components = {{{1}, 50}, {{2}, 50}};
+
+    MixedFilamentDefinition gradient = ordinary;
+    gradient.behavior.gradient.enabled = true;
+
+    CHECK_FALSE(mixed_filament_definition_uses_local_z(ordinary, false));
+    CHECK(mixed_filament_definition_uses_local_z(ordinary, true));
+    CHECK(mixed_filament_definition_uses_local_z(gradient, false));
+
+    gradient.recipe.manual_pattern = MixedFilamentManualPattern{{{{1}}, {{2}}}};
+    CHECK_FALSE(mixed_filament_definition_uses_local_z(gradient, false));
+
+    gradient.recipe.manual_pattern.reset();
+    gradient.visibility.tombstoned = true;
+    CHECK_FALSE(mixed_filament_definition_uses_local_z(gradient, true));
+}
+
+TEST_CASE("Object-assigned Local-Z rows opt into full-domain scope", "[MixedFilament][LocalZ]")
+{
+    CHECK_FALSE(mixed_filament_local_z_uses_full_domain(false, false));
+    CHECK(mixed_filament_local_z_uses_full_domain(false, true));
+    CHECK(mixed_filament_local_z_uses_full_domain(true, false));
+    CHECK(mixed_filament_local_z_uses_full_domain(true, true));
+}
+
+TEST_CASE("Local-Z planner leaves physical and inactive mixed paint at nominal height", "[MixedFilament][LocalZ]")
+{
+    CHECK_FALSE(mixed_filament_local_z_painted_override_uses_planner(false, false));
+    CHECK_FALSE(mixed_filament_local_z_painted_override_uses_planner(false, true));
+    CHECK_FALSE(mixed_filament_local_z_painted_override_uses_planner(true, false));
+    CHECK(mixed_filament_local_z_painted_override_uses_planner(true, true));
+}
+
+TEST_CASE("Local-Z preview reports the effective direct thickness ratio", "[MixedFilament][LocalZ]")
+{
+    MixedFilamentLegacyRow row;
+    row.component_a   = 1;
+    row.component_b   = 2;
+    row.mix_b_percent = 25;
+    row.custom        = true;
+
+    const MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(row, 2);
+    MixedFilamentPreviewSettings settings;
+    settings.nominal_layer_height = 0.20;
+    settings.min_sublayer_height  = 0.04;
+    settings.local_z_mode         = true;
+
+    const std::vector<double> passes = mixed_filament_local_z_preview_pass_heights(0.20, 0.04, 0.0, 0.0, 25);
+    REQUIRE(passes.size() == 2);
+    CHECK(passes[0] == Approx(0.15));
+    CHECK(passes[1] == Approx(0.05));
+    CHECK(mixed_filament_effective_local_z_preview_mix_b_percent(definition, settings) == 25);
+
+    settings.min_sublayer_height = 0.06;
+    CHECK(mixed_filament_effective_local_z_preview_mix_b_percent(definition, settings) == 30);
+
+    settings.local_z_mode = false;
+    CHECK(mixed_filament_effective_local_z_preview_mix_b_percent(definition, settings) == 25);
+    CHECK(mixed_filament_supports_bias_apparent_color(definition, settings, true));
+
+    MixedFilamentDefinition gradient = definition;
+    gradient.behavior.gradient.enabled = true;
+    CHECK(mixed_filament_effective_local_z_preview_mix_b_percent(gradient, settings) == 30);
+    CHECK_FALSE(mixed_filament_supports_bias_apparent_color(gradient, settings, true));
 }
 
 TEST_CASE("Mixed filament bias helper maps signed bias to a one-sided safe offset pair", "[MixedFilament]")
@@ -488,6 +605,103 @@ TEST_CASE("Mixed filament component surface offsets follow the signed bias targe
         CHECK(mgr.component_surface_offset(3, 2, 2) == Approx(0.05f));
         CHECK(mgr.component_surface_offset(3, 2, 3) == Approx(0.0f));
     }
+}
+
+TEST_CASE("Multi-component mixed filament bias treats the first component against the remaining group", "[MixedFilament]")
+{
+    const std::vector<std::string> colors = {"#FF0000", "#FFFF00", "#0000FF"};
+    MixedFilamentDefinition definition;
+    definition.source.kind = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components = {{{1}, 40}, {{2}, 30}, {{3}, 30}};
+    definition.behavior.distribution = MixedFilamentDistributionMode::Simple;
+
+    MixedFilamentPreviewSettings preview_settings;
+    CHECK(mixed_filament_supports_bias_apparent_color(definition, preview_settings, true));
+
+    const auto [offset_a, offset_b] = MixedFilamentManager::surface_offset_pair_from_signed_bias(0.04f, 0.4f);
+    definition.behavior.surface_bias.component_a_offset_mm = offset_a;
+    definition.behavior.surface_bias.component_b_offset_mm = offset_b;
+    CHECK(MixedFilamentManager::apparent_component_percentages({40, 30, 30}, offset_a, offset_b, 0.4f) ==
+          std::vector<int>{50, 25, 25});
+
+    MixedFilamentManager manager;
+    manager.set_mixed_filament_definitions({definition}, colors);
+    std::set<unsigned int> resolved_components;
+    for (int layer_idx = 0; layer_idx < 20; ++layer_idx) {
+        const unsigned int resolved = manager.resolve(4, 3, layer_idx);
+        resolved_components.insert(resolved);
+        CHECK(manager.component_surface_offset(4, 3, layer_idx) == Approx(resolved == 1 ? 0.0f : 0.04f));
+    }
+    CHECK(resolved_components == std::set<unsigned int>{1, 2, 3});
+
+    const auto [negative_a, negative_b] = MixedFilamentManager::surface_offset_pair_from_signed_bias(-0.04f, 0.4f);
+    definition.behavior.surface_bias.component_a_offset_mm = negative_a;
+    definition.behavior.surface_bias.component_b_offset_mm = negative_b;
+    CHECK(MixedFilamentManager::apparent_component_percentages({40, 30, 30}, negative_a, negative_b, 0.4f) ==
+          std::vector<int>{30, 35, 35});
+    manager.set_mixed_filament_definitions({definition}, colors);
+    for (int layer_idx = 0; layer_idx < 20; ++layer_idx) {
+        const unsigned int resolved = manager.resolve(4, 3, layer_idx);
+        CHECK(manager.component_surface_offset(4, 3, layer_idx) == Approx(resolved == 1 ? 0.04f : 0.0f));
+    }
+}
+
+TEST_CASE("Multi-component mixed filament bias stores and applies every component independently", "[MixedFilament][FullSpectrum3mf]")
+{
+    const std::vector<std::string> colors = {"#FF0000", "#FFFF00", "#0000FF"};
+    const std::vector<std::string> refs = {"fil_red", "fil_yellow", "fil_blue"};
+
+    MixedFilamentDefinition definition;
+    definition.identity.stable_id = 6103;
+    definition.source.kind = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components = {{{1}, 40}, {{2}, 30}, {{3}, 30}};
+    definition.behavior.distribution = MixedFilamentDistributionMode::Simple;
+    set_mixed_filament_component_surface_offsets(definition, {0.02f, 0.04f, -0.02f});
+
+    CHECK(mixed_filament_component_surface_offsets(definition) == std::vector<float>{0.02f, 0.04f, -0.02f});
+    CHECK(MixedFilamentManager::apparent_component_percentages(
+              {40, 30, 30}, mixed_filament_component_surface_offsets(definition), 0.4f) ==
+          std::vector<int>{38, 20, 42});
+
+    MixedFilamentManager manager;
+    manager.set_mixed_filament_definitions({definition}, colors);
+    std::set<unsigned int> resolved_components;
+    for (int layer_idx = 0; layer_idx < 40; ++layer_idx) {
+        const unsigned int resolved = manager.resolve(4, 3, layer_idx);
+        resolved_components.insert(resolved);
+        const float expected_offset = resolved == 1 ? 0.02f : (resolved == 2 ? 0.04f : -0.02f);
+        CHECK(manager.component_surface_offset(4, 3, layer_idx) == Approx(expected_offset));
+    }
+    CHECK(resolved_components == std::set<unsigned int>{1, 2, 3});
+
+    const std::string legacy = manager.serialize_custom_entries();
+    CHECK(legacy.find(",xv0.02/0.04/-0.02") != std::string::npos);
+    MixedFilamentManager legacy_rebuilt;
+    legacy_rebuilt.load_custom_entries(legacy, colors);
+    const std::vector<MixedFilamentDefinition> legacy_definitions = legacy_rebuilt.mixed_filament_definitions(colors.size());
+    REQUIRE(legacy_definitions.size() == 1);
+    CHECK(mixed_filament_component_surface_offsets(legacy_definitions.front()) == std::vector<float>{0.02f, 0.04f, -0.02f});
+
+    const MixedFilaments canonical = mixed_filaments_from_manager(manager, refs);
+    REQUIRE(canonical.virtual_filaments.size() == 1);
+    REQUIRE(canonical.virtual_filaments.front().gradient);
+    CHECK_FALSE(canonical.virtual_filaments.front().gradient->enabled);
+    CHECK(canonical.virtual_filaments.front().distribution.mode == "simple");
+    CHECK(canonical.virtual_filaments.front().surface_bias.component_refs == refs);
+    REQUIRE(canonical.virtual_filaments.front().surface_bias.component_offsets_mm.size() == 3);
+    CHECK(canonical.virtual_filaments.front().surface_bias.component_offsets_mm[0] == Approx(0.02));
+    CHECK(canonical.virtual_filaments.front().surface_bias.component_offsets_mm[1] == Approx(0.04));
+    CHECK(canonical.virtual_filaments.front().surface_bias.component_offsets_mm[2] == Approx(-0.02));
+
+    const MixedFilaments parsed = parse_json<MixedFilaments>(serialize_json(canonical));
+    const MixedFilamentManager canonical_rebuilt = manager_from_mixed_filaments(parsed, colors, refs);
+    const std::vector<MixedFilamentDefinition> canonical_definitions = canonical_rebuilt.mixed_filament_definitions(colors.size());
+    REQUIRE(canonical_definitions.size() == 1);
+    CHECK(canonical_definitions.front().behavior.distribution == MixedFilamentDistributionMode::Simple);
+    CHECK(canonical_definitions.front().recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2, 3});
+    CHECK(mixed_filament_component_surface_offsets(canonical_definitions.front()) == std::vector<float>{0.02f, 0.04f, -0.02f});
 }
 
 TEST_CASE("Mixed filament auto generation can be disabled without dropping custom rows", "[MixedFilament]")

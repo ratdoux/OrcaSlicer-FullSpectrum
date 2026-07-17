@@ -25,7 +25,8 @@ namespace Slic3r::GUI {
 
 // A single entry in the layer-stack representation of a mixed filament print.
 // filament_index: 0-based index into the colors array passed to update_preview().
-// scale: width/height fraction (0..1) for the visual bar; always 1.0 in current usage.
+// scale: width/height multiplier for the visual bar. Values below 1 contract;
+// values above 1 expand relative to the other layers in the preview.
 struct MFDPreviewLayerEntry {
     int    filament_index;
     double scale;
@@ -42,7 +43,8 @@ public:
     void update_preview_mix(
         const std::vector<double>&               weights,
         const std::vector<wxColor>&              colors,
-        const wxColor&                           mixed_color);
+        const wxColor&                           mixed_color,
+        const std::vector<double>&               component_scales = {});
 
     void update_preview_pattern(
         const std::vector<int>&                  pattern_indices,

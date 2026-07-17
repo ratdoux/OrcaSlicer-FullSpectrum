@@ -46,7 +46,7 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
         return component_a;
     }
 
-    if (definition.behavior.distribution != MixedFilamentDistributionMode::Simple && definition.recipe.blend.components.size() >= 3) {
+    if (definition.recipe.blend.components.size() >= 3) {
         const std::vector<unsigned int> gradient_sequence = mixed_filament_weighted_blend_sequence(definition, num_physical);
         if (!gradient_sequence.empty()) {
             const size_t pos = size_t(safe_mod(layer_index, int(gradient_sequence.size())));
@@ -60,7 +60,11 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
     if (use_height_weighted) {
         float h_a = 0.f;
         float h_b = 0.f;
-        compute_gradient_heights_from_mix(pair.component_b_percent, m_height_lower_bound, m_height_upper_bound, h_a, h_b);
+        compute_gradient_heights_from_mix(pair.component_b_percent,
+                                          m_nominal_layer_height,
+                                          m_min_sublayer_height,
+                                          h_a,
+                                          h_b);
         const float cycle_h  = std::max(0.01f, h_a + h_b);
         const float z_anchor = (layer_height > 1e-6f) ? std::max(0.f, layer_print_z - 0.5f * layer_height) : std::max(0.f, layer_print_z);
         float       phase    = std::fmod(z_anchor, cycle_h);
@@ -161,13 +165,13 @@ float MixedFilamentManager::component_surface_offset(unsigned int filament_id,
         return 0.f;
 
     const unsigned int resolved = resolve(filament_id, num_physical, layer_index, layer_print_z, layer_height, force_height_weighted);
-    const float signed_bias     = canonical_signed_bias_value(definition.behavior.surface_bias.component_a_offset_mm,
-                                                              definition.behavior.surface_bias.component_b_offset_mm);
-    const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or(0, 0);
-    if (signed_bias > EPSILON && resolved == pair.component_b.id)
-        return signed_bias;
-    if (signed_bias < -EPSILON && resolved == pair.component_a.id)
-        return -signed_bias;
+    const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
+    for (size_t component_idx = 0;
+         component_idx < definition.recipe.blend.components.size() && component_idx < component_offsets.size();
+         ++component_idx) {
+        if (definition.recipe.blend.components[component_idx].filament.id == resolved)
+            return component_offsets[component_idx];
+    }
     return 0.f;
 }
 

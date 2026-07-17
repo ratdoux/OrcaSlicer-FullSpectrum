@@ -61,11 +61,16 @@ void MFDPreviewAccordion::build_ui()
 void MFDPreviewAccordion::update_preview_mix(
     const std::vector<double>&               weights,
     const std::vector<wxColor>&              colors,
-    const wxColor&                           mixed_color)
+    const wxColor&                           mixed_color,
+    const std::vector<double>&               component_scales)
 {
     m_preview_mode = PreviewMode::Mix;
     m_layer_stack  = compute_layer_stack(weights, 20);
     m_colors       = colors;
+    for (MFDPreviewLayerEntry &entry : m_layer_stack) {
+        if (entry.filament_index >= 0 && size_t(entry.filament_index) < component_scales.size())
+            entry.scale = std::clamp(component_scales[size_t(entry.filament_index)], 0.1, 2.0);
+    }
 
     if (m_color_panel) {
         m_color_panel->SetBackgroundColour(mixed_color);
@@ -300,6 +305,9 @@ void MFDPreviewAccordion::draw_layer_stack_common(
         double H = size.y - 2 * padding;
         double step_size = (vertical ? H : W) / total_layers;
         double radius = vertical ? (step_size / 2.0) : FromDIP(1.0);
+        double max_scale = 1.0;
+        for (const MFDPreviewLayerEntry &entry : m_layer_stack)
+            max_scale = std::max(max_scale, entry.scale);
 
         for (int i = 0; i < total_layers; ++i) {
             const auto& entry = m_layer_stack[i];
@@ -311,12 +319,12 @@ void MFDPreviewAccordion::draw_layer_stack_common(
             gc->SetPen(*wxTRANSPARENT_PEN);
 
             if (vertical) {
-                double draw_w = W * entry.scale;
+                double draw_w = W * entry.scale / max_scale;
                 double draw_x = padding + (W - draw_w) / 2.0;
                 double draw_y = (size.y - padding) - (i + 1) * step_size;
                 gc->DrawRoundedRectangle(draw_x, draw_y, draw_w, step_size, radius);
             } else {
-                double draw_h = H * entry.scale;
+                double draw_h = H * entry.scale / max_scale;
                 double draw_y = padding + (H - draw_h) / 2.0;
                 double draw_x = padding + i * step_size;
                 gc->DrawRoundedRectangle(draw_x, draw_y, step_size, draw_h, radius);
