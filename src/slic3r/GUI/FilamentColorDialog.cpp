@@ -2,6 +2,7 @@
 
 #include "FilamentColorUtils.hpp"
 #include "GUI_App.hpp"
+#include "HexColourDialog.hpp"
 #include "Widgets/Button.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/StateColor.hpp"
@@ -890,7 +891,7 @@ void FilamentColorDialog::OpenMoreColorDialog()
     for (int index = 0; index < custom_count; ++index)
         data.SetCustomColour(index, string_to_wxColor(custom_colors[index]));
 
-    wxColourDialog dialog(this, &data);
+    HexColourDialog dialog(this, &data);
     dialog.SetTitle(_L("Please choose the filament color"));
     if (dialog.ShowModal() != wxID_OK)
         return;
