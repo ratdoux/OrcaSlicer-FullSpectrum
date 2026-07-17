@@ -1597,6 +1597,10 @@ public:
     // BBS
     static bool    obj_import_vertex_color_deal(const std::vector<unsigned char> &vertex_filament_ids, const unsigned char &first_extruder_id, Model *model);
     static bool    obj_import_face_color_deal(const std::vector<unsigned char> &face_filament_ids, const unsigned char &first_extruder_id, Model *model);
+    static bool    obj_import_image_map_deal(const std::vector<unsigned char> &filament_ids,
+                                             const ObjImageMapSamplePlan &sample_plan,
+                                             const unsigned char &first_extruder_id,
+                                             Model *model);
     static double findMaxSpeed(const ModelObject* object);
     static double getThermalLength(const ModelVolume* modelVolumePtr);
     static double getThermalLength(const std::vector<ModelVolume*> modelVolumePtrs);

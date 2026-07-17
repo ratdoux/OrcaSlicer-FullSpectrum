@@ -733,6 +733,29 @@ TEST_CASE("Multi-component mixed filament bias stores and applies every componen
     CHECK(mixed_filament_component_surface_offsets(canonical_definitions.front()) == std::vector<float>{0.02f, 0.04f, -0.02f});
 }
 
+TEST_CASE("Surface-bias encoding reproduces requested apparent component percentages", "[MixedFilament][SurfaceBias]")
+{
+    SECTION("two components") {
+        const std::vector<int> actual = {50, 50};
+        const std::vector<int> target = {75, 25};
+        const std::vector<float> offsets = mixed_filament_surface_offsets_for_apparent_percentages(actual, target, 0.4f);
+        REQUIRE(offsets.size() == 2);
+        CHECK(offsets[0] == Approx(-0.05f));
+        CHECK(offsets[1] == Approx(0.05f));
+        CHECK(MixedFilamentManager::apparent_component_percentages(actual, offsets, 0.4f) == target);
+    }
+
+    SECTION("four components") {
+        const std::vector<int> actual = {25, 25, 25, 25};
+        const std::vector<int> target = {55, 25, 15, 5};
+        const std::vector<float> offsets = mixed_filament_surface_offsets_for_apparent_percentages(actual, target, 0.4f);
+        REQUIRE(offsets.size() == 4);
+        CHECK(MixedFilamentManager::apparent_component_percentages(actual, offsets, 0.4f) == target);
+    }
+
+    CHECK(mixed_filament_surface_offsets_for_apparent_percentages({50, 50}, {100}, 0.4f).empty());
+}
+
 TEST_CASE("Mixed filament auto generation can be disabled without dropping custom rows", "[MixedFilament]")
 {
     const std::vector<std::string> colors = {"#FF0000", "#00FF00", "#0000FF"};

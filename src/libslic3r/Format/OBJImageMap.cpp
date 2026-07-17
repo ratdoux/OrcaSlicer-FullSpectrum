@@ -1,0 +1,271 @@
+#include "OBJImageMap.hpp"
+
+#include "ImportedTexture.hpp"
+#include "libslic3r/TriangleMesh.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <map>
+#include <set>
+#include <sstream>
+
+#include <boost/filesystem.hpp>
+
+namespace Slic3r {
+namespace {
+
+constexpr unsigned int k_max_subdivision_depth = 6;
+
+struct LoadedTexture
+{
+    std::vector<uint8_t> rgba;
+    uint32_t             width{0};
+    uint32_t             height{0};
+};
+
+float wrap_uv(float value)
+{
+    if (!std::isfinite(value))
+        return 0.f;
+    constexpr float epsilon = 1e-6f;
+    if (value >= -epsilon && value <= 1.f + epsilon)
+        return std::clamp(value, 0.f, 1.f);
+    const float wrapped = value - std::floor(value);
+    return wrapped < 0.f ? wrapped + 1.f : wrapped;
+}
+
+RGBA sample_texture(const LoadedTexture& texture, const Vec2f& uv, const RGBA& background)
+{
+    if (texture.width == 0 || texture.height == 0 || texture.rgba.size() < size_t(texture.width) * size_t(texture.height) * 4)
+        return background;
+
+    const float  x  = wrap_uv(uv.x()) * float(texture.width > 1 ? texture.width - 1 : 0);
+    const float  y  = wrap_uv(uv.y()) * float(texture.height > 1 ? texture.height - 1 : 0);
+    const size_t x0 = std::min<size_t>(size_t(std::floor(x)), size_t(texture.width - 1));
+    const size_t y0 = std::min<size_t>(size_t(std::floor(y)), size_t(texture.height - 1));
+    const size_t x1 = std::min<size_t>(x0 + 1, size_t(texture.width - 1));
+    const size_t y1 = std::min<size_t>(y0 + 1, size_t(texture.height - 1));
+    const float  tx = x - float(x0);
+    const float  ty = y - float(y0);
+
+    auto channel = [&texture](size_t sx, size_t sy, size_t component) {
+        return float(texture.rgba[(sy * size_t(texture.width) + sx) * 4 + component]) / 255.f;
+    };
+
+    RGBA sampled{};
+    for (size_t component = 0; component < 4; ++component) {
+        const float top    = channel(x0, y0, component) + (channel(x1, y0, component) - channel(x0, y0, component)) * tx;
+        const float bottom = channel(x0, y1, component) + (channel(x1, y1, component) - channel(x0, y1, component)) * tx;
+        sampled[component] = std::clamp(top + (bottom - top) * ty, 0.f, 1.f);
+    }
+
+    const float alpha = sampled[3];
+    return RGBA{std::clamp(sampled[0] * alpha + background[0] * (1.f - alpha), 0.f, 1.f),
+                std::clamp(sampled[1] * alpha + background[1] * (1.f - alpha), 0.f, 1.f),
+                std::clamp(sampled[2] * alpha + background[2] * (1.f - alpha), 0.f, 1.f), 1.f};
+}
+
+boost::filesystem::path resolve_texture_path(const std::string& obj_directory, const std::string& texture_name)
+{
+    const boost::filesystem::path raw(texture_name);
+    if (raw.is_absolute() && boost::filesystem::exists(raw))
+        return raw;
+
+    const boost::filesystem::path directory(obj_directory);
+    const boost::filesystem::path relative = directory / raw;
+    if (boost::filesystem::exists(relative))
+        return relative;
+
+    const boost::filesystem::path filename_only = directory / raw.filename();
+    return boost::filesystem::exists(filename_only) ? filename_only : relative;
+}
+
+unsigned int desired_subdivision_depth(const indexed_triangle_set& mesh,
+                                       size_t                      triangle_idx,
+                                       const std::array<Vec2f, 3>& uvs,
+                                       const LoadedTexture&        texture,
+                                       float                       target_sample_size_mm)
+{
+    const stl_triangle_vertex_indices& indices     = mesh.indices[triangle_idx];
+    const Vec3f&                       p0          = mesh.vertices[size_t(indices[0])];
+    const Vec3f&                       p1          = mesh.vertices[size_t(indices[1])];
+    const Vec3f&                       p2          = mesh.vertices[size_t(indices[2])];
+    const float                        max_edge_mm = std::max({(p1 - p0).norm(), (p2 - p1).norm(), (p0 - p2).norm()});
+    const float                        safe_target = std::max(0.1f, target_sample_size_mm);
+    const unsigned int physical_depth = max_edge_mm > safe_target ? unsigned(std::ceil(std::log2(max_edge_mm / safe_target))) : 0u;
+
+    auto uv_pixel_distance = [&texture](const Vec2f& a, const Vec2f& b) {
+        const float du = std::abs(a.x() - b.x()) * float(texture.width);
+        const float dv = std::abs(a.y() - b.y()) * float(texture.height);
+        return std::max(du, dv);
+    };
+    const float max_texture_edge = std::max(
+        {uv_pixel_distance(uvs[0], uvs[1]), uv_pixel_distance(uvs[1], uvs[2]), uv_pixel_distance(uvs[2], uvs[0])});
+    const unsigned int texture_depth = max_texture_edge > 1.f ? unsigned(std::ceil(std::log2(max_texture_edge))) : 0u;
+    return std::min({physical_depth, texture_depth, k_max_subdivision_depth});
+}
+
+void append_leaf_colors(
+    const std::array<Vec2f, 3>& uvs, unsigned int depth, const LoadedTexture& texture, const RGBA& background, std::vector<RGBA>& colors)
+{
+    if (depth == 0) {
+        colors.emplace_back(sample_texture(texture, (uvs[0] + uvs[1] + uvs[2]) / 3.f, background));
+        return;
+    }
+
+    const Vec2f m01 = (uvs[0] + uvs[1]) * 0.5f;
+    const Vec2f m12 = (uvs[1] + uvs[2]) * 0.5f;
+    const Vec2f m20 = (uvs[2] + uvs[0]) * 0.5f;
+    append_leaf_colors({uvs[0], m01, m20}, depth - 1, texture, background, colors);
+    append_leaf_colors({m01, uvs[1], m12}, depth - 1, texture, background, colors);
+    append_leaf_colors({m12, uvs[2], m20}, depth - 1, texture, background, colors);
+    append_leaf_colors({m01, m12, m20}, depth - 1, texture, background, colors);
+}
+
+std::string encode_leaf(unsigned char filament_id, unsigned char base_filament_id)
+{
+    if (filament_id == 0 || filament_id > 16)
+        return {};
+    if (filament_id == base_filament_id)
+        return "0";
+    if (filament_id <= 2) {
+        const int code = int(filament_id) << 2;
+        return std::string(1, char(code < 10 ? '0' + code : 'A' + code - 10));
+    }
+    const int extension = int(filament_id) - 3;
+    return std::string(1, char(extension < 10 ? '0' + extension : 'A' + extension - 10)) + "C";
+}
+
+std::string encode_tree(const std::vector<unsigned char>& filament_ids, size_t& offset, unsigned int depth, unsigned char base_filament_id)
+{
+    if (depth == 0)
+        return offset < filament_ids.size() ? encode_leaf(filament_ids[offset++], base_filament_id) : std::string();
+
+    std::string encoded;
+    for (size_t child = 0; child < 4; ++child)
+        encoded += encode_tree(filament_ids, offset, depth - 1, base_filament_id);
+    encoded += '3';
+    return encoded;
+}
+
+} // namespace
+
+size_t obj_image_map_leaf_count(unsigned int subdivision_depth)
+{
+    size_t count = 1;
+    for (unsigned int depth = 0; depth < subdivision_depth; ++depth) {
+        if (count > std::numeric_limits<size_t>::max() / 4)
+            return 0;
+        count *= 4;
+    }
+    return count;
+}
+
+bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
+                                     const ObjInfo&         obj_info,
+                                     float                  target_sample_size_mm,
+                                     size_t                 max_samples,
+                                     ObjImageMapSamplePlan& out_plan,
+                                     std::string*           warning)
+{
+    out_plan                                   = ObjImageMapSamplePlan{};
+    const indexed_triangle_set& its            = mesh.its;
+    const size_t                triangle_count = its.indices.size();
+    out_plan.triangle_subdivision_depths.assign(triangle_count, int8_t(-1));
+    if (triangle_count == 0 || obj_info.triangle_uvs.size() != triangle_count || obj_info.triangle_uvs_valid.size() != triangle_count ||
+        obj_info.triangle_texture_files.size() != triangle_count)
+        return false;
+
+    std::map<std::string, LoadedTexture> loaded;
+    std::set<std::string>                failed;
+    for (const std::string& texture_name : obj_info.triangle_texture_files) {
+        if (texture_name.empty() || loaded.count(texture_name) != 0 || failed.count(texture_name) != 0)
+            continue;
+        const boost::filesystem::path path = resolve_texture_path(obj_info.obj_directory, texture_name);
+        LoadedTexture                 texture;
+        if (!decode_imported_texture_rgba_from_file(path.string(), texture.rgba, texture.width, texture.height)) {
+            failed.emplace(texture_name);
+            continue;
+        }
+        loaded.emplace(texture_name, std::move(texture));
+    }
+    out_plan.loaded_texture_count = loaded.size();
+
+    std::vector<unsigned int> depths(triangle_count, 0);
+    size_t                    sample_count = 0;
+    for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        const std::string& texture_name = obj_info.triangle_texture_files[triangle_idx];
+        const auto         texture_it   = loaded.find(texture_name);
+        if (obj_info.triangle_uvs_valid[triangle_idx] == 0 || texture_it == loaded.end())
+            continue;
+        const stl_triangle_vertex_indices& indices = its.indices[triangle_idx];
+        if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0 || size_t(indices[0]) >= its.vertices.size() ||
+            size_t(indices[1]) >= its.vertices.size() || size_t(indices[2]) >= its.vertices.size())
+            continue;
+
+        depths[triangle_idx] = desired_subdivision_depth(its, triangle_idx, obj_info.triangle_uvs[triangle_idx], texture_it->second,
+                                                         target_sample_size_mm);
+        out_plan.triangle_subdivision_depths[triangle_idx] = int8_t(depths[triangle_idx]);
+        sample_count += obj_image_map_leaf_count(depths[triangle_idx]);
+        ++out_plan.textured_triangle_count;
+    }
+
+    const size_t effective_budget = std::max(max_samples, out_plan.textured_triangle_count);
+    while (sample_count > effective_budget) {
+        size_t best_triangle = triangle_count;
+        size_t best_saving   = 0;
+        for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+            if (out_plan.triangle_subdivision_depths[triangle_idx] <= 0)
+                continue;
+            const size_t current = obj_image_map_leaf_count(depths[triangle_idx]);
+            const size_t reduced = obj_image_map_leaf_count(depths[triangle_idx] - 1);
+            if (current - reduced > best_saving) {
+                best_saving   = current - reduced;
+                best_triangle = triangle_idx;
+            }
+        }
+        if (best_triangle == triangle_count)
+            break;
+        --depths[best_triangle];
+        out_plan.triangle_subdivision_depths[best_triangle] = int8_t(depths[best_triangle]);
+        sample_count -= best_saving;
+    }
+
+    out_plan.colors.reserve(sample_count);
+    for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        if (out_plan.triangle_subdivision_depths[triangle_idx] < 0)
+            continue;
+        const auto texture_it = loaded.find(obj_info.triangle_texture_files[triangle_idx]);
+        if (texture_it == loaded.end())
+            continue;
+        const RGBA background = triangle_idx < obj_info.face_colors.size() ? obj_info.face_colors[triangle_idx] : RGBA{1.f, 1.f, 1.f, 1.f};
+        append_leaf_colors(obj_info.triangle_uvs[triangle_idx], depths[triangle_idx], texture_it->second, background, out_plan.colors);
+    }
+
+    if (warning != nullptr && !failed.empty()) {
+        std::ostringstream stream;
+        stream << "Unable to load " << failed.size() << " OBJ image texture" << (failed.size() == 1 ? "" : "s") << '.';
+        *warning = stream.str();
+    }
+    return !out_plan.empty();
+}
+
+std::string encode_obj_image_map_triangle_filaments(const std::vector<unsigned char>& filament_ids,
+                                                    size_t                            offset,
+                                                    unsigned int                      subdivision_depth,
+                                                    unsigned char                     base_filament_id)
+{
+    const size_t leaf_count = obj_image_map_leaf_count(subdivision_depth);
+    if (leaf_count == 0 || offset > filament_ids.size() || leaf_count > filament_ids.size() - offset)
+        return {};
+    if (std::all_of(filament_ids.begin() + offset, filament_ids.begin() + offset + leaf_count,
+                    [base_filament_id](unsigned char id) { return id == base_filament_id; }))
+        return {};
+
+    size_t cursor = offset;
+    return encode_tree(filament_ids, cursor, subdivision_depth, base_filament_id);
+}
+
+} // namespace Slic3r

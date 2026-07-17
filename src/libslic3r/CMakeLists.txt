@@ -200,8 +200,12 @@ set(lisbslic3r_sources
     Format/FullSpectrum3mf/Fs3mfWriter.cpp
     Format/FullSpectrum3mf/Fs3mfWriter.hpp
     format.hpp
+    Format/ImportedTexture.cpp
+    Format/ImportedTexture.hpp
     Format/OBJ.cpp
     Format/OBJ.hpp
+    Format/OBJImageMap.cpp
+    Format/OBJImageMap.hpp
     Format/objparser.cpp
     Format/objparser.hpp
     Format/SL1.cpp

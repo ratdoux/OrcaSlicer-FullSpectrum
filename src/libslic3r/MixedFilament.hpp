@@ -360,6 +360,10 @@ std::string compute_mixed_filament_display_color(const MixedFilamentDefinition &
 std::string compute_mixed_filament_display_color(const MixedFilamentLegacyRow &row, const MixedFilamentDisplayContext &context);
 std::vector<float> mixed_filament_component_surface_offsets(const MixedFilamentDefinition &definition);
 void set_mixed_filament_component_surface_offsets(MixedFilamentDefinition &definition, const std::vector<float> &offsets_mm);
+std::vector<float> mixed_filament_surface_offsets_for_apparent_percentages(
+    const std::vector<int> &component_percents,
+    const std::vector<int> &target_apparent_percents,
+    float                   reference_width_mm = 0.4f);
 
 MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFilamentLegacyRow &row, size_t num_physical = 0);
 void                    apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition &definition,

@@ -1101,8 +1101,10 @@ static bool apply_mixed_component_surface_offsets(PrintObject &print_object, std
     for (const MixedFilamentDefinition &definition : mixed_mgr.mixed_filament_definitions(num_physical)) {
         if (definition.visibility.tombstoned || mixed_filament_definition_uses_local_z(definition, false))
             continue;
-        if (std::abs(definition.behavior.surface_bias.component_a_offset_mm) > EPSILON ||
-            std::abs(definition.behavior.surface_bias.component_b_offset_mm) > EPSILON) {
+        const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
+        if (std::any_of(component_offsets.begin(), component_offsets.end(), [](float offset) {
+                return std::abs(offset) > EPSILON;
+            })) {
             has_component_offsets = true;
             break;
         }
@@ -2300,8 +2302,10 @@ static bool apply_mixed_region_surface_offsets(PrintObject &print_object)
     for (const MixedFilamentDefinition &definition : mixed_mgr.mixed_filament_definitions(num_physical)) {
         if (definition.visibility.tombstoned || mixed_filament_definition_uses_local_z(definition, false))
             continue;
-        if (std::abs(definition.behavior.surface_bias.component_a_offset_mm) > EPSILON ||
-            std::abs(definition.behavior.surface_bias.component_b_offset_mm) > EPSILON) {
+        const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
+        if (std::any_of(component_offsets.begin(), component_offsets.end(), [](float offset) {
+                return std::abs(offset) > EPSILON;
+            })) {
             has_component_offsets = true;
             break;
         }

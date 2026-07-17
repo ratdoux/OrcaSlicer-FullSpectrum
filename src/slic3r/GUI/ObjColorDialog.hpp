@@ -22,7 +22,7 @@ class ObjColorPanel : public wxPanel
 public:
     // BBS
     ObjColorPanel(wxWindow *                            parent,
-                  std::vector<Slic3r::RGBA> &     input_colors,bool  is_single_color,
+                  std::vector<Slic3r::RGBA> &     input_colors,bool  is_single_color, bool is_image_map,
                   const std::vector<std::string> &      extruder_colours,
                   std::vector<unsigned char> &    filament_ids,
                   unsigned char &                 first_extruder_id);
@@ -92,6 +92,7 @@ private:
     std::vector<int>      m_cluster_map_filaments;//show middle
     std::vector<wxColour> m_cluster_colours;//from_algo and show left
     std::vector<wxColour> m_new_add_colors;
+    bool                  m_is_image_map{false};
     //algo result
     std::vector<Slic3r::RGBA> m_cluster_colors_from_algo;
     std::vector<int>          m_cluster_labels_from_algo;
@@ -104,7 +105,7 @@ class ObjColorDialog : public Slic3r::GUI::DPIDialog
 {
 public:
     ObjColorDialog(wxWindow *                         parent,
-                   std::vector<Slic3r::RGBA>&   input_colors, bool is_single_color,
+                   std::vector<Slic3r::RGBA>&   input_colors, bool is_single_color, bool is_image_map,
                    const std::vector<std::string> &   extruder_colours,
                    std::vector<unsigned char>&        filament_ids,
                    unsigned char &                 first_extruder_id);

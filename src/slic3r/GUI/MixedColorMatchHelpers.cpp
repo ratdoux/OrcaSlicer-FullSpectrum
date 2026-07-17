@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <fstream>
+#include <numeric>
 #include <queue>
 #include <sstream>
 #include <mutex>
@@ -637,7 +638,9 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
 }
 
 MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(const MixedColorMatchRecipeResult &recipe,
-                                                                           size_t                             num_physical)
+                                                                           size_t                             num_physical,
+                                                                           MixedColorMatchEncoding            encoding,
+                                                                           float                              reference_width_mm)
 {
     MixedFilamentDefinition definition;
     definition.source.kind = MixedFilamentSourceKind::Custom;
@@ -655,25 +658,68 @@ MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(const 
         component_weights = {100 - std::clamp(recipe.mix_b_percent, 0, 100), std::clamp(recipe.mix_b_percent, 0, 100)};
     }
 
+    std::vector<int> target_component_weights = component_weights;
+    if (encoding == MixedColorMatchEncoding::SurfaceBias) {
+        component_ids.resize(num_physical);
+        std::iota(component_ids.begin(), component_ids.end(), 1u);
+        target_component_weights = normalize_color_match_weights(
+            expand_color_match_recipe_weights(recipe, num_physical), num_physical);
+        component_weights = normalize_color_match_weights(std::vector<int>(component_ids.size(), 1), component_ids.size());
+    }
+
     for (size_t index = 0; index < component_ids.size() && index < component_weights.size(); ++index)
         definition.recipe.blend.components.push_back({{component_ids[index]}, component_weights[index]});
 
-    if (!recipe.manual_pattern.empty()) {
+    if (encoding == MixedColorMatchEncoding::LayerRatio && !recipe.manual_pattern.empty()) {
         definition.recipe.manual_pattern = mixed_filament_manual_pattern_from_string(
             recipe.manual_pattern, recipe.component_a, recipe.component_b, num_physical);
     }
-    definition.behavior.distribution =
-        definition.recipe.manual_pattern || definition.recipe.blend.components.size() >= 3 ?
-            MixedFilamentDistributionMode::LayerCycle : MixedFilamentDistributionMode::Simple;
+    definition.behavior.distribution = encoding == MixedColorMatchEncoding::SurfaceBias ||
+                                               definition.recipe.manual_pattern ||
+                                               definition.recipe.blend.components.size() >= 3 ?
+                                           MixedFilamentDistributionMode::LayerCycle :
+                                           MixedFilamentDistributionMode::Simple;
+    if (encoding == MixedColorMatchEncoding::SurfaceBias) {
+        set_mixed_filament_component_surface_offsets(
+            definition,
+            mixed_filament_surface_offsets_for_apparent_percentages(
+                component_weights, target_component_weights, reference_width_mm));
+    }
     definition.presentation.display_color =
         recipe.preview_color.IsOk() ? recipe.preview_color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString() : std::string("#26A69A");
     return definition;
 }
 
+static void configure_surface_bias_color_match_mode(PresetBundle &preset_bundle)
+{
+    DynamicPrintConfig &print_config = preset_bundle.prints.get_edited_preset().config;
+    auto set_bool = [&preset_bundle, &print_config](const std::string &key, bool value) {
+        if (ConfigOptionBool *option = print_config.option<ConfigOptionBool>(key))
+            option->value = value;
+        else if (ConfigOptionInt *option = print_config.option<ConfigOptionInt>(key))
+            option->value = value ? 1 : 0;
+        else
+            print_config.set_key_value(key, new ConfigOptionBool(value));
+
+        if (ConfigOptionBool *option = preset_bundle.project_config.option<ConfigOptionBool>(key))
+            option->value = value;
+        else if (ConfigOptionInt *option = preset_bundle.project_config.option<ConfigOptionInt>(key))
+            option->value = value ? 1 : 0;
+        else
+            preset_bundle.project_config.set_key_value(key, new ConfigOptionBool(value));
+    };
+
+    // Surface-bias image maps use the normal layer cadence. Local-Z is a
+    // mutually exclusive geometry path and would suppress the XY offsets.
+    set_bool("mixed_filament_component_bias_enabled", true);
+    set_bool("dithering_local_z_mode", false);
+}
+
 MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour                 &target_color,
                                                                  const std::vector<std::string> &physical_colors,
                                                                  int                             min_component_percent,
-                                                                 size_t                          max_total_filaments)
+                                                                 size_t                          max_total_filaments,
+                                                                 MixedColorMatchEncoding         encoding)
 {
     MixedColorMatchCreationResult result;
     if (!target_color.IsOk() || physical_colors.empty())
@@ -693,7 +739,8 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
     result.valid       = true;
     result.filament_id = closest_physical.first;
     result.delta_e     = closest_physical.second;
-    if (closest_physical.second <= 0.5 || physical_colors.size() < 2)
+    if (physical_colors.size() < 2 ||
+        (encoding == MixedColorMatchEncoding::LayerRatio && closest_physical.second <= 0.5))
         return result;
 
     PresetBundle *preset_bundle = wxGetApp().preset_bundle;
@@ -701,11 +748,15 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
         return result;
 
     MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    if (encoding == MixedColorMatchEncoding::SurfaceBias) {
+        context.preview_settings.local_z_mode = false;
+        context.component_bias_enabled        = true;
+    }
     auto &manager = preset_bundle->mixed_filaments;
     manager.set_display_context(context);
 
     const std::vector<std::string> existing_mixed_colors = manager.display_colors();
-    if (!existing_mixed_colors.empty()) {
+    if (encoding == MixedColorMatchEncoding::LayerRatio && !existing_mixed_colors.empty()) {
         const auto closest_mixed = choose_closest(existing_mixed_colors, unsigned(physical_colors.size() + 1));
         if (closest_mixed.second + 1e-6 < result.delta_e) {
             result.filament_id = closest_mixed.first;
@@ -714,8 +765,41 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
         if (closest_mixed.second <= 0.5)
             return result;
     }
+    if (encoding == MixedColorMatchEncoding::SurfaceBias && !existing_mixed_colors.empty()) {
+        const std::vector<MixedFilamentDefinition> definitions = manager.mixed_filament_definitions(physical_colors.size());
+        size_t visible_idx = 0;
+        for (const MixedFilamentDefinition &definition : definitions) {
+            if (definition.visibility.tombstoned)
+                continue;
 
-    const MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
+            bool shared_palette_cadence = definition.source.kind == MixedFilamentSourceKind::Custom &&
+                                          !definition.recipe.manual_pattern &&
+                                          !definition.behavior.gradient.enabled &&
+                                          definition.recipe.blend.components.size() == physical_colors.size();
+            int min_weight = 100;
+            int max_weight = 0;
+            for (size_t component_idx = 0;
+                 shared_palette_cadence && component_idx < definition.recipe.blend.components.size();
+                 ++component_idx) {
+                const MixedFilamentWeightedComponent &component = definition.recipe.blend.components[component_idx];
+                shared_palette_cadence = component.filament.id == component_idx + 1;
+                min_weight = std::min(min_weight, component.percent);
+                max_weight = std::max(max_weight, component.percent);
+            }
+            if (shared_palette_cadence && max_weight - min_weight <= 1 && visible_idx < existing_mixed_colors.size()) {
+                const double delta = color_delta_e00(target_color, parse_mixed_color(existing_mixed_colors[visible_idx]));
+                if (delta <= 0.5) {
+                    result.filament_id = unsigned(physical_colors.size() + visible_idx + 1);
+                    result.delta_e     = delta;
+                    configure_surface_bias_color_match_mode(*preset_bundle);
+                    return result;
+                }
+            }
+            ++visible_idx;
+        }
+    }
+
+    MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
         physical_colors,
         target_color,
         min_component_percent,
@@ -723,16 +807,41 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
         context.physical_material_ids,
         MixedFilamentManager::color_engine(),
         MixedFilamentManager::use_td_for_color_prediction());
-    if (!recipe.valid || recipe.delta_e >= result.delta_e - 1e-6)
-        return result;
+    if (!recipe.valid || recipe.delta_e >= result.delta_e - 1e-6) {
+        if (encoding == MixedColorMatchEncoding::LayerRatio)
+            return result;
+
+        recipe = MixedColorMatchRecipeResult{};
+        recipe.valid         = true;
+        recipe.component_a   = closest_physical.first;
+        recipe.component_b   = closest_physical.first == 1 ? 2 : 1;
+        recipe.mix_b_percent = 0;
+        recipe.preview_color = parse_mixed_color(physical_colors[closest_physical.first - 1]);
+        recipe.delta_e       = closest_physical.second;
+    }
 
     const size_t visible_before = manager.visible_count();
     if (physical_colors.size() + visible_before >= max_total_filaments)
         return result;
 
-    MixedFilamentDefinition definition = mixed_filament_definition_from_color_match_recipe(recipe, physical_colors.size());
+    float reference_width_mm = 0.4f;
+    if (encoding == MixedColorMatchEncoding::SurfaceBias) {
+        double nozzle_sum   = 0.0;
+        size_t nozzle_count = 0;
+        for (size_t component_idx = 0; component_idx < context.nozzle_diameters.size() && component_idx < 2; ++component_idx) {
+            nozzle_sum += std::max(0.05, context.nozzle_diameters[component_idx]);
+            ++nozzle_count;
+        }
+        if (nozzle_count > 0)
+            reference_width_mm = float(nozzle_sum / double(nozzle_count));
+    }
+
+    MixedFilamentDefinition definition = mixed_filament_definition_from_color_match_recipe(
+        recipe, physical_colors.size(), encoding, reference_width_mm);
     if (!manager.add_custom_filament_definition(std::move(definition), physical_colors))
         return result;
+    if (encoding == MixedColorMatchEncoding::SurfaceBias)
+        configure_surface_bias_color_match_mode(*preset_bundle);
 
     result.created     = true;
     result.filament_id = unsigned(physical_colors.size() + visible_before + 1);

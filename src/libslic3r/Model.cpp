@@ -11,6 +11,7 @@
 #include "TriangleSelector.hpp"
 
 #include "Format/AMF.hpp"
+#include "Format/OBJImageMap.hpp"
 #include "Format/svg.hpp"
 // BBS
 #include "FaceDetector.hpp"
@@ -18,6 +19,7 @@
 #include "libslic3r/Geometry/ConvexHull.hpp"
 
 #include <float.h>
+#include <limits>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -270,30 +272,59 @@ Model Model::read_from_file(const std::string&                                  
         ObjInfo                 obj_info;
         result = load_obj(input_file.c_str(), &model, obj_info, message);
         if (result){
-            unsigned char first_extruder_id;
-            if (obj_info.vertex_colors.size() > 0) {
+            unsigned char first_extruder_id = 1;
+            bool handled_image_map = false;
+            if (obj_info.has_uv_png && !model.objects.empty() && !model.objects.front()->volumes.empty()) {
+                ObjImageMapSamplePlan image_map_plan;
+                std::string image_map_warning;
+                const bool image_map_built = build_obj_image_map_sample_plan(model.objects.front()->volumes.front()->mesh(),
+                                                                              obj_info,
+                                                                              1.f,
+                                                                              120000,
+                                                                              image_map_plan,
+                                                                              &image_map_warning);
+                if (image_map_built) {
+                    handled_image_map = true;
+                    std::vector<unsigned char> image_map_filament_ids;
+                    if (objFn) {
+                        objFn(image_map_plan.colors,
+                              false,
+                              image_map_filament_ids,
+                              first_extruder_id,
+                              ObjColorImportSource::ImageTexture);
+                        if (!image_map_filament_ids.empty()) {
+                            result = obj_import_image_map_deal(image_map_filament_ids, image_map_plan, first_extruder_id, &model);
+                        }
+                    }
+                }
+                if (!image_map_warning.empty())
+                    BOOST_LOG_TRIVIAL(warning) << "OBJ image-map import: " << image_map_warning;
+            }
+            if (!handled_image_map && obj_info.vertex_colors.size() > 0) {
                 std::vector<unsigned char> vertex_filament_ids;
                 if (objFn) { // 1.result is ok and pop up a dialog
-                    objFn(obj_info.vertex_colors, false, vertex_filament_ids, first_extruder_id);
+                    objFn(obj_info.vertex_colors,
+                          false,
+                          vertex_filament_ids,
+                          first_extruder_id,
+                          ObjColorImportSource::VertexColors);
                     if (vertex_filament_ids.size() > 0) {
                         result = obj_import_vertex_color_deal(vertex_filament_ids, first_extruder_id, & model);
                     }
                 }
-            } else if (obj_info.face_colors.size() > 0 && obj_info.has_uv_png == false) { // mtl file
+            } else if (!handled_image_map && obj_info.face_colors.size() > 0) { // mtl file
                 std::vector<unsigned char> face_filament_ids;
                 if (objFn) { // 1.result is ok and pop up a dialog
-                    objFn(obj_info.face_colors, obj_info.is_single_mtl, face_filament_ids, first_extruder_id);
+                    objFn(obj_info.face_colors,
+                          obj_info.is_single_mtl,
+                          face_filament_ids,
+                          first_extruder_id,
+                          ObjColorImportSource::FaceColors);
                     if (face_filament_ids.size() > 0) {
                         result = obj_import_face_color_deal(face_filament_ids, first_extruder_id, &model);
                     }
                 }
-            } /*else if (obj_info.has_uv_png && obj_info.uvs.size() > 0) {
-                boost::filesystem::path full_path(input_file);
-                std::string             obj_directory = full_path.parent_path().string();
-                obj_info.obj_dircetory = obj_directory;
-                result = false;
-                message = _L("Importing obj with png function is developing.");
-            }*/
+            }
         }
     }
     else if (boost::algorithm::iends_with(input_file, ".svg"))
@@ -3142,6 +3173,50 @@ bool Model::obj_import_face_color_deal(const std::vector<unsigned char> &face_fi
         }
     }
     return false;
+}
+
+bool Model::obj_import_image_map_deal(const std::vector<unsigned char> &filament_ids,
+                                      const ObjImageMapSamplePlan &sample_plan,
+                                      const unsigned char &first_extruder_id,
+                                      Model *model)
+{
+    if (model == nullptr || model->objects.size() != 1 || model->objects.front()->volumes.size() != 1 || filament_ids.empty())
+        return false;
+
+    ModelObject *object = model->objects.front();
+    ModelVolume *volume = object->volumes.front();
+    const size_t triangle_count = volume->mesh().its.indices.size();
+    if (sample_plan.triangle_subdivision_depths.size() != triangle_count)
+        return false;
+
+    size_t expected_filament_ids = 0;
+    for (const int8_t depth : sample_plan.triangle_subdivision_depths) {
+        if (depth < 0)
+            continue;
+        const size_t leaf_count = obj_image_map_leaf_count(unsigned(depth));
+        if (leaf_count == 0 || expected_filament_ids > std::numeric_limits<size_t>::max() - leaf_count)
+            return false;
+        expected_filament_ids += leaf_count;
+    }
+    if (expected_filament_ids != filament_ids.size())
+        return false;
+
+    object->config.set("extruder", first_extruder_id);
+    volume->config.set("extruder", first_extruder_id);
+    volume->mmu_segmentation_facets.reserve(triangle_count);
+
+    size_t offset = 0;
+    for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        const int8_t depth = sample_plan.triangle_subdivision_depths[triangle_idx];
+        if (depth < 0)
+            continue;
+        const std::string encoded = encode_obj_image_map_triangle_filaments(
+            filament_ids, offset, unsigned(depth), first_extruder_id);
+        if (!encoded.empty())
+            volume->mmu_segmentation_facets.set_triangle_from_string(int(triangle_idx), encoded);
+        offset += obj_image_map_leaf_count(unsigned(depth));
+    }
+    return offset == filament_ids.size();
 }
 
 void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &filament_id_map, size_t total_filaments)

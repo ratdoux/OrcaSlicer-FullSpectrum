@@ -470,4 +470,25 @@ std::vector<int> MixedFilamentManager::apparent_component_percentages(const std:
     return apparent;
 }
 
+std::vector<float> mixed_filament_surface_offsets_for_apparent_percentages(
+    const std::vector<int> &component_percents,
+    const std::vector<int> &target_apparent_percents,
+    float                   reference_width_mm)
+{
+    const std::vector<int> normalized = normalize_weight_vector_to_percent(component_percents);
+    const std::vector<int> target     = normalize_weight_vector_to_percent(target_apparent_percents);
+    if (normalized.size() < 2 || normalized.size() != target.size())
+        return {};
+
+    const double safe_reference = std::max(0.05, double(std::abs(reference_width_mm)));
+    const double component_scale = double(normalized.size()) / double(normalized.size() - 1);
+    const double offset_limit    = MixedFilamentManager::max_component_surface_offset_mm(float(safe_reference));
+    std::vector<float> offsets(normalized.size(), 0.f);
+    for (size_t component_idx = 0; component_idx < normalized.size(); ++component_idx) {
+        const double adjustment = (double(target[component_idx]) - double(normalized[component_idx])) / component_scale;
+        offsets[component_idx] = float(std::clamp(-adjustment * safe_reference / 100.0, -offset_limit, offset_limit));
+    }
+    return offsets;
+}
+
 } // namespace Slic3r

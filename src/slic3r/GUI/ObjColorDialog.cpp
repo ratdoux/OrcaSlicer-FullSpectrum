@@ -137,12 +137,13 @@ void ObjColorDialog::on_dpi_changed(const wxRect &suggested_rect)
 ObjColorDialog::ObjColorDialog(wxWindow *                      parent,
                                std::vector<Slic3r::RGBA> &     input_colors,
                                bool                            is_single_color,
+                               bool                            is_image_map,
                                const std::vector<std::string> &extruder_colours,
                                std::vector<unsigned char> &    filament_ids,
                                unsigned char &                 first_extruder_id)
     : DPIDialog(parent ? parent : static_cast<wxWindow *>(wxGetApp().mainframe),
                 wxID_ANY,
-                _(L("Import OBJ Colors")),
+                is_image_map ? _(L("Import OBJ Image Map")) : _(L("Import OBJ Colors")),
                 wxDefaultPosition,
                 wxDefaultSize,
                 wxDEFAULT_DIALOG_STYLE /* | wxRESIZE_BORDER*/)
@@ -158,7 +159,13 @@ ObjColorDialog::ObjColorDialog(wxWindow *                      parent,
     this->SetBackgroundColour(*wxWHITE);
     this->SetMinSize(wxSize(MIN_OBJCOLOR_DIALOG_WIDTH, -1));
 
-    m_panel_ObjColor = new ObjColorPanel(this, input_colors, is_single_color, extruder_colours, filament_ids, first_extruder_id);
+    m_panel_ObjColor = new ObjColorPanel(this,
+                                         input_colors,
+                                         is_single_color,
+                                         is_image_map,
+                                         extruder_colours,
+                                         filament_ids,
+                                         first_extruder_id);
 
     auto main_sizer = new wxBoxSizer(wxVERTICAL);
     main_sizer->Add(m_line_top, 0, wxEXPAND, 0);
@@ -216,6 +223,7 @@ wxColour convert_to_wxColour(const RGBA &color)
 ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
                              std::vector<Slic3r::RGBA>&       input_colors,
                              bool                             is_single_color,
+                             bool                             is_image_map,
                              const std::vector<std::string>&  extruder_colours,
                              std::vector<unsigned char> &    filament_ids,
                              unsigned char &                 first_extruder_id)
@@ -223,6 +231,7 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
     , m_input_colors(input_colors)
     , m_filament_ids(filament_ids)
     , m_first_extruder_id(first_extruder_id)
+    , m_is_image_map(is_image_map)
 {
     if (input_colors.size() == 0) { return; }
     for (const std::string& color : extruder_colours) {
@@ -259,6 +268,17 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
     update_ui(m_page_simple);
     // BBS
     m_sizer_simple->AddSpacer(FromDIP(10));
+    if (is_image_map) {
+        auto *description = new wxStaticText(
+            m_page_simple,
+            wxID_ANY,
+            wxString::Format(_L("The OBJ image texture was sampled into %llu printable surface regions.\n"
+                                  "Generated mixes share one equal-cadence filament order; per-filament surface bias reproduces each color.\n"
+                                  "Creating these mixes enables Mixed Filament Bias and disables Subdivide Mix Layer."),
+                             static_cast<unsigned long long>(input_colors.size())));
+        description->Wrap(FromDIP(PANEL_WIDTH - 30));
+        m_sizer_simple->Add(description, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(20));
+    }
     // BBS: for tunning flush volumes
     {
         //color cluster results
@@ -438,7 +458,8 @@ bool ObjColorPanel::update_filament_ids()
                     return colors;
                 }(),
                 min_component_percent(),
-                g_max_color);
+                g_max_color,
+                m_is_image_map ? MixedColorMatchEncoding::SurfaceBias : MixedColorMatchEncoding::LayerRatio);
             if (!match.valid || match.filament_id == 0 || match.filament_id > unsigned(g_max_color)) {
                 m_warning_text->SetLabelText(_L("Unable to create a printable mixed color for one or more OBJ colors."));
                 return false;
@@ -863,7 +884,15 @@ void ObjColorPanel::deal_algo(char cluster_number, bool redraw_ui)
     }
     m_last_cluster_number = cluster_number;
     QuantKMeans quant(10);
-    quant.apply(m_input_colors, m_cluster_colors_from_algo, m_cluster_labels_from_algo, (int)cluster_number);
+    const size_t existing_mixed = wxGetApp().preset_bundle != nullptr ?
+        wxGetApp().preset_bundle->mixed_filaments.visible_count() : 0;
+    const int printable_mix_slots = std::max(1,
+        int(g_max_color) - int(m_colours.size()) - int(existing_mixed));
+    quant.apply(m_input_colors,
+                m_cluster_colors_from_algo,
+                m_cluster_labels_from_algo,
+                int(cluster_number),
+                printable_mix_slots);
     m_cluster_colours.clear();
     m_cluster_colours.reserve(m_cluster_colors_from_algo.size());
     for (size_t i = 0; i < m_cluster_colors_from_algo.size(); i++) {
