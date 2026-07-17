@@ -11,12 +11,14 @@
 #include "Widgets/Button.hpp"
 #include "slic3r/Utils/ColorSpaceConvert.hpp"
 #include "MainFrame.hpp"
+#include "Plater.hpp"
 #include "libslic3r/Config.hpp"
 #include "BitmapComboBox.hpp"
 #include "Widgets/ComboBox.hpp"
 #include <wx/sizer.h>
 
 #include "libslic3r/ObjColorUtils.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 using namespace Slic3r;
 using namespace Slic3r::GUI;
@@ -140,7 +142,7 @@ ObjColorDialog::ObjColorDialog(wxWindow *                      parent,
                                unsigned char &                 first_extruder_id)
     : DPIDialog(parent ? parent : static_cast<wxWindow *>(wxGetApp().mainframe),
                 wxID_ANY,
-                _(L("Obj file Import color")),
+                _(L("Import OBJ Colors")),
                 wxDefaultPosition,
                 wxDefaultSize,
                 wxDEFAULT_DIALOG_STYLE /* | wxRESIZE_BORDER*/)
@@ -180,8 +182,8 @@ ObjColorDialog::ObjColorDialog(wxWindow *                      parent,
 
     if (this->FindWindowById(wxID_OK, this)) {
         this->FindWindowById(wxID_OK, this)->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {// if OK button is clicked..
-              m_panel_ObjColor->update_filament_ids();
-              EndModal(wxID_OK);
+              if (m_panel_ObjColor->update_filament_ids())
+                  EndModal(wxID_OK);
             }, wxID_OK);
     }
     if (this->FindWindowById(wxID_CANCEL, this)) {
@@ -229,8 +231,8 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
     //deal input_colors
     m_input_colors_size = input_colors.size();
     for (size_t i = 0; i < input_colors.size(); i++) {
-        if (color_is_equal(input_colors[i] , UNDEFINE_COLOR)) { // not define color range:0~1
-            input_colors[i]=convert_to_rgba( m_colours[0]);
+        if (color_is_equal(input_colors[i] , UNDEFINE_COLOR) && !m_colours.empty()) { // not define color range:0~1
+            input_colors[i]=convert_to_rgba(m_colours[0]);
         }
     }
     if (is_single_color && input_colors.size() >=1) {
@@ -261,7 +263,7 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
     {
         //color cluster results
         wxBoxSizer *  specify_cluster_sizer               = new wxBoxSizer(wxHORIZONTAL);
-        wxStaticText *specify_color_cluster_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Specify number of colors:"));
+        wxStaticText *specify_color_cluster_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Quantized colors:"));
         specify_color_cluster_title->SetFont(Label::Head_14);
         specify_cluster_sizer->Add(specify_color_cluster_title, 0, wxALIGN_CENTER | wxALL, FromDIP(5));
 
@@ -316,10 +318,18 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
         wxStaticText *recommend_color_cluster_title = new wxStaticText(m_page_simple, wxID_ANY, "(" + std::to_string(m_color_num_recommend) + " " + _L("Recommended ") + ")");
         specify_cluster_sizer->Add(recommend_color_cluster_title, 0, wxALIGN_CENTER | wxALL, 0);
 
+        specify_cluster_sizer->AddSpacer(FromDIP(18));
+        auto *minimum_weight_label = new wxStaticText(m_page_simple, wxID_ANY, _L("Minimum mix component:"));
+        specify_cluster_sizer->Add(minimum_weight_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+        m_min_component_percent_ctrl = new wxSpinCtrl(m_page_simple, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                                      wxSize(FromDIP(58), -1), wxSP_ARROW_KEYS, 1, 49, 15);
+        m_min_component_percent_ctrl->SetToolTip(_L("Smallest physical-filament percentage allowed in generated mixed colors."));
+        specify_cluster_sizer->Add(m_min_component_percent_ctrl, 0, wxALIGN_CENTER_VERTICAL);
+
         m_sizer_simple->Add(specify_cluster_sizer, 0, wxEXPAND | wxLEFT, FromDIP(20));
 
         wxBoxSizer *  current_filaments_title_sizer  = new wxBoxSizer(wxHORIZONTAL);
-        wxStaticText *current_filaments_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Current filament colors:"));
+        wxStaticText *current_filaments_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Physical filament colors:"));
         current_filaments_title->SetFont(Label::Head_14);
         current_filaments_title_sizer->Add(current_filaments_title, 0, wxALIGN_CENTER | wxALL, FromDIP(5));
         m_sizer_simple->Add(current_filaments_title_sizer, 0, wxEXPAND | wxLEFT, FromDIP(20));
@@ -394,10 +404,11 @@ bool ObjColorPanel::is_ok() {
     return true;
 }
 
-void ObjColorPanel::update_filament_ids()
+bool ObjColorPanel::update_filament_ids()
 {
     const int existing_filament_count = static_cast<int>(m_colours.size());
     std::map<int, int> appended_filament_id_map;
+    bool created_mixed_filament = false;
 
     if (!m_new_add_colors.empty()) {
         std::vector<int> selected_appended_indices;
@@ -411,15 +422,29 @@ void ObjColorPanel::update_filament_ids()
         std::sort(selected_appended_indices.begin(), selected_appended_indices.end());
         selected_appended_indices.erase(std::unique(selected_appended_indices.begin(), selected_appended_indices.end()), selected_appended_indices.end());
 
-        int next_filament_id = existing_filament_count + 1;
         for (int combo_selection : selected_appended_indices) {
             const int new_color_idx = combo_selection - existing_filament_count - 1;
             if (new_color_idx < 0 || new_color_idx >= static_cast<int>(m_new_add_colors.size())) {
                 continue;
             }
 
-            wxGetApp().sidebar().add_custom_filament(m_new_add_colors[new_color_idx]);
-            appended_filament_id_map.emplace(combo_selection, next_filament_id++);
+            const MixedColorMatchCreationResult match = create_mixed_filament_color_match(
+                m_new_add_colors[new_color_idx],
+                [&]() {
+                    std::vector<std::string> colors;
+                    colors.reserve(m_colours.size());
+                    for (const wxColour &color : m_colours)
+                        colors.emplace_back(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString());
+                    return colors;
+                }(),
+                min_component_percent(),
+                g_max_color);
+            if (!match.valid || match.filament_id == 0 || match.filament_id > unsigned(g_max_color)) {
+                m_warning_text->SetLabelText(_L("Unable to create a printable mixed color for one or more OBJ colors."));
+                return false;
+            }
+            appended_filament_id_map.emplace(combo_selection, int(match.filament_id));
+            created_mixed_filament |= match.created;
         }
     }
 
@@ -436,6 +461,9 @@ void ObjColorPanel::update_filament_ids()
         m_filament_ids.emplace_back(resolve_filament_id(m_cluster_map_filaments[label]));
     }
     m_first_extruder_id = resolve_filament_id(m_cluster_map_filaments[0]);
+    if (created_mixed_filament && wxGetApp().plater() != nullptr)
+        wxGetApp().plater()->on_filaments_change(m_colours.size());
+    return !m_filament_ids.empty();
 }
 
 wxBoxSizer *ObjColorPanel::create_approximate_match_btn_sizer(wxWindow *parent)
@@ -446,8 +474,8 @@ wxBoxSizer *ObjColorPanel::create_approximate_match_btn_sizer(wxWindow *parent)
     StateColor calc_btn_bd(std::pair<wxColour, int>(wxColour(0, 150, 136), StateColor::Normal));
     StateColor calc_btn_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Normal));
     //create btn
-    m_quick_approximate_match_btn = new Button(parent, _L("Color match"));
-    m_quick_approximate_match_btn->SetToolTip(_L("Approximate color matching."));
+    m_quick_approximate_match_btn = new Button(parent, _L("Physical match"));
+    m_quick_approximate_match_btn->SetToolTip(_L("Map every quantized OBJ color to the nearest physical filament."));
     auto cur_btn         = m_quick_approximate_match_btn;
     cur_btn->SetFont(Label::Body_13);
     cur_btn->SetMinSize(wxSize(FromDIP(60), FromDIP(20)));
@@ -471,8 +499,8 @@ wxBoxSizer *ObjColorPanel::create_add_btn_sizer(wxWindow *parent)
     StateColor calc_btn_bd(std::pair<wxColour, int>(wxColour(0, 150, 136), StateColor::Normal));
     StateColor calc_btn_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Normal));
     // create btn
-    m_quick_add_btn = new Button(parent, _L("Append all"));
-    m_quick_add_btn->SetToolTip(_L("Add all clustered colors after the existing filaments."));
+    m_quick_add_btn = new Button(parent, _L("Generate mixes"));
+    m_quick_add_btn->SetToolTip(_L("Generate mixed filaments that match all quantized OBJ colors."));
     auto cur_btn    = m_quick_add_btn;
     cur_btn->SetFont(Label::Body_13);
     cur_btn->SetMinSize(wxSize(FromDIP(60), FromDIP(20)));
@@ -536,13 +564,18 @@ std::string ObjColorPanel::get_color_str(const wxColour &color) {
 
 ComboBox *ObjColorPanel::CreateEditorCtrl(wxWindow *parent, int id) // wxRect labelRect,, const wxVariant &value
 {
-    std::vector<wxBitmap *> icons = get_extruder_color_icons();
     const double            em          = Slic3r::GUI::wxGetApp().em_unit();
     bool                    thin_icon   = false;
     const int               icon_width  = lround((thin_icon ? 2 : 4.4) * em);
     const int               icon_height = lround(2 * em);
     m_combox_icon_width                 = icon_width;
     m_combox_icon_height                = icon_height;
+    std::vector<wxBitmap *> icons;
+    icons.reserve(m_colours.size());
+    for (size_t index = 0; index < m_colours.size(); ++index) {
+        icons.emplace_back(get_extruder_color_icon(
+            m_colours[index].GetAsString(wxC2S_HTML_SYNTAX).ToStdString(), std::to_string(index + 1), icon_width, icon_height));
+    }
     wxColour undefined_color(0,255,0,255);
     icons.insert(icons.begin(), get_extruder_color_icon(undefined_color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString(), std::to_string(-1), icon_width, icon_height));
     if (icons.empty())
@@ -633,9 +666,25 @@ int ObjColorPanel::find_filament_selection_by_color(const wxColour &color) const
 
 int ObjColorPanel::append_new_filament_option(const wxColour &color)
 {
-    if (m_colours.size() + m_new_add_colors.size() >= g_max_color) {
+    if (m_colours.size() < 2 || m_colours.size() + m_new_add_colors.size() >= g_max_color) {
         return 0;
     }
+
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_colours.size());
+    for (const wxColour &physical_color : m_colours)
+        physical_colors.emplace_back(physical_color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString());
+    const MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    const MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
+        physical_colors,
+        color,
+        min_component_percent(),
+        context.physical_tds,
+        context.physical_material_ids,
+        MixedFilamentManager::color_engine(),
+        MixedFilamentManager::use_td_for_color_prediction());
+    if (!recipe.valid)
+        return 0;
 
     m_new_add_colors.emplace_back(color);
     const int selection = static_cast<int>(m_colours.size() + m_new_add_colors.size());
@@ -685,7 +734,7 @@ void ObjColorPanel::deal_keep_color_btn(int id)
     }
 
     if (selection == 0) {
-        m_warning_text->SetLabelText(_L("Warning: The count of newly added and \ncurrent extruders exceeds 16."));
+        m_warning_text->SetLabelText(_L("The generated colors would exceed the 16 printable color slots."));
         return;
     }
 
@@ -838,13 +887,18 @@ void ObjColorPanel::deal_algo(char cluster_number, bool redraw_ui)
 
 void ObjColorPanel::deal_default_strategy()
 {
-    if (m_colours.empty()) {
-        deal_add_btn();
+    if (m_colours.size() < 2) {
+        deal_approximate_match_btn();
         return;
     }
 
-    deal_approximate_match_btn();
-    m_warning_text->SetLabelText(_L("Note: The color has been selected, you can choose OK \nto continue or manually adjust it."));
+    deal_add_btn();
+    m_warning_text->SetLabelText(_L("Mixed-filament matches were selected. Adjust the quantization or mappings if needed."));
+}
+
+int ObjColorPanel::min_component_percent() const
+{
+    return m_min_component_percent_ctrl != nullptr ? std::clamp(m_min_component_percent_ctrl->GetValue(), 1, 49) : 15;
 }
 
 void ObjColorPanel::deal_add_btn()
@@ -865,7 +919,7 @@ void ObjColorPanel::deal_add_btn()
     }
     if (is_exceed) {
         deal_approximate_match_btn();
-        m_warning_text->SetLabelText(_L("Warning: The count of newly added and \ncurrent extruders exceeds 16."));
+        m_warning_text->SetLabelText(_L("Some colors could not be generated within the 16 printable color slots."));
         return;
     }
 
@@ -910,8 +964,8 @@ wxBoxSizer *ObjColorPanel::create_result_button_sizer(wxWindow *parent, int id)
     StateColor calc_btn_bd(std::pair<wxColour, int>(wxColour(0, 150, 136), StateColor::Normal));
     StateColor calc_btn_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Normal));
 
-    auto *keep_color_btn = new Button(parent, _L("Keep color"));
-    keep_color_btn->SetToolTip(_L("Add this cluster color as a new filament."));
+    auto *keep_color_btn = new Button(parent, _L("Create mix"));
+    keep_color_btn->SetToolTip(_L("Generate a mixed filament for this quantized color."));
     keep_color_btn->SetFont(Label::Body_13);
     keep_color_btn->SetMinSize(wxSize(FromDIP(88), FromDIP(24)));
     keep_color_btn->SetCornerRadius(FromDIP(12));

@@ -636,6 +636,111 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
     return best;
 }
 
+MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(const MixedColorMatchRecipeResult &recipe,
+                                                                           size_t                             num_physical)
+{
+    MixedFilamentDefinition definition;
+    definition.source.kind = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+
+    std::vector<unsigned int> component_ids;
+    std::vector<int>          component_weights;
+    if (!recipe.gradient_component_ids.empty()) {
+        component_ids = MixedFilamentManager::decode_gradient_component_ids(recipe.gradient_component_ids, num_physical);
+        component_weights = decode_color_match_gradient_weights(recipe.gradient_component_weights, component_ids.size());
+        component_weights = normalize_color_match_weights(component_weights, component_ids.size());
+    }
+    if (component_ids.size() < 2) {
+        component_ids = {recipe.component_a, recipe.component_b};
+        component_weights = {100 - std::clamp(recipe.mix_b_percent, 0, 100), std::clamp(recipe.mix_b_percent, 0, 100)};
+    }
+
+    for (size_t index = 0; index < component_ids.size() && index < component_weights.size(); ++index)
+        definition.recipe.blend.components.push_back({{component_ids[index]}, component_weights[index]});
+
+    if (!recipe.manual_pattern.empty()) {
+        definition.recipe.manual_pattern = mixed_filament_manual_pattern_from_string(
+            recipe.manual_pattern, recipe.component_a, recipe.component_b, num_physical);
+    }
+    definition.behavior.distribution =
+        definition.recipe.manual_pattern || definition.recipe.blend.components.size() >= 3 ?
+            MixedFilamentDistributionMode::LayerCycle : MixedFilamentDistributionMode::Simple;
+    definition.presentation.display_color =
+        recipe.preview_color.IsOk() ? recipe.preview_color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString() : std::string("#26A69A");
+    return definition;
+}
+
+MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour                 &target_color,
+                                                                 const std::vector<std::string> &physical_colors,
+                                                                 int                             min_component_percent,
+                                                                 size_t                          max_total_filaments)
+{
+    MixedColorMatchCreationResult result;
+    if (!target_color.IsOk() || physical_colors.empty())
+        return result;
+
+    auto choose_closest = [&target_color](const std::vector<std::string> &colors, unsigned int first_id) {
+        std::pair<unsigned int, double> closest{first_id, std::numeric_limits<double>::infinity()};
+        for (size_t index = 0; index < colors.size(); ++index) {
+            const double delta = color_delta_e00(target_color, parse_mixed_color(colors[index]));
+            if (delta + 1e-6 < closest.second)
+                closest = {first_id + unsigned(index), delta};
+        }
+        return closest;
+    };
+
+    const auto closest_physical = choose_closest(physical_colors, 1);
+    result.valid       = true;
+    result.filament_id = closest_physical.first;
+    result.delta_e     = closest_physical.second;
+    if (closest_physical.second <= 0.5 || physical_colors.size() < 2)
+        return result;
+
+    PresetBundle *preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle == nullptr)
+        return result;
+
+    MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    auto &manager = preset_bundle->mixed_filaments;
+    manager.set_display_context(context);
+
+    const std::vector<std::string> existing_mixed_colors = manager.display_colors();
+    if (!existing_mixed_colors.empty()) {
+        const auto closest_mixed = choose_closest(existing_mixed_colors, unsigned(physical_colors.size() + 1));
+        if (closest_mixed.second + 1e-6 < result.delta_e) {
+            result.filament_id = closest_mixed.first;
+            result.delta_e     = closest_mixed.second;
+        }
+        if (closest_mixed.second <= 0.5)
+            return result;
+    }
+
+    const MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
+        physical_colors,
+        target_color,
+        min_component_percent,
+        context.physical_tds,
+        context.physical_material_ids,
+        MixedFilamentManager::color_engine(),
+        MixedFilamentManager::use_td_for_color_prediction());
+    if (!recipe.valid || recipe.delta_e >= result.delta_e - 1e-6)
+        return result;
+
+    const size_t visible_before = manager.visible_count();
+    if (physical_colors.size() + visible_before >= max_total_filaments)
+        return result;
+
+    MixedFilamentDefinition definition = mixed_filament_definition_from_color_match_recipe(recipe, physical_colors.size());
+    if (!manager.add_custom_filament_definition(std::move(definition), physical_colors))
+        return result;
+
+    result.created     = true;
+    result.filament_id = unsigned(physical_colors.size() + visible_before + 1);
+    result.delta_e     = recipe.delta_e;
+    preset_bundle->sync_mixed_filament_definitions_to_project_config();
+    return result;
+}
+
 static std::vector<double> selected_filament_transmission_distances(PresetBundle *preset_bundle, size_t count)
 {
     std::vector<double> tds(count, 0.0);

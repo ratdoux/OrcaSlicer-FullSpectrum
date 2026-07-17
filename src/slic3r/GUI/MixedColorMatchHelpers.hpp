@@ -59,6 +59,14 @@ struct MixedColorMatchRecipeResult
     double       delta_e       = std::numeric_limits<double>::infinity();
 };
 
+struct MixedColorMatchCreationResult
+{
+    bool         valid       = false;
+    bool         created     = false;
+    unsigned int filament_id = 1;
+    double       delta_e     = std::numeric_limits<double>::infinity();
+};
+
 // ---- small pure helpers (defined here, used everywhere) ----
 
 wxColour parse_mixed_color(const std::string &value);
@@ -96,6 +104,18 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(
     const std::vector<std::string> &physical_material_ids,
     MixedFilamentColorEngine        color_engine,
     bool                            use_td_prediction);
+
+MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(
+    const MixedColorMatchRecipeResult &recipe,
+    size_t                             num_physical);
+
+// Reuse an exact physical or virtual color when possible; otherwise create a
+// custom mixed filament using the active FullSpectrum color engine.
+MixedColorMatchCreationResult create_mixed_filament_color_match(
+    const wxColour                 &target_color,
+    const std::vector<std::string> &physical_colors,
+    int                             min_component_percent = 15,
+    size_t                          max_total_filaments = 16);
 
 // ---- display context helpers ----
 MixedFilamentDisplayContext build_mixed_filament_display_context(

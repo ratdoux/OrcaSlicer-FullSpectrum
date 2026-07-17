@@ -28,7 +28,7 @@ public:
                   unsigned char &                 first_extruder_id);
     void msw_rescale();
     bool is_ok();
-    void update_filament_ids();
+    bool update_filament_ids();
     struct ButtonState
     {
         ComboBox *bitmap_combox{nullptr};
@@ -54,6 +54,7 @@ private:
     void deal_reset_btn();
     void deal_algo(char cluster_number,bool redraw_ui =false);
     void deal_default_strategy();
+    int min_component_percent() const;
     int find_filament_selection_by_color(const wxColour &color) const;
     int append_new_filament_option(const wxColour &color);
     void update_keep_color_buttons();
@@ -65,6 +66,7 @@ private:
     wxBoxSizer *              m_sizer        = nullptr;
     wxBoxSizer *              m_sizer_simple = nullptr;
     wxTextCtrl *m_color_cluster_num_by_user_ebox{nullptr};
+    wxSpinCtrl *m_min_component_percent_ctrl{nullptr};
     wxStaticText *             m_warning_text{nullptr};
     Button *    m_quick_approximate_match_btn{nullptr};
     Button *    m_quick_add_btn{nullptr};
