@@ -2021,6 +2021,14 @@ bool ModelVolume::is_the_only_one_part() const
     return true;
 }
 
+bool ModelVolume::set_image_map_data(ImageMap::VolumeData data)
+{
+    if (!data.validate(this->mesh()).valid)
+        return false;
+    m_image_map_data = std::make_shared<ImageMap::VolumeData>(std::move(data));
+    return true;
+}
+
 void ModelVolume::reset_extra_facets()
 {
     this->supported_facets.reset();
@@ -2909,9 +2917,12 @@ void ModelVolume::scale_geometry_after_creation(const Vec3f& versor)
 
 void ModelVolume::transform_this_mesh(const Transform3d &mesh_trafo, bool fix_left_handed)
 {
+	auto image_map_data = m_image_map_data;
 	TriangleMesh mesh = this->mesh();
 	mesh.transform(mesh_trafo, fix_left_handed);
 	this->set_mesh(std::move(mesh));
+    if (image_map_data && image_map_data->topology_fingerprint == ImageMap::topology_fingerprint(this->mesh()))
+        m_image_map_data = std::move(image_map_data);
     TriangleMesh convex_hull = this->get_convex_hull();
     convex_hull.transform(mesh_trafo, fix_left_handed);
     m_convex_hull = std::make_shared<TriangleMesh>(std::move(convex_hull));
@@ -2921,9 +2932,12 @@ void ModelVolume::transform_this_mesh(const Transform3d &mesh_trafo, bool fix_le
 
 void ModelVolume::transform_this_mesh(const Matrix3d &matrix, bool fix_left_handed)
 {
+	auto image_map_data = m_image_map_data;
 	TriangleMesh mesh = this->mesh();
 	mesh.transform(matrix, fix_left_handed);
 	this->set_mesh(std::move(mesh));
+    if (image_map_data && image_map_data->topology_fingerprint == ImageMap::topology_fingerprint(this->mesh()))
+        m_image_map_data = std::move(image_map_data);
     TriangleMesh convex_hull = this->get_convex_hull();
     convex_hull.transform(matrix, fix_left_handed);
     m_convex_hull = std::make_shared<TriangleMesh>(std::move(convex_hull));

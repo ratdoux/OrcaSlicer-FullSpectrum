@@ -19,6 +19,7 @@
 #include "TextConfiguration.hpp"
 #include "EmbossShape.hpp"
 #include "TriangleSelector.hpp"
+#include "ImageMap/VolumeData.hpp"
 
 //BBS: add bbs 3mf
 #include "Format/bbs_3mf.hpp"
@@ -855,14 +856,18 @@ public:
     // The triangular model.
     const TriangleMesh& mesh() const { return *m_mesh.get(); }
     std::shared_ptr<const TriangleMesh> mesh_ptr() const { return m_mesh; }
-    void                set_mesh(const TriangleMesh &mesh) { m_mesh = std::make_shared<const TriangleMesh>(mesh); }
-    void                set_mesh(TriangleMesh &&mesh) { m_mesh = std::make_shared<const TriangleMesh>(std::move(mesh)); }
-    void                set_mesh(const indexed_triangle_set &mesh) { m_mesh = std::make_shared<const TriangleMesh>(mesh); }
-    void                set_mesh(indexed_triangle_set &&mesh) { m_mesh = std::make_shared<const TriangleMesh>(std::move(mesh)); }
-    void                set_mesh(std::shared_ptr<const TriangleMesh> &mesh) { m_mesh = mesh; }
-    void                set_mesh(std::unique_ptr<const TriangleMesh> &&mesh) { m_mesh = std::move(mesh); }
-	void				reset_mesh() { m_mesh = std::make_shared<const TriangleMesh>(); }
+    void                set_mesh(const TriangleMesh &mesh) { clear_image_map_data(); m_mesh = std::make_shared<const TriangleMesh>(mesh); }
+    void                set_mesh(TriangleMesh &&mesh) { clear_image_map_data(); m_mesh = std::make_shared<const TriangleMesh>(std::move(mesh)); }
+    void                set_mesh(const indexed_triangle_set &mesh) { clear_image_map_data(); m_mesh = std::make_shared<const TriangleMesh>(mesh); }
+    void                set_mesh(indexed_triangle_set &&mesh) { clear_image_map_data(); m_mesh = std::make_shared<const TriangleMesh>(std::move(mesh)); }
+    void                set_mesh(std::shared_ptr<const TriangleMesh> &mesh) { clear_image_map_data(); m_mesh = mesh; }
+    void                set_mesh(std::unique_ptr<const TriangleMesh> &&mesh) { clear_image_map_data(); m_mesh = std::move(mesh); }
+	void				reset_mesh() { clear_image_map_data(); m_mesh = std::make_shared<const TriangleMesh>(); }
     const std::shared_ptr<const TriangleMesh>& get_mesh_shared_ptr() const { return m_mesh; }
+    bool                set_image_map_data(ImageMap::VolumeData data);
+    void                clear_image_map_data() { m_image_map_data.reset(); }
+    bool                has_image_map_data() const { return m_image_map_data && !m_image_map_data->empty(); }
+    std::shared_ptr<const ImageMap::VolumeData> image_map_data() const { return m_image_map_data; }
     // Configuration parameters specific to an object model geometry or a modifier volume, 
     // overriding the global Slic3r settings and the ModelObject settings.
     ModelConfigObject	config;
@@ -1034,6 +1039,7 @@ private:
     ModelObject*                    	object;
     // The triangular model.
     std::shared_ptr<const TriangleMesh> m_mesh;
+    std::shared_ptr<ImageMap::VolumeData> m_image_map_data;
     // Is it an object to be printed, or a modifier volume?
     ModelVolumeType                 	m_type;
     t_model_material_id             	m_material_id;
@@ -1105,7 +1111,8 @@ private:
         name(other.name), source(other.source), m_mesh(other.m_mesh), m_convex_hull(other.m_convex_hull),
         config(other.config), m_type(other.m_type), object(object), m_transformation(other.m_transformation),
         supported_facets(other.supported_facets), seam_facets(other.seam_facets), mmu_segmentation_facets(other.mmu_segmentation_facets),
-        fuzzy_skin_facets(other.fuzzy_skin_facets), cut_info(other.cut_info), text_configuration(other.text_configuration), emboss_shape(other.emboss_shape)
+        fuzzy_skin_facets(other.fuzzy_skin_facets), cut_info(other.cut_info), text_configuration(other.text_configuration), emboss_shape(other.emboss_shape),
+        m_image_map_data(other.m_image_map_data)
     {
 		assert(this->id().valid()); 
         assert(this->config.id().valid()); 
@@ -1194,6 +1201,7 @@ private:
         cereal::load_by_value(ar, config);
         cereal::load(ar, text_configuration);
         cereal::load(ar, emboss_shape);
+        cereal::load(ar, m_image_map_data);
 		assert(m_mesh);
 		if (has_convex_hull) {
 			cereal::load_optional(ar, m_convex_hull);
@@ -1215,6 +1223,7 @@ private:
         cereal::save_by_value(ar, config);
         cereal::save(ar, text_configuration);
         cereal::save(ar, emboss_shape);
+        cereal::save(ar, m_image_map_data);
 		if (has_convex_hull)
 			cereal::save_optional(ar, m_convex_hull);
 	}

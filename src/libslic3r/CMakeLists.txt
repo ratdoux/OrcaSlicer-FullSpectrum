@@ -222,6 +222,8 @@ set(lisbslic3r_sources
     GCode/AdaptivePAInterpolator.hpp
     GCode/AdaptivePAProcessor.cpp
     GCode/AdaptivePAProcessor.hpp
+    ImageMap/VolumeData.cpp
+    ImageMap/VolumeData.hpp
     GCode/AvoidCrossingPerimeters.cpp
     GCode/AvoidCrossingPerimeters.hpp
     GCode/ConflictChecker.cpp
