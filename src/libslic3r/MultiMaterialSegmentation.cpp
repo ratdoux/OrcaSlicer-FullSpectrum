@@ -7,6 +7,7 @@
 #include "Geometry/VoronoiUtils.hpp"
 #include "MutablePolygon.hpp"
 #include "format.hpp"
+#include "ImageMap/FacetRasterizer.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -2202,11 +2203,57 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
     const float  interlocking_depth = float(print_object.config().mmu_segmented_region_interlocking_depth.value);
     const bool   interlocking_beam  = print_object.config().interlocking_beam.value;
 
+    struct FacetSnapshot {
+        const ModelVolume *volume{nullptr};
+        std::unique_ptr<FacetsAnnotation> facets;
+    };
+    std::vector<FacetSnapshot> facet_snapshots;
+    facet_snapshots.reserve(print_object.model_object()->volumes.size());
+    const MixedFilamentManager &mixed_manager = print_object.print()->mixed_filament_manager();
+    for (const ModelVolume *mv : print_object.model_object()->volumes) {
+        if (mv == nullptr)
+            continue;
+        FacetSnapshot snapshot;
+        snapshot.volume = mv;
+        snapshot.facets = mv->mmu_segmentation_facets.copy_for_slicing();
+        if (const std::shared_ptr<const ImageMap::VolumeData> data = mv->image_map_data(); data && !data->empty()) {
+            const unsigned int base_filament_id = unsigned(std::clamp(mv->extruder_id(), 1, int(num_total_filaments)));
+            const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(
+                mv->mesh(), *data, base_filament_id,
+                [&mixed_manager, num_physical_filaments, num_total_filaments](const ImageMap::PaletteEntry &entry) {
+                    if (entry.mixed_filament_stable_id != 0) {
+                        const std::optional<unsigned int> stable_id =
+                            mixed_manager.filament_id_from_stable_id(entry.mixed_filament_stable_id, num_physical_filaments);
+                        if (stable_id && *stable_id <= num_total_filaments)
+                            return *stable_id;
+                    }
+                    return entry.fallback_filament_id <= num_total_filaments ? entry.fallback_filament_id : 0u;
+                });
+            for (const ImageMap::RasterizedFacet &facet : rasterized.facets) {
+                if (!facet.encoded_states.empty())
+                    snapshot.facets->set_triangle_from_string(int(facet.triangle_index), facet.encoded_states);
+            }
+            if (rasterized.unresolved_palette_entries != 0) {
+                BOOST_LOG_TRIVIAL(warning) << "Image-map slice-time palette resolution fell back to the volume filament"
+                                           << " unresolved=" << rasterized.unresolved_palette_entries
+                                           << " volume=" << mv->name;
+            }
+        }
+        facet_snapshots.emplace_back(std::move(snapshot));
+    }
+
+    auto snapshot_for_volume = [&facet_snapshots](const ModelVolume &volume) -> const FacetsAnnotation & {
+        auto it = std::find_if(facet_snapshots.begin(), facet_snapshots.end(), [&volume](const FacetSnapshot &snapshot) {
+            return snapshot.volume == &volume;
+        });
+        return it == facet_snapshots.end() ? volume.mmu_segmentation_facets : *it->facets;
+    };
+
     size_t max_painted_state = 0;
     for (const ModelVolume *mv : print_object.model_object()->volumes) {
         if (!mv->is_model_part())
             continue;
-        const auto &used_states = mv->mmu_segmentation_facets.get_data().used_states;
+        const auto &used_states = snapshot_for_volume(*mv).get_data().used_states;
         for (size_t state_idx = static_cast<size_t>(EnforcerBlockerType::Extruder1); state_idx < used_states.size(); ++state_idx) {
             if (used_states[state_idx])
                 max_painted_state = std::max(max_painted_state, state_idx);
@@ -2226,8 +2273,9 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
                                  << " total_filaments=" << num_total_filaments;
     }
 
-    const auto extract_facets_info = [](const ModelVolume &mv) -> ModelVolumeFacetsInfo {
-        return {mv.mmu_segmentation_facets, mv.is_mm_painted(), false};
+    const auto extract_facets_info = [&snapshot_for_volume](const ModelVolume &mv) -> ModelVolumeFacetsInfo {
+        const FacetsAnnotation &facets = snapshot_for_volume(mv);
+        return {facets, !facets.empty(), false};
     };
 
     return segmentation_by_painting(print_object, extract_facets_info, num_facets_states, max_width, interlocking_depth, interlocking_beam, IncludeTopAndBottomLayers::Yes, throw_on_cancel_callback);

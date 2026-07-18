@@ -719,6 +719,22 @@ std::optional<MixedFilamentDefinition> MixedFilamentManager::mixed_filament_defi
     return m_definitions[size_t(idx)];
 }
 
+std::optional<unsigned int> MixedFilamentManager::filament_id_from_stable_id(MixedFilamentStableId stable_id,
+                                                                              size_t                num_physical) const
+{
+    if (stable_id == 0)
+        return std::nullopt;
+    unsigned int filament_id = unsigned(num_physical + 1);
+    for (const MixedFilamentDefinition &definition : m_definitions) {
+        if (definition.visibility.tombstoned)
+            continue;
+        if (definition.identity.stable_id == stable_id)
+            return filament_id;
+        ++filament_id;
+    }
+    return std::nullopt;
+}
+
 std::vector<MixedFilamentDefinition> MixedFilamentManager::mixed_filament_definitions(size_t num_physical) const
 {
     (void) num_physical;

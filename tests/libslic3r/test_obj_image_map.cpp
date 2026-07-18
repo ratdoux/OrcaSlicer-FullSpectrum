@@ -2,6 +2,8 @@
 
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
+#include "libslic3r/ImageMap/FacetRasterizer.hpp"
+#include "libslic3r/ImageMap/Sampling.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/PNGReadWrite.hpp"
 #include "libslic3r/TriangleMesh.hpp"
@@ -207,4 +209,44 @@ TEST_CASE("OBJ image-map import retains texture pixels and UVs as persistent mod
     CHECK(volume->mmu_segmentation_facets.empty());
 
     boost::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Image-map sources are sampled and rasterized only for the current slice", "[ImageMap][FacetRasterizer]")
+{
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(0.f, 0.f, 0.f), Vec3f(4.f, 0.f, 0.f), Vec3f(0.f, 4.f, 0.f)};
+    its.indices.emplace_back(0, 1, 2);
+    auto mesh = std::make_shared<TriangleMesh>(std::move(its));
+
+    auto data = std::make_shared<ImageMap::VolumeData>();
+    data->topology_fingerprint = ImageMap::topology_fingerprint(*mesh);
+    data->texture_assets.push_back({"green", "green", 1, 1, {0, 255, 0, 255}});
+    ImageMap::Zone zone;
+    zone.stable_id = "zone";
+    zone.target_sample_size_mm = 1.5f;
+    zone.max_facet_samples = 128;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    zone.palette.push_back({RGBA{0.f, 1.f, 0.f, 1.f}, 0, 2});
+    data->zones.push_back(zone);
+    ImageMap::TriangleBinding binding;
+    binding.triangle_index = 0;
+    binding.source.kind = ImageMap::SourceKind::Texture;
+    binding.source.texture_asset_index = 0;
+    binding.source.uvs = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
+    data->triangle_bindings.push_back(binding);
+    REQUIRE(data->validate(*mesh).valid);
+
+    ImageMap::SurfaceSampler sampler(mesh, data);
+    const auto sample = sampler.sample(Vec3d(1.0, 1.0, 0.05), 0.1);
+    REQUIRE(sample);
+    REQUIRE(sample->palette_entry != nullptr);
+    CHECK(sample->palette_entry->fallback_filament_id == 2);
+    CHECK(sample->color[1] == Approx(1.f));
+
+    const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(
+        *mesh, *data, 1, [](const ImageMap::PaletteEntry &entry) { return entry.fallback_filament_id; });
+    CHECK(rasterized.unresolved_palette_entries == 0);
+    CHECK(rasterized.sampled_leaf_count == 16);
+    REQUIRE(rasterized.facets.size() == 1);
+    CHECK_FALSE(rasterized.facets.front().encoded_states.empty());
 }

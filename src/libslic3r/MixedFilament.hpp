@@ -523,6 +523,7 @@ public:
         const std::vector<MixedFilamentColorInput> &color_percents);
 
     std::optional<MixedFilamentDefinition> mixed_filament_definition_from_id(unsigned int filament_id, size_t num_physical) const;
+    std::optional<unsigned int> filament_id_from_stable_id(MixedFilamentStableId stable_id, size_t num_physical) const;
 
     // Compute a display colour by blending two colours with the selected engine.
     static std::string blend_color(const std::string &color_a,

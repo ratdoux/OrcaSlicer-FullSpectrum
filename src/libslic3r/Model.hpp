@@ -760,6 +760,8 @@ public:
     // After deserializing the last triangle, shrink data to fit.
     void shrink_to_fit() { m_data.triangles_to_split.shrink_to_fit(); m_data.bitstream.shrink_to_fit(); }
     bool equals(const FacetsAnnotation &other) const;
+    std::unique_ptr<FacetsAnnotation> copy_for_slicing() const
+        { return std::unique_ptr<FacetsAnnotation>(new FacetsAnnotation(*this)); }
 
 private:
     // Constructors to be only called by derived classes.
@@ -1013,7 +1015,7 @@ public:
 
     bool is_fdm_support_painted() const { return !this->supported_facets.empty(); }
     bool is_seam_painted() const { return !this->seam_facets.empty(); }
-    bool is_mm_painted() const { return !this->mmu_segmentation_facets.empty(); }
+    bool is_mm_painted() const { return !this->mmu_segmentation_facets.empty() || this->has_image_map_data(); }
     bool is_fuzzy_skin_painted() const { return !this->fuzzy_skin_facets.empty(); }
     
     // Orca: Implement prusa's filament shrink compensation approach
