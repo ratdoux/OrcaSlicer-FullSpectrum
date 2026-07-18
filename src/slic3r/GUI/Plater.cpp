@@ -9222,43 +9222,50 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 // BBS: add plate data related logic
                 PlateDataPtrs plate_data;
                 // BBS: project embedded settings
-                std::vector<Preset *> project_presets;
-                bool                  is_xxx;
-                Semver                file_version;
-                
-                //ObjImportColorFn obj_color_fun=nullptr;
-                auto obj_color_fun = [this, &path](std::vector<RGBA> &input_colors, bool is_single_color, std::vector<unsigned char> &filament_ids,
-                                                   unsigned char &first_extruder_id, ObjColorImportSource source) {
-                    if (!boost::iends_with(path.string(), ".obj")) { return; }
-                    const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
-                    ObjColorDialog color_dlg(nullptr,
-                                             input_colors,
-                                             is_single_color,
-                                             source == ObjColorImportSource::ImageTexture,
-                                             extruder_colours,
-                                             filament_ids,
+                std::vector<Preset*> project_presets;
+                bool                 is_xxx;
+                Semver               file_version;
+
+                // ObjImportColorFn obj_color_fun=nullptr;
+                auto obj_color_fun = [this, &path](std::vector<RGBA>& input_colors, bool is_single_color,
+                                                   std::vector<unsigned char>& filament_ids, unsigned char& first_extruder_id,
+                                                   ObjColorImportContext& import_context) {
+                    if (!boost::iends_with(path.string(), ".obj")) {
+                        return;
+                    }
+                    const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr,
+                                                                                                                                  false);
+                    ObjColorDialog color_dlg(nullptr, input_colors, is_single_color, import_context, extruder_colours, filament_ids,
                                              first_extruder_id);
-                    if (color_dlg.ShowModal() != wxID_OK) { 
+                    if (color_dlg.ShowModal() != wxID_OK) {
                         filament_ids.clear();
                     }
                 };
-                if (boost::iends_with(path.string(), ".stp") ||
-                    boost::iends_with(path.string(), ".step")) {
-                        double linear = string_to_double_decimal_point(wxGetApp().app_config->get("linear_defletion"));
-                        if (linear <= 0) linear = 0.003;
-                        double angle = string_to_double_decimal_point(wxGetApp().app_config->get("angle_defletion"));
-                        if (angle <= 0) angle = 0.5;
-                        bool split_compound = wxGetApp().app_config->get_bool("is_split_compound");
-                        model = Slic3r::Model:: read_from_step(path.string(), strategy,
-                        [this, &dlg, real_filename, &progress_percent, &file_percent, step_percent, INPUT_FILES_RATIO, total_files, i](int load_stage, int current, int total, bool &cancel)
-                        {
-                                bool     cont = true;
-                                float percent_float = (100.0f * (float)i / (float)total_files) + INPUT_FILES_RATIO * ((float)step_percent[load_stage] + (float)current * (float)(step_percent[load_stage + 1] - step_percent[load_stage]) / (float)total) / (float)total_files;
-                                BOOST_LOG_TRIVIAL(trace) << "load_step_file: percent(float)=" << percent_float << ", stage = " << load_stage << ", curr = " << current << ", total = " << total;
-                                progress_percent = (int)percent_float;
-                                wxString msg  = wxString::Format(_L("Loading file: %s"), from_path(real_filename));
-                                cont          = dlg.Update(progress_percent, msg);
-                                cancel        = !cont;
+                if (boost::iends_with(path.string(), ".stp") || boost::iends_with(path.string(), ".step")) {
+                    double linear = string_to_double_decimal_point(wxGetApp().app_config->get("linear_defletion"));
+                    if (linear <= 0)
+                        linear = 0.003;
+                    double angle = string_to_double_decimal_point(wxGetApp().app_config->get("angle_defletion"));
+                    if (angle <= 0)
+                        angle = 0.5;
+                    bool split_compound = wxGetApp().app_config->get_bool("is_split_compound");
+                    model               = Slic3r::Model::read_from_step(
+                        path.string(), strategy,
+                        [this, &dlg, real_filename, &progress_percent, &file_percent, step_percent, INPUT_FILES_RATIO, total_files,
+                         i](int load_stage, int current, int total, bool& cancel) {
+                            bool  cont          = true;
+                            float percent_float = (100.0f * (float) i / (float) total_files) +
+                                                  INPUT_FILES_RATIO *
+                                                      ((float) step_percent[load_stage] +
+                                                       (float) current * (float) (step_percent[load_stage + 1] - step_percent[load_stage]) /
+                                                           (float) total) /
+                                                      (float) total_files;
+                            BOOST_LOG_TRIVIAL(trace) << "load_step_file: percent(float)=" << percent_float << ", stage = " << load_stage
+                                                     << ", curr = " << current << ", total = " << total;
+                            progress_percent = (int) percent_float;
+                            wxString msg     = wxString::Format(_L("Loading file: %s"), from_path(real_filename));
+                            cont             = dlg.Update(progress_percent, msg);
+                            cancel           = !cont;
                         },
                         [](int isUtf8StepFile) {
                             if (!isUtf8StepFile) {
@@ -9274,7 +9281,8 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                 }
                             }
                         },
-                        [this, &path, &is_user_cancel, &linear, &angle, &split_compound](Slic3r::Step& file, double& linear_value, double& angle_value, bool& is_split)-> int {
+                        [this, &path, &is_user_cancel, &linear, &angle, &split_compound](Slic3r::Step& file, double& linear_value,
+                                                                                         double& angle_value, bool& is_split) -> int {
                             if (wxGetApp().app_config->get_bool("enable_step_mesh_setting")) {
                                 StepMeshDialog mesh_dlg(nullptr, file, linear, angle);
                                 if (mesh_dlg.ShowModal() == wxID_OK) {
@@ -9291,8 +9299,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                             }
                             is_user_cancel = true;
                             return -1;
-                        }, linear, angle, split_compound);
-                }else {
+                        },
+                        linear, angle, split_compound);
+                } else {
                     model = Slic3r::Model:: read_from_file(
                     path.string(), nullptr, nullptr, strategy, &plate_data, &project_presets, &is_xxx, &file_version, nullptr,
                     [this, &dlg, real_filename, &progress_percent, &file_percent, INPUT_FILES_RATIO, total_files, i, &designer_model_id, &designer_country_code](int current, int total, bool &cancel, std::string &mode_id, std::string &code)
@@ -11213,27 +11222,22 @@ void Plater::priv::reload_from_disk()
 
     // load one file at a time
     for (size_t i = 0; i < input_paths.size(); ++i) {
-        const auto& path = input_paths[i].string();
-        auto obj_color_fun = [this, &path](std::vector<RGBA> &input_colors,
-                                          bool is_single_color,
-                                          std::vector<unsigned char> &filament_ids,
-                                          unsigned char &first_extruder_id,
-                                          ObjColorImportSource source) {
-            if (!boost::iends_with(path, ".obj")) { return; }
+        const auto& path   = input_paths[i].string();
+        auto obj_color_fun = [this, &path](std::vector<RGBA>& input_colors, bool is_single_color, std::vector<unsigned char>& filament_ids,
+                                           unsigned char& first_extruder_id, ObjColorImportContext& import_context) {
+            if (!boost::iends_with(path, ".obj")) {
+                return;
+            }
             const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
-            ObjColorDialog color_dlg(nullptr,
-                                     input_colors,
-                                     is_single_color,
-                                     source == ObjColorImportSource::ImageTexture,
-                                     extruder_colours,
-                                     filament_ids,
-                                     first_extruder_id);
-            if (color_dlg.ShowModal() != wxID_OK) { filament_ids.clear(); }
+            ObjColorDialog                 color_dlg(nullptr, input_colors, is_single_color, import_context, extruder_colours, filament_ids,
+                                                     first_extruder_id);
+            if (color_dlg.ShowModal() != wxID_OK) {
+                filament_ids.clear();
+            }
         };
         wxBusyCursor wait;
-        GLCanvas3D* canvas = q->get_current_canvas3D();
-        if (!canvas)
-        {
+        GLCanvas3D*  canvas = q->get_current_canvas3D();
+        if (!canvas) {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "canvas is nullptr";
             continue;
         }

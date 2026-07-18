@@ -15,6 +15,8 @@
 #include "libslic3r/Config.hpp"
 #include "BitmapComboBox.hpp"
 #include "Widgets/ComboBox.hpp"
+#include <wx/choicdlg.h>
+#include <wx/filedlg.h>
 #include <wx/sizer.h>
 
 #include "libslic3r/ObjColorUtils.hpp"
@@ -134,16 +136,16 @@ void ObjColorDialog::on_dpi_changed(const wxRect &suggested_rect)
     this->Refresh();
 };
 
-ObjColorDialog::ObjColorDialog(wxWindow *                      parent,
-                               std::vector<Slic3r::RGBA> &     input_colors,
+ObjColorDialog::ObjColorDialog(wxWindow*                       parent,
+                               std::vector<Slic3r::RGBA>&      input_colors,
                                bool                            is_single_color,
-                               bool                            is_image_map,
-                               const std::vector<std::string> &extruder_colours,
-                               std::vector<unsigned char> &    filament_ids,
-                               unsigned char &                 first_extruder_id)
-    : DPIDialog(parent ? parent : static_cast<wxWindow *>(wxGetApp().mainframe),
+                               Slic3r::ObjColorImportContext&  import_context,
+                               const std::vector<std::string>& extruder_colours,
+                               std::vector<unsigned char>&     filament_ids,
+                               unsigned char&                  first_extruder_id)
+    : DPIDialog(parent ? parent : static_cast<wxWindow*>(wxGetApp().mainframe),
                 wxID_ANY,
-                is_image_map ? _(L("Import OBJ Image Map")) : _(L("Import OBJ Colors")),
+                import_context.mode == ObjColorImportMode::ImageMap ? _(L("Import OBJ Image Map")) : _(L("Import OBJ Colors")),
                 wxDefaultPosition,
                 wxDefaultSize,
                 wxDEFAULT_DIALOG_STYLE /* | wxRESIZE_BORDER*/)
@@ -159,12 +161,7 @@ ObjColorDialog::ObjColorDialog(wxWindow *                      parent,
     this->SetBackgroundColour(*wxWHITE);
     this->SetMinSize(wxSize(MIN_OBJCOLOR_DIALOG_WIDTH, -1));
 
-    m_panel_ObjColor = new ObjColorPanel(this,
-                                         input_colors,
-                                         is_single_color,
-                                         is_image_map,
-                                         extruder_colours,
-                                         filament_ids,
+    m_panel_ObjColor = new ObjColorPanel(this, input_colors, is_single_color, import_context, extruder_colours, filament_ids,
                                          first_extruder_id);
 
     auto main_sizer = new wxBoxSizer(wxVERTICAL);
@@ -216,28 +213,31 @@ wxColour convert_to_wxColour(const RGBA &color)
     auto     g = std::clamp((int) (color[1] * 255.f), 0, 255);
     auto     b = std::clamp((int) (color[2] * 255.f), 0, 255);
     auto     a = std::clamp((int) (color[3] * 255.f), 0, 255);
-    wxColour wx_color(r,g,b,a);
+    wxColour wx_color(r, g, b, a);
     return wx_color;
 }
 // This panel contains all control widgets for both simple and advanced mode (these reside in separate sizers)
-ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
-                             std::vector<Slic3r::RGBA>&       input_colors,
-                             bool                             is_single_color,
-                             bool                             is_image_map,
-                             const std::vector<std::string>&  extruder_colours,
-                             std::vector<unsigned char> &    filament_ids,
-                             unsigned char &                 first_extruder_id)
+ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
+                             std::vector<Slic3r::RGBA>&      input_colors,
+                             bool                            is_single_color,
+                             Slic3r::ObjColorImportContext&  import_context,
+                             const std::vector<std::string>& extruder_colours,
+                             std::vector<unsigned char>&     filament_ids,
+                             unsigned char&                  first_extruder_id)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize /*,wxBORDER_RAISED*/)
     , m_input_colors(input_colors)
-    , m_filament_ids(filament_ids)
+    , m_is_image_map(import_context.mode == ObjColorImportMode::ImageMap)
+    , m_import_context(import_context)
     , m_first_extruder_id(first_extruder_id)
-    , m_is_image_map(is_image_map)
+    , m_filament_ids(filament_ids)
 {
-    if (input_colors.size() == 0) { return; }
+    if (input_colors.size() == 0) {
+        return;
+    }
     for (const std::string& color : extruder_colours) {
         m_colours.push_back(wxColor(color));
     }
-    //deal input_colors
+    // deal input_colors
     m_input_colors_size = input_colors.size();
     for (size_t i = 0; i < input_colors.size(); i++) {
         if (color_is_equal(input_colors[i] , UNDEFINE_COLOR) && !m_colours.empty()) { // not define color range:0~1
@@ -260,26 +260,27 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
     //draw ui
     auto sizer_width = FromDIP(300);
     // Create two switched panels with their own sizers
-    m_sizer_simple          = new wxBoxSizer(wxVERTICAL);
-    m_page_simple			= new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL);
+    m_sizer_simple = new wxBoxSizer(wxVERTICAL);
+    m_page_simple  = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL);
     m_page_simple->SetSizer(m_sizer_simple);
     m_page_simple->SetBackgroundColour(*wxWHITE);
 
     update_ui(m_page_simple);
     // BBS
     m_sizer_simple->AddSpacer(FromDIP(10));
-    if (is_image_map) {
+    if (m_is_image_map) {
         auto* description = new wxStaticText(
             m_page_simple, wxID_ANY,
-            wxString::Format(_L("The OBJ image texture was sampled into %llu printable surface regions.\n"
-                                "Choose normal mixed colors, or a shared layer sequence whose outer perimeter is modulated to reveal the image."),
-                             static_cast<unsigned long long>(input_colors.size())));
+            wxString::Format(
+                _L("The selected OBJ surface colors were sampled into %llu printable regions.\n"
+                   "Choose normal mixed colors, or a shared layer sequence whose outer perimeter is modulated to reveal the image."),
+                static_cast<unsigned long long>(input_colors.size())));
         description->Wrap(FromDIP(PANEL_WIDTH - 30));
         m_sizer_simple->Add(description, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(20));
 
-        auto *mode_sizer = new wxBoxSizer(wxHORIZONTAL);
-        mode_sizer->Add(new wxStaticText(m_page_simple, wxID_ANY, _L("Image mapping method:")),
-                        0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        auto* mode_sizer = new wxBoxSizer(wxHORIZONTAL);
+        mode_sizer->Add(new wxStaticText(m_page_simple, wxID_ANY, _L("Image mapping method:")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT,
+                        FromDIP(8));
         m_image_map_mode_ctrl = new wxChoice(m_page_simple, wxID_ANY);
         m_image_map_mode_ctrl->Append(_L("Normal mixed filaments"));
         m_image_map_mode_ctrl->Append(_L("One filament per layer - perimeter modulation"));
@@ -376,33 +377,38 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
         m_scrolledWindow = new wxScrolledWindow(m_page_simple,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxSB_VERTICAL);
         m_sizer_simple->Add(m_scrolledWindow, 0, wxEXPAND | wxALL, FromDIP(5));
         draw_table();
-        //buttons
-        wxBoxSizer *quick_set_sizer = new wxBoxSizer(wxHORIZONTAL);
-        wxStaticText *quick_set_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Quick set:"));
+        // buttons
+        wxBoxSizer*   quick_set_sizer = new wxBoxSizer(wxHORIZONTAL);
+        wxStaticText* quick_set_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Quick set:"));
         quick_set_title->SetFont(Label::Head_12);
         quick_set_sizer->Add(quick_set_title, 0, wxALIGN_CENTER | wxALL, 0);
         quick_set_sizer->AddSpacer(FromDIP(10));
 
         auto calc_approximate_match_btn_sizer = create_approximate_match_btn_sizer(m_page_simple);
-        auto calc_add_btn_sizer = create_add_btn_sizer(m_page_simple);
-        auto calc_reset_btn_sizer      = create_reset_btn_sizer(m_page_simple);
+        auto calc_add_btn_sizer               = create_add_btn_sizer(m_page_simple);
+        auto image_map_btn_sizer              = create_image_map_btn_sizer(m_page_simple);
+        auto calc_reset_btn_sizer             = create_reset_btn_sizer(m_page_simple);
         quick_set_sizer->Add(calc_add_btn_sizer, 0, wxALIGN_CENTER | wxALL, 0);
         quick_set_sizer->AddSpacer(FromDIP(10));
         quick_set_sizer->Add(calc_approximate_match_btn_sizer, 0, wxALIGN_CENTER | wxALL, 0);
+        quick_set_sizer->AddSpacer(FromDIP(10));
+        quick_set_sizer->Add(image_map_btn_sizer, 0, wxALIGN_CENTER | wxALL, 0);
         quick_set_sizer->AddSpacer(FromDIP(10));
         quick_set_sizer->Add(calc_reset_btn_sizer, 0, wxALIGN_CENTER | wxALL, 0);
         quick_set_sizer->AddSpacer(FromDIP(10));
         m_sizer_simple->Add(quick_set_sizer, 0, wxEXPAND | wxLEFT, FromDIP(30));
 
-        wxBoxSizer *warning_sizer = new wxBoxSizer(wxHORIZONTAL);
-        m_warning_text = new wxStaticText(m_page_simple, wxID_ANY, "");
+        wxBoxSizer* warning_sizer = new wxBoxSizer(wxHORIZONTAL);
+        m_warning_text            = new wxStaticText(m_page_simple, wxID_ANY, "");
+        if (!m_import_context.warning_message.empty())
+            m_warning_text->SetLabelText(wxString::FromUTF8(m_import_context.warning_message));
         warning_sizer->Add(m_warning_text, 0, wxALIGN_CENTER | wxALL, 0);
         m_sizer_simple->Add(warning_sizer, 0, wxEXPAND | wxLEFT, FromDIP(30));
 
         m_sizer_simple->AddSpacer(10);
     }
     deal_default_strategy();
-    //page_simple//page_advanced
+    // page_simple//page_advanced
     m_sizer = new wxBoxSizer(wxVERTICAL);
     m_sizer->Add(m_page_simple, 0, wxEXPAND, 0);
 
@@ -615,17 +621,110 @@ wxBoxSizer *ObjColorPanel::create_reset_btn_sizer(wxWindow *parent)
     cur_btn->SetTextColor(calc_btn_text);
     cur_btn->SetFocus();
     btn_sizer->Add(cur_btn, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 0);
-    cur_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) {
-        deal_reset_btn();
-    });
+    cur_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { deal_reset_btn(); });
     return btn_sizer;
 }
 
-wxBoxSizer *ObjColorPanel::create_extruder_icon_and_rgba_sizer(wxWindow *parent, int id, const wxColour &color)
+wxBoxSizer* ObjColorPanel::create_image_map_btn_sizer(wxWindow* parent)
 {
-    auto icon_sizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton *icon       = new wxButton(parent, wxID_ANY, {}, wxDefaultPosition, ICON_SIZE, wxBORDER_NONE | wxBU_AUTODRAW);
-    icon->SetBitmap(*get_extruder_color_icon(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString(), std::to_string(id + 1), FromDIP(16), FromDIP(16)));
+    auto       btn_sizer = new wxBoxSizer(wxHORIZONTAL);
+    StateColor calc_btn_bg(std::pair<wxColour, int>(wxColour(0, 137, 123), StateColor::Pressed),
+                           std::pair<wxColour, int>(wxColour(38, 166, 154), StateColor::Hovered),
+                           std::pair<wxColour, int>(wxColour(0, 150, 136), StateColor::Normal));
+    StateColor calc_btn_bd(std::pair<wxColour, int>(wxColour(0, 150, 136), StateColor::Normal));
+    StateColor calc_btn_text(std::pair<wxColour, int>(wxColour(255, 255, 254), StateColor::Normal));
+
+    m_image_map_btn = new Button(parent, m_is_image_map ? _L("Image source...") : _L("Image map..."));
+    m_image_map_btn->SetToolTip(
+        _L("Open the image-map importer using a detected texture, a selected texture image, or colors stored in the OBJ."));
+    m_image_map_btn->SetFont(Label::Body_13);
+    m_image_map_btn->SetMinSize(wxSize(FromDIP(78), FromDIP(20)));
+    m_image_map_btn->SetCornerRadius(FromDIP(10));
+    m_image_map_btn->SetBackgroundColor(calc_btn_bg);
+    m_image_map_btn->SetBorderColor(calc_btn_bd);
+    m_image_map_btn->SetTextColor(calc_btn_text);
+    btn_sizer->Add(m_image_map_btn, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 0);
+    m_image_map_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { choose_image_map_source(); });
+    return btn_sizer;
+}
+
+void ObjColorPanel::choose_image_map_source()
+{
+    struct ImageSourceChoice
+    {
+        wxString             label;
+        ObjColorImportSource source;
+        bool                 select_texture_file{false};
+    };
+
+    std::vector<ImageSourceChoice> source_choices;
+    if (m_import_context.detected_texture_available) {
+        source_choices.push_back({_L("Use the detected OBJ texture"), ObjColorImportSource::ImageTexture, false});
+    }
+    if (m_import_context.texture_coordinates_available) {
+        source_choices.push_back({_L("Select a PNG or JPEG texture..."), ObjColorImportSource::ImageTexture, true});
+    }
+    if (m_import_context.vertex_colors_available) {
+        source_choices.push_back({_L("Use OBJ vertex colors"), ObjColorImportSource::VertexColors, false});
+    }
+    if (m_import_context.face_colors_available) {
+        source_choices.push_back({_L("Use OBJ material colors"), ObjColorImportSource::FaceColors, false});
+    }
+
+    if (source_choices.empty()) {
+        MessageDialog dialog(this,
+                             _L("This OBJ has no UV coordinates, vertex colors, or material colors that can be used for image mapping."),
+                             _L("OBJ image map"), wxOK | wxICON_INFORMATION);
+        dialog.ShowModal();
+        return;
+    }
+
+    wxArrayString labels;
+    int           default_selection = 0;
+    for (size_t choice_idx = 0; choice_idx < source_choices.size(); ++choice_idx) {
+        labels.Add(source_choices[choice_idx].label);
+        if (source_choices[choice_idx].source == m_import_context.source &&
+            !(m_import_context.source == ObjColorImportSource::ImageTexture && source_choices[choice_idx].select_texture_file)) {
+            default_selection = int(choice_idx);
+        }
+    }
+
+    wxSingleChoiceDialog source_dialog(this, _L("Choose the surface color source for image mapping."), _L("OBJ image map source"), labels);
+    source_dialog.SetSelection(default_selection);
+    if (source_dialog.ShowModal() != wxID_OK)
+        return;
+
+    const int selection = source_dialog.GetSelection();
+    if (selection < 0 || selection >= int(source_choices.size()))
+        return;
+    const ImageSourceChoice& choice = source_choices[size_t(selection)];
+
+    std::string texture_file;
+    if (choice.select_texture_file) {
+        wxFileDialog texture_dialog(
+            this, _L("Choose an image texture for the OBJ"), wxEmptyString, wxEmptyString,
+            _L("Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|PNG files (*.png)|*.png|JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg"),
+            wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+        if (texture_dialog.ShowModal() != wxID_OK)
+            return;
+        texture_file = into_u8(texture_dialog.GetPath());
+    }
+
+    m_import_context.source_change_requested = true;
+    m_import_context.requested_source        = choice.source;
+    m_import_context.requested_mode          = ObjColorImportMode::ImageMap;
+    m_import_context.requested_texture_file  = std::move(texture_file);
+    m_import_context.warning_message.clear();
+    if (auto* dialog = dynamic_cast<wxDialog*>(GetParent()))
+        dialog->EndModal(wxID_APPLY);
+}
+
+wxBoxSizer* ObjColorPanel::create_extruder_icon_and_rgba_sizer(wxWindow* parent, int id, const wxColour& color)
+{
+    auto      icon_sizer = new wxBoxSizer(wxHORIZONTAL);
+    wxButton* icon       = new wxButton(parent, wxID_ANY, {}, wxDefaultPosition, ICON_SIZE, wxBORDER_NONE | wxBU_AUTODRAW);
+    icon->SetBitmap(
+        *get_extruder_color_icon(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString(), std::to_string(id + 1), FromDIP(16), FromDIP(16)));
     icon->SetCanFocus(false);
     m_extruder_icon_list.emplace_back(icon);
     icon_sizer->Add(icon, 0, wxALIGN_CENTER | wxALIGN_CENTER_VERTICAL, FromDIP(10)); // wxALIGN_CENTER_VERTICAL | wxTOP | wxBOTTOM
@@ -634,7 +733,8 @@ wxBoxSizer *ObjColorPanel::create_extruder_icon_and_rgba_sizer(wxWindow *parent,
     return icon_sizer;
 }
 
-std::string ObjColorPanel::get_color_str(const wxColour &color) {
+std::string ObjColorPanel::get_color_str(const wxColour& color)
+{
     std::string str = ("R:" + std::to_string(color.Red()) +
                           std::string(" G:") + std::to_string(color.Green()) +
                           std::string(" B:") + std::to_string(color.Blue()) +

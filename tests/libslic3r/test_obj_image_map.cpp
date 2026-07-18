@@ -148,5 +148,20 @@ TEST_CASE("OBJ image-map sampling decodes UV textures with a bounded detail plan
     CHECK(plan.triangle_subdivision_depths.front() == 1);
     CHECK(plan.colors.size() == 4);
 
+    SECTION("an explicitly selected texture works without an MTL texture reference")
+    {
+        info.triangle_texture_files.clear();
+        info.has_uv_png = false;
+
+        ObjImageMapSamplePlan selected_plan;
+        std::string           selected_warning;
+        REQUIRE(build_obj_image_map_sample_plan_with_texture(mesh, info, texture_path.string(), 1.f, 128, selected_plan, &selected_warning));
+        CHECK(selected_warning.empty());
+        CHECK(selected_plan.loaded_texture_count == 1);
+        CHECK(selected_plan.textured_triangle_count == 1);
+        CHECK(selected_plan.triangle_subdivision_depths == std::vector<int8_t>{1});
+        CHECK(selected_plan.colors.size() == 4);
+    }
+
     boost::filesystem::remove_all(directory);
 }

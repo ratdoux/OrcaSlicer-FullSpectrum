@@ -18,6 +18,7 @@
 
 #include "libslic3r/Geometry/ConvexHull.hpp"
 
+#include <algorithm>
 #include <float.h>
 #include <limits>
 
@@ -267,68 +268,126 @@ Model Model::read_from_file(const std::string&                                  
     if (boost::algorithm::iends_with(input_file, ".stl"))
         result = load_stl(input_file.c_str(), &model, nullptr, stlFn);
     else if (boost::algorithm::iends_with(input_file, ".oltp"))
-        result = load_stl(input_file.c_str(), &model, nullptr, stlFn,256);
+        result = load_stl(input_file.c_str(), &model, nullptr, stlFn, 256);
     else if (boost::algorithm::iends_with(input_file, ".obj")) {
-        ObjInfo                 obj_info;
+        ObjInfo obj_info;
         result = load_obj(input_file.c_str(), &model, obj_info, message);
-        if (result){
-            unsigned char first_extruder_id = 1;
-            bool handled_image_map = false;
-            if (obj_info.has_uv_png && !model.objects.empty() && !model.objects.front()->volumes.empty()) {
-                ObjImageMapSamplePlan image_map_plan;
-                std::string image_map_warning;
-                const bool image_map_built = build_obj_image_map_sample_plan(model.objects.front()->volumes.front()->mesh(), obj_info, 0.4f,
-                                                                             200000, image_map_plan, &image_map_warning);
-                if (image_map_built) {
-                    handled_image_map = true;
-                    std::vector<unsigned char> image_map_filament_ids;
-                    if (objFn) {
-                        objFn(image_map_plan.colors,
-                              false,
-                              image_map_filament_ids,
-                              first_extruder_id,
-                              ObjColorImportSource::ImageTexture);
-                        if (!image_map_filament_ids.empty()) {
-                            result = obj_import_image_map_deal(image_map_filament_ids, image_map_plan, first_extruder_id, &model);
-                        }
-                    }
-                }
-                if (!image_map_warning.empty())
-                    BOOST_LOG_TRIVIAL(warning) << "OBJ image-map import: " << image_map_warning;
+        if (result && objFn && !model.objects.empty() && !model.objects.front()->volumes.empty()) {
+            unsigned char       first_extruder_id             = 1;
+            const TriangleMesh& mesh                          = model.objects.front()->volumes.front()->mesh();
+            const bool          vertex_colors_available       = !obj_info.vertex_colors.empty();
+            const bool          face_colors_available         = !obj_info.face_colors.empty();
+            const bool          texture_coordinates_available = obj_info.triangle_uvs.size() == mesh.its.indices.size() &&
+                                                       obj_info.triangle_uvs_valid.size() == mesh.its.indices.size() &&
+                                                       std::any_of(obj_info.triangle_uvs_valid.begin(), obj_info.triangle_uvs_valid.end(),
+                                                                   [](uint8_t valid) { return valid != 0; });
+
+            ObjImageMapSamplePlan detected_image_map_plan;
+            std::string           detected_image_map_warning;
+            const bool            detected_texture_available = obj_info.has_uv_png && texture_coordinates_available &&
+                                                    build_obj_image_map_sample_plan(mesh, obj_info, 0.4f, 200000, detected_image_map_plan,
+                                                                                    &detected_image_map_warning);
+            if (!detected_image_map_warning.empty())
+                BOOST_LOG_TRIVIAL(warning) << "OBJ image-map import: " << detected_image_map_warning;
+
+            ObjColorImportSource  current_source = ObjColorImportSource::VertexColors;
+            ObjColorImportMode    current_mode   = ObjColorImportMode::Colors;
+            ObjImageMapSamplePlan current_image_map_plan;
+            bool                  source_available = false;
+            if (detected_texture_available) {
+                current_source         = ObjColorImportSource::ImageTexture;
+                current_mode           = ObjColorImportMode::ImageMap;
+                current_image_map_plan = detected_image_map_plan;
+                source_available       = true;
+            } else if (vertex_colors_available) {
+                current_source   = ObjColorImportSource::VertexColors;
+                source_available = true;
+            } else if (face_colors_available) {
+                current_source   = ObjColorImportSource::FaceColors;
+                source_available = true;
             }
-            if (!handled_image_map && obj_info.vertex_colors.size() > 0) {
-                std::vector<unsigned char> vertex_filament_ids;
-                if (objFn) { // 1.result is ok and pop up a dialog
-                    objFn(obj_info.vertex_colors,
-                          false,
-                          vertex_filament_ids,
-                          first_extruder_id,
-                          ObjColorImportSource::VertexColors);
-                    if (vertex_filament_ids.size() > 0) {
-                        result = obj_import_vertex_color_deal(vertex_filament_ids, first_extruder_id, & model);
-                    }
+
+            std::string pending_warning;
+            while (source_available) {
+                std::vector<RGBA>* input_colors    = nullptr;
+                bool               is_single_color = false;
+                switch (current_source) {
+                case ObjColorImportSource::ImageTexture: input_colors = &current_image_map_plan.colors; break;
+                case ObjColorImportSource::VertexColors: input_colors = &obj_info.vertex_colors; break;
+                case ObjColorImportSource::FaceColors:
+                    input_colors    = &obj_info.face_colors;
+                    is_single_color = obj_info.is_single_mtl;
+                    break;
                 }
-            } else if (!handled_image_map && obj_info.face_colors.size() > 0) { // mtl file
-                std::vector<unsigned char> face_filament_ids;
-                if (objFn) { // 1.result is ok and pop up a dialog
-                    objFn(obj_info.face_colors,
-                          obj_info.is_single_mtl,
-                          face_filament_ids,
-                          first_extruder_id,
-                          ObjColorImportSource::FaceColors);
-                    if (face_filament_ids.size() > 0) {
-                        result = obj_import_face_color_deal(face_filament_ids, first_extruder_id, &model);
+                if (input_colors == nullptr || input_colors->empty())
+                    break;
+
+                ObjColorImportContext import_context;
+                import_context.source                        = current_source;
+                import_context.mode                          = current_mode;
+                import_context.vertex_colors_available       = vertex_colors_available;
+                import_context.face_colors_available         = face_colors_available;
+                import_context.texture_coordinates_available = texture_coordinates_available;
+                import_context.detected_texture_available    = detected_texture_available;
+                import_context.requested_source              = current_source;
+                import_context.requested_mode                = current_mode;
+                import_context.warning_message               = std::move(pending_warning);
+
+                std::vector<unsigned char> filament_ids;
+                objFn(*input_colors, is_single_color, filament_ids, first_extruder_id, import_context);
+
+                if (import_context.source_change_requested) {
+                    ObjColorImportSource next_source = import_context.requested_source;
+                    ObjColorImportMode   next_mode   = import_context.requested_mode;
+                    bool                 switched    = false;
+                    if (next_source == ObjColorImportSource::ImageTexture) {
+                        ObjImageMapSamplePlan next_plan;
+                        if (!import_context.requested_texture_file.empty()) {
+                            switched = build_obj_image_map_sample_plan_with_texture(mesh, obj_info, import_context.requested_texture_file,
+                                                                                    0.4f, 200000, next_plan, &pending_warning);
+                        } else if (detected_texture_available) {
+                            next_plan = detected_image_map_plan;
+                            switched  = true;
+                        } else {
+                            pending_warning = "No usable texture was detected. Select a PNG or JPEG image for the OBJ UV coordinates.";
+                        }
+                        if (switched)
+                            current_image_map_plan = std::move(next_plan);
+                    } else if (next_source == ObjColorImportSource::VertexColors) {
+                        switched = vertex_colors_available;
+                        if (!switched)
+                            pending_warning = "This OBJ does not contain vertex colors.";
+                    } else if (next_source == ObjColorImportSource::FaceColors) {
+                        switched = face_colors_available;
+                        if (!switched)
+                            pending_warning = "This OBJ does not contain material colors.";
                     }
+
+                    if (switched) {
+                        current_source = next_source;
+                        current_mode   = next_mode;
+                        pending_warning.clear();
+                    }
+                    continue;
                 }
+
+                if (filament_ids.empty())
+                    break;
+                if (current_source == ObjColorImportSource::ImageTexture)
+                    result = obj_import_image_map_deal(filament_ids, current_image_map_plan, first_extruder_id, &model);
+                else if (current_source == ObjColorImportSource::VertexColors)
+                    result = obj_import_vertex_color_deal(filament_ids, first_extruder_id, &model);
+                else
+                    result = obj_import_face_color_deal(filament_ids, first_extruder_id, &model);
+                break;
             }
         }
-    }
-    else if (boost::algorithm::iends_with(input_file, ".svg"))
+    } else if (boost::algorithm::iends_with(input_file, ".svg"))
         result = load_svg(input_file.c_str(), &model, message);
-    //BBS: remove the old .amf.xml files
-    //else if (boost::algorithm::iends_with(input_file, ".amf") || boost::algorithm::iends_with(input_file, ".amf.xml"))
+    // BBS: remove the old .amf.xml files
+    // else if (boost::algorithm::iends_with(input_file, ".amf") || boost::algorithm::iends_with(input_file, ".amf.xml"))
     else if (boost::algorithm::iends_with(input_file, ".amf"))
-        //BBS: is_xxx is used for is_inches when load amf
+        // BBS: is_xxx is used for is_inches when load amf
         result = load_amf(input_file.c_str(), config, config_substitutions, &model, is_xxx);
     else if (boost::algorithm::iends_with(input_file, ".3mf"))
         //BBS: add part plate related logic

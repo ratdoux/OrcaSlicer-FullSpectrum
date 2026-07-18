@@ -252,6 +252,53 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
     return !out_plan.empty();
 }
 
+bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
+                                                  const ObjInfo&         obj_info,
+                                                  const std::string&     texture_file,
+                                                  float                  target_sample_size_mm,
+                                                  size_t                 max_samples,
+                                                  ObjImageMapSamplePlan& out_plan,
+                                                  std::string*           warning)
+{
+    if (texture_file.empty()) {
+        out_plan = ObjImageMapSamplePlan{};
+        if (warning != nullptr)
+            *warning = "No image texture was selected.";
+        return false;
+    }
+
+    const size_t triangle_count = mesh.its.indices.size();
+    if (obj_info.triangle_uvs.size() != triangle_count || obj_info.triangle_uvs_valid.size() != triangle_count) {
+        out_plan = ObjImageMapSamplePlan{};
+        if (warning != nullptr)
+            *warning = "The OBJ does not contain usable UV coordinates for the selected texture.";
+        return false;
+    }
+
+    ObjInfo texture_info = obj_info;
+    texture_info.triangle_texture_files.assign(triangle_count, std::string());
+    bool has_textured_triangle = false;
+    for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        if (texture_info.triangle_uvs_valid[triangle_idx] == 0)
+            continue;
+        texture_info.triangle_texture_files[triangle_idx] = texture_file;
+        has_textured_triangle                             = true;
+    }
+    texture_info.has_uv_png = has_textured_triangle;
+
+    if (!has_textured_triangle) {
+        out_plan = ObjImageMapSamplePlan{};
+        if (warning != nullptr)
+            *warning = "The OBJ does not contain usable UV coordinates for the selected texture.";
+        return false;
+    }
+
+    const bool built = build_obj_image_map_sample_plan(mesh, texture_info, target_sample_size_mm, max_samples, out_plan, warning);
+    if (!built && warning != nullptr && warning->empty())
+        *warning = "The selected image could not be used as an OBJ texture.";
+    return built;
+}
+
 std::string encode_obj_image_map_triangle_filaments(const std::vector<unsigned char>& filament_ids,
                                                     size_t                            offset,
                                                     unsigned int                      subdivision_depth,
