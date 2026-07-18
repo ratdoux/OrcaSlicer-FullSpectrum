@@ -108,6 +108,8 @@ ValidationResult validate_package_model(const PackageModel &model)
                 }
             }
 
+            if (vf.surface_bias.application != "region_mask" && vf.surface_bias.application != "external_perimeter")
+                result.fail("mixed filament " + vf.id + " surface bias application is invalid");
             if (!vf.surface_bias.component_refs.empty() || !vf.surface_bias.component_offsets_mm.empty()) {
                 if (vf.surface_bias.component_refs.size() != vf.surface_bias.component_offsets_mm.size())
                     result.fail("mixed filament " + vf.id + " surface bias offsets do not match component refs");

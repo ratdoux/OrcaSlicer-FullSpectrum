@@ -1099,7 +1099,8 @@ static bool apply_mixed_component_surface_offsets(PrintObject &print_object, std
     const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
     bool has_component_offsets = false;
     for (const MixedFilamentDefinition &definition : mixed_mgr.mixed_filament_definitions(num_physical)) {
-        if (definition.visibility.tombstoned || mixed_filament_definition_uses_local_z(definition, false))
+        if (definition.visibility.tombstoned || mixed_filament_definition_uses_local_z(definition, false) ||
+            definition.behavior.surface_bias.perimeter_modulation)
             continue;
         const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
         if (std::any_of(component_offsets.begin(), component_offsets.end(), [](float offset) {
@@ -1138,7 +1139,8 @@ static bool apply_mixed_component_surface_offsets(PrintObject &print_object, std
             const std::optional<MixedFilamentDefinition> definition =
                 mixed_mgr.mixed_filament_definition_from_id(state_id, num_physical);
             if (definition &&
-                (definition->visibility.tombstoned || mixed_filament_definition_uses_local_z(*definition, false)))
+                (definition->visibility.tombstoned || mixed_filament_definition_uses_local_z(*definition, false) ||
+                 definition->behavior.surface_bias.perimeter_modulation))
                 continue;
 
             const coordf_t offset_mm = clamped_mixed_component_surface_offset(mixed_mgr,
@@ -2300,7 +2302,8 @@ static bool apply_mixed_region_surface_offsets(PrintObject &print_object)
     const MixedFilamentManager &mixed_mgr = print->mixed_filament_manager();
     bool has_component_offsets = false;
     for (const MixedFilamentDefinition &definition : mixed_mgr.mixed_filament_definitions(num_physical)) {
-        if (definition.visibility.tombstoned || mixed_filament_definition_uses_local_z(definition, false))
+        if (definition.visibility.tombstoned || mixed_filament_definition_uses_local_z(definition, false) ||
+            definition.behavior.surface_bias.perimeter_modulation)
             continue;
         const std::vector<float> component_offsets = mixed_filament_component_surface_offsets(definition);
         if (std::any_of(component_offsets.begin(), component_offsets.end(), [](float offset) {
@@ -2341,7 +2344,8 @@ static bool apply_mixed_region_surface_offsets(PrintObject &print_object)
             const std::optional<MixedFilamentDefinition> definition =
                 mixed_mgr.mixed_filament_definition_from_id(filament_id, num_physical);
             if (definition &&
-                (definition->visibility.tombstoned || mixed_filament_definition_uses_local_z(*definition, false)))
+                (definition->visibility.tombstoned || mixed_filament_definition_uses_local_z(*definition, false) ||
+                 definition->behavior.surface_bias.perimeter_modulation))
                 continue;
 
             const coordf_t offset_mm = clamped_mixed_component_surface_offset(mixed_mgr,
@@ -4087,13 +4091,16 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     const unsigned int channel_id = unsigned(channel_idx);
                     std::optional<MixedFilamentDefinition> mixed_definition;
                     bool channel_uses_local_z = false;
+                    bool channel_uses_perimeter_modulation = false;
                     if (mixed_mgr.is_mixed(channel_id, num_physical)) {
                         mixed_definition = mixed_mgr.mixed_filament_definition_from_id(channel_id, num_physical);
                         channel_uses_local_z = mixed_definition &&
                             mixed_filament_definition_uses_local_z(*mixed_definition, local_z_mode);
+                        channel_uses_perimeter_modulation = mixed_definition &&
+                            mixed_definition->behavior.surface_bias.perimeter_modulation;
                     }
                     bool collapse_this_channel = collapse_mixed_regions;
-                    if (collapse_this_channel && channel_uses_local_z)
+                    if (collapse_this_channel && (channel_uses_local_z || channel_uses_perimeter_modulation))
                         collapse_this_channel = false;
                     const unsigned int effective_filament_id = collapse_this_channel ?
                         mixed_mgr.effective_painted_region_filament_id(channel_id,
@@ -4118,6 +4125,7 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                         bias_mode_enabled &&
                         mixed_mgr.is_mixed(channel_id, num_physical) &&
                         !channel_uses_local_z &&
+                        !channel_uses_perimeter_modulation &&
                         std::abs(mixed_mgr.component_surface_offset(channel_id,
                                                                    num_physical,
                                                                    int(layer_id),

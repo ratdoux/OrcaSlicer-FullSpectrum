@@ -89,6 +89,11 @@ struct MixedFilamentLegacyRow
     // means the legacy A/B fields are authoritative.
     std::string component_surface_offsets;
 
+    // Apply component surface offsets to the visible external-perimeter
+    // centerline only. This is used by shared-cadence image maps; ordinary
+    // mixed-filament bias continues to offset the complete region mask.
+    bool perimeter_modulation = false;
+
     // Legacy availability bit kept so old project settings and 3MF rows keep
     // their column layout. Runtime treats every non-deleted row as available.
     bool enabled = true;
@@ -133,6 +138,7 @@ struct MixedFilamentLegacyRow
                std::abs(component_a_surface_offset - rhs.component_a_surface_offset) <= k_surface_offset_epsilon &&
                std::abs(component_b_surface_offset - rhs.component_b_surface_offset) <= k_surface_offset_epsilon &&
                component_surface_offsets == rhs.component_surface_offsets &&
+               perimeter_modulation == rhs.perimeter_modulation &&
                deleted      == rhs.deleted &&
                custom       == rhs.custom &&
                origin_auto  == rhs.origin_auto &&
@@ -270,6 +276,7 @@ struct MixedFilamentSurfaceBias
     std::vector<float> component_offsets_mm;
     float component_a_offset_mm = 0.f;
     float component_b_offset_mm = 0.f;
+    bool  perimeter_modulation = false;
 };
 
 struct MixedFilamentBehavior

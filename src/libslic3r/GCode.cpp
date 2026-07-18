@@ -16,6 +16,7 @@
 #include "GCode/WipeTower2.hpp"
 #include "ShortestPath.hpp"
 #include "MixedFilament.hpp"
+#include "MixedFilament/PerimeterModulation.hpp"
 #include "Print.hpp"
 #include "Utils.hpp"
 #include "ClipperUtils.hpp"
@@ -6164,6 +6165,41 @@ static std::unique_ptr<EdgeGrid::Grid> calculate_layer_edge_grid(const Layer& la
     return out;
 }
 
+void GCode::modulate_mixed_filament_external_perimeter(ExtrusionPath &path) const
+{
+    if (path.is_force_no_extrusion() || !is_external_perimeter(path.role()) ||
+        m_curr_print == nullptr || m_layer == nullptr ||
+        !m_config.mixed_filament_component_bias_enabled.value)
+        return;
+
+    const size_t       num_physical = m_config.filament_colour.values.size();
+    const unsigned int filament_id  = unsigned(std::max(0, m_config.wall_filament.value));
+    const MixedFilamentManager &manager = m_curr_print->mixed_filament_manager();
+    if (num_physical < 2 || !manager.is_mixed(filament_id, num_physical))
+        return;
+    const std::optional<MixedFilamentDefinition> definition =
+        manager.mixed_filament_definition_from_id(filament_id, num_physical);
+    if (!definition || !definition->behavior.surface_bias.perimeter_modulation)
+        return;
+
+    const float layer_height = path.height > EPSILON ? path.height : float(m_layer->height);
+    const float surface_inset_mm = manager.component_surface_offset(filament_id,
+                                                                     num_physical,
+                                                                     int(m_layer->id()),
+                                                                     float(m_layer->print_z),
+                                                                     layer_height);
+    if (std::abs(surface_inset_mm) <= EPSILON)
+        return;
+
+    const float reference_width_mm = path.width > EPSILON ? path.width : float(EXTRUDER_CONFIG(nozzle_diameter));
+    const float max_shift_mm = MixedFilamentManager::max_component_surface_offset_mm(reference_width_mm);
+    apply_mixed_filament_perimeter_modulation(path.polyline,
+                                              m_layer->lslices,
+                                              surface_inset_mm,
+                                              max_shift_mm,
+                                              reference_width_mm + max_shift_mm);
+}
+
 std::string GCode::extrude_loop(
     ExtrusionLoop loop, std::string description, double speed, const ExtrusionEntitiesPtr& region_perimeters, const Point* start_point)
 {
@@ -6217,6 +6253,8 @@ std::string GCode::extrude_loop(
     loop.clip_end(clip_length, &paths);
     if (paths.empty())
         return "";
+    for (ExtrusionPath &path : paths)
+        modulate_mixed_filament_external_perimeter(path);
 
     // SoftFever: check loop lenght for small perimeter.
     double small_peri_speed = -1;
@@ -6443,6 +6481,9 @@ std::string GCode::extrude_loop(
 
 std::string GCode::extrude_multi_path(ExtrusionMultiPath multipath, std::string description, double speed)
 {
+    for (ExtrusionPath &path : multipath.paths)
+        modulate_mixed_filament_external_perimeter(path);
+
     // extrude along the path
     std::string gcode;
 
@@ -6505,6 +6546,8 @@ std::string GCode::extrude_entity(const ExtrusionEntity&      entity,
 
 std::string GCode::extrude_path(ExtrusionPath path, std::string description, double speed)
 {
+    modulate_mixed_filament_external_perimeter(path);
+
     // Orca: Reset average multipath flow as this is a single line, single extrude volumetric speed path
     m_multi_flow_segment_path_pa_set             = false;
     m_multi_flow_segment_path_average_mm3_per_mm = 0;

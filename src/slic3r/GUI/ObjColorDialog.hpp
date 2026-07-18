@@ -8,6 +8,7 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/checkbox.h>
+#include <wx/choice.h>
 #include <wx/msgdlg.h>
 class Button;
 class Label;
@@ -55,6 +56,7 @@ private:
     void deal_algo(char cluster_number,bool redraw_ui =false);
     void deal_default_strategy();
     int min_component_percent() const;
+    bool uses_layer_sequence_image_map() const;
     int find_filament_selection_by_color(const wxColour &color) const;
     int append_new_filament_option(const wxColour &color);
     void update_keep_color_buttons();
@@ -67,6 +69,7 @@ private:
     wxBoxSizer *              m_sizer_simple = nullptr;
     wxTextCtrl *m_color_cluster_num_by_user_ebox{nullptr};
     wxSpinCtrl *m_min_component_percent_ctrl{nullptr};
+    wxChoice *m_image_map_mode_ctrl{nullptr};
     wxStaticText *             m_warning_text{nullptr};
     Button *    m_quick_approximate_match_btn{nullptr};
     Button *    m_quick_add_btn{nullptr};

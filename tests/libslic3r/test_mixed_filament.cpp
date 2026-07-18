@@ -8,6 +8,7 @@
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfValidation.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfWriter.hpp"
 #include "libslic3r/Model.hpp"
+#include "libslic3r/MixedFilament/PerimeterModulation.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/GCode/ToolOrdering.hpp"
@@ -765,6 +766,75 @@ TEST_CASE("Surface-bias encoding reproduces requested apparent component percent
     }
 
     CHECK(mixed_filament_surface_offsets_for_apparent_percentages({50, 50}, {100}, 0.4f).empty());
+}
+
+TEST_CASE("Perimeter modulation moves only centerline points near the object boundary", "[MixedFilament][PerimeterModulation]")
+{
+    ExPolygon slice;
+    slice.contour.points = {
+        Point(scale_(0.0), scale_(0.0)),
+        Point(scale_(10.0), scale_(0.0)),
+        Point(scale_(10.0), scale_(10.0)),
+        Point(scale_(0.0), scale_(10.0))
+    };
+    const ExPolygons layer_slices{slice};
+
+    Polyline contracted({Point(scale_(0.2), scale_(1.0)), Point(scale_(0.2), scale_(9.0))});
+    REQUIRE(apply_mixed_filament_perimeter_modulation(contracted, layer_slices, 0.1f, 0.2f, 0.6f));
+    CHECK(unscale<double>(contracted.points.front().x()) == Approx(0.3).margin(1e-4));
+    CHECK(unscale<double>(contracted.points.back().x()) == Approx(0.3).margin(1e-4));
+
+    Polyline expanded({Point(scale_(0.2), scale_(1.0)), Point(scale_(0.2), scale_(9.0))});
+    REQUIRE(apply_mixed_filament_perimeter_modulation(expanded, layer_slices, -0.1f, 0.2f, 0.6f));
+    CHECK(unscale<double>(expanded.points.front().x()) == Approx(0.1).margin(1e-4));
+
+    Polyline internal({Point(scale_(5.0), scale_(1.0)), Point(scale_(5.0), scale_(9.0))});
+    CHECK_FALSE(apply_mixed_filament_perimeter_modulation(internal, layer_slices, -0.1f, 0.2f, 0.6f));
+    CHECK(unscale<double>(internal.points.front().x()) == Approx(5.0).margin(1e-4));
+}
+
+TEST_CASE("Perimeter image-map definitions share one physical layer sequence and persist their application", "[MixedFilament][PerimeterModulation]")
+{
+    const std::vector<std::string> colors = {"#00FFFF", "#FF00FF", "#FFFF00", "#000000"};
+    const std::vector<std::string> refs = {"fil_c", "fil_m", "fil_y", "fil_k"};
+
+    auto make_definition = [](const std::vector<float> &offsets, const std::string &display_color) {
+        MixedFilamentDefinition definition;
+        definition.source.kind = MixedFilamentSourceKind::Custom;
+        definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
+        definition.recipe.blend.components = {{{1}, 25}, {{2}, 25}, {{3}, 25}, {{4}, 25}};
+        definition.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;
+        definition.behavior.surface_bias.perimeter_modulation = true;
+        set_mixed_filament_component_surface_offsets(definition, offsets);
+        definition.presentation.display_color = display_color;
+        return definition;
+    };
+
+    MixedFilamentManager manager;
+    REQUIRE(manager.add_custom_filament_definition(make_definition({-0.08f, 0.02f, 0.03f, 0.03f}, "#35A8A8"), colors));
+    REQUIRE(manager.add_custom_filament_definition(make_definition({0.04f, -0.08f, 0.02f, 0.02f}, "#A835A8"), colors));
+
+    for (int layer_index = 0; layer_index < 16; ++layer_index)
+        CHECK(manager.resolve(5, colors.size(), layer_index) == manager.resolve(6, colors.size(), layer_index));
+
+    const std::string legacy = manager.serialize_custom_entries();
+    CHECK(legacy.find(",xp1") != std::string::npos);
+    MixedFilamentManager legacy_rebuilt;
+    legacy_rebuilt.load_custom_entries(legacy, colors);
+    const std::vector<MixedFilamentDefinition> legacy_definitions = legacy_rebuilt.mixed_filament_definitions(colors.size());
+    REQUIRE(legacy_definitions.size() == 2);
+    CHECK(legacy_definitions[0].behavior.surface_bias.perimeter_modulation);
+    CHECK(legacy_definitions[1].behavior.surface_bias.perimeter_modulation);
+
+    const MixedFilaments canonical = mixed_filaments_from_manager(manager, refs);
+    REQUIRE(canonical.virtual_filaments.size() == 2);
+    CHECK(canonical.virtual_filaments[0].surface_bias.application == "external_perimeter");
+    const MixedFilaments parsed = parse_json<MixedFilaments>(serialize_json(canonical));
+    const MixedFilamentManager canonical_rebuilt = manager_from_mixed_filaments(parsed, colors, refs);
+    const std::vector<MixedFilamentDefinition> canonical_definitions = canonical_rebuilt.mixed_filament_definitions(colors.size());
+    REQUIRE(canonical_definitions.size() == 2);
+    CHECK(canonical_definitions[0].behavior.surface_bias.perimeter_modulation);
+    CHECK(canonical_definitions[1].behavior.surface_bias.perimeter_modulation);
 }
 
 TEST_CASE("Mixed filament auto generation can be disabled without dropping custom rows", "[MixedFilament]")

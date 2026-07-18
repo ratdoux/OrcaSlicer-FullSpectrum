@@ -381,7 +381,8 @@ void to_json(nlohmann::json &j, const SurfaceBias &v)
 {
     j = nlohmann::json{
         {"component_a_offset_mm", v.component_a_offset_mm},
-        {"component_b_offset_mm", v.component_b_offset_mm}
+        {"component_b_offset_mm", v.component_b_offset_mm},
+        {"application", v.application}
     };
     if (!v.component_refs.empty())
         j["component_refs"] = v.component_refs;
@@ -395,6 +396,7 @@ void from_json(const nlohmann::json &j, SurfaceBias &v)
     get_if_present(j, "component_b_offset_mm", v.component_b_offset_mm);
     get_if_present(j, "component_refs", v.component_refs);
     get_if_present(j, "component_offsets_mm", v.component_offsets_mm);
+    get_if_present(j, "application", v.application);
 }
 
 void to_json(nlohmann::json &j, const LocalZ &v)

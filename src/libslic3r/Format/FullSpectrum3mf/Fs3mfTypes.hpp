@@ -178,6 +178,10 @@ struct SurfaceBias
     // Pair fields remain for Profile v1 and older readers.
     double component_a_offset_mm = 0.0;
     double component_b_offset_mm = 0.0;
+    // "region_mask" is the ordinary mixed-filament bias path.
+    // "external_perimeter" preserves the region and moves only its visible
+    // external-perimeter centerline at constant extrusion width.
+    std::string application = "region_mask";
 };
 
 struct LocalZ

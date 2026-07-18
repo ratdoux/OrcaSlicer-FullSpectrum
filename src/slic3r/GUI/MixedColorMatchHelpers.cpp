@@ -806,6 +806,25 @@ bool definition_has_surface_bias(const MixedFilamentDefinition& definition)
     return std::any_of(offsets.begin(), offsets.end(), [](float offset) { return std::abs(offset) >= 0.0005f; });
 }
 
+bool definition_has_shared_image_map_cadence(const MixedFilamentDefinition &definition, size_t num_physical)
+{
+    if (num_physical < 2 || !definition.behavior.surface_bias.perimeter_modulation ||
+        definition.recipe.manual_pattern || definition.behavior.gradient.enabled ||
+        definition.recipe.blend.components.size() != num_physical)
+        return false;
+
+    int min_weight = 100;
+    int max_weight = 0;
+    for (size_t index = 0; index < definition.recipe.blend.components.size(); ++index) {
+        const MixedFilamentWeightedComponent &component = definition.recipe.blend.components[index];
+        if (component.filament.id != index + 1)
+            return false;
+        min_weight = std::min(min_weight, component.percent);
+        max_weight = std::max(max_weight, component.percent);
+    }
+    return max_weight - min_weight <= 1;
+}
+
 } // namespace
 
 MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(const MixedColorMatchRecipeResult &recipe,
@@ -817,7 +836,16 @@ MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(const 
     definition.source.kind = MixedFilamentSourceKind::Custom;
     definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
 
-    DecodedColorMatchRecipe    decoded           = decode_color_match_recipe(recipe, num_physical);
+    DecodedColorMatchRecipe decoded = decode_color_match_recipe(recipe, num_physical);
+    std::vector<double> apparent_component_weights = recipe.apparent_component_weights;
+    if (encoding == MixedColorMatchEncoding::PerimeterModulatedLayerSequence) {
+        decoded.component_ids.resize(num_physical);
+        std::iota(decoded.component_ids.begin(), decoded.component_ids.end(), 1u);
+        decoded.component_weights = normalize_color_match_weights(std::vector<int>(num_physical, 1), num_physical);
+        const std::vector<int> target_weights = normalize_color_match_weights(
+            expand_color_match_recipe_weights(recipe, num_physical), num_physical);
+        apparent_component_weights.assign(target_weights.begin(), target_weights.end());
+    }
     std::vector<unsigned int>& component_ids     = decoded.component_ids;
     std::vector<int>&          component_weights = decoded.component_weights;
 
@@ -828,15 +856,20 @@ MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(const 
         definition.recipe.manual_pattern = mixed_filament_manual_pattern_from_string(
             recipe.manual_pattern, recipe.component_a, recipe.component_b, num_physical);
     }
-    definition.behavior.distribution = definition.recipe.manual_pattern || definition.recipe.blend.components.size() >= 3 ?
+    definition.behavior.distribution = encoding == MixedColorMatchEncoding::PerimeterModulatedLayerSequence ||
+                                               definition.recipe.manual_pattern || definition.recipe.blend.components.size() >= 3 ?
                                            MixedFilamentDistributionMode::LayerCycle :
                                            MixedFilamentDistributionMode::Simple;
-    if (encoding == MixedColorMatchEncoding::SurfaceBias && recipe.apparent_component_weights.size() == component_weights.size()) {
+    if ((encoding == MixedColorMatchEncoding::SurfaceBias ||
+         encoding == MixedColorMatchEncoding::PerimeterModulatedLayerSequence) &&
+        apparent_component_weights.size() == component_weights.size()) {
         set_mixed_filament_component_surface_offsets(definition,
                                                      mixed_filament_surface_offsets_for_apparent_weights(component_weights,
-                                                                                                         recipe.apparent_component_weights,
+                                                                                                         apparent_component_weights,
                                                                                                          reference_width_mm));
     }
+    definition.behavior.surface_bias.perimeter_modulation =
+        encoding == MixedColorMatchEncoding::PerimeterModulatedLayerSequence;
     definition.presentation.display_color =
         recipe.preview_color.IsOk() ? recipe.preview_color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString() : std::string("#26A69A");
     return definition;
@@ -891,7 +924,8 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
     result.valid       = true;
     result.filament_id = closest_physical.first;
     result.delta_e     = closest_physical.second;
-    if (physical_colors.size() < 2 || closest_physical.second <= 0.5)
+    const bool perimeter_modulated_sequence = encoding == MixedColorMatchEncoding::PerimeterModulatedLayerSequence;
+    if (physical_colors.size() < 2 || (!perimeter_modulated_sequence && closest_physical.second <= 0.5))
         return result;
 
     PresetBundle *preset_bundle = wxGetApp().preset_bundle;
@@ -899,15 +933,95 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
         return result;
 
     MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
-    if (encoding == MixedColorMatchEncoding::SurfaceBias) {
+    if (encoding == MixedColorMatchEncoding::SurfaceBias || perimeter_modulated_sequence) {
         context.preview_settings.local_z_mode = false;
         context.component_bias_enabled        = true;
     }
     auto &manager = preset_bundle->mixed_filaments;
     manager.set_display_context(context);
 
-    const std::vector<MixedFilamentDefinition> definitions                   = manager.mixed_filament_definitions(physical_colors.size());
-    auto                                       consider_existing_definitions = [&](bool biased_definitions) {
+    const std::vector<MixedFilamentDefinition> definitions = manager.mixed_filament_definitions(physical_colors.size());
+
+    if (perimeter_modulated_sequence) {
+        result = MixedColorMatchCreationResult{};
+        size_t visible_idx = 0;
+        for (const MixedFilamentDefinition &definition : definitions) {
+            if (definition.visibility.tombstoned)
+                continue;
+            const unsigned int filament_id = unsigned(physical_colors.size() + visible_idx + 1);
+            ++visible_idx;
+            if (!definition_has_shared_image_map_cadence(definition, physical_colors.size()))
+                continue;
+
+            const wxColour existing_color = parse_mixed_color(compute_mixed_filament_display_color(definition, context));
+            const double delta = color_delta_e00(target_color, existing_color);
+            if (!result.valid || delta + 1e-6 < result.delta_e) {
+                result.valid             = true;
+                result.filament_id       = filament_id;
+                result.delta_e           = delta;
+                result.used_surface_bias = definition_has_surface_bias(definition);
+            }
+            if (delta <= 0.5) {
+                configure_surface_bias_color_match_mode(*preset_bundle);
+                return result;
+            }
+        }
+
+        MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
+            physical_colors,
+            target_color,
+            min_component_percent,
+            context.physical_tds,
+            context.physical_material_ids,
+            MixedFilamentManager::color_engine(),
+            MixedFilamentManager::use_td_for_color_prediction());
+        if (!recipe.valid || closest_physical.second + 1e-6 < recipe.delta_e) {
+            recipe = MixedColorMatchRecipeResult{};
+            recipe.valid         = true;
+            recipe.component_a   = closest_physical.first;
+            recipe.component_b   = closest_physical.first == 1 ? 2 : 1;
+            recipe.mix_b_percent = 0;
+            recipe.preview_color = parse_mixed_color(physical_colors[closest_physical.first - 1]);
+            recipe.delta_e       = closest_physical.second;
+        }
+
+        float  reference_width_mm = 0.4f;
+        double nozzle_sum         = 0.0;
+        size_t nozzle_count       = 0;
+        for (size_t index = 0; index < physical_colors.size() && index < context.nozzle_diameters.size(); ++index) {
+            nozzle_sum += std::max(0.05, context.nozzle_diameters[index]);
+            ++nozzle_count;
+        }
+        if (nozzle_count > 0)
+            reference_width_mm = float(nozzle_sum / double(nozzle_count));
+
+        const size_t visible_before = manager.visible_count();
+        if (physical_colors.size() + visible_before >= max_total_filaments) {
+            if (result.valid)
+                configure_surface_bias_color_match_mode(*preset_bundle);
+            return result;
+        }
+
+        MixedFilamentDefinition definition = mixed_filament_definition_from_color_match_recipe(
+            recipe, physical_colors.size(), encoding, reference_width_mm);
+        const bool uses_bias = definition_has_surface_bias(definition);
+        if (!manager.add_custom_filament_definition(std::move(definition), physical_colors)) {
+            if (result.valid)
+                configure_surface_bias_color_match_mode(*preset_bundle);
+            return result;
+        }
+
+        configure_surface_bias_color_match_mode(*preset_bundle);
+        result.valid             = true;
+        result.created           = true;
+        result.used_surface_bias = uses_bias;
+        result.filament_id       = unsigned(physical_colors.size() + visible_before + 1);
+        result.delta_e           = recipe.delta_e;
+        preset_bundle->sync_mixed_filament_definitions_to_project_config();
+        return result;
+    }
+
+    auto consider_existing_definitions = [&](bool biased_definitions) {
         size_t visible_idx = 0;
         for (const MixedFilamentDefinition &definition : definitions) {
             if (definition.visibility.tombstoned)

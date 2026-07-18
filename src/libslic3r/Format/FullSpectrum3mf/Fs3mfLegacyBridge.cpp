@@ -315,6 +315,7 @@ MixedFilaments mixed_filaments_from_manager(const MixedFilamentManager    &manag
         }
         vf.surface_bias.component_a_offset_mm = component_offsets.empty() ? 0.0 : component_offsets[0];
         vf.surface_bias.component_b_offset_mm = component_offsets.size() < 2 ? 0.0 : component_offsets[1];
+        vf.surface_bias.application = definition.behavior.surface_bias.perimeter_modulation ? "external_perimeter" : "region_mask";
         if (definition.behavior.local_z.max_sublayers > 0)
             vf.local_z = LocalZ{definition.behavior.local_z.max_sublayers, "standard-pair-split"};
         mixed.virtual_filaments.emplace_back(std::move(vf));
@@ -383,6 +384,7 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
         definition.behavior.local_z.max_sublayers = vf.local_z ? std::max(0, vf.local_z->max_sublayers) : 0;
         definition.behavior.surface_bias.component_a_offset_mm = float(vf.surface_bias.component_a_offset_mm);
         definition.behavior.surface_bias.component_b_offset_mm = float(vf.surface_bias.component_b_offset_mm);
+        definition.behavior.surface_bias.perimeter_modulation = vf.surface_bias.application == "external_perimeter";
         if (!vf.surface_bias.component_refs.empty() &&
             vf.surface_bias.component_refs.size() == vf.surface_bias.component_offsets_mm.size()) {
             std::vector<float> component_offsets(definition.recipe.blend.components.size(), 0.f);

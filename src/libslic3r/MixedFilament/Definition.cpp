@@ -239,6 +239,7 @@ MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFil
                                                                     definition.behavior.gradient.enabled));
     definition.behavior.surface_bias.component_a_offset_mm = row.component_a_surface_offset;
     definition.behavior.surface_bias.component_b_offset_mm = row.component_b_surface_offset;
+    definition.behavior.surface_bias.perimeter_modulation   = row.perimeter_modulation;
     const std::vector<float> component_offsets =
         decode_component_surface_offsets(row.component_surface_offsets, definition.recipe.blend.components.size());
     if (!component_offsets.empty())
@@ -275,6 +276,7 @@ void apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition
     row.component_a_surface_offset = component_offsets.empty() ? 0.f : component_offsets[0];
     row.component_b_surface_offset = component_offsets.size() < 2 ? 0.f : component_offsets[1];
     row.component_surface_offsets = component_offsets.size() >= 3 ? encode_component_surface_offsets(component_offsets) : std::string();
+    row.perimeter_modulation      = definition.behavior.surface_bias.perimeter_modulation;
     row.deleted                    = definition.visibility.tombstoned;
     row.enabled                    = !row.deleted;
     row.custom        = definition.source.kind == MixedFilamentSourceKind::Custom;

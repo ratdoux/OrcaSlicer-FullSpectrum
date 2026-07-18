@@ -272,12 +272,23 @@ ObjColorPanel::ObjColorPanel(wxWindow *                       parent,
         auto* description = new wxStaticText(
             m_page_simple, wxID_ANY,
             wxString::Format(_L("The OBJ image texture was sampled into %llu printable surface regions.\n"
-                                "Each quantized color first uses the closest physical filament or normal weighted mix.\n"
-                                "A small per-filament surface-bias correction is added only when it improves the remaining color error; "
-                                "Subdivide Mix Layer is disabled only when such a correction is needed."),
+                                "Choose normal mixed colors, or a shared layer sequence whose outer perimeter is modulated to reveal the image."),
                              static_cast<unsigned long long>(input_colors.size())));
         description->Wrap(FromDIP(PANEL_WIDTH - 30));
         m_sizer_simple->Add(description, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(20));
+
+        auto *mode_sizer = new wxBoxSizer(wxHORIZONTAL);
+        mode_sizer->Add(new wxStaticText(m_page_simple, wxID_ANY, _L("Image mapping method:")),
+                        0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        m_image_map_mode_ctrl = new wxChoice(m_page_simple, wxID_ANY);
+        m_image_map_mode_ctrl->Append(_L("Normal mixed filaments"));
+        m_image_map_mode_ctrl->Append(_L("One filament per layer - perimeter modulation"));
+        m_image_map_mode_ctrl->SetSelection(0);
+        m_image_map_mode_ctrl->SetToolTip(
+            _L("Perimeter modulation gives every generated image color the same physical-filament layer sequence. "
+               "It shifts only the external perimeter path and keeps extrusion width unchanged."));
+        mode_sizer->Add(m_image_map_mode_ctrl, 1, wxALIGN_CENTER_VERTICAL);
+        m_sizer_simple->Add(mode_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(20));
     }
     // BBS: for tunning flush volumes
     {
@@ -430,6 +441,60 @@ bool ObjColorPanel::update_filament_ids()
     std::map<int, int> appended_filament_id_map;
     bool created_mixed_filament = false;
 
+    auto physical_color_strings = [this]() {
+        std::vector<std::string> colors;
+        colors.reserve(m_colours.size());
+        for (const wxColour &color : m_colours)
+            colors.emplace_back(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString());
+        return colors;
+    };
+
+    if (m_is_image_map && uses_layer_sequence_image_map()) {
+        const std::vector<std::string> physical_colors = physical_color_strings();
+        std::vector<unsigned char> cluster_filament_ids(m_cluster_colours.size(), 0);
+        for (size_t cluster_index = 0; cluster_index < m_cluster_colours.size(); ++cluster_index) {
+            wxColour target_color = m_cluster_colours[cluster_index];
+            const int mapped_filament_id = cluster_index < m_cluster_map_filaments.size() ?
+                                               m_cluster_map_filaments[cluster_index] : 0;
+            if (mapped_filament_id >= 1 && mapped_filament_id <= existing_filament_count) {
+                target_color = m_colours[size_t(mapped_filament_id - 1)];
+            } else if (mapped_filament_id > existing_filament_count) {
+                const int new_color_index = mapped_filament_id - existing_filament_count - 1;
+                if (new_color_index >= 0 && new_color_index < int(m_new_add_colors.size()))
+                    target_color = m_new_add_colors[size_t(new_color_index)];
+            }
+
+            const MixedColorMatchCreationResult match = create_mixed_filament_color_match(
+                target_color,
+                physical_colors,
+                min_component_percent(),
+                g_max_color,
+                MixedColorMatchEncoding::PerimeterModulatedLayerSequence);
+            if (!match.valid || match.filament_id == 0 || match.filament_id > unsigned(g_max_color)) {
+                m_warning_text->SetLabelText(
+                    _L("Unable to create a shared layer-sequence color within the 16 printable color slots."));
+                return false;
+            }
+            cluster_filament_ids[cluster_index] = static_cast<unsigned char>(match.filament_id);
+            created_mixed_filament |= match.created;
+        }
+
+        m_filament_ids.clear();
+        m_filament_ids.reserve(m_input_colors_size);
+        for (size_t input_index = 0; input_index < size_t(m_input_colors_size); ++input_index) {
+            const int cluster_index = m_cluster_labels_from_algo[input_index];
+            if (cluster_index < 0 || cluster_index >= int(cluster_filament_ids.size()))
+                return false;
+            m_filament_ids.emplace_back(cluster_filament_ids[size_t(cluster_index)]);
+        }
+        if (cluster_filament_ids.empty())
+            return false;
+        m_first_extruder_id = cluster_filament_ids.front();
+        if (created_mixed_filament && wxGetApp().plater() != nullptr)
+            wxGetApp().plater()->on_filaments_change(m_colours.size());
+        return !m_filament_ids.empty();
+    }
+
     if (!m_new_add_colors.empty()) {
         std::vector<int> selected_appended_indices;
         selected_appended_indices.reserve(m_cluster_map_filaments.size());
@@ -450,13 +515,7 @@ bool ObjColorPanel::update_filament_ids()
 
             const MixedColorMatchCreationResult match = create_mixed_filament_color_match(
                 m_new_add_colors[new_color_idx],
-                [&]() {
-                    std::vector<std::string> colors;
-                    colors.reserve(m_colours.size());
-                    for (const wxColour &color : m_colours)
-                        colors.emplace_back(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString());
-                    return colors;
-                }(),
+                physical_color_strings(),
                 min_component_percent(),
                 g_max_color,
                 m_is_image_map ? MixedColorMatchEncoding::SurfaceBias : MixedColorMatchEncoding::LayerRatio);
@@ -928,6 +987,11 @@ void ObjColorPanel::deal_default_strategy()
 int ObjColorPanel::min_component_percent() const
 {
     return m_min_component_percent_ctrl != nullptr ? std::clamp(m_min_component_percent_ctrl->GetValue(), 1, 49) : 15;
+}
+
+bool ObjColorPanel::uses_layer_sequence_image_map() const
+{
+    return m_image_map_mode_ctrl != nullptr && m_image_map_mode_ctrl->GetSelection() == 1;
 }
 
 void ObjColorPanel::deal_add_btn()

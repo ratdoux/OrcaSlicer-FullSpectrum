@@ -319,6 +319,8 @@ set(lisbslic3r_sources
     MixedFilament/Gradient.cpp
     MixedFilament/Internal.hpp
     MixedFilament/Manager.cpp
+    MixedFilament/PerimeterModulation.cpp
+    MixedFilament/PerimeterModulation.hpp
     MixedFilament/Pattern.cpp
     MixedFilament/Preview.cpp
     MixedFilament/Resolver.cpp

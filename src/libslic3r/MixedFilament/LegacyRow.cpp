@@ -23,6 +23,7 @@ bool parse_row_definition(const std::string& row,
                           float&             component_a_surface_offset,
                           float&             component_b_surface_offset,
                           std::string&       component_surface_offsets,
+                          bool&              perimeter_modulation,
                           bool&              deleted,
                           bool&              gradient_enabled,
                           float&             gradient_start,
@@ -128,6 +129,7 @@ bool parse_row_definition(const std::string& row,
     component_a_surface_offset = 0.f;
     component_b_surface_offset = 0.f;
     component_surface_offsets.clear();
+    perimeter_modulation       = false;
     deleted                    = false;
     gradient_enabled           = false;
     gradient_start             = MixedFilamentLegacyRow::k_default_gradient_dominant;
@@ -195,6 +197,12 @@ bool parse_row_definition(const std::string& row,
         }
         if ((tok[0] == 'x' || tok[0] == 'X') && tok.size() >= 3) {
             const char component = char(std::tolower(static_cast<unsigned char>(tok[1])));
+            if (component == 'p') {
+                int parsed_perimeter_modulation = perimeter_modulation ? 1 : 0;
+                if (parse_int_token(tok.substr(2), parsed_perimeter_modulation))
+                    perimeter_modulation = parsed_perimeter_modulation != 0;
+                continue;
+            }
             if (component == 'v') {
                 component_surface_offsets = tok.substr(2);
                 continue;

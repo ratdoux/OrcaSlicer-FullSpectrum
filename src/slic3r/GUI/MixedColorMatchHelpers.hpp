@@ -75,7 +75,8 @@ struct MixedColorMatchCreationResult
 enum class MixedColorMatchEncoding
 {
     LayerRatio,
-    SurfaceBias
+    SurfaceBias,
+    PerimeterModulatedLayerSequence
 };
 
 // ---- small pure helpers (defined here, used everywhere) ----
