@@ -1477,6 +1477,77 @@ TEST_CASE("FullSpectrum writer emits core package parts and mixed assignments", 
     CHECK(assignments.paint_state_bindings.front().material_ref == "mix_9001");
 }
 
+TEST_CASE("FullSpectrum image maps persist authoritative sources and binary texture assets", "[FullSpectrum3mf][ImageMap]")
+{
+    PresetBundle bundle = make_bundle_with_filaments({"#FF0000", "#0000FF"});
+
+    Model source_model;
+    ModelObject *source_object = source_model.add_object();
+    source_object->add_instance();
+    ModelVolume *source_volume = source_object->add_volume(make_cube(1., 1., 1.));
+
+    ImageMap::VolumeData data;
+    data.topology_fingerprint = ImageMap::topology_fingerprint(source_volume->mesh());
+    data.texture_assets.push_back({"source-texture", "checker", 1, 1, {12, 34, 56, 255}});
+    ImageMap::Zone zone;
+    zone.stable_id   = "zone-main";
+    zone.display_name = "Main image";
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    data.zones.push_back(zone);
+    ImageMap::TriangleBinding binding;
+    binding.triangle_index                   = 0;
+    binding.zone_index                       = 0;
+    binding.source.kind                      = ImageMap::SourceKind::Texture;
+    binding.source.texture_asset_index       = 0;
+    binding.source.uvs                       = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
+    data.triangle_bindings.push_back(binding);
+    REQUIRE(source_volume->set_image_map_data(std::move(data)));
+
+    GeometryBindingInput geometry;
+    geometry.project_name = "image map persistence";
+    geometry.objects.push_back({10, "obj_image"});
+    VolumeBindingInput volume_input;
+    volume_input.model_object_id = 10;
+    volume_input.model_volume_id = 11;
+    volume_input.stable_object_id = "obj_image";
+    volume_input.stable_volume_id = "vol_image";
+    volume_input.extruder_id      = 1;
+    volume_input.image_map_data   = source_volume->image_map_data();
+    geometry.volumes.push_back(volume_input);
+
+    const PackageWritePlan plan = build_write_plan(bundle.project_config, geometry, true);
+    const PackagePartPlan *image_maps_part = find_fullspectrum_part(plan, PATH_IMAGE_MAPS);
+    REQUIRE(image_maps_part != nullptr);
+    const ImageMaps canonical = parse_json<ImageMaps>(image_maps_part->bytes);
+    REQUIRE(canonical.volumes.size() == 1);
+    REQUIRE(canonical.texture_assets.size() == 1);
+    CHECK(canonical.volumes.front().stable_volume_id == "vol_image");
+    CHECK(canonical.volumes.front().zones.front().render_mode == "perimeter_modulation_v2");
+    const PackagePartPlan *asset_part = find_fullspectrum_part(plan, canonical.texture_assets.front().path);
+    REQUIRE(asset_part != nullptr);
+    CHECK(std::vector<uint8_t>(asset_part->bytes.begin(), asset_part->bytes.end()) == std::vector<uint8_t>{12, 34, 56, 255});
+
+    Model target_model;
+    ModelObject *target_object = target_model.add_object();
+    target_object->add_instance();
+    ModelVolume *target_volume = target_object->add_volume(make_cube(1., 1., 1.));
+    CanonicalBindingContext context;
+    context.model_objects_by_3mf_id[10] = target_object;
+    context.model_volumes_by_3mf_id[11] = target_volume;
+    DynamicPrintConfig imported_config = bundle.project_config;
+    ArchiveImportState state = import_state_from_plan(plan);
+    std::string warning;
+    REQUIRE(state.apply_to_model_and_config(target_model, imported_config, context, &warning));
+    CHECK(warning.empty());
+    REQUIRE(target_volume->has_image_map_data());
+    const auto imported = target_volume->image_map_data();
+    REQUIRE(imported->texture_assets.size() == 1);
+    CHECK(imported->texture_assets.front().rgba == std::vector<uint8_t>{12, 34, 56, 255});
+    CHECK(imported->zones.front().render_mode == ImageMap::RenderMode::PerimeterModulationV2);
+    CHECK(imported->triangle_bindings.front().source.texture_asset_index == 0);
+}
+
 TEST_CASE("FullSpectrum writer dual-writes spatial multi-filament gradients", "[FullSpectrum3mf]")
 {
     const std::vector<std::string> colors = {"#FF0000", "#00FF00", "#0000FF"};

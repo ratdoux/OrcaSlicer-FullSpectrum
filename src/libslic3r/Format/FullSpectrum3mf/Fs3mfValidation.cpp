@@ -145,6 +145,66 @@ ValidationResult validate_package_model(const PackageModel &model)
         }
     }
 
+    if (model.image_maps) {
+        std::set<std::string> asset_refs;
+        for (const ImageMapTextureAsset &asset : model.image_maps->texture_assets) {
+            if (asset.id.empty() || !asset_refs.insert(asset.id).second)
+                result.fail("image map texture asset ids must be non-empty and unique");
+            if (asset.path.empty() || asset.width == 0 || asset.height == 0)
+                result.fail("image map texture asset is incomplete: " + asset.id);
+        }
+
+        std::set<std::string> image_volume_refs;
+        for (const ImageMapVolume &volume : model.image_maps->volumes) {
+            if (volume_refs.count(volume.stable_volume_id) == 0)
+                result.fail("image map references missing volume " + volume.stable_volume_id);
+            if (!image_volume_refs.insert(volume.stable_volume_id).second)
+                result.fail("duplicate image map volume " + volume.stable_volume_id);
+            if (volume.topology_fingerprint == 0)
+                result.fail("image map volume has no topology fingerprint");
+
+            std::set<std::string> zone_refs;
+            for (const ImageMapZone &zone : volume.zones) {
+                if (zone.id.empty() || !zone_refs.insert(zone.id).second)
+                    result.fail("image map zone ids must be non-empty and unique");
+                if (zone.render_mode != "normal_mix" && zone.render_mode != "perimeter_modulation_v2")
+                    result.fail("image map zone has invalid render mode " + zone.render_mode);
+                if (zone.palette.empty())
+                    result.fail("image map zone has no palette: " + zone.id);
+                for (const ImageMapPaletteEntry &entry : zone.palette) {
+                    if (entry.target_rgba.size() != 4)
+                        result.fail("image map palette colour must contain RGBA");
+                    if (entry.material_ref.empty() || material_refs.count(entry.material_ref) == 0)
+                        result.fail("image map palette references missing material " + entry.material_ref);
+                    if (entry.fallback_runtime_filament_id <= 0)
+                        result.fail("image map palette fallback filament is invalid");
+                }
+            }
+
+            std::set<std::pair<uint32_t, uint32_t>> bindings;
+            for (const ImageMapTriangleBinding &binding : volume.triangle_bindings) {
+                if (binding.zone_index >= volume.zones.size())
+                    result.fail("image map triangle binding references missing zone");
+                if (!bindings.emplace(binding.triangle_index, binding.zone_index).second)
+                    result.fail("duplicate image map triangle binding");
+                if (binding.source.kind != "texture" && binding.source.kind != "vertex_colors" && binding.source.kind != "face_color")
+                    result.fail("image map triangle binding has invalid source kind " + binding.source.kind);
+                if (binding.source.kind == "texture" && asset_refs.count(binding.source.texture_asset_ref) == 0)
+                    result.fail("image map triangle binding references missing texture " + binding.source.texture_asset_ref);
+                if (binding.source.uvs.size() != 6 || binding.source.corner_rgba.size() != 12)
+                    result.fail("image map triangle binding source arrays are malformed");
+            }
+        }
+
+        std::set<std::string> asset_paths;
+        for (const ImageMapAssetPart &asset : model.image_map_assets)
+            asset_paths.insert(asset.path);
+        for (const ImageMapTextureAsset &asset : model.image_maps->texture_assets) {
+            if (asset_paths.count(asset.path) == 0)
+                result.fail("image map texture bytes are missing: " + asset.path);
+        }
+    }
+
     for (const Assignment &assignment : model.assignments.assignments) {
         if (assignment.id.empty())
             result.fail("assignment has empty id");

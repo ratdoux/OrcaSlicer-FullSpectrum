@@ -82,6 +82,21 @@ void from_json(const nlohmann::json &j, VirtualFilament &v);
 void to_json(nlohmann::json &j, const MixedFilaments &v);
 void from_json(const nlohmann::json &j, MixedFilaments &v);
 
+void to_json(nlohmann::json &j, const ImageMapTextureAsset &v);
+void from_json(const nlohmann::json &j, ImageMapTextureAsset &v);
+void to_json(nlohmann::json &j, const ImageMapSurfaceSource &v);
+void from_json(const nlohmann::json &j, ImageMapSurfaceSource &v);
+void to_json(nlohmann::json &j, const ImageMapTriangleBinding &v);
+void from_json(const nlohmann::json &j, ImageMapTriangleBinding &v);
+void to_json(nlohmann::json &j, const ImageMapPaletteEntry &v);
+void from_json(const nlohmann::json &j, ImageMapPaletteEntry &v);
+void to_json(nlohmann::json &j, const ImageMapZone &v);
+void from_json(const nlohmann::json &j, ImageMapZone &v);
+void to_json(nlohmann::json &j, const ImageMapVolume &v);
+void from_json(const nlohmann::json &j, ImageMapVolume &v);
+void to_json(nlohmann::json &j, const ImageMaps &v);
+void from_json(const nlohmann::json &j, ImageMaps &v);
+
 void to_json(nlohmann::json &j, const PreservedPart &v);
 void from_json(const nlohmann::json &j, PreservedPart &v);
 

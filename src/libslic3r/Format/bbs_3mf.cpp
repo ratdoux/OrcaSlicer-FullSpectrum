@@ -6353,6 +6353,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
         stream << " <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n";
         stream << " <Default Extension=\"model\" ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodel+xml\"/>\n";
         stream << " <Default Extension=\"png\" ContentType=\"image/png\"/>\n";
+        stream << " <Default Extension=\"rgba8\" ContentType=\"" << FullSpectrum3mf::CONTENT_TYPE_RGBA8 << "\"/>\n";
         stream << " <Default Extension=\"gcode\" ContentType=\"text/x.gcode\"/>\n";
         for (const auto &content_type : FullSpectrum3mf::content_type_overrides())
             stream << " <Override PartName=\"" << content_type.first << "\" ContentType=\"" << content_type.second << "\"/>\n";
@@ -6410,7 +6411,8 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                     FullSpectrum3mf::stable_volume_id_from_model(model, *volume, volume_id_it->second);
                 input.extruder_id = volume->extruder_id();
                 for (size_t extruder_idx : volume->get_extruders_from_multi_material_painting())
-                    input.paint_states.push_back(int(extruder_idx + 1));
+                input.paint_states.push_back(int(extruder_idx + 1));
+                input.image_map_data = volume->image_map_data();
                 geometry.volumes.emplace_back(std::move(input));
             }
         }

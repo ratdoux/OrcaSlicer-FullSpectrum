@@ -49,6 +49,12 @@ bool is_preservable_extension_zip_path(const std::string &path)
     return normalized.rfind(prefix, 0) == 0;
 }
 
+bool is_fullspectrum_asset_zip_path(const std::string &path)
+{
+    const std::string normalized = normalize_package_path(path);
+    return normalized.rfind(package_path_to_zip_path(PATH_IMAGE_MAP_ASSETS_PREFIX), 0) == 0;
+}
+
 std::vector<std::pair<std::string, std::string>> content_type_overrides()
 {
     return {
@@ -57,7 +63,8 @@ std::vector<std::pair<std::string, std::string>> content_type_overrides()
         {PATH_IDENTITY_MAP, CONTENT_TYPE_IDENTITY_MAP},
         {PATH_MATERIALS, CONTENT_TYPE_MATERIALS},
         {PATH_ASSIGNMENTS, CONTENT_TYPE_ASSIGNMENTS},
-        {PATH_MIXED_FILAMENTS, CONTENT_TYPE_MIXED_FILAMENTS}
+        {PATH_MIXED_FILAMENTS, CONTENT_TYPE_MIXED_FILAMENTS},
+        {PATH_IMAGE_MAPS, CONTENT_TYPE_IMAGE_MAPS}
     };
 }
 

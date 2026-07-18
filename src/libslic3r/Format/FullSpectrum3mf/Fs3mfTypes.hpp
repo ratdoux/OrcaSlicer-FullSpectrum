@@ -212,6 +212,77 @@ struct MixedFilaments
     std::vector<VirtualFilament> virtual_filaments;
 };
 
+struct ImageMapTextureAsset
+{
+    std::string id;
+    std::string display_name;
+    std::string path;
+    uint32_t    width = 0;
+    uint32_t    height = 0;
+};
+
+struct ImageMapSurfaceSource
+{
+    std::string         kind = "face_color";
+    std::string         texture_asset_ref;
+    std::string         wrap_u = "repeat";
+    std::string         wrap_v = "repeat";
+    std::vector<double> uvs;
+    std::vector<double> corner_rgba;
+};
+
+struct ImageMapTriangleBinding
+{
+    uint32_t              triangle_index = 0;
+    uint32_t              zone_index = 0;
+    ImageMapSurfaceSource source;
+};
+
+struct ImageMapPaletteEntry
+{
+    std::vector<double> target_rgba;
+    std::string         material_ref;
+    int                 fallback_runtime_filament_id = 1;
+};
+
+struct ImageMapZone
+{
+    std::string                       id;
+    std::string                       display_name;
+    bool                              enabled = true;
+    int                               priority = 0;
+    std::string                       render_mode = "normal_mix";
+    int                               minimum_component_percent = 15;
+    double                            target_sample_size_mm = 0.4;
+    uint64_t                          max_facet_samples = 200000;
+    double                            modulation_sample_spacing_mm = 0.25;
+    double                            corner_smoothing_radius_mm = 0.6;
+    std::vector<ImageMapPaletteEntry> palette;
+};
+
+struct ImageMapVolume
+{
+    std::string                          stable_volume_id;
+    uint64_t                             topology_fingerprint = 0;
+    std::vector<ImageMapZone>            zones;
+    std::vector<ImageMapTriangleBinding> triangle_bindings;
+};
+
+struct ImageMaps
+{
+    std::string                       kind;
+    std::string                       schema_version;
+    std::vector<ImageMapTextureAsset> texture_assets;
+    std::vector<ImageMapVolume>       volumes;
+};
+
+struct ImageMapAssetPart
+{
+    std::string path;
+    std::string content_type;
+    std::string bytes;
+};
+
 struct PreservedPart
 {
     std::string path;
@@ -230,6 +301,8 @@ struct PackageModel
     Materials                     materials;
     Assignments                   assignments;
     std::optional<MixedFilaments> mixed_filaments;
+    std::optional<ImageMaps>      image_maps;
+    std::vector<ImageMapAssetPart> image_map_assets;
     std::vector<PreservedPart>    preserved_parts;
 };
 

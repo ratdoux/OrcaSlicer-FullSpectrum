@@ -185,6 +185,7 @@ struct CanonicalParts
     IdentityMap                   identity_map;
     Assignments                   assignments;
     std::optional<MixedFilaments> mixed_filaments;
+    std::optional<ImageMaps>      image_maps;
 };
 
 bool parse_canonical_parts(const std::map<std::string, std::string> &parts,
@@ -238,6 +239,16 @@ bool parse_canonical_parts(const std::map<std::string, std::string> &parts,
         out.mixed_filaments = parse_json<MixedFilaments>(mixed_bytes);
         if (!require_kind_schema("mixed filaments", out.mixed_filaments->kind, KIND_MIXED_FILAMENTS,
                                  out.mixed_filaments->schema_version, warning))
+            return false;
+    }
+
+    std::string image_maps_bytes;
+    const std::string image_maps_path = authoritative_path(out.manifest, "image_maps", "image-maps", PATH_IMAGE_MAPS);
+    if (find_part(parts, image_maps_path, image_maps_bytes)) {
+        if (!read_manifest_part(parts, out.manifest, image_maps_path, image_maps_bytes, warning))
+            return false;
+        out.image_maps = parse_json<ImageMaps>(image_maps_bytes);
+        if (!require_kind_schema("image maps", out.image_maps->kind, KIND_IMAGE_MAPS, out.image_maps->schema_version, warning))
             return false;
     }
 
@@ -311,11 +322,124 @@ void store_preserved_parts(Model &model, const std::vector<PreservedPart> &prese
     set_model_metadata(model, MODEL_METADATA_PRESERVED_PARTS, serialize_json(preserved));
 }
 
+ImageMap::SourceKind source_kind_from_string(const std::string &value)
+{
+    if (value == "texture")
+        return ImageMap::SourceKind::Texture;
+    if (value == "vertex_colors")
+        return ImageMap::SourceKind::VertexColors;
+    return ImageMap::SourceKind::FaceColor;
+}
+
+ImageMap::WrapMode wrap_mode_from_string(const std::string &value)
+{
+    return value == "clamp" ? ImageMap::WrapMode::Clamp : ImageMap::WrapMode::Repeat;
+}
+
+ImageMap::RenderMode render_mode_from_string(const std::string &value)
+{
+    return value == "perimeter_modulation_v2" ? ImageMap::RenderMode::PerimeterModulationV2 : ImageMap::RenderMode::NormalMix;
+}
+
+bool image_map_volume_data_from_canonical(const Manifest                            &manifest,
+                                          const ImageMaps                           &image_maps,
+                                          const ImageMapVolume                     &source_volume,
+                                          const std::map<std::string, std::string> &parts,
+                                          const std::unordered_map<std::string, int> &material_to_runtime,
+                                          const std::unordered_map<std::string, uint64_t> &material_to_stable,
+                                          ImageMap::VolumeData                     &out,
+                                          std::string                              *warning)
+{
+    out = ImageMap::VolumeData{};
+    out.topology_fingerprint = source_volume.topology_fingerprint;
+
+    std::unordered_map<std::string, int32_t> asset_indices;
+    for (const ImageMapTextureAsset &source_asset : image_maps.texture_assets) {
+        std::string bytes;
+        if (!read_manifest_part(parts, manifest, source_asset.path, bytes, warning))
+            return false;
+        const size_t expected = size_t(source_asset.width) * size_t(source_asset.height) * 4;
+        if (source_asset.width == 0 || source_asset.height == 0 || bytes.size() != expected) {
+            if (warning)
+                *warning = "FullSpectrum image-map texture asset has an invalid size: " + source_asset.path;
+            return false;
+        }
+        ImageMap::TextureAsset asset;
+        asset.stable_id   = source_asset.id;
+        asset.display_name = source_asset.display_name;
+        asset.width       = source_asset.width;
+        asset.height      = source_asset.height;
+        asset.rgba.assign(bytes.begin(), bytes.end());
+        asset_indices[source_asset.id] = int32_t(out.texture_assets.size());
+        out.texture_assets.emplace_back(std::move(asset));
+    }
+
+    for (const ImageMapZone &source_zone : source_volume.zones) {
+        ImageMap::Zone zone;
+        zone.stable_id                      = source_zone.id;
+        zone.display_name                   = source_zone.display_name;
+        zone.enabled                        = source_zone.enabled;
+        zone.priority                       = source_zone.priority;
+        zone.render_mode                    = render_mode_from_string(source_zone.render_mode);
+        zone.minimum_component_percent      = source_zone.minimum_component_percent;
+        zone.target_sample_size_mm          = float(source_zone.target_sample_size_mm);
+        zone.max_facet_samples              = size_t(source_zone.max_facet_samples);
+        zone.modulation_sample_spacing_mm   = float(source_zone.modulation_sample_spacing_mm);
+        zone.corner_smoothing_radius_mm     = float(source_zone.corner_smoothing_radius_mm);
+        for (const ImageMapPaletteEntry &source_entry : source_zone.palette) {
+            ImageMap::PaletteEntry entry;
+            if (source_entry.target_rgba.size() == 4) {
+                for (size_t channel = 0; channel < 4; ++channel)
+                    entry.target_color[channel] = float(source_entry.target_rgba[channel]);
+            }
+            auto runtime_it = material_to_runtime.find(source_entry.material_ref);
+            entry.fallback_filament_id = runtime_it == material_to_runtime.end() ?
+                                             unsigned(std::max(1, source_entry.fallback_runtime_filament_id)) :
+                                             unsigned(runtime_it->second);
+            auto stable_it = material_to_stable.find(source_entry.material_ref);
+            if (stable_it != material_to_stable.end())
+                entry.mixed_filament_stable_id = stable_it->second;
+            zone.palette.emplace_back(std::move(entry));
+        }
+        out.zones.emplace_back(std::move(zone));
+    }
+
+    for (const ImageMapTriangleBinding &source_binding : source_volume.triangle_bindings) {
+        ImageMap::TriangleBinding binding;
+        binding.triangle_index = source_binding.triangle_index;
+        binding.zone_index     = source_binding.zone_index;
+        binding.source.kind    = source_kind_from_string(source_binding.source.kind);
+        binding.source.wrap_u  = wrap_mode_from_string(source_binding.source.wrap_u);
+        binding.source.wrap_v  = wrap_mode_from_string(source_binding.source.wrap_v);
+        if (!source_binding.source.texture_asset_ref.empty()) {
+            auto asset_it = asset_indices.find(source_binding.source.texture_asset_ref);
+            if (asset_it == asset_indices.end()) {
+                if (warning)
+                    *warning = "FullSpectrum image-map triangle references a missing texture asset.";
+                return false;
+            }
+            binding.source.texture_asset_index = asset_it->second;
+        }
+        if (source_binding.source.uvs.size() == 6) {
+            for (size_t corner = 0; corner < 3; ++corner)
+                binding.source.uvs[corner] = Vec2f(float(source_binding.source.uvs[corner * 2]),
+                                                   float(source_binding.source.uvs[corner * 2 + 1]));
+        }
+        if (source_binding.source.corner_rgba.size() == 12) {
+            for (size_t corner = 0; corner < 3; ++corner)
+                for (size_t channel = 0; channel < 4; ++channel)
+                    binding.source.corner_colors[corner][channel] = float(source_binding.source.corner_rgba[corner * 4 + channel]);
+        }
+        out.triangle_bindings.emplace_back(std::move(binding));
+    }
+    return true;
+}
+
 } // namespace
 
 bool ArchiveImportState::accepts_part(const std::string &zip_path) const
 {
-    return is_fullspectrum_json_zip_path(zip_path) || is_preservable_extension_zip_path(zip_path);
+    return is_fullspectrum_json_zip_path(zip_path) || is_fullspectrum_asset_zip_path(zip_path) || is_preservable_extension_zip_path(zip_path);
 }
 
 void ArchiveImportState::add_part(std::string zip_path, std::string bytes)
@@ -371,6 +495,36 @@ bool ArchiveImportState::apply_to_model_and_config(Model                        
             runtime_material_map(canonical.materials, canonical.mixed_filaments);
         const std::unordered_map<std::string, ModelVolume *> volumes_by_stable_id =
             volume_map_by_stable_id(canonical.identity_map, context);
+
+        if (canonical.image_maps) {
+            std::unordered_map<std::string, uint64_t> material_to_stable;
+            if (canonical.mixed_filaments) {
+                for (const VirtualFilament &filament : canonical.mixed_filaments->virtual_filaments) {
+                    if (filament.legacy_stable_id != 0)
+                        material_to_stable[filament.id] = filament.legacy_stable_id;
+                }
+            }
+            for (const ImageMapVolume &source_volume : canonical.image_maps->volumes) {
+                auto volume_it = volumes_by_stable_id.find(source_volume.stable_volume_id);
+                if (volume_it == volumes_by_stable_id.end() || volume_it->second == nullptr)
+                    continue;
+                ImageMap::VolumeData data;
+                if (!image_map_volume_data_from_canonical(canonical.manifest,
+                                                          *canonical.image_maps,
+                                                          source_volume,
+                                                          m_json_parts,
+                                                          material_to_runtime,
+                                                          material_to_stable,
+                                                          data,
+                                                          warning) ||
+                    !volume_it->second->set_image_map_data(std::move(data))) {
+                    if (warning && warning->empty())
+                        *warning = "FullSpectrum image-map data does not match its model volume.";
+                    set_model_metadata(model, MODEL_METADATA_WARNING, warning ? *warning : "Invalid FullSpectrum image-map data.");
+                    return false;
+                }
+            }
+        }
 
         for (const Assignment &assignment : canonical.assignments.assignments) {
             if (assignment.target.kind != "volume")

@@ -4,6 +4,7 @@
 #include "Fs3mfTypes.hpp"
 
 #include <string>
+#include <memory>
 #include <vector>
 
 namespace Slic3r {
@@ -11,6 +12,7 @@ class DynamicPrintConfig;
 class Model;
 class ModelObject;
 class ModelVolume;
+namespace ImageMap { struct VolumeData; }
 }
 
 namespace Slic3r::FullSpectrum3mf {
@@ -29,6 +31,7 @@ struct VolumeBindingInput
     std::string      stable_volume_id;
     int              extruder_id = 0;
     std::vector<int> paint_states;
+    std::shared_ptr<const ImageMap::VolumeData> image_map_data;
 };
 
 struct GeometryBindingInput

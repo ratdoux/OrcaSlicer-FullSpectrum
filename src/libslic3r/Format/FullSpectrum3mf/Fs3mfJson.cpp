@@ -462,6 +462,112 @@ void from_json(const nlohmann::json &j, MixedFilaments &v)
     get_if_present(j, "virtual_filaments", v.virtual_filaments);
 }
 
+void to_json(nlohmann::json &j, const ImageMapTextureAsset &v)
+{
+    j = nlohmann::json{{"id", v.id}, {"display_name", v.display_name}, {"path", v.path}, {"width", v.width}, {"height", v.height}};
+}
+
+void from_json(const nlohmann::json &j, ImageMapTextureAsset &v)
+{
+    get_if_present(j, "id", v.id);
+    get_if_present(j, "display_name", v.display_name);
+    get_if_present(j, "path", v.path);
+    get_if_present(j, "width", v.width);
+    get_if_present(j, "height", v.height);
+}
+
+void to_json(nlohmann::json &j, const ImageMapSurfaceSource &v)
+{
+    j = nlohmann::json{{"kind", v.kind}, {"texture_asset_ref", v.texture_asset_ref}, {"wrap_u", v.wrap_u}, {"wrap_v", v.wrap_v},
+                       {"uvs", v.uvs}, {"corner_rgba", v.corner_rgba}};
+}
+
+void from_json(const nlohmann::json &j, ImageMapSurfaceSource &v)
+{
+    get_if_present(j, "kind", v.kind);
+    get_if_present(j, "texture_asset_ref", v.texture_asset_ref);
+    get_if_present(j, "wrap_u", v.wrap_u);
+    get_if_present(j, "wrap_v", v.wrap_v);
+    get_if_present(j, "uvs", v.uvs);
+    get_if_present(j, "corner_rgba", v.corner_rgba);
+}
+
+void to_json(nlohmann::json &j, const ImageMapTriangleBinding &v)
+{
+    j = nlohmann::json{{"triangle_index", v.triangle_index}, {"zone_index", v.zone_index}, {"source", v.source}};
+}
+
+void from_json(const nlohmann::json &j, ImageMapTriangleBinding &v)
+{
+    get_if_present(j, "triangle_index", v.triangle_index);
+    get_if_present(j, "zone_index", v.zone_index);
+    get_if_present(j, "source", v.source);
+}
+
+void to_json(nlohmann::json &j, const ImageMapPaletteEntry &v)
+{
+    j = nlohmann::json{{"target_rgba", v.target_rgba}, {"material_ref", v.material_ref},
+                       {"fallback_runtime_filament_id", v.fallback_runtime_filament_id}};
+}
+
+void from_json(const nlohmann::json &j, ImageMapPaletteEntry &v)
+{
+    get_if_present(j, "target_rgba", v.target_rgba);
+    get_if_present(j, "material_ref", v.material_ref);
+    get_if_present(j, "fallback_runtime_filament_id", v.fallback_runtime_filament_id);
+}
+
+void to_json(nlohmann::json &j, const ImageMapZone &v)
+{
+    j = nlohmann::json{{"id", v.id}, {"display_name", v.display_name}, {"enabled", v.enabled}, {"priority", v.priority},
+                       {"render_mode", v.render_mode}, {"minimum_component_percent", v.minimum_component_percent},
+                       {"target_sample_size_mm", v.target_sample_size_mm}, {"max_facet_samples", v.max_facet_samples},
+                       {"modulation_sample_spacing_mm", v.modulation_sample_spacing_mm},
+                       {"corner_smoothing_radius_mm", v.corner_smoothing_radius_mm}, {"palette", v.palette}};
+}
+
+void from_json(const nlohmann::json &j, ImageMapZone &v)
+{
+    get_if_present(j, "id", v.id);
+    get_if_present(j, "display_name", v.display_name);
+    get_if_present(j, "enabled", v.enabled);
+    get_if_present(j, "priority", v.priority);
+    get_if_present(j, "render_mode", v.render_mode);
+    get_if_present(j, "minimum_component_percent", v.minimum_component_percent);
+    get_if_present(j, "target_sample_size_mm", v.target_sample_size_mm);
+    get_if_present(j, "max_facet_samples", v.max_facet_samples);
+    get_if_present(j, "modulation_sample_spacing_mm", v.modulation_sample_spacing_mm);
+    get_if_present(j, "corner_smoothing_radius_mm", v.corner_smoothing_radius_mm);
+    get_if_present(j, "palette", v.palette);
+}
+
+void to_json(nlohmann::json &j, const ImageMapVolume &v)
+{
+    j = nlohmann::json{{"stable_volume_id", v.stable_volume_id}, {"topology_fingerprint", v.topology_fingerprint},
+                       {"zones", v.zones}, {"triangle_bindings", v.triangle_bindings}};
+}
+
+void from_json(const nlohmann::json &j, ImageMapVolume &v)
+{
+    get_if_present(j, "stable_volume_id", v.stable_volume_id);
+    get_if_present(j, "topology_fingerprint", v.topology_fingerprint);
+    get_if_present(j, "zones", v.zones);
+    get_if_present(j, "triangle_bindings", v.triangle_bindings);
+}
+
+void to_json(nlohmann::json &j, const ImageMaps &v)
+{
+    j = nlohmann::json{{"kind", v.kind}, {"schema_version", v.schema_version}, {"texture_assets", v.texture_assets}, {"volumes", v.volumes}};
+}
+
+void from_json(const nlohmann::json &j, ImageMaps &v)
+{
+    get_if_present(j, "kind", v.kind);
+    get_if_present(j, "schema_version", v.schema_version);
+    get_if_present(j, "texture_assets", v.texture_assets);
+    get_if_present(j, "volumes", v.volumes);
+}
+
 void to_json(nlohmann::json &j, const PreservedPart &v)
 {
     j = nlohmann::json{
