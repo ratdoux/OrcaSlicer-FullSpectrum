@@ -224,10 +224,14 @@ set(lisbslic3r_sources
     GCode/AdaptivePAProcessor.hpp
     ImageMap/VolumeData.cpp
     ImageMap/VolumeData.hpp
+    ImageMap/BoundaryModulation.cpp
+    ImageMap/BoundaryModulation.hpp
     ImageMap/Sampling.cpp
     ImageMap/Sampling.hpp
     ImageMap/FacetRasterizer.cpp
     ImageMap/FacetRasterizer.hpp
+    ImageMap/PerimeterEnvelopeRenderer.cpp
+    ImageMap/PerimeterEnvelopeRenderer.hpp
     GCode/AvoidCrossingPerimeters.cpp
     GCode/AvoidCrossingPerimeters.hpp
     GCode/ConflictChecker.cpp

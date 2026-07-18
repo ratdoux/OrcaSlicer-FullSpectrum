@@ -61,3 +61,24 @@ This deliberately separates four concerns:
 - Support detection and perimeter generation consume the same V2 envelope, so
   an outward image-map displacement cannot become an unsupported surprise.
 
+## V2 rendering pipeline
+
+- `BoundaryModulation` is a pure geometry operator. A caller supplies signed
+  displacement and smoothing-radius samples; the operator owns bounded
+  resampling, circular smoothing, bidirectional slope limiting, narrow-feature
+  clamping, corner-safe movement, and polygon normalization.
+- `PerimeterEnvelopeRenderer` is the print-domain adapter. It snapshots volume
+  transforms and `SurfaceSampler` instances, resolves stable palette references
+  through `MixedFilamentManager`, and supplies the active layer's component
+  offset to `BoundaryModulation`.
+- The renderer runs after XY/elephant-foot compensation and before the final
+  `Layer::make_slices()`. Contracted geometry clips every material region;
+  outward strips are assigned back to the biased boundary region. The resulting
+  region surfaces and `Layer::lslices` are then backed up as the untyped slice
+  source used by wall, overhang, and support stages. Orca's separate
+  elephant-foot-uncompensated first-layer envelope is rendered through the same
+  adapter before it replaces `Layer::lslices`.
+- The old G-code-time perimeter shifter remains only as a compatibility path
+  for non-image-map mixed filaments. Filaments referenced by persistent V2
+  palettes skip that path, preventing a second displacement without changing
+  unrelated painted or whole-object mixed filaments.

@@ -15,6 +15,7 @@
 #include "GCode/WipeTower.hpp"
 #include "GCode/WipeTower2.hpp"
 #include "ShortestPath.hpp"
+#include "ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "MixedFilament.hpp"
 #include "MixedFilament/PerimeterModulation.hpp"
 #include "Print.hpp"
@@ -6180,6 +6181,16 @@ void GCode::modulate_mixed_filament_external_perimeter(ExtrusionPath &path) cons
     const std::optional<MixedFilamentDefinition> definition =
         manager.mixed_filament_definition_from_id(filament_id, num_physical);
     if (!definition || !definition->behavior.surface_bias.perimeter_modulation)
+        return;
+
+    // Persistent V2 image maps have already displaced the shared layer
+    // envelope before wall and support generation. Suppress the compatibility
+    // G-code renderer only for palette filaments owned by that envelope.
+    const PrintObject *print_object = m_layer->object();
+    if (print_object != nullptr && print_object->model_object() != nullptr &&
+        ImageMap::model_uses_perimeter_modulation_v2_filament(*print_object->model_object(),
+                                                              definition->identity.stable_id,
+                                                              filament_id))
         return;
 
     const float layer_height = path.height > EPSILON ? path.height : float(m_layer->height);

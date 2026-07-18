@@ -2,6 +2,7 @@
 
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
+#include "libslic3r/ImageMap/BoundaryModulation.hpp"
 #include "libslic3r/ImageMap/FacetRasterizer.hpp"
 #include "libslic3r/ImageMap/Sampling.hpp"
 #include "libslic3r/Model.hpp"
@@ -249,4 +250,53 @@ TEST_CASE("Image-map sources are sampled and rasterized only for the current sli
     CHECK(rasterized.sampled_leaf_count == 16);
     REQUIRE(rasterized.facets.size() == 1);
     CHECK_FALSE(rasterized.facets.front().encoded_states.empty());
+}
+
+TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[ImageMap][BoundaryModulation]")
+{
+    ExPolygon square;
+    square.contour.points = {
+        Point(scale_(0.0), scale_(0.0)),
+        Point(scale_(10.0), scale_(0.0)),
+        Point(scale_(10.0), scale_(10.0)),
+        Point(scale_(0.0), scale_(10.0))
+    };
+    ImageMap::BoundaryModulationOptions options;
+    options.sample_spacing_mm = 0.25f;
+    options.max_abs_displacement_mm = 0.35f;
+
+    SECTION("constant inset preserves the offset through square corners")
+    {
+        const ImageMap::BoundaryModulationResult result = ImageMap::modulate_boundary(
+            {square}, options, [](const Vec2d &, const Vec2d &) {
+                return ImageMap::BoundaryDisplacement{0.2f, 0.6f};
+            });
+        REQUIRE(result.changed);
+        REQUIRE(result.geometry.size() == 1);
+        const BoundingBox bounds = get_extents(result.geometry);
+        CHECK(unscale<double>(bounds.min.x()) == Approx(0.2).margin(0.01));
+        CHECK(unscale<double>(bounds.min.y()) == Approx(0.2).margin(0.01));
+        CHECK(unscale<double>(bounds.max.x()) == Approx(9.8).margin(0.01));
+        CHECK(unscale<double>(bounds.max.y()) == Approx(9.8).margin(0.01));
+        CHECK(result.fallback_polygons == 0);
+    }
+
+    SECTION("outward modulation cannot create an acute transition spike")
+    {
+        const ImageMap::BoundaryModulationResult result = ImageMap::modulate_boundary(
+            {square}, options, [](const Vec2d &point, const Vec2d &) {
+                return ImageMap::BoundaryDisplacement{point.x() < 5.0 ? -0.35f : 0.35f, 0.6f};
+            });
+        REQUIRE(result.changed);
+        REQUIRE_FALSE(result.geometry.empty());
+        const BoundingBox bounds = get_extents(result.geometry);
+        CHECK(unscale<double>(bounds.min.x()) >= -0.36);
+        CHECK(unscale<double>(bounds.min.y()) >= -0.36);
+        CHECK(unscale<double>(bounds.max.x()) <= 10.36);
+        CHECK(unscale<double>(bounds.max.y()) <= 10.36);
+        CHECK(result.sampled_points >= 100);
+        CHECK(result.fallback_polygons == 0);
+        for (const ExPolygon &polygon : result.geometry)
+            CHECK(polygon.is_valid());
+    }
 }

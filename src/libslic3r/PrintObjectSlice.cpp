@@ -15,6 +15,7 @@
 #include "ElephantFootCompensation.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "MixedFilament.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
@@ -5029,6 +5030,9 @@ void PrintObject::slice_volumes()
     InterlockingGenerator::generate_interlocking_structure(this);
     m_print->throw_if_canceled();
 
+    const std::unique_ptr<ImageMap::PerimeterEnvelopeRenderer> image_map_envelope_renderer =
+        ImageMap::PerimeterEnvelopeRenderer::create(*this);
+
     BOOST_LOG_TRIVIAL(debug) << "Slicing volumes - make_slices in parallel - begin";
     {
         // Compensation value, scaled. Only applying the negative scaling here, as the positive scaling has already been applied during slicing.
@@ -5045,7 +5049,8 @@ void PrintObject::slice_volumes()
         //BBS: this part has been changed a lot to support seperated contour and hole size compensation
 	    tbb::parallel_for(
 	        tbb::blocked_range<size_t>(0, m_layers.size()),
-			[this, xy_hole_scaled, xy_contour_scaled, elephant_foot_compensation_scaled, &lslices_elfoot_uncompensated](const tbb::blocked_range<size_t>& range) {
+			[this, xy_hole_scaled, xy_contour_scaled, elephant_foot_compensation_scaled, &lslices_elfoot_uncompensated,
+             image_map_envelope_renderer = image_map_envelope_renderer.get()](const tbb::blocked_range<size_t>& range) {
 	            for (size_t layer_id = range.begin(); layer_id < range.end(); ++ layer_id) {
 	                m_print->throw_if_canceled();
 	                Layer *layer = m_layers[layer_id];
@@ -5146,6 +5151,11 @@ void PrintObject::slice_volumes()
                                 layer->regions()[region_id]->slices.set(intersection_ex(contour_exp, to_polygons(trimming)), stInternal);
                             }
                         }
+	                }
+	                if (image_map_envelope_renderer != nullptr) {
+                        image_map_envelope_renderer->apply(*layer);
+	                    if (layer_id < lslices_elfoot_uncompensated.size() && !lslices_elfoot_uncompensated[layer_id].empty())
+	                        image_map_envelope_renderer->apply_to_envelope(lslices_elfoot_uncompensated[layer_id], *layer);
 	                }
 	                // Merge all regions' slices to get islands, chain them by a shortest path.
 	                layer->make_slices();
