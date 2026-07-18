@@ -15,15 +15,18 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
 {
     ImageMap::RenderMode render_mode;
     double               expected_size_mm;
+    double               expected_first_layer_size_mm;
     SECTION("normal mixed filaments are assigned without changing the envelope")
     {
         render_mode      = ImageMap::RenderMode::NormalMix;
         expected_size_mm = 20.0;
+        expected_first_layer_size_mm = 20.0;
     }
     SECTION("V2 modulation changes the shared wall and support envelope")
     {
         render_mode      = ImageMap::RenderMode::PerimeterModulationV2;
-        expected_size_mm = 19.6;
+        expected_size_mm = 19.8;
+        expected_first_layer_size_mm = 20.2;
     }
 
     Model model;
@@ -97,8 +100,8 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
     REQUIRE(first_layer != nullptr);
     REQUIRE_FALSE(first_layer->lslices.empty());
     const BoundingBox first_layer_bounds = get_extents(first_layer->lslices);
-    CHECK(unscale<double>(first_layer_bounds.size().x()) == Approx(expected_size_mm).margin(0.04));
-    CHECK(unscale<double>(first_layer_bounds.size().y()) == Approx(expected_size_mm).margin(0.04));
+    CHECK(unscale<double>(first_layer_bounds.size().x()) == Approx(expected_first_layer_size_mm).margin(0.04));
+    CHECK(unscale<double>(first_layer_bounds.size().y()) == Approx(expected_first_layer_size_mm).margin(0.04));
 
     ExPolygons region_geometry;
     bool       mapped_to_mixed_filament = false;

@@ -3,6 +3,7 @@
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
 #include "libslic3r/ImageMap/BoundaryModulation.hpp"
+#include "libslic3r/ImageMap/ContinuousColorSolver.hpp"
 #include "libslic3r/ImageMap/FacetRasterizer.hpp"
 #include "libslic3r/ImageMap/Sampling.hpp"
 #include "libslic3r/Model.hpp"
@@ -15,6 +16,30 @@
 #include <algorithm>
 
 using namespace Slic3r;
+
+TEST_CASE("Continuous image-map colors solve physical filament weights without a display palette", "[ImageMap][ColorSolver]")
+{
+    ImageMap::ContinuousColorSolver solver({{"#FF0000", std::nullopt, std::nullopt},
+                                             {"#0000FF", std::nullopt, std::nullopt}});
+    REQUIRE(solver.valid());
+    CHECK(solver.candidate_count() == ImageMap::continuous_color_solver_candidate_count(2));
+    CHECK(solver.candidate_count() == 41);
+
+    const std::vector<double> red = solver.solve(RGBA{1.f, 0.f, 0.f, 1.f});
+    const std::vector<double> blue = solver.solve(RGBA{0.f, 0.f, 1.f, 1.f});
+    REQUIRE(red.size() == 2);
+    REQUIRE(blue.size() == 2);
+    CHECK(red[0] == Approx(1.0));
+    CHECK(red[1] == Approx(0.0));
+    CHECK(blue[0] == Approx(0.0));
+    CHECK(blue[1] == Approx(1.0));
+
+    const std::vector<double> purple = solver.solve(RGBA{0.5f, 0.f, 0.5f, 1.f});
+    REQUIRE(purple.size() == 2);
+    CHECK(purple[0] > 0.0);
+    CHECK(purple[1] > 0.0);
+    CHECK(purple[0] + purple[1] == Approx(1.0));
+}
 
 TEST_CASE("OBJ texture metadata stays aligned when material ranges contain quads", "[ObjImageMap]")
 {
@@ -267,6 +292,37 @@ TEST_CASE("Image-map sources are sampled and rasterized only for the current sli
     CHECK(rasterized.sampled_leaf_count == 16);
     REQUIRE(rasterized.facets.size() == 1);
     CHECK_FALSE(rasterized.facets.front().encoded_states.empty());
+}
+
+TEST_CASE("V2 source sampling retains raw colors independently of its display palette", "[ImageMap][Sampling]")
+{
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(0.f, 0.f, 0.f), Vec3f(4.f, 0.f, 0.f), Vec3f(0.f, 4.f, 0.f)};
+    its.indices.emplace_back(0, 1, 2);
+    auto mesh = std::make_shared<TriangleMesh>(std::move(its));
+
+    auto data = std::make_shared<ImageMap::VolumeData>();
+    data->topology_fingerprint = ImageMap::topology_fingerprint(*mesh);
+    ImageMap::Zone zone;
+    zone.stable_id   = "continuous-zone";
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    data->zones.push_back(zone);
+    ImageMap::TriangleBinding binding;
+    binding.triangle_index       = 0;
+    binding.source.kind          = ImageMap::SourceKind::VertexColors;
+    binding.source.corner_colors = {RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{0.f, 1.f, 0.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f}};
+    data->triangle_bindings.push_back(binding);
+
+    ImageMap::SurfaceSampler sampler(mesh, data);
+    const auto continuous = sampler.sample(Vec3d(1.0, 1.0, 0.02), 0.1, ImageMap::RenderMode::PerimeterModulationV2);
+    REQUIRE(continuous);
+    REQUIRE(continuous->palette_entry != nullptr);
+    const RGBA palette_red{1.f, 0.f, 0.f, 1.f};
+    CHECK(continuous->palette_entry->target_color == palette_red);
+    CHECK(continuous->color[0] + continuous->color[1] + continuous->color[2] == Approx(1.f));
+    CHECK(continuous->color[1] == Approx(0.25f));
+    CHECK(continuous->color[2] == Approx(0.25f));
 }
 
 TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[ImageMap][BoundaryModulation]")

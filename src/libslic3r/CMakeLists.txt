@@ -226,6 +226,8 @@ set(lisbslic3r_sources
     ImageMap/VolumeData.hpp
     ImageMap/BoundaryModulation.cpp
     ImageMap/BoundaryModulation.hpp
+    ImageMap/ContinuousColorSolver.cpp
+    ImageMap/ContinuousColorSolver.hpp
     ImageMap/Sampling.cpp
     ImageMap/Sampling.hpp
     ImageMap/FacetRasterizer.cpp
