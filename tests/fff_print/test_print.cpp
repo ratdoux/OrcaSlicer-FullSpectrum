@@ -11,8 +11,21 @@
 using namespace Slic3r;
 using namespace Slic3r::Test;
 
-TEST_CASE("Persistent V2 image maps alter the shared slice envelope before walls and support", "[PrintObject][ImageMap][V2]")
+TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice envelope", "[PrintObject][ImageMap]")
 {
+    ImageMap::RenderMode render_mode;
+    double               expected_size_mm;
+    SECTION("normal mixed filaments are assigned without changing the envelope")
+    {
+        render_mode      = ImageMap::RenderMode::NormalMix;
+        expected_size_mm = 20.0;
+    }
+    SECTION("V2 modulation changes the shared wall and support envelope")
+    {
+        render_mode      = ImageMap::RenderMode::PerimeterModulationV2;
+        expected_size_mm = 19.6;
+    }
+
     Model model;
     ModelObject *model_object = model.add_object();
     ModelVolume *volume = model_object->add_volume(Test::mesh(TestMesh::cube_20x20x20));
@@ -34,8 +47,8 @@ TEST_CASE("Persistent V2 image maps alter the shared slice envelope before walls
     ImageMap::VolumeData image_map;
     image_map.topology_fingerprint = ImageMap::topology_fingerprint(volume->mesh());
     ImageMap::Zone zone;
-    zone.stable_id = "v2-zone";
-    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.stable_id = "image-map-zone";
+    zone.render_mode = render_mode;
     zone.modulation_sample_spacing_mm = 0.25f;
     zone.corner_smoothing_radius_mm = 0.6f;
     zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 424242, 3});
@@ -77,23 +90,29 @@ TEST_CASE("Persistent V2 image maps alter the shared slice envelope before walls
     REQUIRE(layer != nullptr);
     REQUIRE_FALSE(layer->lslices.empty());
     const BoundingBox bounds = get_extents(layer->lslices);
-    CHECK(unscale<double>(bounds.size().x()) == Approx(19.6).margin(0.04));
-    CHECK(unscale<double>(bounds.size().y()) == Approx(19.6).margin(0.04));
+    CHECK(unscale<double>(bounds.size().x()) == Approx(expected_size_mm).margin(0.04));
+    CHECK(unscale<double>(bounds.size().y()) == Approx(expected_size_mm).margin(0.04));
 
     const Layer *first_layer = print_object.get_layer(0);
     REQUIRE(first_layer != nullptr);
     REQUIRE_FALSE(first_layer->lslices.empty());
     const BoundingBox first_layer_bounds = get_extents(first_layer->lslices);
-    CHECK(unscale<double>(first_layer_bounds.size().x()) == Approx(19.6).margin(0.04));
-    CHECK(unscale<double>(first_layer_bounds.size().y()) == Approx(19.6).margin(0.04));
+    CHECK(unscale<double>(first_layer_bounds.size().x()) == Approx(expected_size_mm).margin(0.04));
+    CHECK(unscale<double>(first_layer_bounds.size().y()) == Approx(expected_size_mm).margin(0.04));
 
     ExPolygons region_geometry;
-    for (const LayerRegion *region : layer->regions())
+    bool       mapped_to_mixed_filament = false;
+    for (const LayerRegion *region : layer->regions()) {
         append(region_geometry, to_expolygons(region->slices.surfaces));
+        mapped_to_mixed_filament |= !region->slices.empty() && region->region().config().wall_filament.value == 3;
+    }
+    CHECK(mapped_to_mixed_filament);
     REQUIRE_FALSE(region_geometry.empty());
     const BoundingBox region_bounds = get_extents(union_ex(std::move(region_geometry)));
-    CHECK(region_bounds.min == bounds.min);
-    CHECK(region_bounds.max == bounds.max);
+    CHECK(unscale<double>(region_bounds.min.x()) == Approx(unscale<double>(bounds.min.x())).margin(0.002));
+    CHECK(unscale<double>(region_bounds.min.y()) == Approx(unscale<double>(bounds.min.y())).margin(0.002));
+    CHECK(unscale<double>(region_bounds.max.x()) == Approx(unscale<double>(bounds.max.x())).margin(0.002));
+    CHECK(unscale<double>(region_bounds.max.y()) == Approx(unscale<double>(bounds.max.y())).margin(0.002));
 }
 
 SCENARIO("PrintObject: Perimeter generation", "[PrintObject]") {

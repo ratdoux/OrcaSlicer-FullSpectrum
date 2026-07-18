@@ -1178,6 +1178,48 @@ static void append_mixed_component_extruders(const MixedFilamentManager &mixed_m
         append_unique_painted_extruder(painting_extruders, extruder_id, num_physical_extruders);
 }
 
+static size_t append_image_map_painted_extruders(const ModelVolume&           volume,
+                                                 const MixedFilamentManager& mixed_mgr,
+                                                 size_t                      num_physical_extruders,
+                                                 size_t                      num_total_filaments,
+                                                 std::vector<unsigned int>&  painting_extruders)
+{
+    const std::shared_ptr<const ImageMap::VolumeData> data = volume.image_map_data();
+    if (!data || data->empty())
+        return 0;
+
+    std::vector<bool> referenced_zones(data->zones.size(), false);
+    for (const ImageMap::TriangleBinding& binding : data->triangle_bindings) {
+        if (binding.zone_index < referenced_zones.size())
+            referenced_zones[binding.zone_index] = true;
+    }
+
+    size_t unresolved = 0;
+    for (size_t zone_idx = 0; zone_idx < data->zones.size(); ++zone_idx) {
+        const ImageMap::Zone& zone = data->zones[zone_idx];
+        if (!referenced_zones[zone_idx] || !zone.enabled)
+            continue;
+        for (const ImageMap::PaletteEntry& entry : zone.palette) {
+            unsigned int filament_id = 0;
+            if (entry.mixed_filament_stable_id != 0) {
+                const std::optional<unsigned int> stable =
+                    mixed_mgr.filament_id_from_stable_id(entry.mixed_filament_stable_id, num_physical_extruders);
+                if (stable && *stable >= 1 && *stable <= num_total_filaments)
+                    filament_id = *stable;
+            }
+            if (filament_id == 0 && entry.fallback_filament_id >= 1 && entry.fallback_filament_id <= num_total_filaments)
+                filament_id = entry.fallback_filament_id;
+            if (filament_id == 0) {
+                ++unresolved;
+                continue;
+            }
+            painting_extruders.emplace_back(filament_id);
+            append_mixed_component_extruders(mixed_mgr, filament_id, num_physical_extruders, painting_extruders);
+        }
+    }
+    return unresolved;
+}
+
 Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_config)
 {
 #ifdef _DEBUG
@@ -1777,15 +1819,21 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
         std::vector<unsigned int> painting_extruders;
         if (const auto &volumes = print_object.model_object()->volumes;
             num_extruders > 1 &&
-            std::find_if(volumes.begin(), volumes.end(), [](const ModelVolume *v) { return ! v->mmu_segmentation_facets.empty(); }) != volumes.end()) {
+            std::find_if(volumes.begin(), volumes.end(), [](const ModelVolume *v) { return v->is_mm_painted(); }) != volumes.end()) {
 
             std::array<bool, static_cast<size_t>(EnforcerBlockerType::ExtruderMax) + 1> used_facet_states{};
+            size_t unresolved_image_map_entries = 0;
             for (const ModelVolume *volume : volumes) {
                 const std::vector<bool> &volume_used_facet_states = volume->mmu_segmentation_facets.get_data().used_states;
 
                 assert(volume_used_facet_states.size() == used_facet_states.size());
                 for (size_t state_idx = 0; state_idx < std::min(volume_used_facet_states.size(), used_facet_states.size()); ++state_idx)
                     used_facet_states[state_idx] |= volume_used_facet_states[state_idx];
+                unresolved_image_map_entries += append_image_map_painted_extruders(*volume,
+                                                                                   m_mixed_filament_mgr,
+                                                                                   num_extruders,
+                                                                                   num_total_filaments,
+                                                                                   painting_extruders);
             }
 
             size_t dropped_painted_states = 0;
@@ -1803,6 +1851,13 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
             }
             std::sort(painting_extruders.begin(), painting_extruders.end());
             painting_extruders.erase(std::unique(painting_extruders.begin(), painting_extruders.end()), painting_extruders.end());
+
+            if (unresolved_image_map_entries > 0) {
+                BOOST_LOG_TRIVIAL(warning) << "Print::apply could not resolve persistent image-map palette entries"
+                                           << " unresolved=" << unresolved_image_map_entries
+                                           << " physical_filaments=" << num_extruders
+                                           << " total_filaments=" << num_total_filaments;
+            }
 
             if (dropped_painted_states > 0) {
                 BOOST_LOG_TRIVIAL(warning) << "Print::apply dropping painted extruder IDs above available filament range"

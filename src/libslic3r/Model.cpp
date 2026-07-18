@@ -2570,6 +2570,32 @@ bool ModelVolume::is_splittable() const
 }
 
 // BBS
+static std::vector<unsigned int> image_map_fallback_filament_ids(const ModelVolume &volume)
+{
+    const std::shared_ptr<const ImageMap::VolumeData> data = volume.image_map_data();
+    if (!data)
+        return {};
+
+    std::vector<bool> referenced_zones(data->zones.size(), false);
+    for (const ImageMap::TriangleBinding &binding : data->triangle_bindings) {
+        if (binding.zone_index < referenced_zones.size())
+            referenced_zones[binding.zone_index] = true;
+    }
+
+    std::vector<unsigned int> filament_ids;
+    for (size_t zone_idx = 0; zone_idx < data->zones.size(); ++zone_idx) {
+        const ImageMap::Zone &zone = data->zones[zone_idx];
+        if (!referenced_zones[zone_idx] || !zone.enabled)
+            continue;
+        for (const ImageMap::PaletteEntry &entry : zone.palette) {
+            if (entry.fallback_filament_id > 0 &&
+                std::find(filament_ids.begin(), filament_ids.end(), entry.fallback_filament_id) == filament_ids.end())
+                filament_ids.push_back(entry.fallback_filament_id);
+        }
+    }
+    return filament_ids;
+}
+
 std::vector<int> ModelVolume::get_extruders() const
 {
     if (m_type == ModelVolumeType::INVALID
@@ -2599,6 +2625,11 @@ std::vector<int> ModelVolume::get_extruders() const
         volume_extruders.push_back(volume_extruder_id);
     else if (volume_extruder_id == 0)
         volume_extruders.push_back(volume_extruder_id + 1);
+
+    for (unsigned int filament_id : image_map_fallback_filament_ids(*this)) {
+        if (std::find(volume_extruders.begin(), volume_extruders.end(), int(filament_id)) == volume_extruders.end())
+            volume_extruders.push_back(int(filament_id));
+    }
 
     return volume_extruders;
 }
@@ -3000,20 +3031,27 @@ void ModelVolume::convert_from_meters()
 
 // Orca: Implement prusa's filament shrink compensation approach
 // Returns 0-based indices of extruders painted by multi-material painting gizmo.
-std::vector<size_t> ModelVolume::get_extruders_from_multi_material_painting() const {
-     if (!this->is_mm_painted())
-         return {};
+std::vector<size_t> ModelVolume::get_extruders_from_multi_material_painting() const
+{
+    if (!this->is_mm_painted())
+        return {};
 
-     const TriangleSelector::TriangleSplittingData &data = this->mmu_segmentation_facets.get_data();
+    const TriangleSelector::TriangleSplittingData &data = this->mmu_segmentation_facets.get_data();
 
-     std::vector<size_t> extruders;
-     for (size_t state_idx = static_cast<size_t>(EnforcerBlockerType::Extruder1); state_idx < data.used_states.size(); ++state_idx) {
-         if (data.used_states[state_idx])
-             extruders.emplace_back(state_idx - 1);
-     }
+    std::vector<size_t> extruders;
+    for (size_t state_idx = static_cast<size_t>(EnforcerBlockerType::Extruder1); state_idx < data.used_states.size(); ++state_idx) {
+        if (data.used_states[state_idx])
+            extruders.emplace_back(state_idx - 1);
+    }
 
-     return extruders;
- }
+    for (unsigned int filament_id : image_map_fallback_filament_ids(*this)) {
+        const size_t extruder_idx = size_t(filament_id - 1);
+        if (std::find(extruders.begin(), extruders.end(), extruder_idx) == extruders.end())
+            extruders.push_back(extruder_idx);
+    }
+
+    return extruders;
+}
 
 void ModelInstance::transform_mesh(TriangleMesh* mesh, bool dont_translate) const
 {
@@ -3370,6 +3408,16 @@ void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &fil
             if (!volume->mmu_segmentation_facets.empty())
                 volume->mmu_segmentation_facets.remap_enforcer_block_types(
                     *volume, EnforcerBlockerType(safe_total), state_map);
+            if (const std::shared_ptr<const ImageMap::VolumeData> image_map_data = volume->image_map_data()) {
+                ImageMap::VolumeData remapped_image_map = *image_map_data;
+                for (ImageMap::Zone &zone : remapped_image_map.zones) {
+                    for (ImageMap::PaletteEntry &entry : zone.palette)
+                        entry.fallback_filament_id = unsigned(remap_id(int(entry.fallback_filament_id)));
+                }
+                const bool image_map_updated = volume->set_image_map_data(std::move(remapped_image_map));
+                assert(image_map_updated);
+                (void) image_map_updated;
+            }
         }
     }
 }

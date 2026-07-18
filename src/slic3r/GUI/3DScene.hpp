@@ -57,6 +57,10 @@ class ModelVolume;
 class GLShaderProgram;
 enum ModelInstanceEPrintVolumeState : unsigned char;
 
+namespace ImageMap {
+struct VolumeData;
+}
+
 using ModelObjectPtrs = std::vector<ModelObject*>;
 
 // Return appropriate color based on the ModelVolume.
@@ -219,6 +223,11 @@ public:
     // BBS
     mutable std::vector<GUI::GLModel> mmuseg_models;
     mutable ObjectBase::Timestamp       mmuseg_ts;
+    // Persistent image maps stay authoritative on ModelVolume. The viewport
+    // retains only the immutable source snapshot and its resolved palette key
+    // so display meshes can be rebuilt without writing legacy facet paint.
+    mutable std::shared_ptr<const ImageMap::VolumeData> image_map_preview_data;
+    mutable size_t                                      image_map_preview_palette_signature{0};
 
     // Ranges of triangle and quad indices to be rendered.
     std::pair<size_t, size_t>   tverts_range;

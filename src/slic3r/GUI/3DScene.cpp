@@ -21,6 +21,7 @@
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/ImageMap/FacetRasterizer.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Tesselate.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -423,7 +424,7 @@ static bool render_preview_gradient_model(GUI::GLModel&                         
     return rendered;
 }
 
-static bool volume_has_mmu_segmentation(const GLVolume& volume)
+static bool volume_has_surface_segmentation(const GLVolume& volume)
 {
     ModelObjectPtrs& model_objects = GUI::wxGetApp().model().objects;
     if (volume.object_idx() < 0 || volume.object_idx() >= model_objects.size())
@@ -434,7 +435,51 @@ static bool volume_has_mmu_segmentation(const GLVolume& volume)
         return false;
 
     const ModelVolume* model_volume = model_object->volumes[volume.volume_idx()];
-    return model_volume != nullptr && !model_volume->mmu_segmentation_facets.empty();
+    return model_volume != nullptr && model_volume->is_mm_painted();
+}
+
+struct ImageMapPreviewPalette
+{
+    const MixedFilamentManager* manager{nullptr};
+    size_t                      num_physical{0};
+    size_t                      num_total{0};
+
+    unsigned int resolve(const ImageMap::PaletteEntry& entry) const
+    {
+        if (manager != nullptr && entry.mixed_filament_stable_id != 0) {
+            const std::optional<unsigned int> stable = manager->filament_id_from_stable_id(entry.mixed_filament_stable_id, num_physical);
+            if (stable && *stable >= 1 && *stable <= num_total)
+                return *stable;
+        }
+        return entry.fallback_filament_id >= 1 && entry.fallback_filament_id <= num_total ? entry.fallback_filament_id : 0u;
+    }
+
+    size_t signature(const ImageMap::VolumeData& data, unsigned int base_filament_id) const
+    {
+        size_t seed = base_filament_id;
+        auto hash_combine = [&seed](size_t value) {
+            seed ^= value + size_t(0x9e3779b9) + (seed << 6) + (seed >> 2);
+        };
+        hash_combine(num_physical);
+        hash_combine(num_total);
+        for (const ImageMap::Zone& zone : data.zones) {
+            hash_combine(zone.enabled ? 1u : 0u);
+            for (const ImageMap::PaletteEntry& entry : zone.palette)
+                hash_combine(resolve(entry));
+        }
+        return seed;
+    }
+};
+
+static ImageMapPreviewPalette image_map_preview_palette()
+{
+    ImageMapPreviewPalette palette;
+    if (GUI::wxGetApp().preset_bundle == nullptr)
+        return palette;
+    palette.manager      = &GUI::wxGetApp().preset_bundle->mixed_filaments;
+    palette.num_physical = size_t(std::max(GUI::wxGetApp().filaments_cnt(), 0));
+    palette.num_total    = palette.manager->total_filaments(palette.num_physical);
+    return palette;
 }
 
 Transform3d GLVolume::world_matrix() const
@@ -654,20 +699,42 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
         if (volume_idx() >= model_object->volumes.size())
             break;
         model_volume = model_object->volumes[volume_idx()];
-        if (model_volume->mmu_segmentation_facets.empty())
+        const std::shared_ptr<const ImageMap::VolumeData> image_map_data = model_volume->image_map_data();
+        if (model_volume->mmu_segmentation_facets.empty() && (!image_map_data || image_map_data->empty()))
             break;
 
-        color_volume = true;
-        if (model_volume->mmu_segmentation_facets.timestamp() != mmuseg_ts) {
+        const ImageMapPreviewPalette preview_palette = image_map_preview_palette();
+        const unsigned int base_filament_id = unsigned(std::clamp(model_volume->extruder_id(), 1, int(std::max<size_t>(1, preview_palette.num_total))));
+        const size_t image_map_palette_signature = image_map_data ? preview_palette.signature(*image_map_data, base_filament_id) : 0;
+        color_volume                              = true;
+        if (model_volume->mmu_segmentation_facets.timestamp() != mmuseg_ts || image_map_data != image_map_preview_data ||
+            image_map_palette_signature != image_map_preview_palette_signature) {
             mmuseg_models.clear();
+            std::unique_ptr<FacetsAnnotation> preview_facets = model_volume->mmu_segmentation_facets.copy_for_slicing();
+            if (image_map_data) {
+                const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(
+                    model_volume->mesh(), *image_map_data, base_filament_id,
+                    [&preview_palette](const ImageMap::PaletteEntry& entry) { return preview_palette.resolve(entry); });
+                for (const ImageMap::RasterizedFacet& facet : rasterized.facets) {
+                    if (!facet.encoded_states.empty())
+                        preview_facets->set_triangle_from_string(int(facet.triangle_index), facet.encoded_states);
+                }
+                if (rasterized.unresolved_palette_entries != 0) {
+                    BOOST_LOG_TRIVIAL(warning) << "Image-map viewport palette resolution fell back to the volume filament"
+                                               << " unresolved=" << rasterized.unresolved_palette_entries
+                                               << " volume=" << model_volume->name;
+                }
+            }
             std::vector<indexed_triangle_set> its_per_color;
-            model_volume->mmu_segmentation_facets.get_facets(*model_volume, its_per_color);
+            preview_facets->get_facets(*model_volume, its_per_color);
             mmuseg_models.resize(its_per_color.size());
             for (int idx = 0; idx < its_per_color.size(); idx++) {
                 mmuseg_models[idx].init_from(its_per_color[idx]);
             }
 
-            mmuseg_ts = model_volume->mmu_segmentation_facets.timestamp();
+            mmuseg_ts                           = model_volume->mmu_segmentation_facets.timestamp();
+            image_map_preview_data              = image_map_data;
+            image_map_preview_palette_signature = image_map_palette_signature;
         }
     } while (0);
 
@@ -1166,7 +1233,7 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
             !volume.first->is_wipe_tower &&
             !volume.first->picking &&
             !m_use_color_clip_plane &&
-            !volume_has_mmu_segmentation(*volume.first);
+            !volume_has_surface_segmentation(*volume.first);
         if (use_preview_gradient) {
             rendered_preview_gradient = render_preview_gradient_model(volume.first->model,
                                                                       volume.first->tverts_range,
@@ -1185,7 +1252,7 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
 
         const bool has_segmented_preview_gradient =
             !rendered_preview_gradient &&
-            volume_has_mmu_segmentation(*volume.first) &&
+            volume_has_surface_segmentation(*volume.first) &&
             !volume.first->preview_gradient_colors_by_extruder.empty() &&
             !volume.first->picking &&
             !m_use_color_clip_plane;
