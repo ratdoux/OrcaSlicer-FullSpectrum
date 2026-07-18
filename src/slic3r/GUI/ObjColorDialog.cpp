@@ -496,6 +496,7 @@ bool ObjColorPanel::update_filament_ids()
         if (cluster_filament_ids.empty())
             return false;
         m_first_extruder_id = cluster_filament_ids.front();
+        store_image_map_palette(cluster_filament_ids);
         if (created_mixed_filament && wxGetApp().plater() != nullptr)
             wxGetApp().plater()->on_filaments_change(m_colours.size());
         return !m_filament_ids.empty();
@@ -547,9 +548,48 @@ bool ObjColorPanel::update_filament_ids()
         m_filament_ids.emplace_back(resolve_filament_id(m_cluster_map_filaments[label]));
     }
     m_first_extruder_id = resolve_filament_id(m_cluster_map_filaments[0]);
+    if (m_is_image_map) {
+        std::vector<unsigned char> cluster_filament_ids;
+        cluster_filament_ids.reserve(m_cluster_map_filaments.size());
+        for (int mapped_filament_id : m_cluster_map_filaments)
+            cluster_filament_ids.emplace_back(resolve_filament_id(mapped_filament_id));
+        store_image_map_palette(cluster_filament_ids);
+    }
     if (created_mixed_filament && wxGetApp().plater() != nullptr)
         wxGetApp().plater()->on_filaments_change(m_colours.size());
     return !m_filament_ids.empty();
+}
+
+void ObjColorPanel::store_image_map_palette(const std::vector<unsigned char>& cluster_filament_ids)
+{
+    m_import_context.image_map_render_mode = uses_layer_sequence_image_map() ?
+                                                 ObjImageMapRenderMode::PerimeterModulationV2 :
+                                                 ObjImageMapRenderMode::NormalMix;
+    m_import_context.image_map_minimum_component_percent = min_component_percent();
+    m_import_context.image_map_palette_colors.clear();
+    m_import_context.image_map_palette_filament_ids.clear();
+    m_import_context.image_map_palette_mixed_stable_ids.clear();
+    m_import_context.image_map_palette_colors.reserve(m_cluster_colours.size());
+    m_import_context.image_map_palette_filament_ids.reserve(m_cluster_colours.size());
+    m_import_context.image_map_palette_mixed_stable_ids.reserve(m_cluster_colours.size());
+
+    PresetBundle *preset_bundle = wxGetApp().preset_bundle;
+    for (size_t cluster_idx = 0; cluster_idx < m_cluster_colours.size() && cluster_idx < cluster_filament_ids.size(); ++cluster_idx) {
+        const wxColour &color = m_cluster_colours[cluster_idx];
+        m_import_context.image_map_palette_colors.push_back(
+            RGBA{float(color.Red()) / 255.f, float(color.Green()) / 255.f, float(color.Blue()) / 255.f, float(color.Alpha()) / 255.f});
+        const unsigned char filament_id = cluster_filament_ids[cluster_idx];
+        m_import_context.image_map_palette_filament_ids.push_back(filament_id);
+
+        uint64_t stable_id = 0;
+        if (preset_bundle != nullptr && filament_id > m_colours.size()) {
+            const std::optional<MixedFilamentDefinition> definition =
+                preset_bundle->mixed_filaments.mixed_filament_definition_from_id(filament_id, m_colours.size());
+            if (definition)
+                stable_id = definition->identity.stable_id;
+        }
+        m_import_context.image_map_palette_mixed_stable_ids.push_back(stable_id);
+    }
 }
 
 wxBoxSizer *ObjColorPanel::create_approximate_match_btn_sizer(wxWindow *parent)

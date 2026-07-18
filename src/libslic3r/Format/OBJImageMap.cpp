@@ -299,6 +299,110 @@ bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
     return built;
 }
 
+bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
+                                     const ObjInfo&            obj_info,
+                                     ObjColorImportSource      source,
+                                     const std::string&        selected_texture_file,
+                                     ImageMap::Zone            zone,
+                                     ImageMap::VolumeData&     out_data,
+                                     std::string*              warning)
+{
+    out_data = ImageMap::VolumeData{};
+    out_data.topology_fingerprint = ImageMap::topology_fingerprint(mesh);
+    if (zone.stable_id.empty())
+        zone.stable_id = "obj-image-map-zone";
+    if (zone.display_name.empty())
+        zone.display_name = "OBJ image map";
+    out_data.zones.emplace_back(std::move(zone));
+
+    const indexed_triangle_set& its = mesh.its;
+    if (its.indices.empty())
+        return false;
+
+    std::map<std::string, int32_t> texture_indices;
+    auto ensure_texture = [&](const std::string& texture_file) -> int32_t {
+        if (texture_file.empty())
+            return -1;
+        auto existing = texture_indices.find(texture_file);
+        if (existing != texture_indices.end())
+            return existing->second;
+
+        const boost::filesystem::path path = selected_texture_file.empty() ?
+                                                  resolve_texture_path(obj_info.obj_directory, texture_file) :
+                                                  boost::filesystem::path(texture_file);
+        LoadedTexture loaded;
+        if (!decode_imported_texture_rgba_from_file(path.string(), loaded.rgba, loaded.width, loaded.height))
+            return -1;
+
+        ImageMap::TextureAsset asset;
+        asset.stable_id   = "obj-texture-" + std::to_string(out_data.texture_assets.size() + 1);
+        asset.display_name = path.filename().string();
+        asset.width       = loaded.width;
+        asset.height      = loaded.height;
+        asset.rgba        = std::move(loaded.rgba);
+        const int32_t index = int32_t(out_data.texture_assets.size());
+        out_data.texture_assets.emplace_back(std::move(asset));
+        texture_indices.emplace(texture_file, index);
+        return index;
+    };
+
+    size_t skipped = 0;
+    for (size_t triangle_idx = 0; triangle_idx < its.indices.size(); ++triangle_idx) {
+        const stl_triangle_vertex_indices& indices = its.indices[triangle_idx];
+        if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0 || size_t(indices[0]) >= its.vertices.size() ||
+            size_t(indices[1]) >= its.vertices.size() || size_t(indices[2]) >= its.vertices.size()) {
+            ++skipped;
+            continue;
+        }
+
+        ImageMap::TriangleBinding binding;
+        binding.triangle_index = uint32_t(triangle_idx);
+        binding.zone_index     = 0;
+        const RGBA face_color = triangle_idx < obj_info.face_colors.size() ?
+                                    obj_info.face_colors[triangle_idx] : RGBA{1.f, 1.f, 1.f, 1.f};
+        binding.source.corner_colors = {face_color, face_color, face_color};
+
+        if (source == ObjColorImportSource::ImageTexture) {
+            if (triangle_idx >= obj_info.triangle_uvs.size() || triangle_idx >= obj_info.triangle_uvs_valid.size() ||
+                obj_info.triangle_uvs_valid[triangle_idx] == 0) {
+                ++skipped;
+                continue;
+            }
+            const std::string texture_file = !selected_texture_file.empty() ? selected_texture_file :
+                                             (triangle_idx < obj_info.triangle_texture_files.size() ?
+                                                  obj_info.triangle_texture_files[triangle_idx] : std::string());
+            const int32_t texture_index = ensure_texture(texture_file);
+            if (texture_index < 0) {
+                ++skipped;
+                continue;
+            }
+            binding.source.kind                = ImageMap::SourceKind::Texture;
+            binding.source.texture_asset_index = texture_index;
+            binding.source.uvs                 = obj_info.triangle_uvs[triangle_idx];
+        } else if (source == ObjColorImportSource::VertexColors) {
+            if (obj_info.vertex_colors.size() != its.vertices.size()) {
+                if (warning)
+                    *warning = "OBJ vertex colours no longer align with the imported mesh topology.";
+                return false;
+            }
+            binding.source.kind = ImageMap::SourceKind::VertexColors;
+            for (size_t corner = 0; corner < 3; ++corner)
+                binding.source.corner_colors[corner] = obj_info.vertex_colors[size_t(indices[corner])];
+        } else {
+            if (triangle_idx >= obj_info.face_colors.size()) {
+                ++skipped;
+                continue;
+            }
+            binding.source.kind = ImageMap::SourceKind::FaceColor;
+        }
+        out_data.triangle_bindings.emplace_back(std::move(binding));
+    }
+
+    if (warning && skipped > 0)
+        *warning = "Skipped " + std::to_string(skipped) + " OBJ triangles without a usable image-map source.";
+    return !out_data.empty() && out_data.validate(mesh).valid;
+}
+
 std::string encode_obj_image_map_triangle_filaments(const std::vector<unsigned char>& filament_ids,
                                                     size_t                            offset,
                                                     unsigned int                      subdivision_depth,

@@ -2,6 +2,7 @@
 #define slic3r_Format_OBJImageMap_hpp_
 
 #include "OBJ.hpp"
+#include "../ImageMap/VolumeData.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -53,6 +54,16 @@ std::string encode_obj_image_map_triangle_filaments(const std::vector<unsigned c
                                                     size_t                            offset,
                                                     unsigned int                      subdivision_depth,
                                                     unsigned char                     base_filament_id);
+
+// Builds the persistent, triangle-aligned source retained by ModelVolume and
+// 3MF. Sampling plans remain a UI quantization preview only.
+bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
+                                     const ObjInfo&            obj_info,
+                                     ObjColorImportSource      source,
+                                     const std::string&        selected_texture_file,
+                                     ImageMap::Zone            zone,
+                                     ImageMap::VolumeData&     out_data,
+                                     std::string*              warning = nullptr);
 
 } // namespace Slic3r
 

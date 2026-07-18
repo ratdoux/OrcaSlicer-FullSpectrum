@@ -20,6 +20,8 @@ enum class ObjColorImportSource : uint8_t { VertexColors, FaceColors, ImageTextu
 
 enum class ObjColorImportMode : uint8_t { Colors, ImageMap };
 
+enum class ObjImageMapRenderMode : uint8_t { NormalMix, PerimeterModulationV2 };
+
 struct ObjColorImportContext
 {
     ObjColorImportSource source{ObjColorImportSource::VertexColors};
@@ -33,6 +35,11 @@ struct ObjColorImportContext
     ObjColorImportMode   requested_mode{ObjColorImportMode::Colors};
     std::string          requested_texture_file;
     std::string          warning_message;
+    ObjImageMapRenderMode image_map_render_mode{ObjImageMapRenderMode::NormalMix};
+    int                   image_map_minimum_component_percent{15};
+    std::vector<RGBA>      image_map_palette_colors;
+    std::vector<unsigned char> image_map_palette_filament_ids;
+    std::vector<uint64_t>  image_map_palette_mixed_stable_ids;
 };
 
 typedef std::function<void(std::vector<RGBA>&          input_colors,

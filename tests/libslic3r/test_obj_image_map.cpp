@@ -165,3 +165,46 @@ TEST_CASE("OBJ image-map sampling decodes UV textures with a bounded detail plan
 
     boost::filesystem::remove_all(directory);
 }
+
+TEST_CASE("OBJ image-map import retains texture pixels and UVs as persistent model data", "[ObjImageMap][ImageMap]")
+{
+    const boost::filesystem::path directory = boost::filesystem::temp_directory_path() /
+                                              boost::filesystem::unique_path("fs-obj-persistent-map-%%%%-%%%%");
+    REQUIRE(boost::filesystem::create_directories(directory));
+    const boost::filesystem::path texture_path = directory / "texture.png";
+    REQUIRE(png::write_rgb_to_file(texture_path.string(), 1, 1, std::vector<uint8_t>{90, 120, 150}));
+
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(0.f, 0.f, 0.f), Vec3f(4.f, 0.f, 0.f), Vec3f(0.f, 4.f, 0.f)};
+    its.indices.emplace_back(0, 1, 2);
+    TriangleMesh mesh(std::move(its));
+
+    ObjInfo info;
+    info.obj_directory          = directory.string();
+    info.face_colors            = {RGBA{1.f, 1.f, 1.f, 1.f}};
+    info.triangle_uvs           = {{Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)}};
+    info.triangle_uvs_valid     = {1};
+    info.triangle_texture_files = {texture_path.string()};
+
+    ImageMap::Zone zone;
+    zone.stable_id = "zone-test";
+    zone.palette.push_back({RGBA{0.35f, 0.47f, 0.59f, 1.f}, 0, 1});
+    ImageMap::VolumeData data;
+    std::string warning;
+    REQUIRE(build_obj_image_map_volume_data(mesh, info, ObjColorImportSource::ImageTexture, {}, std::move(zone), data, &warning));
+    CHECK(warning.empty());
+    REQUIRE(data.texture_assets.size() == 1);
+    CHECK(data.texture_assets.front().rgba == std::vector<uint8_t>{90, 120, 150, 255});
+    REQUIRE(data.triangle_bindings.size() == 1);
+    CHECK(data.triangle_bindings.front().source.uvs[1] == Vec2f(1.f, 0.f));
+
+    Model model;
+    ModelObject *object = model.add_object();
+    object->add_instance();
+    ModelVolume *volume = object->add_volume(mesh);
+    REQUIRE(Model::obj_import_persistent_image_map_deal(std::move(data), 1, &model));
+    CHECK(volume->has_image_map_data());
+    CHECK(volume->mmu_segmentation_facets.empty());
+
+    boost::filesystem::remove_all(directory);
+}

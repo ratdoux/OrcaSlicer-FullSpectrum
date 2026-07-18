@@ -1610,6 +1610,9 @@ public:
                                              const ObjImageMapSamplePlan &sample_plan,
                                              const unsigned char &first_extruder_id,
                                              Model *model);
+    static bool    obj_import_persistent_image_map_deal(ImageMap::VolumeData data,
+                                                        const unsigned char &first_extruder_id,
+                                                        Model *model);
     static double findMaxSpeed(const ModelObject* object);
     static double getThermalLength(const ModelVolume* modelVolumePtr);
     static double getThermalLength(const std::vector<ModelVolume*> modelVolumePtrs);

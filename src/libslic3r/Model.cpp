@@ -293,6 +293,7 @@ Model Model::read_from_file(const std::string&                                  
             ObjColorImportSource  current_source = ObjColorImportSource::VertexColors;
             ObjColorImportMode    current_mode   = ObjColorImportMode::Colors;
             ObjImageMapSamplePlan current_image_map_plan;
+            std::string           current_texture_file;
             bool                  source_available = false;
             if (detected_texture_available) {
                 current_source         = ObjColorImportSource::ImageTexture;
@@ -345,9 +346,12 @@ Model Model::read_from_file(const std::string&                                  
                         if (!import_context.requested_texture_file.empty()) {
                             switched = build_obj_image_map_sample_plan_with_texture(mesh, obj_info, import_context.requested_texture_file,
                                                                                     0.4f, 200000, next_plan, &pending_warning);
+                            if (switched)
+                                current_texture_file = import_context.requested_texture_file;
                         } else if (detected_texture_available) {
                             next_plan = detected_image_map_plan;
                             switched  = true;
+                            current_texture_file.clear();
                         } else {
                             pending_warning = "No usable texture was detected. Select a PNG or JPEG image for the OBJ UV coordinates.";
                         }
@@ -355,10 +359,14 @@ Model Model::read_from_file(const std::string&                                  
                             current_image_map_plan = std::move(next_plan);
                     } else if (next_source == ObjColorImportSource::VertexColors) {
                         switched = vertex_colors_available;
+                        if (switched)
+                            current_texture_file.clear();
                         if (!switched)
                             pending_warning = "This OBJ does not contain vertex colors.";
                     } else if (next_source == ObjColorImportSource::FaceColors) {
                         switched = face_colors_available;
+                        if (switched)
+                            current_texture_file.clear();
                         if (!switched)
                             pending_warning = "This OBJ does not contain material colors.";
                     }
@@ -373,7 +381,36 @@ Model Model::read_from_file(const std::string&                                  
 
                 if (filament_ids.empty())
                     break;
-                if (current_source == ObjColorImportSource::ImageTexture)
+                if (current_mode == ObjColorImportMode::ImageMap) {
+                    ImageMap::Zone zone;
+                    zone.stable_id                   = "obj-image-map-zone";
+                    zone.display_name                = "OBJ image map";
+                    zone.render_mode                 = import_context.image_map_render_mode == ObjImageMapRenderMode::PerimeterModulationV2 ?
+                                                           ImageMap::RenderMode::PerimeterModulationV2 : ImageMap::RenderMode::NormalMix;
+                    zone.minimum_component_percent  = import_context.image_map_minimum_component_percent;
+                    const size_t palette_size = std::min({import_context.image_map_palette_colors.size(),
+                                                          import_context.image_map_palette_filament_ids.size(),
+                                                          import_context.image_map_palette_mixed_stable_ids.size()});
+                    for (size_t palette_idx = 0; palette_idx < palette_size; ++palette_idx) {
+                        zone.palette.push_back({import_context.image_map_palette_colors[palette_idx],
+                                                import_context.image_map_palette_mixed_stable_ids[palette_idx],
+                                                import_context.image_map_palette_filament_ids[palette_idx]});
+                    }
+
+                    ImageMap::VolumeData image_map_data;
+                    std::string image_map_warning;
+                    result = !zone.palette.empty() &&
+                             build_obj_image_map_volume_data(mesh,
+                                                             obj_info,
+                                                             current_source,
+                                                             current_texture_file,
+                                                             std::move(zone),
+                                                             image_map_data,
+                                                             &image_map_warning) &&
+                             obj_import_persistent_image_map_deal(std::move(image_map_data), first_extruder_id, &model);
+                    if (!image_map_warning.empty())
+                        BOOST_LOG_TRIVIAL(warning) << "OBJ image-map source: " << image_map_warning;
+                } else if (current_source == ObjColorImportSource::ImageTexture)
                     result = obj_import_image_map_deal(filament_ids, current_image_map_plan, first_extruder_id, &model);
                 else if (current_source == ObjColorImportSource::VertexColors)
                     result = obj_import_vertex_color_deal(filament_ids, first_extruder_id, &model);
@@ -3286,6 +3323,19 @@ bool Model::obj_import_image_map_deal(const std::vector<unsigned char> &filament
         offset += obj_image_map_leaf_count(unsigned(depth));
     }
     return offset == filament_ids.size();
+}
+
+bool Model::obj_import_persistent_image_map_deal(ImageMap::VolumeData data,
+                                                 const unsigned char &first_extruder_id,
+                                                 Model *model)
+{
+    if (model == nullptr || model->objects.size() != 1 || model->objects.front()->volumes.size() != 1)
+        return false;
+    ModelObject *object = model->objects.front();
+    ModelVolume *volume = object->volumes.front();
+    object->config.set("extruder", first_extruder_id);
+    volume->config.set("extruder", first_extruder_id);
+    return volume->set_image_map_data(std::move(data));
 }
 
 void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &filament_id_map, size_t total_filaments)

@@ -63,6 +63,7 @@ private:
     void        deal_default_strategy();
     int         min_component_percent() const;
     bool        uses_layer_sequence_image_map() const;
+    void        store_image_map_palette(const std::vector<unsigned char>& cluster_filament_ids);
     int         find_filament_selection_by_color(const wxColour& color) const;
     int         append_new_filament_option(const wxColour& color);
     void        update_keep_color_buttons();

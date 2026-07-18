@@ -10,6 +10,10 @@
 #include <string>
 #include <vector>
 
+#include <cereal/types/array.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/types/vector.hpp>
+
 namespace Slic3r {
 
 class TriangleMesh;
