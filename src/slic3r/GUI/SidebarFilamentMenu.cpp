@@ -6,37 +6,72 @@
 #include "Plater.hpp"
 #include "Tab.hpp"
 #include "MainFrame.hpp"
+#include "MixedColorMatchHelpers.hpp"
 #include "MixedFilamentDialog.hpp"
 #include "MixedFilamentBatchDialog.hpp"
 #include "Widgets/FilamentCard.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/Model.hpp"
+#include "libslic3r/ImageMap/Sampling.hpp"
+#include "libslic3r/ImageMap/VolumeData.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <map>
 
 namespace Slic3r::GUI {
 
-SidebarFilamentMenu::SidebarFilamentMenu(wxWindow* parent, const wxColour& title_bg) : ::wxPanel(parent, wxID_ANY)
+namespace {
+
+std::vector<wxColour> wx_spectrum_colors(const std::vector<RGBA>& representative)
 {
-    build_ui(title_bg);
+    std::vector<wxColour> colors;
+    colors.reserve(representative.size());
+    for (const RGBA& color : representative) {
+        colors.emplace_back(std::clamp(int(std::lround(color[0] * 255.f)), 0, 255), std::clamp(int(std::lround(color[1] * 255.f)), 0, 255),
+                            std::clamp(int(std::lround(color[2] * 255.f)), 0, 255));
+    }
+    return colors;
 }
+
+std::vector<wxColour> image_map_spectrum_colors(const ModelObject& object)
+{
+    std::vector<RGBA> representative;
+    for (const ModelVolume* volume : object.volumes) {
+        if (volume == nullptr)
+            continue;
+        const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+        if (!data)
+            continue;
+        std::vector<RGBA> volume_colors = ImageMap::representative_source_colors(*data, ImageMap::RenderMode::PerimeterModulationV2);
+        representative.insert(representative.end(), volume_colors.begin(), volume_colors.end());
+    }
+    representative = ImageMap::representative_source_colors(representative, 8, 256);
+
+    return wx_spectrum_colors(representative);
+}
+
+} // namespace
+
+SidebarFilamentMenu::SidebarFilamentMenu(wxWindow* parent, const wxColour& title_bg) : ::wxPanel(parent, wxID_ANY) { build_ui(title_bg); }
 
 void SidebarFilamentMenu::refresh_mixed_color_previews()
 {
-    auto *preset_bundle = wxGetApp().preset_bundle;
+    auto* preset_bundle = wxGetApp().preset_bundle;
     if (preset_bundle == nullptr)
         return;
 
     preset_bundle->update_multi_material_filament_presets();
-    std::vector<MixedFilamentDefinition> mixed =
-        preset_bundle->mixed_filaments.mixed_filament_definitions(m_physical_filaments.size());
+    std::vector<MixedFilamentDefinition> mixed = preset_bundle->mixed_filaments.mixed_filament_definitions(m_physical_filaments.size());
     on_mixed_change(mixed);
 
-    Plater *plater = wxGetApp().plater();
+    Plater* plater = wxGetApp().plater();
     if (plater == nullptr)
         return;
 
     plater->update_filament_colors_in_full_config();
-    auto refresh_canvas = [](GLCanvas3D *canvas) {
+    auto refresh_canvas = [](GLCanvas3D* canvas) {
         if (canvas == nullptr || !canvas->is_initialized())
             return;
         canvas->update_volumes_colors_by_extruder();
@@ -44,6 +79,15 @@ void SidebarFilamentMenu::refresh_mixed_color_previews()
     };
     refresh_canvas(plater->get_view3D_canvas3D());
     refresh_canvas(plater->get_assmeble_canvas3D());
+}
+
+void SidebarFilamentMenu::refresh_image_map_entries()
+{
+    auto* preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle == nullptr)
+        return;
+    std::vector<MixedFilamentDefinition> mixed = preset_bundle->mixed_filaments.mixed_filament_definitions(m_physical_filaments.size());
+    on_mixed_change(mixed);
 }
 
 void SidebarFilamentMenu::on_filaments_change(size_t physical_count, std::vector<MixedFilamentDefinition>& mixed_filaments)
@@ -99,7 +143,6 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
 
     update_physical_filaments();
 
-
     if (physical_count == 1)
         m_physical_sizer->SetCols(1);
     else
@@ -108,7 +151,7 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
     // Counter logic
     if (m_lbl_physical_counter) {
         if (physical_count > 6) {
-            m_lbl_physical_counter->SetLabel(wxString::Format(" (%d)", (int)physical_count));
+            m_lbl_physical_counter->SetLabel(wxString::Format(" (%d)", (int) physical_count));
             m_lbl_physical_counter->Show(true);
         } else {
             m_lbl_physical_counter->Show(false);
@@ -123,10 +166,8 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
     const int target_height      = std::min(max_content_height, m_scrollbar_threshold);
 
     // Automatically adjust panel height, when grab panel is not shown
-    const bool needs_automatic_adjustment = (
-        max_content_height < m_scrollbar_threshold
-        || current_height < m_scrollbar_threshold
-        || current_height > max_content_height);   
+    const bool needs_automatic_adjustment = (max_content_height < m_scrollbar_threshold || current_height < m_scrollbar_threshold ||
+                                             current_height > max_content_height);
     if (needs_automatic_adjustment) {
         m_physical_panel->SetMinSize(wxSize(-1, target_height));
         m_physical_panel->SetMaxSize(wxSize(-1, target_height));
@@ -150,43 +191,160 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
 
 void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& mixed_filaments)
 {
-    int current_count = m_mixed_count();
-    int new_count    = static_cast<int>(mixed_filaments.size());
-    
-    // ADD new cards if mixed_count increased
-    for (int i = current_count; i < new_count; i++) {
-        auto* card = new FilamentCardMixed(m_mixed_panel, &mixed_filaments[i], m_physical_filaments);
-        card->set_on_box_edit_callback([this, i](bool edit_by_color) 
-        { 
-            edit_mixed_filament(i, edit_by_color);
+    const int previous_count = int(m_mixed_cards.size() + m_image_map_cards.size());
+    m_mixed_filaments        = mixed_filaments;
+
+    m_image_map_sizer->Clear(true);
+    m_mixed_sizer->Clear(true);
+    m_image_map_cards.clear();
+    m_image_map_adaptive_filament_ids.clear();
+    m_mixed_cards.clear();
+    m_mixed_definition_indices.clear();
+
+    std::map<uint64_t, unsigned int>                       filament_id_by_stable_id;
+    std::map<unsigned int, const MixedFilamentDefinition*> definition_by_filament_id;
+    unsigned int                                           next_filament_id = unsigned(m_physical_filaments.size() + 1);
+    for (const MixedFilamentDefinition& definition : m_mixed_filaments) {
+        if (definition.visibility.tombstoned)
+            continue;
+        definition_by_filament_id.emplace(next_filament_id, &definition);
+        if (definition.identity.stable_id != 0)
+            filament_id_by_stable_id.emplace(definition.identity.stable_id, next_filament_id);
+        ++next_filament_id;
+    }
+
+    auto resolve_adaptive_filament_id = [&](const ImageMap::PaletteEntry& entry) {
+        if (entry.mixed_filament_stable_id != 0) {
+            const auto stable_it = filament_id_by_stable_id.find(entry.mixed_filament_stable_id);
+            if (stable_it != filament_id_by_stable_id.end())
+                return stable_it->second;
+        }
+        return definition_by_filament_id.count(entry.fallback_filament_id) != 0 ? entry.fallback_filament_id : 0u;
+    };
+
+    std::map<unsigned int, std::vector<RGBA>> adaptive_cycle_colors;
+
+    const ModelObjectPtrs& objects = wxGetApp().model().objects;
+    for (size_t object_index = 0; object_index < objects.size(); ++object_index) {
+        const ModelObject* object = objects[object_index];
+        if (object == nullptr)
+            continue;
+
+        for (const ModelVolume* volume : object->volumes) {
+            if (volume == nullptr)
+                continue;
+            const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+            if (!data)
+                continue;
+            for (size_t zone_index = 0; zone_index < data->zones.size(); ++zone_index) {
+                const ImageMap::Zone& zone = data->zones[zone_index];
+                if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles)
+                    continue;
+                const std::vector<std::vector<RGBA>> palette_spectra = ImageMap::representative_palette_source_colors(*data, zone_index, 8,
+                                                                                                                      512);
+                for (size_t palette_index = 0; palette_index < zone.palette.size(); ++palette_index) {
+                    const unsigned int filament_id   = resolve_adaptive_filament_id(zone.palette[palette_index]);
+                    const auto         definition_it = definition_by_filament_id.find(filament_id);
+                    if (definition_it == definition_by_filament_id.end() ||
+                        !definition_it->second->behavior.surface_bias.perimeter_modulation)
+                        continue;
+                    std::vector<RGBA>& colors = adaptive_cycle_colors[filament_id];
+                    if (palette_index < palette_spectra.size())
+                        colors.insert(colors.end(), palette_spectra[palette_index].begin(), palette_spectra[palette_index].end());
+                    else
+                        colors.push_back(zone.palette[palette_index].target_color);
+                }
+            }
+        }
+
+        const bool has_perimeter_image_map = std::any_of(object->volumes.begin(), object->volumes.end(), [](const ModelVolume* volume) {
+            if (volume == nullptr)
+                return false;
+            const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+            return data && std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone& zone) {
+                       return zone.enabled && zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2;
+                   });
         });
-        card->set_on_edit_btn_callback([this, i, card](wxWindow* anchor) {
-            show_mixed_filament_menu(i, wxDefaultPosition, anchor);
+        if (!has_perimeter_image_map)
+            continue;
+
+        const wxString object_name = object->name.empty() ? wxString::Format(_L("Object %d"), int(object_index + 1)) :
+                                                            wxString::FromUTF8(object->name);
+        auto*          card        = new FilamentCardImageMap(m_mixed_panel, object_name, image_map_spectrum_colors(*object));
+        card->set_on_delete_callback([this, object_index]() {
+            if (m_on_delete_image_map)
+                m_on_delete_image_map(int(object_index));
         });
-        card->set_on_right_click_callback([this, i](const wxPoint& screen_pos) {
-            show_mixed_filament_menu(i, screen_pos, nullptr);
+        m_image_map_cards.push_back(card);
+        m_image_map_adaptive_filament_ids.push_back(0);
+        m_image_map_sizer->Add(card, 0, wxEXPAND);
+    }
+
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(physical_colors);
+
+    for (auto& [filament_id, source_colors] : adaptive_cycle_colors) {
+        const std::vector<RGBA> representative = ImageMap::representative_source_colors(source_colors, 64, 512);
+        std::vector<FilamentCardImageMap::ComponentFilament> component_filaments;
+        std::vector<unsigned int>                            component_ids;
+        const auto definition_it = definition_by_filament_id.find(filament_id);
+        if (definition_it != definition_by_filament_id.end()) {
+            for (const MixedFilamentWeightedComponent& component : definition_it->second->recipe.blend.components) {
+                const unsigned int component_id = component.filament.id;
+                if (component.percent <= 0 || component_id < 1 || component_id > m_physical_filaments.size())
+                    continue;
+                const wxColour component_color(m_physical_filaments[component_id - 1].first);
+                component_filaments.emplace_back(component_id, component_color.IsOk() ? component_color : *wxBLACK);
+                component_ids.emplace_back(component_id);
+            }
+        }
+        std::vector<wxColour> attainable_colors =
+            build_adaptive_cycle_attainable_colors(component_ids, representative, display_context);
+        if (attainable_colors.empty())
+            attainable_colors = wx_spectrum_colors(representative);
+        auto*                   card = new FilamentCardImageMap(m_mixed_panel, wxString::Format(_L("Mixed filament %u"), filament_id),
+                                                                 std::move(attainable_colors), false,
+                                                                 _L("KM/K-S-predicted attainable colors. Click to highlight the object regions assigned to this adaptive localized cycle"),
+                                                                 std::move(component_filaments));
+        card->set_selected(m_selected_adaptive_filament_id == filament_id);
+        card->set_on_select_callback([this, filament_id]() {
+            set_adaptive_cycle_highlight(m_selected_adaptive_filament_id == filament_id ? 0u : filament_id);
         });
+        m_image_map_cards.push_back(card);
+        m_image_map_adaptive_filament_ids.push_back(filament_id);
+        m_image_map_sizer->Add(card, 0, wxEXPAND);
+    }
+
+    if (m_selected_adaptive_filament_id != 0 && adaptive_cycle_colors.count(m_selected_adaptive_filament_id) == 0)
+        set_adaptive_cycle_highlight(0);
+
+    for (size_t definition_index = 0; definition_index < m_mixed_filaments.size(); ++definition_index) {
+        MixedFilamentDefinition& definition = m_mixed_filaments[definition_index];
+        if (definition.visibility.tombstoned || definition.behavior.surface_bias.perimeter_modulation)
+            continue;
+
+        auto* card = new FilamentCardMixed(m_mixed_panel, &definition, m_physical_filaments);
+        card->set_on_box_edit_callback(
+            [this, definition_index](bool edit_by_color) { edit_mixed_filament(int(definition_index), edit_by_color); });
+        card->set_on_edit_btn_callback(
+            [this, definition_index](wxWindow* anchor) { show_mixed_filament_menu(int(definition_index), wxDefaultPosition, anchor); });
+        card->set_on_right_click_callback(
+            [this, definition_index](const wxPoint& screen_pos) { show_mixed_filament_menu(int(definition_index), screen_pos, nullptr); });
 
         m_mixed_cards.push_back(card);
+        m_mixed_definition_indices.push_back(definition_index);
         m_mixed_sizer->Add(card, 0, wxEXPAND);
     }
 
-    // REMOVE excess cards if mixed_count decreased
-    while (m_mixed_count() > new_count) {
-        auto* card = m_mixed_cards.back();
-
-        m_mixed_sizer->Detach(m_mixed_count() - 1);
-        card->Destroy();
-
-        m_mixed_cards.pop_back();
-    }
-
-    update_mixed_states(mixed_filaments);
-
-    if (new_count == 1)
+    if (m_mixed_cards.size() <= 1)
         m_mixed_sizer->SetCols(1);
     else
         m_mixed_sizer->SetCols(2);
+
+    const int new_count = int(m_mixed_cards.size() + m_image_map_cards.size());
 
     // Counter logic
     if (m_lbl_mixed_counter) {
@@ -206,15 +364,13 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     }
 
     // Update layout
-    int max_content_height = m_mixed_panel->GetSizer()->GetMinSize().y;
+    int       max_content_height = m_mixed_panel->GetSizer()->GetMinSize().y;
     const int current_height     = m_mixed_panel->GetSize().y;
     const int target_height      = std::min(max_content_height, m_scrollbar_threshold);
 
     // Automatically adjust panel height, when grab panel is not shown
-    const bool needs_automatic_adjustment = (
-        max_content_height < m_scrollbar_threshold 
-        || current_height < m_scrollbar_threshold
-        || current_height > max_content_height);
+    const bool needs_automatic_adjustment = (max_content_height < m_scrollbar_threshold || current_height < m_scrollbar_threshold ||
+                                             current_height > max_content_height);
     if (needs_automatic_adjustment) {
         m_mixed_panel->SetMinSize(wxSize(-1, target_height));
         m_mixed_panel->SetMaxSize(wxSize(-1, target_height));
@@ -230,7 +386,7 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     max_content_height = m_mixed_panel->GetSizer()->GetMinSize().y;
     update_grab_panel_visibility(m_mixed_panel, m_content_panel, m_mixed_grab_panel, max_content_height);
 
-    if (new_count != current_count) {
+    if (new_count != previous_count) {
         m_mixed_panel->Scroll(0, m_mixed_panel->GetScrollRange(wxVERTICAL));
     }
 
@@ -241,17 +397,53 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     m_title_panel->Refresh();
 }
 
+void SidebarFilamentMenu::set_adaptive_cycle_highlight(unsigned int filament_id)
+{
+    m_selected_adaptive_filament_id = filament_id;
+    for (size_t card_index = 0; card_index < m_image_map_cards.size(); ++card_index) {
+        const bool selected = card_index < m_image_map_adaptive_filament_ids.size() &&
+                              m_image_map_adaptive_filament_ids[card_index] == filament_id && filament_id != 0;
+        m_image_map_cards[card_index]->set_selected(selected);
+    }
+
+    Plater* plater = wxGetApp().plater();
+    if (plater == nullptr)
+        return;
+    auto apply_highlight = [filament_id](GLCanvas3D* canvas) {
+        if (canvas == nullptr || !canvas->is_initialized())
+            return;
+        canvas->set_image_map_highlight_filament_id(filament_id);
+        canvas->render();
+    };
+    apply_highlight(plater->get_view3D_canvas3D());
+    apply_highlight(plater->get_assmeble_canvas3D());
+}
+
 void SidebarFilamentMenu::edit_mixed_filament(int index, bool edit_by_color)
 {
-    if (index < 0 || index >= m_mixed_count()) return;
+    if (index < 0)
+        return;
 
-    auto* card = m_mixed_cards[index];
+    auto find_card = [this, index]() -> FilamentCardMixed* {
+        const auto card_it = std::find(m_mixed_definition_indices.begin(), m_mixed_definition_indices.end(), size_t(index));
+        if (card_it == m_mixed_definition_indices.end())
+            return nullptr;
+        const size_t card_index = size_t(std::distance(m_mixed_definition_indices.begin(), card_it));
+        return card_index < m_mixed_cards.size() ? m_mixed_cards[card_index] : nullptr;
+    };
+
+    FilamentCardMixed* card = find_card();
+    if (card == nullptr)
+        return;
     card->set_dialog_open(true);
 
     if (m_on_edit_mixed)
         m_on_edit_mixed(index, edit_by_color);
 
-    card->set_dialog_open(false);
+    // The edit callback may refresh the filament list and destroy every card.
+    // Resolve the current card again instead of dereferencing the stale pointer.
+    if (FilamentCardMixed* current_card = find_card())
+        current_card->set_dialog_open(false);
 }
 
 void SidebarFilamentMenu::delete_mixed_filament(int index)
@@ -263,17 +455,15 @@ void SidebarFilamentMenu::delete_mixed_filament(int index)
 void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& screen_pos, wxWindow* anchor)
 {
     wxMenu menu;
-    
+
     // Edit item
-    append_menu_item(&menu, wxID_ANY, _L("Edit"), "", [this, index](wxCommandEvent&) {
-        edit_mixed_filament(index, false);
-    });
-    
+    append_menu_item(&menu, wxID_ANY, _L("Edit"), "", [this, index](wxCommandEvent&) { edit_mixed_filament(index, false); });
+
     // Delete item
-    append_menu_item(&menu, wxID_ANY, _L("Delete"), _L("Delete this mixed filament"), [this, index](wxCommandEvent&) {
-        delete_mixed_filament(index);
-    }, "", nullptr, [this]() { return m_mixed_cards.size() > 0; });
-    
+    append_menu_item(
+        &menu, wxID_ANY, _L("Delete"), _L("Delete this mixed filament"), [this, index](wxCommandEvent&) { delete_mixed_filament(index); },
+        "", nullptr, [this]() { return m_mixed_cards.size() > 0; });
+
     // Show popup
     if (anchor) {
         wxPoint pt{0, anchor->GetSize().GetHeight() + 10};
@@ -286,7 +476,7 @@ void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& scr
     }
 }
 
-void SidebarFilamentMenu::update_physical_filaments() 
+void SidebarFilamentMenu::update_physical_filaments()
 {
     if (!m_get_physical_filaments)
         return;
@@ -296,10 +486,10 @@ void SidebarFilamentMenu::update_physical_filaments()
 
 void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 {
-    const wxColour material_bg     = StateColor::darkModeColorFor(*wxWHITE);
-    const wxColour material_divider = StateColor::darkModeColorFor(wxColour("#CECECE"));
+    const wxColour material_bg            = StateColor::darkModeColorFor(*wxWHITE);
+    const wxColour material_divider       = StateColor::darkModeColorFor(wxColour("#CECECE"));
     const wxColour material_title_chip_bg = StateColor::darkModeColorFor(wxColour("#F0F0F1"));
-    const wxColour material_title_fg = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
+    const wxColour material_title_fg      = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
 
     m_main_sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -311,11 +501,8 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_title_panel->SetBackgroundColor2(0xF1F1F1);
     m_title_panel->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& e) {
         if (m_callbacks[ActionType::CollapseToggle]) {
-            int btn_flushing_x =
-                (m_btn_flushing->IsShown() ?
-                     m_btn_flushing->GetPosition().x :
-                     (m_btn_physical_add->GetPosition().x -
-                      FromDIP(30)));
+            int btn_flushing_x = (m_btn_flushing->IsShown() ? m_btn_flushing->GetPosition().x :
+                                                              (m_btn_physical_add->GetPosition().x - FromDIP(30)));
 
             // ORCA exclude area of del button from titlebar collapse/expand feature to fix
             // undesired collapse when user spams del filament button
@@ -367,7 +554,6 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_title_panel->SetSizer(m_title_sizer);
     m_title_panel->Layout();
 
-
     // ####################################
     // 2. Content Panel
     // ####################################
@@ -390,8 +576,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // nested sizer enables following shrink order: divider->title->buttons
     wxBoxSizer* physical_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
-    auto make_title_chip = [this, material_bg, material_title_chip_bg, material_title_fg](
-                               wxWindow* parent, wxStaticText*& title_label, wxStaticText*& counter_label, const wxString& title) {
+    auto make_title_chip = [this, material_bg, material_title_chip_bg, material_title_fg](wxWindow* parent, wxStaticText*& title_label,
+                                                                                          wxStaticText*&  counter_label,
+                                                                                          const wxString& title) {
         StaticBox* chip = new StaticBox(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
         chip->SetBackgroundColour(material_bg);
         chip->SetBackgroundColor(material_title_chip_bg);
@@ -455,7 +642,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     });
 
     m_physical_title_sizer->Add(m_btn_physical_add, 0, wxALIGN_CENTER | wxLEFT, FromDIP(SidebarProps::IconSpacing()));
-    
+
     // AMS Sync button
     m_btn_ams = new ScalableButton(m_physical_title_panel, wxID_ANY, "ams_fila_sync");
     m_btn_ams->SetToolTip(_L("Synchronize filament list from AMS"));
@@ -465,9 +652,8 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     });
 
     m_physical_title_sizer->Add(m_btn_ams, 0, wxALIGN_CENTER | wxLEFT, FromDIP(SidebarProps::IconSpacing()));
-    
-    m_content_sizer->Add(m_physical_title_panel, 0, wxEXPAND | wxALL, FromDIP(SidebarProps::TitlebarMargin()));
 
+    m_content_sizer->Add(m_physical_title_panel, 0, wxEXPAND | wxALL, FromDIP(SidebarProps::TitlebarMargin()));
 
     // ####################################
     // 2.2 Physical Panel
@@ -483,7 +669,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_physical_panel->SetVirtualSize({-1, m_scrollbar_threshold}); // show scrollbar when content exceeds m_scrollbar_threshold
 
     m_physical_sizer = new wxGridSizer(1, FromDIP(2), FromDIP(SidebarProps::ContentMargin() * 2));
-    
+
     wxBoxSizer* physical_intermediate_sizer = new wxBoxSizer(wxVERTICAL);
     physical_intermediate_sizer->Add(m_physical_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::ContentMargin()));
     m_physical_panel->SetSizer(physical_intermediate_sizer);
@@ -497,9 +683,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     m_physical_grab_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
         wxPaintDC dc(m_physical_grab_panel);
-        wxSize size = m_physical_grab_panel->GetClientSize();
-        int thickness = m_physical_grab_line_thickness;
-        int y = (size.y - thickness) / 2;
+        wxSize    size      = m_physical_grab_panel->GetClientSize();
+        int       thickness = m_physical_grab_line_thickness;
+        int       y         = (size.y - thickness) / 2;
         dc.SetBrush(wxBrush(StateColor::darkModeColorFor(wxColour("#CECECE"))));
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, y, size.x, thickness);
@@ -522,8 +708,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
         event.Skip();
     });
     m_physical_grab_panel->Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) {
-        if (!m_physical_drag_state->is_dragging &&
-            !m_physical_grab_panel->GetScreenRect().Contains(wxGetMousePosition())) {
+        if (!m_physical_drag_state->is_dragging && !m_physical_grab_panel->GetScreenRect().Contains(wxGetMousePosition())) {
             set_grab_panel_line_thickness(m_physical_grab_panel, 1);
         }
         event.Skip();
@@ -554,7 +739,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // add button (add panel for it!!!)
 
     // add function in on_filaments_change to show/Hide
-    // 
+    //
     // hide all
     // if mixed_count > 0
     //      show m_mixed_title_panel & m_mixed_panel
@@ -601,7 +786,8 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_choice_mixed_color_engine->SetMinSize({FromDIP(72), FromDIP(24)});
     m_choice_mixed_color_engine->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
         const MixedFilamentColorEngine engine = m_choice_mixed_color_engine->GetSelection() == 1 ?
-            MixedFilamentColorEngine::FullSpectrumKSPairResidual : MixedFilamentColorEngine::FilamentMixer;
+                                                    MixedFilamentColorEngine::FullSpectrumKSPairResidual :
+                                                    MixedFilamentColorEngine::FilamentMixer;
         MixedFilamentManager::set_color_engine(engine);
         if (wxGetApp().app_config != nullptr) {
             wxGetApp().app_config->set("mixed_filament_color_engine", MixedFilamentManager::color_engine_to_string(engine));
@@ -617,8 +803,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     m_check_mixed_use_td = new wxCheckBox(m_mixed_title_panel, wxID_ANY, _L("TD"));
     m_check_mixed_use_td->SetValue(MixedFilamentManager::use_td_for_color_prediction());
-    m_check_mixed_use_td->Enable(
-        MixedFilamentManager::color_engine() == MixedFilamentColorEngine::FullSpectrumKSPairResidual);
+    m_check_mixed_use_td->Enable(MixedFilamentManager::color_engine() == MixedFilamentColorEngine::FullSpectrumKSPairResidual);
     m_check_mixed_use_td->SetToolTip(_L("Use each filament's transmission distance in KM/K-S color prediction."));
     m_check_mixed_use_td->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) {
         const bool enabled = m_check_mixed_use_td->GetValue();
@@ -648,63 +833,57 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_btn_mixed_del->Bind(wxEVT_BUTTON, [this](auto&) {
         auto* preset_bundle = wxGetApp().preset_bundle;
         if (preset_bundle) {
-            auto &mgr = preset_bundle->mixed_filaments;
-            const size_t num_physical = m_physical_filaments.size();
-            std::vector<MixedFilamentDefinition> definitions = mgr.mixed_filament_definitions(num_physical);
-            std::vector<MixedFilamentDefinition> old_mixed = definitions;
+            auto&                                mgr          = preset_bundle->mixed_filaments;
+            const size_t                         num_physical = m_physical_filaments.size();
+            std::vector<MixedFilamentDefinition> definitions  = mgr.mixed_filament_definitions(num_physical);
+            std::vector<MixedFilamentDefinition> old_mixed    = definitions;
 
             int last_visible_idx = -1;
             for (int i = static_cast<int>(definitions.size()) - 1; i >= 0; --i) {
-                if (!definitions[i].visibility.tombstoned) {
+                if (!definitions[i].visibility.tombstoned && !definitions[i].behavior.surface_bias.perimeter_modulation) {
                     last_visible_idx = i;
                     break;
                 }
             }
 
             if (last_visible_idx >= 0) {
-                auto &target = definitions[last_visible_idx];
-                auto canonical_pair = [](unsigned int a, unsigned int b) {
-                    return std::make_pair(std::min(a, b), std::max(a, b));
-                };
-                const MixedFilamentPrimaryPairView target_pair_view = target.recipe.blend.primary_pair_or();
-                const std::pair<unsigned int, unsigned int> target_pair = canonical_pair(target_pair_view.component_a.id, target_pair_view.component_b.id);
-                const bool valid_auto_pair = target_pair.first >= 1 &&
-                                             target_pair.second >= 1 &&
-                                             target_pair.first <= num_physical &&
-                                             target_pair.second <= num_physical &&
-                                             target_pair.first != target_pair.second;
+                auto& target         = definitions[last_visible_idx];
+                auto  canonical_pair = [](unsigned int a, unsigned int b) { return std::make_pair(std::min(a, b), std::max(a, b)); };
+                const MixedFilamentPrimaryPairView          target_pair_view = target.recipe.blend.primary_pair_or();
+                const std::pair<unsigned int, unsigned int> target_pair      = canonical_pair(target_pair_view.component_a.id,
+                                                                                              target_pair_view.component_b.id);
+                const bool valid_auto_pair = target_pair.first >= 1 && target_pair.second >= 1 && target_pair.first <= num_physical &&
+                                             target_pair.second <= num_physical && target_pair.first != target_pair.second;
 
                 if (target.source.kind == MixedFilamentSourceKind::Custom && target.source.origin_auto && valid_auto_pair) {
                     bool tombstoned_existing_auto = false;
                     for (size_t idx = 0; idx < definitions.size(); ++idx) {
                         if (idx == static_cast<size_t>(last_visible_idx))
                             continue;
-                        MixedFilamentDefinition &candidate = definitions[idx];
+                        MixedFilamentDefinition& candidate = definitions[idx];
                         if (candidate.source.kind == MixedFilamentSourceKind::Custom)
                             continue;
                         const MixedFilamentPrimaryPairView candidate_pair = candidate.recipe.blend.primary_pair_or();
                         if (canonical_pair(candidate_pair.component_a.id, candidate_pair.component_b.id) != target_pair)
                             continue;
                         candidate.visibility.tombstoned = true;
-                        tombstoned_existing_auto = true;
+                        tombstoned_existing_auto        = true;
                         break;
                     }
 
                     if (tombstoned_existing_auto) {
                         definitions.erase(definitions.begin() + last_visible_idx);
                     } else {
-                        target.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
-                        target.recipe.blend.components = {
-                            {MixedFilamentPhysicalRef{target_pair.first}, 50},
-                            {MixedFilamentPhysicalRef{target_pair.second}, 50}
-                        };
+                        target.recipe.kind             = MixedFilamentRecipeKind::WeightedBlend;
+                        target.recipe.blend.components = {{MixedFilamentPhysicalRef{target_pair.first}, 50},
+                                                          {MixedFilamentPhysicalRef{target_pair.second}, 50}};
                         target.recipe.manual_pattern.reset();
                         target.behavior.layer_cadence.component_a_layers = 1;
                         target.behavior.layer_cadence.component_b_layers = 1;
-                        target.behavior.distribution = MixedFilamentDistributionMode::Simple;
-                        target.source.kind = MixedFilamentSourceKind::AutoGenerated;
-                        target.source.origin_auto = true;
-                        target.visibility.tombstoned = true;
+                        target.behavior.distribution                     = MixedFilamentDistributionMode::Simple;
+                        target.source.kind                               = MixedFilamentSourceKind::AutoGenerated;
+                        target.source.origin_auto                        = true;
+                        target.visibility.tombstoned                     = true;
                     }
                 } else if (target.source.kind == MixedFilamentSourceKind::Custom) {
                     definitions.erase(definitions.begin() + last_visible_idx);
@@ -720,7 +899,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
                 mgr.set_mixed_filament_definitions(definitions, physical_colors);
 
                 const std::string serialized = mgr.serialize_custom_entries();
-                if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                if (ConfigOptionString* opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
                     opt->value = serialized;
                 else
                     preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
@@ -747,12 +926,12 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_btn_mixed_add->Bind(wxEVT_BUTTON, [this](auto&) {
         MixedFilamentDialog dlg(this, MixedFilamentDialog::Action::Add, m_physical_filaments);
         if (dlg.ShowModal() == wxID_OK) {
-            MixedFilamentDefinition new_def = dlg.get_result();
-            auto* preset_bundle = wxGetApp().preset_bundle;
+            MixedFilamentDefinition new_def       = dlg.get_result();
+            auto*                   preset_bundle = wxGetApp().preset_bundle;
             if (preset_bundle) {
-                auto &mgr = preset_bundle->mixed_filaments;
-                const size_t num_physical = m_physical_filaments.size();
-                std::vector<MixedFilamentDefinition> old_mixed = mgr.mixed_filament_definitions(num_physical);
+                auto&                                mgr          = preset_bundle->mixed_filaments;
+                const size_t                         num_physical = m_physical_filaments.size();
+                std::vector<MixedFilamentDefinition> old_mixed    = mgr.mixed_filament_definitions(num_physical);
 
                 std::vector<std::string> physical_colors;
                 for (const auto& p : m_physical_filaments) {
@@ -762,7 +941,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
                 mgr.add_custom_filament_definition(new_def, physical_colors);
 
                 const std::string serialized = mgr.serialize_custom_entries();
-                if (ConfigOptionString *opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
+                if (ConfigOptionString* opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
                     opt->value = serialized;
                 else
                     preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
@@ -784,7 +963,6 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     m_content_sizer->Add(m_mixed_title_panel, 0, wxEXPAND | wxALL, FromDIP(SidebarProps::TitlebarMargin()));
 
-    
     // ####################################
     // 2.5 Mixed Panel
     // ####################################
@@ -798,11 +976,13 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_mixed_sizer = new wxGridSizer(1, FromDIP(2), FromDIP(SidebarProps::ContentMargin() * 2));
 
     wxBoxSizer* mixed_intermediate_sizer = new wxBoxSizer(wxVERTICAL);
+    m_image_map_sizer                    = new wxBoxSizer(wxVERTICAL);
+    mixed_intermediate_sizer->Add(m_image_map_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::ContentMargin()));
     mixed_intermediate_sizer->Add(m_mixed_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::ContentMargin()));
     m_mixed_panel->SetSizer(mixed_intermediate_sizer);
 
     m_content_sizer->Add(m_mixed_panel, 0, wxEXPAND);
-    
+
     // grap panel
     m_mixed_grab_panel = new wxPanel(m_content_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(6)), wxBORDER_NONE);
     m_mixed_grab_panel->SetBackgroundColour(material_bg);
@@ -810,9 +990,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     m_mixed_grab_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
         wxPaintDC dc(m_mixed_grab_panel);
-        wxSize size = m_mixed_grab_panel->GetClientSize();
-        int thickness = m_mixed_grab_line_thickness;
-        int y = (size.y - thickness) / 2;
+        wxSize    size      = m_mixed_grab_panel->GetClientSize();
+        int       thickness = m_mixed_grab_line_thickness;
+        int       y         = (size.y - thickness) / 2;
         dc.SetBrush(wxBrush(StateColor::darkModeColorFor(wxColour("#CECECE"))));
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, y, size.x, thickness);
@@ -835,8 +1015,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
         event.Skip();
     });
     m_mixed_grab_panel->Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) {
-        if (!m_mixed_drag_state->is_dragging &&
-            !m_mixed_grab_panel->GetScreenRect().Contains(wxGetMousePosition())) {
+        if (!m_mixed_drag_state->is_dragging && !m_mixed_grab_panel->GetScreenRect().Contains(wxGetMousePosition())) {
             set_grab_panel_line_thickness(m_mixed_grab_panel, 1);
         }
         event.Skip();
@@ -844,7 +1023,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
     m_content_sizer->Add(m_mixed_grab_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::TitlebarMargin()));
     m_mixed_list_bottom_spacer = m_content_sizer->AddSpacer(FromDIP(4));
-    
+
     // ####################################
     // 0. General Layout
     // ####################################
@@ -903,18 +1082,7 @@ void SidebarFilamentMenu::update_physical_states()
         card->update_state();
 }
 
-void SidebarFilamentMenu::update_mixed_states(std::vector<MixedFilamentDefinition>& mixed_filaments)
-{
-    m_mixed_filaments = mixed_filaments;
-
-    int mixed_filament_count = static_cast<int>(m_mixed_filaments.size());
-    int mixed_card_count     = m_mixed_count();
-
-    for (int i = 0; i < mixed_card_count; i++) {
-        if (i < mixed_filament_count)
-            m_mixed_cards[i]->update_state(&m_mixed_filaments[i], true);
-    }
-}
+void SidebarFilamentMenu::update_mixed_states(std::vector<MixedFilamentDefinition>& mixed_filaments) { on_mixed_change(mixed_filaments); }
 
 void SidebarFilamentMenu::msw_rescale()
 {
@@ -987,8 +1155,8 @@ void SidebarFilamentMenu::show_AMS_button(bool show)
 
 void SidebarFilamentMenu::start_drag(const wxMouseEvent& event, DragState* drag_state, wxPanel* grap_panel, wxScrolledWindow* panel)
 {
-    drag_state->is_dragging = true;
-    drag_state->drag_start_y = wxGetMousePosition().y;
+    drag_state->is_dragging        = true;
+    drag_state->drag_start_y       = wxGetMousePosition().y;
     drag_state->panel_start_height = panel->GetSize().y;
     drag_state->max_content_height = panel->GetSizer()->GetMinSize().y;
     grap_panel->CaptureMouse();
@@ -1004,12 +1172,13 @@ void SidebarFilamentMenu::end_drag(const wxMouseEvent& event, DragState* drag_st
     }
 }
 
-void SidebarFilamentMenu::on_drag(const wxMouseEvent& event, DragState* drag_state, wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel)
+void SidebarFilamentMenu::on_drag(
+    const wxMouseEvent& event, DragState* drag_state, wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel)
 {
     if (drag_state->is_dragging && event.LeftIsDown()) {
-        const int current_y = wxGetMousePosition().y;
-        const int delta_y   = current_y - drag_state->drag_start_y;
-        int new_height = drag_state->panel_start_height + delta_y;
+        const int current_y  = wxGetMousePosition().y;
+        const int delta_y    = current_y - drag_state->drag_start_y;
+        int       new_height = drag_state->panel_start_height + delta_y;
 
         new_height = std::clamp(new_height, m_scrollbar_threshold, drag_state->max_content_height);
 
@@ -1030,7 +1199,7 @@ void SidebarFilamentMenu::on_drag(const wxMouseEvent& event, DragState* drag_sta
         }
 
         drag_state->last_layout_time = now;
-        
+
         panel->SetMinSize({-1, new_height});
         panel->SetMaxSize({-1, new_height});
 
@@ -1046,7 +1215,10 @@ void SidebarFilamentMenu::on_drag(const wxMouseEvent& event, DragState* drag_sta
     }
 }
 
-void SidebarFilamentMenu::update_grab_panel_visibility(wxScrolledWindow* panel, wxPanel* parent_panel, wxPanel* grab_panel, int max_content_height)
+void SidebarFilamentMenu::update_grab_panel_visibility(wxScrolledWindow* panel,
+                                                       wxPanel*          parent_panel,
+                                                       wxPanel*          grab_panel,
+                                                       int               max_content_height)
 {
     if (!panel || !grab_panel)
         return;

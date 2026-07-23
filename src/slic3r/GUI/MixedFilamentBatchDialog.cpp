@@ -155,7 +155,8 @@ void MixedFilamentBatchDialog::generate_items()
     // Map existing recipes for lookup
     std::vector<std::pair<BatchMixKey, size_t>> existing_keys;
     for (size_t idx = 0; idx < existing_definitions.size(); ++idx) {
-        if (!existing_definitions[idx].visibility.tombstoned) {
+        if (!existing_definitions[idx].visibility.tombstoned &&
+            !existing_definitions[idx].behavior.surface_bias.perimeter_modulation) {
             existing_keys.push_back({make_mix_key(existing_definitions[idx]), idx});
         }
     }
@@ -197,7 +198,7 @@ void MixedFilamentBatchDialog::generate_items()
     // 1. First register all non-tombstoned existing mixes
     for (size_t idx = 0; idx < existing_definitions.size(); ++idx) {
         auto& def = existing_definitions[idx];
-        if (def.visibility.tombstoned)
+        if (def.visibility.tombstoned || def.behavior.surface_bias.perimeter_modulation)
             continue;
 
         std::vector<int> phys;
@@ -363,7 +364,7 @@ void MixedFilamentBatchDialog::apply_batch_changes()
     for (const auto& item : m_mix_items) {
         if (item.is_existing && item.is_deleted) {
             auto it = std::find_if(definitions.begin(), definitions.end(), [&](const MixedFilamentDefinition& d) {
-                return make_mix_key(d) == item.key;
+                return !d.behavior.surface_bias.perimeter_modulation && make_mix_key(d) == item.key;
             });
             if (it != definitions.end()) {
                 size_t mixed_id = std::distance(definitions.begin(), it);

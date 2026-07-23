@@ -91,6 +91,7 @@
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/ImageMap/VolumeData.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/FilamentHotBedNozzleRules.hpp"
 
@@ -1920,6 +1921,144 @@ Sidebar::Sidebar(Plater *parent)
                 p->plater->update_project_dirty_from_presets();
                 p->plater->on_filaments_change(num_physical);
             }
+        });
+
+        p->m_sidebar_filament_menu->set_on_delete_image_map([this](int object_index) {
+            auto *preset_bundle = wxGetApp().preset_bundle;
+            if (preset_bundle == nullptr || object_index < 0 || size_t(object_index) >= wxGetApp().model().objects.size())
+                return;
+
+            ModelObject *target_object = wxGetApp().model().objects[size_t(object_index)];
+            if (target_object == nullptr)
+                return;
+
+            auto &manager = preset_bundle->mixed_filaments;
+            const size_t num_physical = p->m_sidebar_filament_menu->get_physical_filaments().size();
+            std::vector<MixedFilamentDefinition> definitions = manager.mixed_filament_definitions(num_physical);
+            const std::vector<MixedFilamentDefinition> old_mixed = definitions;
+            std::unordered_set<uint64_t> target_stable_ids;
+            std::unordered_set<unsigned int> target_filament_ids;
+
+            auto remember_palette_entry = [&](const ImageMap::PaletteEntry &entry) {
+                uint64_t stable_id = entry.mixed_filament_stable_id;
+                if (stable_id == 0 && entry.fallback_filament_id > num_physical) {
+                    const std::optional<MixedFilamentDefinition> definition =
+                        manager.mixed_filament_definition_from_id(entry.fallback_filament_id, num_physical);
+                    if (definition)
+                        stable_id = definition->identity.stable_id;
+                }
+                if (stable_id != 0)
+                    target_stable_ids.insert(stable_id);
+                if (entry.fallback_filament_id > num_physical)
+                    target_filament_ids.insert(entry.fallback_filament_id);
+            };
+
+            bool found_image_map = false;
+            for (ModelVolume *volume : target_object->volumes) {
+                if (volume == nullptr)
+                    continue;
+                const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+                if (data == nullptr)
+                    continue;
+                const bool is_perimeter_image_map = std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone &zone) {
+                    return zone.enabled && zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2;
+                });
+                if (!is_perimeter_image_map)
+                    continue;
+                found_image_map = true;
+                for (const ImageMap::Zone &zone : data->zones) {
+                    if (zone.render_mode != ImageMap::RenderMode::PerimeterModulationV2)
+                        continue;
+                    for (const ImageMap::PaletteEntry &entry : zone.palette)
+                        remember_palette_entry(entry);
+                }
+            }
+            if (!found_image_map)
+                return;
+
+            auto is_target_filament_id = [&](int filament_id) {
+                if (filament_id <= int(num_physical))
+                    return false;
+                if (target_filament_ids.count(unsigned(filament_id)) != 0)
+                    return true;
+                const std::optional<MixedFilamentDefinition> definition =
+                    manager.mixed_filament_definition_from_id(unsigned(filament_id), num_physical);
+                return definition && target_stable_ids.count(definition->identity.stable_id) != 0;
+            };
+
+            p->plater->take_snapshot(_u8L("Remove image colors"));
+            for (ModelVolume *volume : target_object->volumes) {
+                if (volume == nullptr || !volume->has_image_map_data())
+                    continue;
+                const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+                const bool is_perimeter_image_map = std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone &zone) {
+                    return zone.enabled && zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2;
+                });
+                if (!is_perimeter_image_map)
+                    continue;
+                if (volume->config.has("extruder") && is_target_filament_id(volume->config.extruder()))
+                    volume->config.set("extruder", 1);
+                volume->clear_image_map_data();
+            }
+            if (target_object->config.has("extruder") && is_target_filament_id(target_object->config.extruder()))
+                target_object->config.set("extruder", 1);
+
+            std::unordered_set<uint64_t> retained_stable_ids;
+            auto retain_filament_id = [&](int filament_id) {
+                if (filament_id <= int(num_physical))
+                    return;
+                const std::optional<MixedFilamentDefinition> definition =
+                    manager.mixed_filament_definition_from_id(unsigned(filament_id), num_physical);
+                if (definition)
+                    retained_stable_ids.insert(definition->identity.stable_id);
+            };
+            for (const ModelObject *object : wxGetApp().model().objects) {
+                if (object == nullptr)
+                    continue;
+                if (object->config.has("extruder"))
+                    retain_filament_id(object->config.extruder());
+                for (const ModelVolume *volume : object->volumes) {
+                    if (volume == nullptr)
+                        continue;
+                    for (int filament_id : volume->get_extruders())
+                        retain_filament_id(filament_id);
+                    const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+                    if (data == nullptr)
+                        continue;
+                    for (const ImageMap::Zone &zone : data->zones) {
+                        for (const ImageMap::PaletteEntry &entry : zone.palette) {
+                            if (entry.mixed_filament_stable_id != 0)
+                                retained_stable_ids.insert(entry.mixed_filament_stable_id);
+                        }
+                    }
+                }
+            }
+
+            definitions.erase(std::remove_if(definitions.begin(), definitions.end(), [&](const MixedFilamentDefinition &definition) {
+                                  return definition.behavior.surface_bias.perimeter_modulation &&
+                                         target_stable_ids.count(definition.identity.stable_id) != 0 &&
+                                         retained_stable_ids.count(definition.identity.stable_id) == 0;
+                              }),
+                              definitions.end());
+
+            if (definitions.size() != old_mixed.size()) {
+                std::vector<std::string> physical_colors;
+                physical_colors.reserve(num_physical);
+                for (const auto &filament : p->m_sidebar_filament_menu->get_physical_filaments())
+                    physical_colors.emplace_back(filament.first);
+                manager.set_mixed_filament_definitions(definitions, physical_colors);
+                preset_bundle->sync_mixed_filament_definitions_to_project_config();
+                preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
+
+                if (auto *print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
+                    print_tab->update_dirty();
+                if (wxGetApp().mainframe)
+                    wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
+            }
+
+            p->plater->update_project_dirty_from_presets();
+            p->plater->on_filaments_change(num_physical);
+            p->plater->changed_object(object_index);
         });
 
         p->m_sidebar_filament_menu->set_on_action(SidebarFilamentMenu::ActionType::CollapseToggle, [this]() { 
@@ -9227,9 +9366,10 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 Semver               file_version;
 
                 // ObjImportColorFn obj_color_fun=nullptr;
-                auto obj_color_fun = [this, &path](std::vector<RGBA>& input_colors, bool is_single_color,
-                                                   std::vector<unsigned char>& filament_ids, unsigned char& first_extruder_id,
-                                                   ObjColorImportContext& import_context) {
+                auto obj_color_fun = [this, &path, &is_user_cancel](std::vector<RGBA>& input_colors, bool is_single_color,
+                                                                    std::vector<unsigned char>& filament_ids,
+                                                                    unsigned char& first_extruder_id,
+                                                                    ObjColorImportContext& import_context) {
                     if (!boost::iends_with(path.string(), ".obj")) {
                         return;
                     }
@@ -9237,9 +9377,73 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                                                                                                                   false);
                     ObjColorDialog color_dlg(nullptr, input_colors, is_single_color, import_context, extruder_colours, filament_ids,
                                              first_extruder_id);
+                    if (is_user_cancel) {
+                        filament_ids.clear();
+                        return;
+                    }
                     if (color_dlg.ShowModal() != wxID_OK) {
                         filament_ids.clear();
                     }
+                };
+                auto obj_image_map_progress_fun = [&dlg, &dlg_cont, &is_user_cancel, real_filename, &progress_percent,
+                                                   INPUT_FILES_RATIO, total_files, i](ObjImageMapProgressStage stage,
+                                                                                     size_t current,
+                                                                                     size_t total) {
+                    int      stage_start = 0;
+                    int      stage_end   = 100;
+                    wxString stage_text;
+                    switch (stage) {
+                    case ObjImageMapProgressStage::ParseGeometry:
+                        stage_start = 0;
+                        stage_end   = 25;
+                        stage_text  = _L("Reading OBJ geometry");
+                        break;
+                    case ObjImageMapProgressStage::DecodeTextures:
+                        stage_start = 25;
+                        stage_end   = 37;
+                        stage_text  = _L("Loading OBJ textures");
+                        break;
+                    case ObjImageMapProgressStage::AnalyzeSurface:
+                        stage_start = 37;
+                        stage_end   = 52;
+                        stage_text  = _L("Analyzing OBJ surface colors");
+                        break;
+                    case ObjImageMapProgressStage::AllocateSamples:
+                        stage_start = 52;
+                        stage_end   = 60;
+                        stage_text  = _L("Allocating OBJ color samples");
+                        break;
+                    case ObjImageMapProgressStage::SampleColors:
+                        stage_start = 60;
+                        stage_end   = 70;
+                        stage_text  = _L("Sampling OBJ surface colors");
+                        break;
+                    case ObjImageMapProgressStage::QuantizeColors:
+                        stage_start = 70;
+                        stage_end   = 85;
+                        stage_text  = _L("Quantizing OBJ colors");
+                        break;
+                    case ObjImageMapProgressStage::CreateMixedFilaments:
+                        stage_start = 85;
+                        stage_end   = 93;
+                        stage_text  = _L("Creating mixed-filament colors");
+                        break;
+                    case ObjImageMapProgressStage::StoreSource:
+                        stage_start = 93;
+                        stage_end   = 100;
+                        stage_text  = _L("Storing OBJ image-map source");
+                        break;
+                    }
+
+                    const float local = total > 0 ? std::clamp(float(current) / float(total), 0.f, 1.f) : 0.f;
+                    const float image_map_fraction = float(stage_start + (stage_end - stage_start) * local) / 100.f;
+                    const float percent_float = (100.f * float(i) / float(total_files)) +
+                                                INPUT_FILES_RATIO * 100.f * image_map_fraction / float(total_files);
+                    progress_percent = int(percent_float);
+                    dlg_cont = dlg.Update(progress_percent,
+                                          wxString::Format("%s: %s", stage_text, from_path(real_filename)));
+                    is_user_cancel |= !dlg_cont;
+                    return dlg_cont;
                 };
                 if (boost::iends_with(path.string(), ".stp") || boost::iends_with(path.string(), ".step")) {
                     double linear = string_to_double_decimal_point(wxGetApp().app_config->get("linear_defletion"));
@@ -9317,7 +9521,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                             cont          = dlg.Update(progress_percent, msg);
                             cancel        = !cont;
                     },
-                    nullptr, 0, obj_color_fun);
+                    nullptr, 0, obj_color_fun, obj_image_map_progress_fun);
                 }
 
                 if (designer_model_id.empty() && boost::algorithm::iends_with(path.string(), ".stl")) {
@@ -10014,6 +10218,9 @@ void Plater::priv::object_list_changed()
     main_frame->update_slice_print_status(MainFrame::eEventObjectUpdate, can_slice);
 
     notify_filament_compatibility_after_apply();
+
+    if (sidebar != nullptr && sidebar->filament_menu() != nullptr)
+        sidebar->filament_menu()->refresh_image_map_entries();
 
     wxGetApp().params_panel()->notify_object_config_changed();
 }

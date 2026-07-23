@@ -63,9 +63,16 @@ private:
     void        deal_default_strategy();
     int         min_component_percent() const;
     bool        uses_layer_sequence_image_map() const;
+    bool        uses_adaptive_local_cycles_image_map() const;
+    bool        adaptive_cycle_mixes_ready() const;
+    bool        report_image_map_progress(Slic3r::ObjImageMapProgressStage stage, size_t current, size_t total);
+    void        update_adaptive_cycle_spectra();
+    void        rebuild_adaptive_cycle_spectrum_table();
+    void        update_image_map_mode_ui();
     void        store_image_map_palette(const std::vector<unsigned char>& cluster_filament_ids);
+    void        store_layer_sequence_image_map_palette(unsigned char filament_id, const wxColour& representative_color);
     int         find_filament_selection_by_color(const wxColour& color) const;
-    int         append_new_filament_option(const wxColour& color);
+    int         append_new_filament_option(const wxColour& color, std::vector<unsigned int>* component_filament_ids = nullptr);
     void        update_keep_color_buttons();
     static bool colors_are_equal(const wxColour& lhs, const wxColour& rhs);
 
@@ -75,6 +82,12 @@ private:
     wxPanel*                   m_page_simple    = nullptr;
     wxBoxSizer*                m_sizer          = nullptr;
     wxBoxSizer*                m_sizer_simple   = nullptr;
+    wxSizer*                   m_quantized_settings_sizer{nullptr};
+    wxSizer*                   m_physical_title_sizer{nullptr};
+    wxSizer*                   m_physical_colors_sizer{nullptr};
+    wxSizer*                   m_image_map_spectrum_sizer{nullptr};
+    wxScrolledWindow*          m_adaptive_spectrum_window{nullptr};
+    wxSizer*                   m_quick_set_sizer{nullptr};
     wxTextCtrl*                m_color_cluster_num_by_user_ebox{nullptr};
     wxSpinCtrl*                m_min_component_percent_ctrl{nullptr};
     wxChoice*                  m_image_map_mode_ctrl{nullptr};
@@ -103,6 +116,9 @@ private:
     std::vector<wxColour>          m_colours;               // from project and show right
     std::vector<int>               m_cluster_map_filaments; // show middle
     std::vector<wxColour>          m_cluster_colours;       // from_algo and show left
+    std::vector<wxColour>          m_source_spectrum_colours;
+    std::vector<std::vector<wxColour>> m_adaptive_cycle_spectrum_colours;
+    std::vector<std::vector<unsigned int>> m_adaptive_cycle_component_filament_ids;
     std::vector<wxColour>          m_new_add_colors;
     bool                           m_is_image_map{false};
     Slic3r::ObjColorImportContext& m_import_context;

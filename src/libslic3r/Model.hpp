@@ -1041,7 +1041,10 @@ private:
     ModelObject*                    	object;
     // The triangular model.
     std::shared_ptr<const TriangleMesh> m_mesh;
-    std::shared_ptr<ImageMap::VolumeData> m_image_map_data;
+    // Image-map source data is replaced as a whole and never mutated in place.
+    // Keeping it const lets undo/redo retain one shared immutable payload instead
+    // of serializing large textures and triangle bindings for every transform.
+    std::shared_ptr<const ImageMap::VolumeData> m_image_map_data;
     // Is it an object to be printed, or a modifier volume?
     ModelVolumeType                 	m_type;
     t_model_material_id             	m_material_id;
@@ -1603,7 +1606,8 @@ public:
                                 ImportstlProgressFn        stlFn                = nullptr,
                                 BBLProject *               project              = nullptr,
                                 int                        plate_id             = 0,
-                                ObjImportColorFn           objFn                = nullptr
+                                ObjImportColorFn           objFn                = nullptr,
+                                ObjImageMapProgressFn      objImageMapProgressFn = nullptr
                                 );
     // BBS
     static bool    obj_import_vertex_color_deal(const std::vector<unsigned char> &vertex_filament_ids, const unsigned char &first_extruder_id, Model *model);

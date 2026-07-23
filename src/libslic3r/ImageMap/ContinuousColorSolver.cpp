@@ -4,6 +4,7 @@
 
 #include "ContinuousColorSolver.hpp"
 
+#include "../FullSpectrumKSPairResidual.hpp"
 #include "../MixedFilament.hpp"
 
 #include <algorithm>
@@ -120,10 +121,21 @@ std::array<float, 3> decode_rgb(const std::string& color_hex)
 struct ContinuousColorSolver::Impl
 {
     std::vector<ContinuousColorComponent> components;
+    std::vector<float>                    predicted_colors;
     std::vector<float>                    perceptual_coordinates;
     std::vector<float>                    weights;
     std::vector<KdNode>                   kd_nodes;
     int                                   kd_root{-1};
+
+    size_t nearest_candidate(const RGBA& target_color) const
+    {
+        const std::array<float, 3> target       = oklab_from_srgb({target_color[0], target_color[1], target_color[2]});
+        const std::array<float, 3> axis_weights = perceptual_axis_weights(target);
+        size_t                     best_index   = size_t(-1);
+        float                      best_error   = std::numeric_limits<float>::max();
+        query(kd_root, target, axis_weights, best_index, best_error);
+        return best_index;
+    }
 
     float candidate_error(size_t candidate_index, const std::array<float, 3>& target, const std::array<float, 3>& axis_weights) const
     {
@@ -197,22 +209,37 @@ ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponen
     if (expected == 0 || expected > MAX_CANDIDATES)
         return;
     m_impl->perceptual_coordinates.reserve(expected * 3);
+    m_impl->predicted_colors.reserve(expected * 3);
     m_impl->weights.reserve(expected * m_impl->components.size());
 
     std::vector<int>                 units(m_impl->components.size(), 0);
     std::function<void(size_t, int)> enumerate = [&](size_t component_index, int remaining_units) {
         if (component_index + 1 == units.size()) {
             units[component_index] = remaining_units;
-            std::vector<MixedFilamentColorInput> inputs;
-            inputs.reserve(units.size());
+            std::vector<FullSpectrumKSPairResidualColorInput> ks_inputs;
+            std::vector<MixedFilamentColorInput>               fallback_inputs;
+            ks_inputs.reserve(units.size());
+            fallback_inputs.reserve(units.size());
             for (size_t index = 0; index < units.size(); ++index) {
                 if (units[index] <= 0)
                     continue;
                 const ContinuousColorComponent& component = m_impl->components[index];
-                inputs.push_back({component.color_hex, units[index], component.transmission_distance_mm, component.material_id});
+                ks_inputs.push_back({component.color_hex, units[index], component.transmission_distance_mm, component.material_id});
+                fallback_inputs.push_back({component.color_hex, units[index], component.transmission_distance_mm, component.material_id});
             }
-            const std::array<float, 3> mixed      = decode_rgb(MixedFilamentManager::blend_color_multi(inputs));
+            std::string mixed_hex;
+            if (ks_inputs.size() == 1) {
+                mixed_hex = ks_inputs.front().color_hex;
+            } else if (const std::optional<std::string> predicted = full_spectrum_ks_blend_color_multi(ks_inputs)) {
+                mixed_hex = *predicted;
+            } else {
+                // Retain a usable candidate table for malformed legacy colors.
+                // Valid physical colors always take the KM/K-S path above.
+                mixed_hex = MixedFilamentManager::blend_color_multi(fallback_inputs);
+            }
+            const std::array<float, 3> mixed      = decode_rgb(mixed_hex);
             const std::array<float, 3> perceptual = oklab_from_srgb(mixed);
+            m_impl->predicted_colors.insert(m_impl->predicted_colors.end(), mixed.begin(), mixed.end());
             m_impl->perceptual_coordinates.insert(m_impl->perceptual_coordinates.end(), perceptual.begin(), perceptual.end());
             for (const int unit : units)
                 m_impl->weights.push_back(float(unit) / float(total_units));
@@ -234,6 +261,7 @@ ContinuousColorSolver& ContinuousColorSolver::operator=(ContinuousColorSolver&&)
 bool ContinuousColorSolver::valid() const
 {
     return m_impl && m_impl->components.size() >= 2 && m_impl->kd_root >= 0 &&
+           m_impl->predicted_colors.size() == candidate_count() * 3 &&
            m_impl->weights.size() == candidate_count() * component_count();
 }
 
@@ -245,11 +273,7 @@ std::vector<double> ContinuousColorSolver::solve(const RGBA& target_color) const
 {
     if (!valid())
         return {};
-    const std::array<float, 3> target       = oklab_from_srgb({target_color[0], target_color[1], target_color[2]});
-    const std::array<float, 3> axis_weights = perceptual_axis_weights(target);
-    size_t                     best_index   = size_t(-1);
-    float                      best_error   = std::numeric_limits<float>::max();
-    m_impl->query(m_impl->kd_root, target, axis_weights, best_index, best_error);
+    const size_t best_index = m_impl->nearest_candidate(target_color);
     if (best_index >= candidate_count())
         return {};
 
@@ -258,6 +282,18 @@ std::vector<double> ContinuousColorSolver::solve(const RGBA& target_color) const
     for (size_t index = 0; index < result.size(); ++index)
         result[index] = m_impl->weights[base + index];
     return result;
+}
+
+std::optional<RGBA> ContinuousColorSolver::predict_color(const RGBA& target_color) const
+{
+    if (!valid())
+        return std::nullopt;
+    const size_t best_index = m_impl->nearest_candidate(target_color);
+    if (best_index >= candidate_count())
+        return std::nullopt;
+
+    const size_t base = best_index * 3;
+    return RGBA{m_impl->predicted_colors[base], m_impl->predicted_colors[base + 1], m_impl->predicted_colors[base + 2], target_color[3]};
 }
 
 } // namespace Slic3r::ImageMap

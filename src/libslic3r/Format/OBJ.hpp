@@ -20,7 +20,21 @@ enum class ObjColorImportSource : uint8_t { VertexColors, FaceColors, ImageTextu
 
 enum class ObjColorImportMode : uint8_t { Colors, ImageMap };
 
-enum class ObjImageMapRenderMode : uint8_t { NormalMix, PerimeterModulationV2 };
+enum class ObjImageMapRenderMode : uint8_t { NormalMix, PerimeterModulationV2, AdaptiveLocalizedCycles };
+
+enum class ObjImageMapProgressStage : uint8_t
+{
+    ParseGeometry,
+    DecodeTextures,
+    AnalyzeSurface,
+    AllocateSamples,
+    SampleColors,
+    QuantizeColors,
+    CreateMixedFilaments,
+    StoreSource
+};
+
+using ObjImageMapProgressFn = std::function<bool(ObjImageMapProgressStage stage, size_t current, size_t total)>;
 
 struct ObjColorImportContext
 {
@@ -40,6 +54,7 @@ struct ObjColorImportContext
     std::vector<RGBA>      image_map_palette_colors;
     std::vector<unsigned char> image_map_palette_filament_ids;
     std::vector<uint64_t>  image_map_palette_mixed_stable_ids;
+    ObjImageMapProgressFn   image_map_progress_fn;
 };
 
 typedef std::function<void(std::vector<RGBA>&          input_colors,
@@ -63,8 +78,17 @@ struct ObjInfo
     std::unordered_map<int, std::string> uv_map_pngs;
     bool                                 has_uv_png{false};
 };
-extern bool load_obj(const char* path, TriangleMesh* mesh, ObjInfo& vertex_colors, std::string& message);
-extern bool load_obj(const char* path, Model* model, ObjInfo& vertex_colors, std::string& message, const char* object_name = nullptr);
+extern bool load_obj(const char* path,
+                     TriangleMesh* mesh,
+                     ObjInfo& vertex_colors,
+                     std::string& message,
+                     const ObjImageMapProgressFn& progress_fn = {});
+extern bool load_obj(const char* path,
+                     Model* model,
+                     ObjInfo& vertex_colors,
+                     std::string& message,
+                     const char* object_name = nullptr,
+                     const ObjImageMapProgressFn& progress_fn = {});
 
 extern bool store_obj(const char* path, TriangleMesh* mesh);
 extern bool store_obj(const char* path, ModelObject* model);

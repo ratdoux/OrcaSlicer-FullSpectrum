@@ -2,10 +2,13 @@
 
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
+#include "libslic3r/FullSpectrumKSPairResidual.hpp"
 #include "libslic3r/ImageMap/BoundaryModulation.hpp"
 #include "libslic3r/ImageMap/ContinuousColorSolver.hpp"
 #include "libslic3r/ImageMap/FacetRasterizer.hpp"
+#include "libslic3r/ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "libslic3r/ImageMap/Sampling.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/PNGReadWrite.hpp"
 #include "libslic3r/TriangleMesh.hpp"
@@ -14,18 +17,26 @@
 #include <boost/nowide/fstream.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <set>
 
 using namespace Slic3r;
 
 TEST_CASE("Continuous image-map colors solve physical filament weights without a display palette", "[ImageMap][ColorSolver]")
 {
-    ImageMap::ContinuousColorSolver solver({{"#FF0000", std::nullopt, std::nullopt},
-                                             {"#0000FF", std::nullopt, std::nullopt}});
+    struct ColorEngineRestore
+    {
+        MixedFilamentColorEngine previous;
+        ~ColorEngineRestore() { MixedFilamentManager::set_color_engine(previous); }
+    } restore{MixedFilamentManager::color_engine()};
+    MixedFilamentManager::set_color_engine(MixedFilamentColorEngine::FilamentMixer);
+
+    ImageMap::ContinuousColorSolver solver({{"#FF0000", std::nullopt, std::nullopt}, {"#0000FF", std::nullopt, std::nullopt}});
     REQUIRE(solver.valid());
     CHECK(solver.candidate_count() == ImageMap::continuous_color_solver_candidate_count(2));
     CHECK(solver.candidate_count() == 41);
 
-    const std::vector<double> red = solver.solve(RGBA{1.f, 0.f, 0.f, 1.f});
+    const std::vector<double> red  = solver.solve(RGBA{1.f, 0.f, 0.f, 1.f});
     const std::vector<double> blue = solver.solve(RGBA{0.f, 0.f, 1.f, 1.f});
     REQUIRE(red.size() == 2);
     REQUIRE(blue.size() == 2);
@@ -39,6 +50,107 @@ TEST_CASE("Continuous image-map colors solve physical filament weights without a
     CHECK(purple[0] > 0.0);
     CHECK(purple[1] > 0.0);
     CHECK(purple[0] + purple[1] == Approx(1.0));
+
+    const std::optional<RGBA> predicted_purple = solver.predict_color(RGBA{0.5f, 0.f, 0.5f, 0.75f});
+    REQUIRE(predicted_purple);
+    CHECK((*predicted_purple)[3] == Approx(0.75f));
+
+    std::vector<FullSpectrumKSPairResidualColorInput> expected_inputs;
+    if (purple[0] > 0.0)
+        expected_inputs.push_back({"#FF0000", int(std::lround(purple[0] * 40.0)), std::nullopt, std::nullopt});
+    if (purple[1] > 0.0)
+        expected_inputs.push_back({"#0000FF", int(std::lround(purple[1] * 40.0)), std::nullopt, std::nullopt});
+    REQUIRE(expected_inputs.size() == 2);
+    const std::optional<std::string> expected_hex = full_spectrum_ks_blend_color_multi(expected_inputs);
+    REQUIRE(expected_hex);
+    ColorRGB expected_rgb;
+    REQUIRE(decode_color(*expected_hex, expected_rgb));
+    CHECK((*predicted_purple)[0] == Approx(expected_rgb.r()));
+    CHECK((*predicted_purple)[1] == Approx(expected_rgb.g()));
+    CHECK((*predicted_purple)[2] == Approx(expected_rgb.b()));
+}
+
+TEST_CASE("Image-map spectrum sampling is bounded and representative", "[ImageMap][Spectrum]")
+{
+    std::vector<RGBA> source_colors(900, RGBA{1.f, 0.f, 0.f, 1.f});
+    source_colors.insert(source_colors.end(), 100, RGBA{0.f, 0.f, 1.f, 1.f});
+    source_colors.insert(source_colors.end(), 100, RGBA{0.f, 1.f, 0.f, 0.f});
+
+    const std::vector<RGBA> representative = ImageMap::representative_source_colors(source_colors, 8, 1024);
+    REQUIRE(representative.size() == 2);
+    CHECK(std::any_of(representative.begin(), representative.end(),
+                      [](const RGBA& color) { return color[0] > 0.9f && color[1] < 0.1f && color[2] < 0.1f; }));
+    CHECK(std::any_of(representative.begin(), representative.end(),
+                      [](const RGBA& color) { return color[2] > 0.9f && color[0] < 0.1f && color[1] < 0.1f; }));
+    CHECK(ImageMap::representative_source_colors(source_colors, 1, 64).size() == 1);
+
+    ImageMap::VolumeData volume_data;
+    ImageMap::Zone       zone;
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    volume_data.zones.push_back(zone);
+    ImageMap::TextureAsset texture;
+    texture.stable_id = "spectrum-texture";
+    texture.width     = 2;
+    texture.height    = 1;
+    texture.rgba      = {255, 0, 0, 255, 0, 0, 255, 255};
+    volume_data.texture_assets.push_back(texture);
+    const std::vector<RGBA> texture_colors = ImageMap::representative_source_colors(volume_data,
+                                                                                    ImageMap::RenderMode::PerimeterModulationV2, 8, 16);
+    CHECK(texture_colors.size() == 2);
+    CHECK(ImageMap::representative_source_colors(volume_data, ImageMap::RenderMode::NormalMix, 8, 16).empty());
+
+    SECTION("labeled source spectra retain each adaptive cluster's colors")
+    {
+        const std::vector<RGBA> labeled_colors{
+            RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{1.f, 0.25f, 0.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f},
+            RGBA{0.25f, 0.f, 1.f, 1.f}, RGBA{0.f, 1.f, 0.f, 1.f}};
+        const std::vector<int> labels{0, 0, 1, 1, -1};
+
+        const std::vector<std::vector<RGBA>> spectra =
+            ImageMap::representative_labeled_source_colors(labeled_colors, labels, 2, 8, 32);
+        REQUIRE(spectra.size() == 2);
+        REQUIRE(spectra[0].size() == 2);
+        REQUIRE(spectra[1].size() == 2);
+        CHECK(std::all_of(spectra[0].begin(), spectra[0].end(), [](const RGBA& color) { return color[0] > color[2]; }));
+        CHECK(std::all_of(spectra[1].begin(), spectra[1].end(), [](const RGBA& color) { return color[2] > color[0]; }));
+    }
+
+    SECTION("adaptive palette spectra are split by localized cycle")
+    {
+        ImageMap::VolumeData adaptive_data;
+        ImageMap::Zone       adaptive_zone;
+        adaptive_zone.render_mode = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+        adaptive_zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 101, 5});
+        adaptive_zone.palette.push_back({RGBA{0.f, 0.f, 1.f, 1.f}, 202, 6});
+        adaptive_data.zones.push_back(adaptive_zone);
+
+        ImageMap::TextureAsset used_texture;
+        used_texture.stable_id = "adaptive-used";
+        used_texture.width     = 4;
+        used_texture.height    = 1;
+        used_texture.rgba      = {255, 0, 0, 255, 255, 80, 0, 255, 0, 0, 255, 255, 80, 0, 255, 255};
+        adaptive_data.texture_assets.push_back(used_texture);
+        ImageMap::TextureAsset unused_texture;
+        unused_texture.stable_id = "adaptive-unused";
+        unused_texture.width     = 1;
+        unused_texture.height    = 1;
+        unused_texture.rgba      = {0, 255, 0, 255};
+        adaptive_data.texture_assets.push_back(unused_texture);
+
+        ImageMap::TriangleBinding binding;
+        binding.zone_index                 = 0;
+        binding.source.kind                = ImageMap::SourceKind::Texture;
+        binding.source.texture_asset_index = 0;
+        adaptive_data.triangle_bindings.push_back(binding);
+
+        const std::vector<std::vector<RGBA>> spectra = ImageMap::representative_palette_source_colors(adaptive_data, 0, 8, 32);
+        REQUIRE(spectra.size() == 2);
+        CHECK(spectra[0].size() >= 2);
+        CHECK(spectra[1].size() >= 2);
+        CHECK(std::all_of(spectra[0].begin(), spectra[0].end(), [](const RGBA& color) { return color[0] > color[2] && color[1] < 0.5f; }));
+        CHECK(std::all_of(spectra[1].begin(), spectra[1].end(), [](const RGBA& color) { return color[2] > color[0] && color[1] < 0.5f; }));
+        CHECK(ImageMap::representative_palette_source_colors(adaptive_data, 1, 8, 32).empty());
+    }
 }
 
 TEST_CASE("OBJ texture metadata stays aligned when material ranges contain quads", "[ObjImageMap]")
@@ -64,10 +176,19 @@ TEST_CASE("OBJ texture metadata stays aligned when material ranges contain quads
                   "usemtl plain\nf 1/1 3/3 5/5\n";
     }
 
-    TriangleMesh mesh;
-    ObjInfo      info;
-    std::string  message;
-    REQUIRE(load_obj(obj_path.string().c_str(), &mesh, info, message));
+    TriangleMesh                           mesh;
+    ObjInfo                                info;
+    std::string                            message;
+    std::vector<std::pair<size_t, size_t>> parse_progress;
+    REQUIRE(load_obj(obj_path.string().c_str(), &mesh, info, message,
+                     [&parse_progress](ObjImageMapProgressStage stage, size_t current, size_t total) {
+                         if (stage == ObjImageMapProgressStage::ParseGeometry)
+                             parse_progress.emplace_back(current, total);
+                         return true;
+                     }));
+    REQUIRE_FALSE(parse_progress.empty());
+    CHECK(parse_progress.front().first == 0);
+    CHECK(parse_progress.back().first == parse_progress.back().second);
     REQUIRE(mesh.its.indices.size() == 3);
     REQUIRE(info.triangle_texture_files.size() == 3);
     const std::string expected_texture_path = (directory / "texture.png").string();
@@ -166,10 +287,19 @@ TEST_CASE("OBJ image-map sampling decodes UV textures with a bounded detail plan
     info.triangle_uvs_valid     = {1};
     info.triangle_texture_files = {"texture.png"};
 
-    ObjImageMapSamplePlan plan;
-    std::string           warning;
-    REQUIRE(build_obj_image_map_sample_plan(mesh, info, 1.f, 128, plan, &warning));
+    ObjImageMapSamplePlan              plan;
+    std::string                        warning;
+    std::set<ObjImageMapProgressStage> progress_stages;
+    REQUIRE(build_obj_image_map_sample_plan(mesh, info, 1.f, 128, plan, &warning,
+                                            [&progress_stages](ObjImageMapProgressStage stage, size_t, size_t) {
+                                                progress_stages.emplace(stage);
+                                                return true;
+                                            }));
     CHECK(warning.empty());
+    CHECK(progress_stages.count(ObjImageMapProgressStage::DecodeTextures) == 1);
+    CHECK(progress_stages.count(ObjImageMapProgressStage::AnalyzeSurface) == 1);
+    CHECK(progress_stages.count(ObjImageMapProgressStage::AllocateSamples) == 1);
+    CHECK(progress_stages.count(ObjImageMapProgressStage::SampleColors) == 1);
     CHECK(plan.loaded_texture_count == 1);
     CHECK(plan.textured_triangle_count == 1);
     REQUIRE(plan.triangle_subdivision_depths.size() == 1);
@@ -223,7 +353,7 @@ TEST_CASE("OBJ image-map import retains texture pixels and UVs as persistent mod
     zone.palette.push_back({RGBA{0.35f, 0.47f, 0.59f, 1.f}, 0, 1});
     zone.palette.push_back({RGBA{0.8f, 0.2f, 0.1f, 1.f}, 0, 5});
     ImageMap::VolumeData data;
-    std::string warning;
+    std::string          warning;
     REQUIRE(build_obj_image_map_volume_data(mesh, info, ObjColorImportSource::ImageTexture, {}, std::move(zone), data, &warning));
     CHECK(warning.empty());
     REQUIRE(data.texture_assets.size() == 1);
@@ -231,10 +361,10 @@ TEST_CASE("OBJ image-map import retains texture pixels and UVs as persistent mod
     REQUIRE(data.triangle_bindings.size() == 1);
     CHECK(data.triangle_bindings.front().source.uvs[1] == Vec2f(1.f, 0.f));
 
-    Model model;
-    ModelObject *object = model.add_object();
+    Model        model;
+    ModelObject* object = model.add_object();
     object->add_instance();
-    ModelVolume *volume = object->add_volume(mesh);
+    ModelVolume* volume = object->add_volume(mesh);
     REQUIRE(Model::obj_import_persistent_image_map_deal(std::move(data), 1, &model));
     CHECK(volume->has_image_map_data());
     CHECK(volume->mmu_segmentation_facets.empty());
@@ -261,33 +391,34 @@ TEST_CASE("Image-map sources are sampled and rasterized only for the current sli
     its.indices.emplace_back(0, 1, 2);
     auto mesh = std::make_shared<TriangleMesh>(std::move(its));
 
-    auto data = std::make_shared<ImageMap::VolumeData>();
+    auto data                  = std::make_shared<ImageMap::VolumeData>();
     data->topology_fingerprint = ImageMap::topology_fingerprint(*mesh);
     data->texture_assets.push_back({"green", "green", 1, 1, {0, 255, 0, 255}});
     ImageMap::Zone zone;
-    zone.stable_id = "zone";
+    zone.stable_id             = "zone";
     zone.target_sample_size_mm = 1.5f;
-    zone.max_facet_samples = 128;
+    zone.max_facet_samples     = 128;
     zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
     zone.palette.push_back({RGBA{0.f, 1.f, 0.f, 1.f}, 0, 2});
     data->zones.push_back(zone);
     ImageMap::TriangleBinding binding;
-    binding.triangle_index = 0;
-    binding.source.kind = ImageMap::SourceKind::Texture;
+    binding.triangle_index             = 0;
+    binding.source.kind                = ImageMap::SourceKind::Texture;
     binding.source.texture_asset_index = 0;
-    binding.source.uvs = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
+    binding.source.uvs                 = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
     data->triangle_bindings.push_back(binding);
     REQUIRE(data->validate(*mesh).valid);
 
     ImageMap::SurfaceSampler sampler(mesh, data);
-    const auto sample = sampler.sample(Vec3d(1.0, 1.0, 0.05), 0.1);
+    const auto               sample = sampler.sample(Vec3d(1.0, 1.0, 0.05), 0.1);
     REQUIRE(sample);
     REQUIRE(sample->palette_entry != nullptr);
     CHECK(sample->palette_entry->fallback_filament_id == 2);
     CHECK(sample->color[1] == Approx(1.f));
 
-    const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(
-        *mesh, *data, 1, [](const ImageMap::PaletteEntry &entry) { return entry.fallback_filament_id; });
+    const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(*mesh, *data, 1, [](const ImageMap::PaletteEntry& entry) {
+        return entry.fallback_filament_id;
+    });
     CHECK(rasterized.unresolved_palette_entries == 0);
     CHECK(rasterized.sampled_leaf_count == 16);
     REQUIRE(rasterized.facets.size() == 1);
@@ -301,11 +432,12 @@ TEST_CASE("V2 source sampling retains raw colors independently of its display pa
     its.indices.emplace_back(0, 1, 2);
     auto mesh = std::make_shared<TriangleMesh>(std::move(its));
 
-    auto data = std::make_shared<ImageMap::VolumeData>();
+    auto data                  = std::make_shared<ImageMap::VolumeData>();
     data->topology_fingerprint = ImageMap::topology_fingerprint(*mesh);
     ImageMap::Zone zone;
-    zone.stable_id   = "continuous-zone";
-    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.stable_id             = "continuous-zone";
+    zone.render_mode           = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.target_sample_size_mm = 2.f;
     zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
     data->zones.push_back(zone);
     ImageMap::TriangleBinding binding;
@@ -315,7 +447,7 @@ TEST_CASE("V2 source sampling retains raw colors independently of its display pa
     data->triangle_bindings.push_back(binding);
 
     ImageMap::SurfaceSampler sampler(mesh, data);
-    const auto continuous = sampler.sample(Vec3d(1.0, 1.0, 0.02), 0.1, ImageMap::RenderMode::PerimeterModulationV2);
+    const auto               continuous = sampler.sample(Vec3d(1.0, 1.0, 0.02), 0.1, ImageMap::RenderMode::PerimeterModulationV2);
     REQUIRE(continuous);
     REQUIRE(continuous->palette_entry != nullptr);
     const RGBA palette_red{1.f, 0.f, 0.f, 1.f};
@@ -323,27 +455,131 @@ TEST_CASE("V2 source sampling retains raw colors independently of its display pa
     CHECK(continuous->color[0] + continuous->color[1] + continuous->color[2] == Approx(1.f));
     CHECK(continuous->color[1] == Approx(0.25f));
     CHECK(continuous->color[2] == Approx(0.25f));
+
+    const ImageMap::SourceColorRasterization preview = ImageMap::rasterize_source_colors(*mesh, *data,
+                                                                                         ImageMap::RenderMode::PerimeterModulationV2);
+    CHECK(preview.source_triangle_count == 1);
+    CHECK(preview.sampled_leaf_count == 16);
+    CHECK(preview.vertices.size() == 48);
+    CHECK(preview.indices.size() == preview.vertices.size());
+    CHECK(std::any_of(preview.vertices.begin(), preview.vertices.end(), [](const ImageMap::SourceColorVertex& vertex) {
+        return vertex.color[1] > 0.9f && vertex.color[0] < 0.1f && vertex.color[2] < 0.1f;
+    }));
+    CHECK(std::any_of(preview.vertices.begin(), preview.vertices.end(), [](const ImageMap::SourceColorVertex& vertex) {
+        return vertex.color[2] > 0.9f && vertex.color[0] < 0.1f && vertex.color[1] < 0.1f;
+    }));
+
+    const ImageMap::SourceColorRasterization wrong_mode = ImageMap::rasterize_source_colors(*mesh, *data, ImageMap::RenderMode::NormalMix);
+    CHECK(wrong_mode.vertices.empty());
+
+    SECTION("viewport detail is capped and reports progress")
+    {
+        std::vector<int>                          progress_updates;
+        ImageMap::SourceColorRasterizationOptions options;
+        options.max_leaf_triangles                       = 4;
+        options.progress                                 = [&progress_updates](int progress) { progress_updates.push_back(progress); };
+        const ImageMap::SourceColorRasterization bounded = ImageMap::rasterize_source_colors(*mesh, *data,
+                                                                                             ImageMap::RenderMode::PerimeterModulationV2,
+                                                                                             RGBA{1.f, 1.f, 1.f, 1.f}, options);
+        CHECK(bounded.sampled_leaf_count == 4);
+        CHECK(bounded.vertices.size() == 12);
+        CHECK_FALSE(progress_updates.empty());
+        CHECK(progress_updates.back() == 85);
+    }
+
+    SECTION("viewport work can be cancelled")
+    {
+        ImageMap::SourceColorRasterizationOptions options;
+        options.cancelled                                  = []() { return true; };
+        const ImageMap::SourceColorRasterization cancelled = ImageMap::rasterize_source_colors(*mesh, *data,
+                                                                                               ImageMap::RenderMode::PerimeterModulationV2,
+                                                                                               RGBA{1.f, 1.f, 1.f, 1.f}, options);
+        CHECK(cancelled.vertices.empty());
+    }
+}
+
+TEST_CASE("Adaptive image maps participate in perimeter modulation ownership", "[ImageMap][PerimeterModulation]")
+{
+    Model        model;
+    ModelObject* object = model.add_object();
+    object->add_instance();
+    ModelVolume* volume = object->add_volume(make_cube(1., 1., 1.));
+
+    ImageMap::VolumeData data;
+    data.topology_fingerprint = ImageMap::topology_fingerprint(volume->mesh());
+    ImageMap::Zone zone;
+    zone.stable_id   = "adaptive-perimeter-zone";
+    zone.render_mode = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+    zone.palette.push_back({RGBA{0.4f, 0.2f, 0.7f, 1.f}, 4242, 5});
+    data.zones.push_back(zone);
+    data.triangle_bindings.push_back(ImageMap::TriangleBinding{});
+    REQUIRE(volume->set_image_map_data(std::move(data)));
+
+    CHECK(ImageMap::model_has_perimeter_modulation(*object));
+    CHECK(ImageMap::model_uses_perimeter_modulation_filament(*object, 4242, 0));
+    CHECK_FALSE(ImageMap::model_uses_perimeter_modulation_filament(*object, 9999, 5));
+}
+
+TEST_CASE("V2 dense source preview produces a genuinely bounded LOD", "[ImageMap][Sampling][LOD]")
+{
+    constexpr int        grid_size = 8;
+    indexed_triangle_set its;
+    for (int y = 0; y < grid_size; ++y)
+        for (int x = 0; x < grid_size; ++x)
+            its.vertices.emplace_back(float(x), float(y), 0.f);
+    for (int y = 0; y + 1 < grid_size; ++y) {
+        for (int x = 0; x + 1 < grid_size; ++x) {
+            const int lower_left  = y * grid_size + x;
+            const int lower_right = lower_left + 1;
+            const int upper_left  = lower_left + grid_size;
+            const int upper_right = upper_left + 1;
+            its.indices.emplace_back(lower_left, lower_right, upper_right);
+            its.indices.emplace_back(lower_left, upper_right, upper_left);
+        }
+    }
+    auto mesh = std::make_shared<TriangleMesh>(std::move(its));
+
+    auto data                  = std::make_shared<ImageMap::VolumeData>();
+    data->topology_fingerprint = ImageMap::topology_fingerprint(*mesh);
+    ImageMap::Zone zone;
+    zone.stable_id   = "dense-zone";
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    data->zones.push_back(zone);
+    for (size_t triangle_idx = 0; triangle_idx < mesh->its.indices.size(); ++triangle_idx) {
+        ImageMap::TriangleBinding binding;
+        binding.triangle_index       = uint32_t(triangle_idx);
+        binding.source.kind          = ImageMap::SourceKind::VertexColors;
+        binding.source.corner_colors = {RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{0.f, 1.f, 0.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f}};
+        data->triangle_bindings.push_back(binding);
+    }
+
+    ImageMap::SourceColorRasterizationOptions options;
+    options.max_leaf_triangles                       = 12;
+    const ImageMap::SourceColorRasterization preview = ImageMap::rasterize_source_colors(*mesh, *data,
+                                                                                         ImageMap::RenderMode::PerimeterModulationV2,
+                                                                                         RGBA{1.f, 1.f, 1.f, 1.f}, options);
+    REQUIRE_FALSE(preview.indices.empty());
+    CHECK(preview.source_triangle_count == mesh->its.indices.size());
+    CHECK(preview.sampled_leaf_count <= options.max_leaf_triangles);
+    CHECK(preview.indices.size() == preview.sampled_leaf_count * 3);
+    CHECK(preview.vertices.size() <= preview.sampled_leaf_count * 3);
 }
 
 TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[ImageMap][BoundaryModulation]")
 {
     ExPolygon square;
-    square.contour.points = {
-        Point(scale_(0.0), scale_(0.0)),
-        Point(scale_(10.0), scale_(0.0)),
-        Point(scale_(10.0), scale_(10.0)),
-        Point(scale_(0.0), scale_(10.0))
-    };
+    square.contour.points = {Point(scale_(0.0), scale_(0.0)), Point(scale_(10.0), scale_(0.0)), Point(scale_(10.0), scale_(10.0)),
+                             Point(scale_(0.0), scale_(10.0))};
     ImageMap::BoundaryModulationOptions options;
-    options.sample_spacing_mm = 0.25f;
+    options.sample_spacing_mm       = 0.25f;
     options.max_abs_displacement_mm = 0.35f;
 
     SECTION("constant inset preserves the offset through square corners")
     {
-        const ImageMap::BoundaryModulationResult result = ImageMap::modulate_boundary(
-            {square}, options, [](const Vec2d &, const Vec2d &) {
-                return ImageMap::BoundaryDisplacement{0.2f, 0.6f};
-            });
+        const ImageMap::BoundaryModulationResult result = ImageMap::modulate_boundary({square}, options, [](const Vec2d&, const Vec2d&) {
+            return ImageMap::BoundaryDisplacement{0.2f, 0.6f};
+        });
         REQUIRE(result.changed);
         REQUIRE(result.geometry.size() == 1);
         const BoundingBox bounds = get_extents(result.geometry);
@@ -356,8 +592,8 @@ TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[Image
 
     SECTION("outward modulation cannot create an acute transition spike")
     {
-        const ImageMap::BoundaryModulationResult result = ImageMap::modulate_boundary(
-            {square}, options, [](const Vec2d &point, const Vec2d &) {
+        const ImageMap::BoundaryModulationResult result =
+            ImageMap::modulate_boundary({square}, options, [](const Vec2d& point, const Vec2d&) {
                 return ImageMap::BoundaryDisplacement{point.x() < 5.0 ? -0.35f : 0.35f, 0.6f};
             });
         REQUIRE(result.changed);
@@ -369,7 +605,7 @@ TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[Image
         CHECK(unscale<double>(bounds.max.y()) <= 10.36);
         CHECK(result.sampled_points >= 100);
         CHECK(result.fallback_polygons == 0);
-        for (const ExPolygon &polygon : result.geometry)
+        for (const ExPolygon& polygon : result.geometry)
             CHECK(polygon.is_valid());
     }
 }

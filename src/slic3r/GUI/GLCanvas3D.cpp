@@ -1832,6 +1832,16 @@ void GLCanvas3D::update_volumes_colors_by_extruder()
         m_volumes.update_colors_by_extruder(m_config);
 }
 
+void GLCanvas3D::set_image_map_highlight_filament_id(unsigned int filament_id)
+{
+    m_image_map_highlight_filament_id = filament_id;
+    for (GLVolume* volume : m_volumes.volumes) {
+        if (volume != nullptr)
+            volume->image_map_highlight_filament_id = filament_id;
+    }
+    set_as_dirty();
+}
+
 bool GLCanvas3D::is_collapse_toolbar_on_left() const
 {
     auto state = wxGetApp().plater()->get_sidebar_docking_state();
@@ -1883,6 +1893,11 @@ void GLCanvas3D::render(bool only_init)
 
     if (!is_initialized() && !init())
         return;
+
+    for (GLVolume* volume : m_volumes.volumes) {
+        if (volume != nullptr)
+            volume->image_map_highlight_filament_id = m_image_map_highlight_filament_id;
+    }
     if (m_canvas_type == ECanvasType::CanvasView3D  && m_gizmos.get_current_type() == GLGizmosManager::Undefined) {
         enable_return_toolbar(false);
     }
@@ -2039,6 +2054,7 @@ void GLCanvas3D::render(bool only_init)
 
     // draw overlays
     _render_overlays();
+    _render_source_color_preview_progress();
 
     if (wxGetApp().plater()->is_render_statistic_dialog_visible()) {
         ImGui::ShowMetricsWindow();
@@ -4852,7 +4868,7 @@ void GLCanvas3D::do_rotate(const std::string& snapshot_type)
                 min_zs[{ i, j }] = SINKING_Z_THRESHOLD;
             }
             else
-                min_zs[{ i, j }] = obj->instance_bounding_box(j).min.z();
+                min_zs[{ i, j }] = obj->get_instance_min_z(j);
 
         }
     }
@@ -4940,7 +4956,7 @@ void GLCanvas3D::do_scale(const std::string& snapshot_type)
         for (int i = 0; i < static_cast<int>(m_model->objects.size()); ++i) {
             const ModelObject* obj = m_model->objects[i];
             for (int j = 0; j < static_cast<int>(obj->instances.size()); ++j) {
-                min_zs[{ i, j }] = obj->instance_bounding_box(j).min.z();
+                min_zs[{ i, j }] = obj->get_instance_min_z(j);
             }
         }
     }
@@ -5048,7 +5064,7 @@ void GLCanvas3D::do_mirror(const std::string& snapshot_type)
         for (int i = 0; i < static_cast<int>(m_model->objects.size()); ++i) {
             const ModelObject* obj = m_model->objects[i];
             for (int j = 0; j < static_cast<int>(obj->instances.size()); ++j) {
-                min_zs[{ i, j }] = obj->instance_bounding_box(j).min.z();
+                min_zs[{ i, j }] = obj->get_instance_min_z(j);
             }
         }
     }
@@ -7696,6 +7712,38 @@ void GLCanvas3D::_render_overlays()
     m_labels.render(sorted_instances);
 
     _render_3d_navigator();
+}
+
+void GLCanvas3D::_render_source_color_preview_progress()
+{
+    if (m_canvas_type != ECanvasType::CanvasView3D)
+        return;
+
+    const std::optional<float> progress = m_volumes.source_color_preview_progress();
+    if (!progress)
+        return;
+
+    const float  window_width = std::max(260.f, ImGui::GetFontSize() * 18.f);
+    const ImVec2 display_size = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(ImVec2(display_size.x * 0.5f, ImGui::GetFontSize() * 5.f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.f));
+    ImGui::SetNextWindowSize(ImVec2(window_width, 0.f));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
+                                   ImGuiWindowFlags_AlwaysAutoResize;
+    if (ImGui::Begin("##source_color_preview_progress", nullptr, flags)) {
+        ImGui::TextUnformatted(_u8L("Preparing color preview").c_str());
+        const int percent = int(std::lround(std::clamp(*progress, 0.f, 1.f) * 100.f));
+        const std::string overlay = std::to_string(percent) + "%";
+        ImGui::ProgressBar(std::clamp(*progress, 0.f, 1.f), ImVec2(window_width - ImGui::GetStyle().WindowPadding.x * 2.f, 0.f),
+                           overlay.c_str());
+    }
+    ImGui::End();
+
+    // Keep polling the worker without making the normal idle loop render at
+    // full speed. The model remains interactive between these frames.
+    schedule_extra_frame(100);
 }
 
 void GLCanvas3D::_render_style_editor()

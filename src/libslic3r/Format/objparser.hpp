@@ -4,10 +4,13 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <functional>
 #include <unordered_map>
 #include <istream>
 
 namespace ObjParser {
+
+using ObjParseProgressFn = std::function<bool(size_t bytes_read)>;
 
 struct ObjVertex
 {
@@ -123,7 +126,7 @@ struct MtlData
     int version;
     std::unordered_map<std::string, std::shared_ptr<ObjNewMtl>> new_mtl_unmap;
 };
-extern bool objparse(const char *path, ObjData &data);
+extern bool objparse(const char *path, ObjData &data, const ObjParseProgressFn& progress_fn = {});
 extern bool mtlparse(const char *path, MtlData &data);
 extern bool objparse(std::istream &stream, ObjData &data);
 

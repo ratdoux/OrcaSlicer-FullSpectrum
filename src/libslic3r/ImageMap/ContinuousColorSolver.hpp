@@ -20,8 +20,8 @@ struct ContinuousColorComponent
 
 // Full-resolution texture colors are solved against a finite, dense set of
 // physical-filament weight combinations. The candidate colors are predicted
-// once with FullSpectrum's active color engine, then queried concurrently by
-// the slice-time perimeter renderer.
+// once with FullSpectrum's KM/K-S sidewall model, then queried concurrently by
+// the slice-time perimeter renderer and viewport result preview.
 class ContinuousColorSolver
 {
 public:
@@ -36,6 +36,7 @@ public:
     size_t              component_count() const;
     size_t              candidate_count() const;
     std::vector<double> solve(const RGBA& target_color) const;
+    std::optional<RGBA> predict_color(const RGBA& target_color) const;
 
 private:
     struct Impl;

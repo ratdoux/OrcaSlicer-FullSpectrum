@@ -1,6 +1,6 @@
 # FullSpectrum development handoff
 
-This document is the self-contained engineering handoff for the FullSpectrum work completed through **2026-07-18**. It is intended to let another agent continue without access to the original chat.
+This document is the self-contained engineering handoff for the FullSpectrum work completed through **2026-07-22**. It is intended to let another agent continue without access to the original chat.
 
 ## Snapshot
 
@@ -28,6 +28,7 @@ The branch now contains four related bodies of work:
 | Local-Z / subdivision | Splits one nominal layer into smaller Z passes assigned to physical components. The split heights represent requested mixture proportions. |
 | Full domain | Lets subdivision operate over the complete eligible object/volume domain instead of only an explicitly painted mixed region. A mixed filament assigned to an entire object or volume implicitly gets this behavior. |
 | Normal Mix image map | Quantizes source colors to a finite palette of physical or generated mixed filaments and slices those regions normally. |
+| Adaptive localized cycles | Quantizes source colors to choose a sparse KM/KS mixed-filament cadence per region, then continuously samples the original texture to modulate that cadence's perimeter exposure. It trades additional localized toolchanges for better color fidelity. |
 | V2 / one filament per layer | Uses one shared physical-filament cadence and represents continuously sampled source colors by expanding or contracting the perimeter for the physical filament active on that layer. It performs no Local-Z subdivision and no line-width modulation. |
 | Surface bias | A signed XY offset. Positive values contract/recess a component; negative values expand it outward. |
 
@@ -128,7 +129,7 @@ OBJ import now offers a color/import dialog instead of blindly collapsing source
 - generate mixed-filament matches;
 - open the explicit **Image map...** / **Image source...** flow;
 - use a detected OBJ/MTL texture, choose another texture file, or use OBJ vertex colors;
-- choose **Normal mixed filaments** or **One filament per layer - perimeter modulation**.
+- choose **Normal mixed filaments**, **One filament per layer - perimeter modulation**, or **Adaptive localized cycles - perimeter modulation**.
 
 Normal mixed-filament recipes are deliberately preferred before bias is introduced. Bias is used for residual color accuracy and transitions, not as the only mechanism. The earlier prototype behavior—many equal 1/2/3/4 recipes distinguished only by bias—should not return.
 
@@ -186,7 +187,7 @@ The schema identifier is currently `fs.image-maps.v1`; in-memory `VolumeData` is
 
 For a texture with tens of thousands of colors, the original pixels are not expanded into tens of thousands of virtual filament definitions or stored solver-weight records. The texture asset remains the compact color source. The palette is a UI/Normal-Mix/fallback representation.
 
-## 6. The two image-map render modes
+## 6. The three image-map render modes
 
 ### Normal Mix
 
@@ -199,6 +200,21 @@ Normal Mix intentionally remains palette-quantized:
 5. the resulting mapped regions use normal mixed-filament behavior.
 
 This mode can require many generated virtual filaments when a large palette is requested. It is appropriate when spatial regions should be printed as conventional physical/mixed materials.
+
+### Adaptive localized cycles / `AdaptiveLocalizedCycles`
+
+This mode deliberately accepts more toolchanges than V2 in exchange for local color fidelity:
+
+1. source colors are quantized into the user-selected palette;
+2. each palette color is matched with the existing KM/KS predictor and sparse recipe search;
+3. every generated definition uses a normal mixed-filament layer cadence and enables perimeter modulation;
+4. transient image-map segmentation assigns those mixed definitions to their corresponding surface regions, so different regions may resolve to different physical filaments on the same nominal layer;
+5. the perimeter envelope renderer samples the original texture at each boundary point, compares the desired apparent KM/KS weights with that region's base recipe, and offsets the currently active component's perimeter;
+6. no Local-Z subdivision is used.
+
+The result is a finite set of localized cadences, not a unique cadence for every source pixel. Increasing the quantized-color count gives the slicer more base recipes at the cost of additional definitions and potentially more toolchanges. Perimeter displacement still uses full-resolution source samples within each palette region, so the palette selects the local filament cycle rather than becoming the final color resolution. The viewport uses the optical source-color preview, while the sidebar exposes the generated mixed definitions that actually drive the regional cadences.
+
+The persistent 3MF render-mode value is `adaptive_localized_cycles`. The map render mode selects adaptive behavior; its referenced definitions use `behavior.surface_bias.perimeter_modulation` and must not opt into Local-Z.
 
 ### One filament per layer / `PerimeterModulationV2`
 
@@ -215,9 +231,9 @@ Its invariants are:
 - support/overhang geometry consumes the same modulated envelope as perimeter generation;
 - the old G-code-time bias shifter skips persistent V2 palette filaments, preventing double displacement.
 
-The imported quantized palette still exists for the viewport, cadence identity, stable-ID persistence, and fallback compatibility. It is **not** the source of slicing weights when the continuous solver and cadence resolve successfully. Consequently, 50,000 distinct image colors are not reduced to palette colors for V2 slicing: each sampled raw RGBA value is independently matched to a physical-filament weight vector at slice time.
+The imported quantized palette remains as compact fallback metadata, but every V2 palette entry now points to the same shared cadence definition. It is **not** the source of slicing weights when the continuous solver and cadence resolve successfully. Consequently, 50,000 distinct image colors are not reduced to palette colors for V2 slicing: each sampled raw RGBA value is independently matched to a physical-filament weight vector at slice time.
 
-Current viewport caveat: the V2 viewport is still a quantized approximation because `3DScene.cpp` uses the palette rasterizer. The printed V2 envelope can therefore have more color variation than the pre-slice viewport suggests.
+The V2 viewport now renders a transient adaptively subdivided mesh with colors sampled directly from the persistent texture or vertex-color source. It no longer previews the quantized fallback palette. In the mixed-filament sidebar, the implementation cadence is hidden and the image map is represented by one non-editable spectrum card named after its object. Deleting that card detaches the persistent image map, restores the object's ordinary base-filament appearance, and removes cadence definitions that are no longer referenced elsewhere.
 
 ## 7. Continuous V2 color solver
 
@@ -267,15 +283,15 @@ This ordering is important. The modulated envelope becomes the geometry seen by 
 ## 9. Critical invariants and common traps
 
 1. Do not bake persistent image maps destructively into legacy MMU facet paint. Derived facets are transient caches/projections.
-2. Do not use quantized palette colors as V2 solver input. Use raw `SurfaceSample.color`.
+2. Do not use quantized palette colors as V2 or Adaptive solver input. Use raw `SurfaceSample.color`; Adaptive uses the palette entry only to select its local mixed cadence.
 3. Do not make Normal Mix continuous implicitly. Its semantics are palette-based region assignment.
 4. Do not use line-width modulation for V2. The requested technique is perimeter geometry modulation.
-5. Do not add Local-Z subdivision to V2. Its value proposition is a single physical-filament cadence with at most the cadence's normal layer changes.
+5. Do not add Local-Z subdivision to either perimeter-modulation mode. V2 uses one shared cadence; Adaptive uses region-specific nominal-layer cadences and accepts the resulting localized toolchanges.
 6. Keep `BoundaryModulation` free of UI, OBJ, 3MF, and color-science dependencies.
 7. Keep color prediction in `MixedFilamentManager`; do not implement a second RGB averaging path in image-map code.
 8. Stable mixed-filament IDs are primary. Numeric IDs are compatibility fallbacks.
 9. Validate topology fingerprints before attaching or using a persistent map.
-10. Keep implicit gradient/full-domain behavior scoped to the relevant gradient/object assignment. Painted physical and ordinary mixed zones must not be pulled into that machinery accidentally.
+10. Keep implicit gradient/full-domain/adaptive behavior scoped to the relevant definition or object assignment. Painted physical and ordinary mixed zones must not be pulled into that machinery accidentally.
 11. Preserve first-layer protection and the 0.06 mm Local-Z default.
 12. Preserve upstream attribution when changing adapted solver logic.
 13. Do not modify `deps/` or `deps_src/` as part of this feature unless explicitly mirroring an upstream version.
@@ -293,6 +309,7 @@ This ordering is important. The modulated envelope becomes the geometry seen by 
 | Persistent image-map model | `src/libslic3r/ImageMap/VolumeData.*`, `src/libslic3r/Model.*` |
 | Surface sampling | `src/libslic3r/ImageMap/Sampling.*` |
 | Palette rasterization | `src/libslic3r/ImageMap/FacetRasterizer.*` |
+| Adaptive localized recipe generation | `src/slic3r/GUI/MixedColorMatchHelpers.*`, `src/libslic3r/MixedFilament/*` |
 | Continuous V2 solve | `src/libslic3r/ImageMap/ContinuousColorSolver.*` |
 | V2 geometry | `src/libslic3r/ImageMap/BoundaryModulation.*`, `PerimeterEnvelopeRenderer.*` |
 | Slice integration | `src/libslic3r/PrintApply.cpp`, `PrintObjectSlice.cpp`, `GCode.cpp` |
@@ -357,18 +374,20 @@ cmake --build build-dev-release --target Snapmaker_Orca --config Release --paral
 
 ## 13. Manual verification still recommended
 
-Use a real UV-textured OBJ and verify both modes independently:
+Use a real UV-textured OBJ and verify all three modes independently:
 
 1. Click **Image map...** during OBJ color import.
 2. Verify the detected MTL texture can be used.
 3. Choose a different external texture and verify it replaces the detected source.
 4. Verify vertex colors can be selected where present.
 5. In Normal Mix, confirm multiple generated mixed filaments map visibly onto the model and appear in the sliced regions.
-6. In V2, enable mixed-filament bias, confirm the shared cadence uses all physical filaments, and inspect sliced geometry at several layers.
-7. Confirm there is no Local-Z layer subdivision in V2 and no second G-code-time displacement.
-8. Confirm outward V2 modulation is reflected in support/overhang behavior.
-9. Save and reopen the project; verify texture colors, UVs, render mode, stable palette IDs, and generated recipes survive the 3MF round trip.
-10. Inspect generated G-code/tool changes to verify the one-filament-per-layer cadence is retained.
+6. In Adaptive Localized Cycles, confirm palette regions receive sparse KM/KS recipes and that differently colored regions can use different physical filaments on the same nominal layer.
+7. Inspect Adaptive geometry and G-code to confirm perimeter displacement follows the original texture, its extra toolchanges are localized, and it creates no Local-Z sublayers.
+8. In V2, enable mixed-filament bias, confirm the shared cadence uses all physical filaments, and inspect sliced geometry at several layers.
+9. Confirm there is no Local-Z layer subdivision in V2 and no second G-code-time displacement.
+10. Confirm outward V2 modulation is reflected in support/overhang behavior.
+11. Save and reopen the project; verify texture colors, UVs, render mode, stable palette IDs, and generated recipes survive the 3MF round trip.
+12. Inspect generated G-code/tool changes to verify the one-filament-per-layer cadence is retained in V2.
 
 ## 14. Known limitations and good next steps
 
@@ -397,7 +416,7 @@ Then:
 
 1. preserve any user changes in a dirty worktree;
 2. read `doc/FullSpectrumImageMapArchitecture.md` and the relevant files from the map above;
-3. decide explicitly whether a change targets Normal Mix, V2, or both;
+3. decide explicitly whether a change targets Normal Mix, Adaptive Localized Cycles, V2, or more than one mode;
 4. maintain the separation between persistent sources, sampling, color solving, and geometry rendering;
 5. add focused deterministic tests before doing a full GUI build;
 6. run `clang-format` only on files actually changed;

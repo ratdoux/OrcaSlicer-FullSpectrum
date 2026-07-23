@@ -167,7 +167,8 @@ ValidationResult validate_package_model(const PackageModel &model)
             for (const ImageMapZone &zone : volume.zones) {
                 if (zone.id.empty() || !zone_refs.insert(zone.id).second)
                     result.fail("image map zone ids must be non-empty and unique");
-                if (zone.render_mode != "normal_mix" && zone.render_mode != "perimeter_modulation_v2")
+                if (zone.render_mode != "normal_mix" && zone.render_mode != "perimeter_modulation_v2" &&
+                    zone.render_mode != "adaptive_localized_cycles")
                     result.fail("image map zone has invalid render mode " + zone.render_mode);
                 if (zone.palette.empty())
                     result.fail("image map zone has no palette: " + zone.id);

@@ -33,7 +33,8 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
                                      float                  target_sample_size_mm,
                                      size_t                 max_samples,
                                      ObjImageMapSamplePlan& out_plan,
-                                     std::string*           warning = nullptr);
+                                     std::string*           warning = nullptr,
+                                     const ObjImageMapProgressFn& progress_fn = {});
 
 // Uses one explicitly selected texture for every triangle that has valid OBJ
 // UV coordinates. This supports OBJ files whose texture was not referenced by
@@ -44,7 +45,8 @@ bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
                                                   float                  target_sample_size_mm,
                                                   size_t                 max_samples,
                                                   ObjImageMapSamplePlan& out_plan,
-                                                  std::string*           warning = nullptr);
+                                                  std::string*           warning = nullptr,
+                                                  const ObjImageMapProgressFn& progress_fn = {});
 
 size_t obj_image_map_leaf_count(unsigned int subdivision_depth);
 
@@ -63,7 +65,8 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
                                      const std::string&        selected_texture_file,
                                      ImageMap::Zone            zone,
                                      ImageMap::VolumeData&     out_data,
-                                     std::string*              warning = nullptr);
+                                     std::string*              warning = nullptr,
+                                     const ObjImageMapProgressFn& progress_fn = {});
 
 } // namespace Slic3r
 

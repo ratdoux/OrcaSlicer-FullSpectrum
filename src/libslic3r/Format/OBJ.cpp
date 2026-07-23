@@ -10,6 +10,7 @@
 #include <array>
 #include <cctype>
 #include <cstdlib>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <string>
@@ -96,20 +97,54 @@ std::string mtl_map_texture_filename(const std::string& map_value)
 
 } // namespace
 
-bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::string &message)
+bool load_obj(const char *path,
+              TriangleMesh *meshptr,
+              ObjInfo& obj_info,
+              std::string &message,
+              const ObjImageMapProgressFn& progress_fn)
 {
     if (meshptr == nullptr)
         return false;
+    const boost::filesystem::path obj_path(path);
+    boost::system::error_code     file_size_error;
+    const uintmax_t               file_size = boost::filesystem::file_size(obj_path, file_size_error);
+    size_t                        last_progress_percent = std::numeric_limits<size_t>::max();
+    auto report_geometry_progress = [&](size_t current, size_t total = 10000) {
+        if (!progress_fn)
+            return true;
+        total   = std::max<size_t>(total, 1);
+        current = std::min(current, total);
+        const size_t percent = current * 100 / total;
+        if (percent == last_progress_percent && current != total)
+            return true;
+        last_progress_percent = percent;
+        return progress_fn(ObjImageMapProgressStage::ParseGeometry, current, total);
+    };
+    if (!report_geometry_progress(0))
+        return false;
+
     // Parse the OBJ file.
     ObjParser::ObjData data;
     ObjParser::MtlData mtl_data;
     std::unordered_map<const ObjParser::ObjNewMtl *, std::string> material_texture_paths;
-    if (! ObjParser::objparse(path, data)) {
+    bool parse_cancelled = false;
+    const ObjParser::ObjParseProgressFn parse_progress_fn = progress_fn ?
+        ObjParser::ObjParseProgressFn([&](size_t bytes_read) {
+            const size_t parse_units = !file_size_error && file_size > 0 ?
+                                           size_t(std::min<uintmax_t>(bytes_read, file_size) * 6000 / file_size) : 0;
+            const bool keep_going = report_geometry_progress(parse_units);
+            parse_cancelled |= !keep_going;
+            return keep_going;
+        }) : ObjParser::ObjParseProgressFn{};
+    if (!ObjParser::objparse(path, data, parse_progress_fn)) {
+        if (parse_cancelled)
+            return false;
         BOOST_LOG_TRIVIAL(error) << "load_obj: failed to parse " << path;
         message = _L("load_obj: failed to parse");
         return false;
     }
-    const boost::filesystem::path obj_path(path);
+    if (!report_geometry_progress(6000))
+        return false;
     obj_info.obj_directory = obj_path.parent_path().string();
     bool exist_mtl = false;
     if (data.mtllibs.size() > 0) { // read mtl
@@ -149,6 +184,8 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
     // n-gons, so triangulate them during import instead of rejecting the model.
     size_t num_triangles = 0;
     for (size_t i = 0; i < data.vertices.size(); ++ i) {
+        if (!report_geometry_progress(6000 + (data.vertices.empty() ? 1000 : i * 1000 / data.vertices.size())))
+            return false;
         // Find the end of face.
         size_t j = i;
         for (; j < data.vertices.size() && data.vertices[j].coordIdx != -1; ++ j) ;
@@ -163,6 +200,8 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
             i = j;
         }
     }
+    if (!report_geometry_progress(7000))
+        return false;
     // Convert ObjData into indexed triangle set.
     indexed_triangle_set its;
     size_t               num_vertices = data.coordinates.size() / OBJ_VERTEX_LENGTH;
@@ -176,6 +215,8 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
         obj_info.face_colors.reserve(num_triangles);
     }
     for (size_t i = 0; i < num_vertices; ++ i) {
+        if (!report_geometry_progress(7000 + (num_vertices == 0 ? 1000 : i * 1000 / num_vertices)))
+            return false;
         size_t j = i * OBJ_VERTEX_LENGTH;
         its.vertices.emplace_back(data.coordinates[j], data.coordinates[j + 1], data.coordinates[j + 2]);
         if (data.has_vertex_color) {
@@ -184,6 +225,8 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
             obj_info.vertex_colors.emplace_back(color);
         }
     }
+    if (!report_geometry_progress(8000))
+        return false;
     auto read_uv = [&data](int uv_idx, Vec2f &out_uv) {
         if (uv_idx < 0)
             return false;
@@ -320,7 +363,9 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
         return true;
     };
 
-    for (size_t i = 0; i < data.vertices.size();)
+    for (size_t i = 0; i < data.vertices.size();) {
+        if (!report_geometry_progress(8000 + (data.vertices.empty() ? 2000 : i * 2000 / data.vertices.size())))
+            return false;
         if (data.vertices[i].coordIdx == -1)
             ++ i;
         else {
@@ -342,6 +387,7 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
             if (face.size() >= 3 && !append_face(face, material_for_face(face_vertex_index)))
                 return false;
         }
+    }
 
     *meshptr = TriangleMesh(std::move(its));
     if (meshptr->empty()) {
@@ -354,14 +400,21 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
         for (std::array<Vec2f, 3> &triangle_uv : obj_info.triangle_uvs)
             std::swap(triangle_uv[1], triangle_uv[2]);
     }
+    if (!report_geometry_progress(10000))
+        return false;
     return true;
 }
 
-bool load_obj(const char *path, Model *model, ObjInfo& obj_info, std::string &message, const char *object_name_in)
+bool load_obj(const char *path,
+              Model *model,
+              ObjInfo& obj_info,
+              std::string &message,
+              const char *object_name_in,
+              const ObjImageMapProgressFn& progress_fn)
 {
     TriangleMesh mesh;
 
-    bool ret = load_obj(path, &mesh, obj_info, message);
+    bool ret = load_obj(path, &mesh, obj_info, message, progress_fn);
 
     if (ret) {
         std::string  object_name;

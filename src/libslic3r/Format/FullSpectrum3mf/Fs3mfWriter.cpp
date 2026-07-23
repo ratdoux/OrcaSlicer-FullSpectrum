@@ -119,7 +119,12 @@ const char *wrap_mode_name(ImageMap::WrapMode mode)
 
 const char *render_mode_name(ImageMap::RenderMode mode)
 {
-    return mode == ImageMap::RenderMode::PerimeterModulationV2 ? "perimeter_modulation_v2" : "normal_mix";
+    switch (mode) {
+    case ImageMap::RenderMode::PerimeterModulationV2:     return "perimeter_modulation_v2";
+    case ImageMap::RenderMode::AdaptiveLocalizedCycles:   return "adaptive_localized_cycles";
+    case ImageMap::RenderMode::NormalMix:
+    default:                                              return "normal_mix";
+    }
 }
 
 std::vector<double> rgba_values(const RGBA &color)

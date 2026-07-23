@@ -5,6 +5,7 @@
 // MixedColorMatchHelpers.cpp.
 
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/Color.hpp"
 
 #include <wx/wx.h>
 #include <wx/bitmap.h>
@@ -76,7 +77,8 @@ enum class MixedColorMatchEncoding
 {
     LayerRatio,
     SurfaceBias,
-    PerimeterModulatedLayerSequence
+    PerimeterModulatedLayerSequence,
+    AdaptiveLocalizedCycles
 };
 
 // ---- small pure helpers (defined here, used everywhere) ----
@@ -161,6 +163,16 @@ MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
 
 MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
     const MixedFilamentDefinition       &definition,
+    const MixedFilamentDisplayContext   &context,
+    size_t                               sample_count = 17);
+
+// Build the colors that an adaptive localized cycle can actually expose. The
+// requested source colors are projected through the same component-restricted
+// KM/K-S solver used by the perimeter renderer; pair sweeps keep the displayed
+// spectrum representative even when a cluster contains very few source colors.
+std::vector<wxColour> build_adaptive_cycle_attainable_colors(
+    const std::vector<unsigned int>     &component_ids,
+    const std::vector<RGBA>             &requested_colors,
     const MixedFilamentDisplayContext   &context,
     size_t                               sample_count = 17);
 

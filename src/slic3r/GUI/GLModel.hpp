@@ -42,6 +42,7 @@ namespace GUI {
                 P3T2, // position 3 floats + texture coords 2 floats
                 P3N3, // position 3 floats + normal 3 floats
                 P3N3T2, // position 3 floats + normal 3 floats + texture coords 2 floats
+                P3N3C4, // position 3 floats + normal 3 floats + color 4 floats
                 P4,   // position 4 floats
             };
 
@@ -73,6 +74,7 @@ namespace GUI {
             void add_vertex(const Vec3f& position, const Vec2f& tex_coord);                      // EVertexLayout::P3T2
             void add_vertex(const Vec3f& position, const Vec3f& normal);                         // EVertexLayout::P3N3
             void add_vertex(const Vec3f& position, const Vec3f& normal, const Vec2f& tex_coord); // EVertexLayout::P3N3T2
+            void add_vertex(const Vec3f& position, const Vec3f& normal, const RGBA& color);       // EVertexLayout::P3N3C4
             void add_vertex(const Vec4f& position);                                              // EVertexLayout::P4
 
             void set_vertex(size_t id, const Vec3f& position, const Vec3f& normal); // EVertexLayout::P3N3
@@ -121,11 +123,17 @@ namespace GUI {
             static size_t tex_coord_offset_floats(const Format& format);
             static size_t tex_coord_offset_bytes(const Format& format) { return tex_coord_offset_floats(format) * sizeof(float); }
 
+            static size_t color_stride_floats(const Format& format);
+            static size_t color_stride_bytes(const Format& format) { return color_stride_floats(format) * sizeof(float); }
+            static size_t color_offset_floats(const Format& format);
+            static size_t color_offset_bytes(const Format& format) { return color_offset_floats(format) * sizeof(float); }
+
             static size_t index_stride_bytes(const Geometry& data);
 
             static bool has_position(const Format& format);
             static bool has_normal(const Format& format);
             static bool has_tex_coord(const Format& format);
+            static bool has_color(const Format& format);
         };
 
         struct RenderData

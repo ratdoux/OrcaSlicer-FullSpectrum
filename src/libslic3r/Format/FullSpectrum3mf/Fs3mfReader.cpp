@@ -338,7 +338,11 @@ ImageMap::WrapMode wrap_mode_from_string(const std::string &value)
 
 ImageMap::RenderMode render_mode_from_string(const std::string &value)
 {
-    return value == "perimeter_modulation_v2" ? ImageMap::RenderMode::PerimeterModulationV2 : ImageMap::RenderMode::NormalMix;
+    if (value == "perimeter_modulation_v2")
+        return ImageMap::RenderMode::PerimeterModulationV2;
+    if (value == "adaptive_localized_cycles")
+        return ImageMap::RenderMode::AdaptiveLocalizedCycles;
+    return ImageMap::RenderMode::NormalMix;
 }
 
 bool image_map_volume_data_from_canonical(const Manifest                            &manifest,

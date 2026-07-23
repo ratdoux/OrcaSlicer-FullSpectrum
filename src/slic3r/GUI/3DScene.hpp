@@ -61,6 +61,8 @@ namespace ImageMap {
 struct VolumeData;
 }
 
+struct SourceColorPreviewJob;
+
 using ModelObjectPtrs = std::vector<ModelObject*>;
 
 // Return appropriate color based on the ModelVolume.
@@ -98,7 +100,7 @@ public:
 
     GLVolume(float r = 1.f, float g = 1.f, float b = 1.f, float a = 1.f);
     GLVolume(const ColorRGBA& color) : GLVolume(color.r(), color.g(), color.b(), color.a()) {}
-    virtual ~GLVolume() = default;
+    virtual ~GLVolume();
 
     // BBS
 protected:
@@ -228,6 +230,15 @@ public:
     // so display meshes can be rebuilt without writing legacy facet paint.
     mutable std::shared_ptr<const ImageMap::VolumeData> image_map_preview_data;
     mutable size_t                                      image_map_preview_palette_signature{0};
+    mutable GUI::GLModel                                image_map_source_model;
+    mutable std::shared_ptr<const ImageMap::VolumeData> image_map_source_preview_data;
+    mutable size_t                                      image_map_source_preview_signature{0};
+    mutable std::shared_ptr<SourceColorPreviewJob>      image_map_source_preview_job;
+    unsigned int                                        image_map_highlight_filament_id{0};
+
+    // Returns progress in [0, 1] while the source-colour display mesh is being
+    // prepared on a worker thread, or no value when no preview is pending.
+    std::optional<float> source_color_preview_progress() const;
 
     // Ranges of triangle and quad indices to be rendered.
     std::pair<size_t, size_t>   tverts_range;
@@ -548,6 +559,8 @@ public:
     size_t 				total_memory_used() const { return this->cpu_memory_used() + this->gpu_memory_used(); }
     // Return CPU, GPU and total memory log line.
     std::string         log_memory_info() const;
+    // Average progress across source-colour previews currently being built.
+    std::optional<float> source_color_preview_progress() const;
     
     void set_transparency(float alpha);
 

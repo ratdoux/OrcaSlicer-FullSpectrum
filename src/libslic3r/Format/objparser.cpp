@@ -561,7 +561,7 @@ static bool        mtl_parseline(const char *line, MtlData &data)
     return true;
 }
 
-bool objparse(const char *path, ObjData &data)
+bool objparse(const char *path, ObjData &data, const ObjParseProgressFn& progress_fn)
 {
     Slic3r::CNumericLocalesSetter locales_setter;
 
@@ -573,7 +573,9 @@ bool objparse(const char *path, ObjData &data)
 		char buf[65536 * 2];
 		size_t len = 0;
 		size_t lenPrev = 0;
+		size_t bytes_read = 0;
 		while ((len = ::fread(buf + lenPrev, 1, 65536, pFile)) != 0) {
+			bytes_read += len;
 			len += lenPrev;
 			size_t lastLine = 0;
 			for (size_t i = 0; i < len; ++ i)
@@ -594,6 +596,10 @@ bool objparse(const char *path, ObjData &data)
 				return false;
 			}
 			memmove(buf, buf + lastLine, lenPrev);
+			if (progress_fn && !progress_fn(bytes_read)) {
+				::fclose(pFile);
+				return false;
+			}
 		}
     }
     catch (std::bad_alloc&) {

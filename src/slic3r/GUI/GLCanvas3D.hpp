@@ -545,6 +545,7 @@ private:
     bool m_event_handlers_bound{ false };
 
     GLVolumeCollection m_volumes;
+    unsigned int       m_image_map_highlight_filament_id{0};
     GCodeViewer m_gcode_viewer;
 
     RenderTimer m_render_timer;
@@ -872,6 +873,7 @@ public:
     float get_collapse_toolbar_height() const;
 
     void update_volumes_colors_by_extruder();
+    void set_image_map_highlight_filament_id(unsigned int filament_id);
 
     bool is_dragging() const { return m_gizmos.is_dragging() || m_moving; }
 
@@ -1183,6 +1185,7 @@ private:
 #endif // ENABLE_RENDER_SELECTION_CENTER
     void _check_and_update_toolbar_icon_scale();
     void _render_overlays();
+    void _render_source_color_preview_progress();
     void _render_style_editor();
     void _render_volumes_for_picking(const Camera& camera) const;
     void _render_current_gizmo() const;

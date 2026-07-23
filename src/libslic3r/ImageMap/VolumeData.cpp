@@ -118,4 +118,26 @@ ValidationResult VolumeData::validate(const TriangleMesh &mesh) const
     return result;
 }
 
+size_t VolumeData::memsize() const
+{
+    size_t size = sizeof(*this);
+
+    size += texture_assets.capacity() * sizeof(TextureAsset);
+    for (const TextureAsset &asset : texture_assets) {
+        size += asset.stable_id.capacity();
+        size += asset.display_name.capacity();
+        size += asset.rgba.capacity() * sizeof(uint8_t);
+    }
+
+    size += zones.capacity() * sizeof(Zone);
+    for (const Zone &zone : zones) {
+        size += zone.stable_id.capacity();
+        size += zone.display_name.capacity();
+        size += zone.palette.capacity() * sizeof(PaletteEntry);
+    }
+
+    size += triangle_bindings.capacity() * sizeof(TriangleBinding);
+    return size;
+}
+
 } // namespace Slic3r::ImageMap

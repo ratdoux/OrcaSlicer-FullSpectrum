@@ -40,6 +40,7 @@ uniform vec4 color_clip_plane;
 
 in vec3 v_position;
 in vec3 v_normal;
+in vec4 v_color;
 
 // x = diffuse, y = specular;
 out vec2 intensity;
@@ -50,11 +51,13 @@ out float color_clip_plane_dot;
 out vec4 world_pos;
 out float world_normal_z;
 out vec3 eye_normal;
+out vec4 vertex_color;
 
 void main()
 {
 	// First transform the normal into camera space and normalize the result.
     eye_normal = normalize(view_normal_matrix * v_normal);
+    vertex_color = v_color;
 
 	// Compute the cos of the angle between the normal and lights direction. The light is directional so the direction is constant for every vertex.
 	// Since these two are normalized the cosine is the dot product. We also need to clamp the result to the [0,1] range.

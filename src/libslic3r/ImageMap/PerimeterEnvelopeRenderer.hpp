@@ -14,10 +14,10 @@ class PrintObject;
 
 namespace ImageMap {
 
-bool model_has_perimeter_modulation_v2(const ModelObject& model_object);
-bool model_uses_perimeter_modulation_v2_filament(const ModelObject& model_object,
-                                                 uint64_t           mixed_filament_stable_id,
-                                                 unsigned int       fallback_filament_id);
+bool model_has_perimeter_modulation(const ModelObject& model_object);
+bool model_uses_perimeter_modulation_filament(const ModelObject& model_object,
+                                              uint64_t           mixed_filament_stable_id,
+                                              unsigned int       fallback_filament_id);
 
 // Immutable slice-time renderer. Construction snapshots all mesh/source
 // references and transforms; apply() only mutates the supplied layer.
@@ -36,7 +36,7 @@ public:
 
     // Orca retains an uncompensated first-layer envelope alongside the
     // compensated region surfaces. Keep alternate pipeline envelopes on the
-    // same sampled V2 boundary without exposing texture concerns to slicing.
+    // same sampled image-map boundary without exposing texture concerns to slicing.
     bool apply_to_envelope(ExPolygons& envelope, const Layer& layer) const;
 
 private:

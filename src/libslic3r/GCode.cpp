@@ -6188,9 +6188,9 @@ void GCode::modulate_mixed_filament_external_perimeter(ExtrusionPath &path) cons
     // G-code renderer only for palette filaments owned by that envelope.
     const PrintObject *print_object = m_layer->object();
     if (print_object != nullptr && print_object->model_object() != nullptr &&
-        ImageMap::model_uses_perimeter_modulation_v2_filament(*print_object->model_object(),
-                                                              definition->identity.stable_id,
-                                                              filament_id))
+        ImageMap::model_uses_perimeter_modulation_filament(*print_object->model_object(),
+                                                            definition->identity.stable_id,
+                                                            filament_id))
         return;
 
     const float layer_height = path.height > EPSILON ? path.height : float(m_layer->height);

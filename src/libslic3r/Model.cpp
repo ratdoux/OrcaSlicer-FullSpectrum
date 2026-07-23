@@ -241,7 +241,8 @@ Model Model::read_from_file(const std::string&                                  
                             ImportstlProgressFn                                 stlFn,
                             BBLProject *                                        project,
                             int                                                 plate_id,
-                            ObjImportColorFn                                    objFn)
+                            ObjImportColorFn                                    objFn,
+                            ObjImageMapProgressFn                               objImageMapProgressFn)
 {
     Model model;
 
@@ -264,6 +265,13 @@ Model Model::read_from_file(const std::string&                                  
 
     bool result = false;
     bool is_cb_cancel = false;
+    bool obj_image_map_cancelled = false;
+    const ObjImageMapProgressFn image_map_progress_fn = objImageMapProgressFn ?
+        ObjImageMapProgressFn([&](ObjImageMapProgressStage stage, size_t current, size_t total) {
+            const bool keep_going = objImageMapProgressFn(stage, current, total);
+            obj_image_map_cancelled |= !keep_going;
+            return keep_going;
+        }) : ObjImageMapProgressFn{};
     std::string message;
     if (boost::algorithm::iends_with(input_file, ".stl"))
         result = load_stl(input_file.c_str(), &model, nullptr, stlFn);
@@ -271,7 +279,9 @@ Model Model::read_from_file(const std::string&                                  
         result = load_stl(input_file.c_str(), &model, nullptr, stlFn, 256);
     else if (boost::algorithm::iends_with(input_file, ".obj")) {
         ObjInfo obj_info;
-        result = load_obj(input_file.c_str(), &model, obj_info, message);
+        result = load_obj(input_file.c_str(), &model, obj_info, message, nullptr, image_map_progress_fn);
+        if (obj_image_map_cancelled)
+            return Model{};
         if (result && objFn && !model.objects.empty() && !model.objects.front()->volumes.empty()) {
             unsigned char       first_extruder_id             = 1;
             const TriangleMesh& mesh                          = model.objects.front()->volumes.front()->mesh();
@@ -286,7 +296,9 @@ Model Model::read_from_file(const std::string&                                  
             std::string           detected_image_map_warning;
             const bool            detected_texture_available = obj_info.has_uv_png && texture_coordinates_available &&
                                                     build_obj_image_map_sample_plan(mesh, obj_info, 0.4f, 200000, detected_image_map_plan,
-                                                                                    &detected_image_map_warning);
+                                                                                    &detected_image_map_warning, image_map_progress_fn);
+            if (obj_image_map_cancelled)
+                return Model{};
             if (!detected_image_map_warning.empty())
                 BOOST_LOG_TRIVIAL(warning) << "OBJ image-map import: " << detected_image_map_warning;
 
@@ -333,9 +345,12 @@ Model Model::read_from_file(const std::string&                                  
                 import_context.requested_source              = current_source;
                 import_context.requested_mode                = current_mode;
                 import_context.warning_message               = std::move(pending_warning);
+                import_context.image_map_progress_fn          = image_map_progress_fn;
 
                 std::vector<unsigned char> filament_ids;
                 objFn(*input_colors, is_single_color, filament_ids, first_extruder_id, import_context);
+                if (obj_image_map_cancelled)
+                    return Model{};
 
                 if (import_context.source_change_requested) {
                     ObjColorImportSource next_source = import_context.requested_source;
@@ -345,7 +360,10 @@ Model Model::read_from_file(const std::string&                                  
                         ObjImageMapSamplePlan next_plan;
                         if (!import_context.requested_texture_file.empty()) {
                             switched = build_obj_image_map_sample_plan_with_texture(mesh, obj_info, import_context.requested_texture_file,
-                                                                                    0.4f, 200000, next_plan, &pending_warning);
+                                                                                    0.4f, 200000, next_plan, &pending_warning,
+                                                                                    image_map_progress_fn);
+                            if (obj_image_map_cancelled)
+                                return Model{};
                             if (switched)
                                 current_texture_file = import_context.requested_texture_file;
                         } else if (detected_texture_available) {
@@ -385,8 +403,18 @@ Model Model::read_from_file(const std::string&                                  
                     ImageMap::Zone zone;
                     zone.stable_id                   = "obj-image-map-zone";
                     zone.display_name                = "OBJ image map";
-                    zone.render_mode                 = import_context.image_map_render_mode == ObjImageMapRenderMode::PerimeterModulationV2 ?
-                                                           ImageMap::RenderMode::PerimeterModulationV2 : ImageMap::RenderMode::NormalMix;
+                    switch (import_context.image_map_render_mode) {
+                    case ObjImageMapRenderMode::PerimeterModulationV2:
+                        zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+                        break;
+                    case ObjImageMapRenderMode::AdaptiveLocalizedCycles:
+                        zone.render_mode = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+                        break;
+                    case ObjImageMapRenderMode::NormalMix:
+                    default:
+                        zone.render_mode = ImageMap::RenderMode::NormalMix;
+                        break;
+                    }
                     zone.minimum_component_percent  = import_context.image_map_minimum_component_percent;
                     const size_t palette_size = std::min({import_context.image_map_palette_colors.size(),
                                                           import_context.image_map_palette_filament_ids.size(),
@@ -406,8 +434,11 @@ Model Model::read_from_file(const std::string&                                  
                                                              current_texture_file,
                                                              std::move(zone),
                                                              image_map_data,
-                                                             &image_map_warning) &&
+                                                             &image_map_warning,
+                                                             image_map_progress_fn) &&
                              obj_import_persistent_image_map_deal(std::move(image_map_data), first_extruder_id, &model);
+                    if (obj_image_map_cancelled)
+                        return Model{};
                     if (!image_map_warning.empty())
                         BOOST_LOG_TRIVIAL(warning) << "OBJ image-map source: " << image_map_warning;
                 } else if (current_source == ObjColorImportSource::ImageTexture)
@@ -2062,7 +2093,7 @@ bool ModelVolume::set_image_map_data(ImageMap::VolumeData data)
 {
     if (!data.validate(this->mesh()).valid)
         return false;
-    m_image_map_data = std::make_shared<ImageMap::VolumeData>(std::move(data));
+    m_image_map_data = std::make_shared<const ImageMap::VolumeData>(std::move(data));
     return true;
 }
 

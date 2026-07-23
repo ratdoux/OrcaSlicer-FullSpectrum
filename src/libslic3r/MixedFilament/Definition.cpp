@@ -1,4 +1,5 @@
 #include "../MixedFilament.hpp"
+#include "../LocalesUtils.hpp"
 #include "Internal.hpp"
 
 #include <algorithm>
@@ -67,15 +68,11 @@ std::vector<float> decode_component_surface_offsets(const std::string &encoded, 
     std::stringstream stream(encoded);
     std::string token;
     while (std::getline(stream, token, '/')) {
-        try {
-            size_t consumed = 0;
-            const float value = std::stof(token, &consumed);
-            if (consumed != token.size() || !std::isfinite(value))
-                return {};
-            offsets.emplace_back(clamp_surface_offset(value));
-        } catch (...) {
+        size_t       consumed = 0;
+        const double value    = string_to_double_decimal_point(token, &consumed);
+        if (consumed != token.size() || !std::isfinite(value))
             return {};
-        }
+        offsets.emplace_back(clamp_surface_offset(float(value)));
     }
     return offsets.size() == expected_count ? offsets : std::vector<float>{};
 }

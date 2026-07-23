@@ -29,6 +29,9 @@ struct SlopeDetection
 };
 
 uniform vec4 uniform_color;
+uniform bool use_vertex_color;
+uniform bool image_map_cycle_preview;
+uniform int image_map_highlight_filament_id;
 uniform bool use_color_clip_plane;
 uniform vec4 uniform_color_clip_plane_1;
 uniform vec4 uniform_color_clip_plane_2;
@@ -59,6 +62,7 @@ varying vec2 intensity;
 varying vec4 world_pos;
 varying float world_normal_z;
 varying vec3 eye_normal;
+varying vec4 vertex_color;
 
 vec3 getBackfaceColor(vec3 fill) {
     float brightness = 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b;
@@ -136,7 +140,20 @@ void main()
 		color.a = uniform_color.a;
     }
     else
-	    color = uniform_color;
+	    color = use_vertex_color ? vec4(vertex_color.rgb, vertex_color.a * uniform_color.a) : uniform_color;
+
+    if (image_map_cycle_preview) {
+        int assigned_filament_id = int(floor(vertex_color.a * 255.0 + 0.5));
+        color.a = uniform_color.a;
+        if (image_map_highlight_filament_id > 0) {
+            if (assigned_filament_id == image_map_highlight_filament_id) {
+                color.rgb = mix(color.rgb, vec3(0.0, 0.72, 0.64), 0.18);
+            } else {
+                float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+                color.rgb = mix(vec3(luminance), vec3(0.08), 0.68);
+            }
+        }
+    }
 
     if (slope.actived) {
          if(world_pos.z<0.1&&world_pos.z>-0.1)

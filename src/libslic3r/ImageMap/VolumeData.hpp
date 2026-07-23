@@ -32,7 +32,8 @@ enum class SourceKind : uint8_t
 enum class RenderMode : uint8_t
 {
     NormalMix,
-    PerimeterModulationV2
+    PerimeterModulationV2,
+    AdaptiveLocalizedCycles
 };
 
 enum class WrapMode : uint8_t
@@ -144,6 +145,13 @@ struct VolumeData
 
     ValidationResult validate(const TriangleMesh &mesh) const;
     bool             empty() const { return zones.empty() || triangle_bindings.empty(); }
+
+    // Immutable VolumeData instances are shared by the undo/redo stack. These
+    // methods provide the same accounting interface as other large immutable
+    // model payloads such as TriangleMesh.
+    size_t memsize() const;
+    size_t release_optional() { return 0; }
+    void   restore_optional() {}
 
     template<class Archive> void serialize(Archive &ar)
     {

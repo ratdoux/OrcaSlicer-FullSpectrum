@@ -1,9 +1,9 @@
 #include "Internal.hpp"
+#include "../LocalesUtils.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <iomanip>
 #include <numeric>
 #include <sstream>
 
@@ -215,14 +215,10 @@ std::vector<float> parse_gradient_stop_position_tokens(const std::string& positi
         if (token.empty())
             return;
 
-        try {
-            size_t      consumed = 0;
-            const float value    = std::stof(token, &consumed);
-            if (consumed == token.size() && std::isfinite(value))
-                out.emplace_back(value);
-        } catch (...) {
-            // Ignore malformed position tokens; validation will drop the row-level stop list.
-        }
+        size_t       consumed = 0;
+        const double value    = string_to_double_decimal_point(token, &consumed);
+        if (consumed == token.size() && std::isfinite(value))
+            out.emplace_back(float(value));
         token.clear();
     };
 
@@ -290,11 +286,10 @@ std::string legacy_gradient_positions_from_float_vector(const std::vector<float>
         return std::string();
 
     std::ostringstream out;
-    out << std::fixed << std::setprecision(4);
     for (size_t i = 0; i < positions.size(); ++i) {
         if (i != 0)
             out << '/';
-        out << std::clamp(positions[i], 0.f, 1.f);
+        out << float_to_string_decimal_point(std::clamp(positions[i], 0.f, 1.f), 4);
     }
     return out.str();
 }

@@ -58,6 +58,10 @@ public:
     {
         m_on_delete_mixed = std::move(cb);
     }
+    void set_on_delete_image_map(std::function<void(int)> cb)
+    {
+        m_on_delete_image_map = std::move(cb);
+    }
     void set_get_physical_filaments(std::function<std::vector<std::pair<std::string, std::string>>()> cb)
     {
         m_get_physical_filaments = std::move(cb);
@@ -68,6 +72,7 @@ public:
     int m_mixed_count() const { return static_cast<int>(m_mixed_cards.size()); }
     void update_mixed_states(std::vector<MixedFilamentDefinition>& mixed_filaments);
     void refresh_mixed_color_previews();
+    void refresh_image_map_entries();
     void edit_mixed_filament(int index, bool edit_by_color);
     void delete_mixed_filament(int index);
     void show_mixed_filament_menu(int index, const wxPoint& screen_pos, wxWindow* anchor);
@@ -82,11 +87,16 @@ private:
     std::vector<MixedFilamentDefinition> m_mixed_filaments{};
     std::vector<FilamentCardPhysical*>   m_physical_cards;
     std::vector<FilamentCardMixed*>      m_mixed_cards;
+    std::vector<size_t>                  m_mixed_definition_indices;
+    std::vector<FilamentCardImageMap*>   m_image_map_cards;
+    std::vector<unsigned int>            m_image_map_adaptive_filament_ids;
+    unsigned int                         m_selected_adaptive_filament_id{0};
     
     void build_ui(const wxColour& title_bg);
 
     void on_physical_change(size_t physical_count);
     void on_mixed_change(std::vector<MixedFilamentDefinition>& mixed_filaments);
+    void set_adaptive_cycle_highlight(unsigned int filament_id);
     
     std::function<std::vector<std::pair<std::string, std::string>>()>   m_get_physical_filaments;
     void                                        update_physical_filaments();
@@ -98,6 +108,7 @@ private:
     std::function<void(int, const wxPoint&)>    m_on_right_click_physical; // Callback for right-click in physical filament card
     std::function<void(int, bool)>              m_on_edit_mixed;
     std::function<void(int)>                    m_on_delete_mixed;
+    std::function<void(int)>                    m_on_delete_image_map;
 
     // Drag handling for physical and mixed panels
     struct DragState
@@ -138,6 +149,7 @@ private:
     wxBoxSizer*         m_physical_title_sizer{nullptr};
     wxGridSizer*        m_physical_sizer{nullptr};
     wxBoxSizer*         m_mixed_title_sizer{nullptr};
+    wxBoxSizer*         m_image_map_sizer{nullptr};
     wxGridSizer*        m_mixed_sizer{nullptr};
 
     // Title bar elements

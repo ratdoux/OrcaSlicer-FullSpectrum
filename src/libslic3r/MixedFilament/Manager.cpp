@@ -1,10 +1,10 @@
 #include "../MixedFilament.hpp"
+#include "../LocalesUtils.hpp"
 #include "Internal.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <boost/log/trivial.hpp>
-#include <cstdio>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -469,11 +469,9 @@ std::string MixedFilamentManager::serialize_custom_entries()
             ss << ",p" << normalized_positions;
         if (mf.ui_mode >= 0)
             ss << ",cm" << mf.ui_mode;
-        if (mf.gradient_enabled) {
-            char buf[64];
-            std::snprintf(buf, sizeof(buf), "%.4f/%.4f", double(mf.gradient_start), double(mf.gradient_end));
-            ss << ",r1/" << buf;
-        }
+        if (mf.gradient_enabled)
+            ss << ",r1/" << float_to_string_decimal_point(mf.gradient_start, 4) << '/'
+               << float_to_string_decimal_point(mf.gradient_end, 4);
         const std::string normalized_pattern = normalize_manual_pattern(mf.manual_pattern);
         if (!normalized_pattern.empty())
             ss << ',' << normalized_pattern;

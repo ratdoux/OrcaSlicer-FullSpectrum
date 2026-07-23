@@ -16,6 +16,7 @@
 #include "libslic3r/TriangleSelector.hpp"
 
 #include <algorithm>
+#include <clocale>
 #include <map>
 #include <set>
 #include <sstream>
@@ -26,6 +27,63 @@ using namespace Slic3r;
 using namespace Slic3r::FullSpectrum3mf;
 
 namespace {
+
+class ScopedCommaNumericLocale
+{
+public:
+    ScopedCommaNumericLocale()
+    {
+        if (const char *current = std::setlocale(LC_NUMERIC, nullptr))
+            m_original = current;
+
+#ifdef _WIN32
+        m_previous_thread_locale_mode = _configthreadlocale(_ENABLE_PER_THREAD_LOCALE);
+#endif
+
+        static constexpr const char *candidates[] = {
+#ifdef _WIN32
+            "German_Germany.1252",
+            "German_Germany",
+#else
+            "de_DE.UTF-8",
+            "de_DE.utf8",
+            "de_DE",
+#endif
+        };
+
+        for (const char *candidate : candidates) {
+            if (std::setlocale(LC_NUMERIC, candidate) == nullptr)
+                continue;
+            const std::lconv *conventions = std::localeconv();
+            if (conventions != nullptr && conventions->decimal_point != nullptr && conventions->decimal_point[0] == ',') {
+                m_active = true;
+                break;
+            }
+        }
+
+        if (!m_active && !m_original.empty())
+            std::setlocale(LC_NUMERIC, m_original.c_str());
+    }
+
+    ~ScopedCommaNumericLocale()
+    {
+        if (!m_original.empty())
+            std::setlocale(LC_NUMERIC, m_original.c_str());
+#ifdef _WIN32
+        if (m_previous_thread_locale_mode != -1)
+            _configthreadlocale(m_previous_thread_locale_mode);
+#endif
+    }
+
+    bool active() const { return m_active; }
+
+private:
+    std::string m_original;
+    bool        m_active = false;
+#ifdef _WIN32
+    int m_previous_thread_locale_mode = -1;
+#endif
+};
 
 static std::vector<std::string> split_rows(const std::string &serialized)
 {
@@ -732,6 +790,52 @@ TEST_CASE("Multi-component mixed filament bias stores and applies every componen
     CHECK(canonical_definitions.front().behavior.distribution == MixedFilamentDistributionMode::Simple);
     CHECK(canonical_definitions.front().recipe.blend.component_ids(colors.size()) == std::vector<unsigned int>{1, 2, 3});
     CHECK(mixed_filament_component_surface_offsets(canonical_definitions.front()) == std::vector<float>{0.02f, 0.04f, -0.02f});
+}
+
+TEST_CASE("Mixed filament gradients round-trip under a comma decimal locale", "[MixedFilament][Locale]")
+{
+    ScopedCommaNumericLocale locale;
+    if (!locale.active()) {
+        WARN("No German comma-decimal locale is installed; locale regression test skipped");
+        return;
+    }
+
+    const std::vector<std::string> colors = {"#FF0000", "#00FF00", "#0000FF"};
+
+    MixedFilamentDefinition definition;
+    definition.identity.stable_id                    = 6203;
+    definition.source.kind                           = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind                           = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components               = {{{1}, 45}, {{2}, 30}, {{3}, 25}};
+    definition.behavior.distribution                 = MixedFilamentDistributionMode::LayerCycle;
+    definition.behavior.gradient.enabled             = true;
+    definition.behavior.gradient.component_a_start   = 0.90f;
+    definition.behavior.gradient.component_a_end     = 0.10f;
+    definition.behavior.gradient.stop_positions      = {0.0f, 0.20f, 0.45f, 0.70f, 1.0f};
+    set_mixed_filament_component_surface_offsets(definition, {0.02f, 0.04f, -0.02f});
+
+    MixedFilamentManager manager;
+    REQUIRE(manager.add_custom_filament_definition(definition, colors));
+
+    const std::string serialized = manager.serialize_custom_entries();
+    CHECK(serialized.find(",p0.0000/0.2000/0.4500/0.7000/1.0000") != std::string::npos);
+    CHECK(serialized.find(",r1/0.9000/0.1000") != std::string::npos);
+    CHECK(serialized.find(",xv0.02/0.04/-0.02") != std::string::npos);
+
+    MixedFilamentManager loaded;
+    loaded.load_custom_entries(serialized, colors);
+    const std::vector<MixedFilamentDefinition> definitions = loaded.mixed_filament_definitions(colors.size());
+    REQUIRE(definitions.size() == 1);
+
+    const MixedFilamentDefinition &round_tripped = definitions.front();
+    CHECK(round_tripped.behavior.gradient.enabled);
+    CHECK(round_tripped.behavior.gradient.component_a_start == Approx(0.90f));
+    CHECK(round_tripped.behavior.gradient.component_a_end == Approx(0.10f));
+    REQUIRE(round_tripped.behavior.gradient.stop_positions.size() == 5);
+    CHECK(round_tripped.behavior.gradient.stop_positions[1] == Approx(0.20f));
+    CHECK(round_tripped.behavior.gradient.stop_positions[2] == Approx(0.45f));
+    CHECK(round_tripped.behavior.gradient.stop_positions[3] == Approx(0.70f));
+    CHECK(mixed_filament_component_surface_offsets(round_tripped) == std::vector<float>{0.02f, 0.04f, -0.02f});
 }
 
 TEST_CASE("Surface-bias encoding reproduces requested apparent component percentages", "[MixedFilament][SurfaceBias]")
@@ -1495,6 +1599,11 @@ TEST_CASE("FullSpectrum image maps persist authoritative sources and binary text
     zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
     zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
     data.zones.push_back(zone);
+    ImageMap::Zone adaptive_zone = zone;
+    adaptive_zone.stable_id      = "zone-adaptive";
+    adaptive_zone.display_name   = "Adaptive local cycles";
+    adaptive_zone.render_mode    = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+    data.zones.push_back(std::move(adaptive_zone));
     ImageMap::TriangleBinding binding;
     binding.triangle_index                   = 0;
     binding.zone_index                       = 0;
@@ -1522,8 +1631,10 @@ TEST_CASE("FullSpectrum image maps persist authoritative sources and binary text
     const ImageMaps canonical = parse_json<ImageMaps>(image_maps_part->bytes);
     REQUIRE(canonical.volumes.size() == 1);
     REQUIRE(canonical.texture_assets.size() == 1);
+    REQUIRE(canonical.volumes.front().zones.size() == 2);
     CHECK(canonical.volumes.front().stable_volume_id == "vol_image");
     CHECK(canonical.volumes.front().zones.front().render_mode == "perimeter_modulation_v2");
+    CHECK(canonical.volumes.front().zones[1].render_mode == "adaptive_localized_cycles");
     const PackagePartPlan *asset_part = find_fullspectrum_part(plan, canonical.texture_assets.front().path);
     REQUIRE(asset_part != nullptr);
     CHECK(std::vector<uint8_t>(asset_part->bytes.begin(), asset_part->bytes.end()) == std::vector<uint8_t>{12, 34, 56, 255});
@@ -1543,8 +1654,10 @@ TEST_CASE("FullSpectrum image maps persist authoritative sources and binary text
     REQUIRE(target_volume->has_image_map_data());
     const auto imported = target_volume->image_map_data();
     REQUIRE(imported->texture_assets.size() == 1);
+    REQUIRE(imported->zones.size() == 2);
     CHECK(imported->texture_assets.front().rgba == std::vector<uint8_t>{12, 34, 56, 255});
     CHECK(imported->zones.front().render_mode == ImageMap::RenderMode::PerimeterModulationV2);
+    CHECK(imported->zones[1].render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles);
     CHECK(imported->triangle_bindings.front().source.texture_asset_index == 0);
 }
 

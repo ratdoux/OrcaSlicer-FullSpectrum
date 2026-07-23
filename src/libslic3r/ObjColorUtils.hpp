@@ -1,12 +1,16 @@
 #pragma once
+#include <algorithm>
 #include <iostream>
 #include <ctime>
+#include <functional>
 
 #include "opencv2/opencv.hpp"
 
 class QuantKMeans
 {
 public:
+    using ProgressFn = std::function<bool(int current, int total)>;
+
     int     m_alpha_thres;
     cv::Mat m_flatten_labels;
     cv::Mat m_centers8UC3;
@@ -44,40 +48,65 @@ public:
 
         convert_color_space(this->m_centers8UC3, this->m_centers8UC3, color_space, true);
     }
-    void apply(const std::vector<std::array<float, 4>> &ori_colors,
+    bool apply(const std::vector<std::array<float, 4>> &ori_colors,
                std::vector<std::array<float, 4>> &      cluster_results,
                std::vector<int> &                       labels,
                int                                      num_cluster = -1,
                int                                      max_cluster = 15,
-               int                                      color_space = 2)
+               int                                      color_space = 2,
+               const ProgressFn&                        progress_fn = {})
     {
+        if (progress_fn && !progress_fn(0, 100))
+            return false;
         // 0~255
         cv::Mat flatten_image8UC3 = flatten_vector(ori_colors);
 
-        this->apply(flatten_image8UC3, cluster_results, labels, num_cluster, max_cluster, color_space);
+        return this->apply(flatten_image8UC3, cluster_results, labels, num_cluster, max_cluster, color_space, progress_fn);
     }
-    void apply(const cv::Mat &                    flatten_image8UC3,
+    bool apply(const cv::Mat &                    flatten_image8UC3,
                std::vector<std::array<float, 4>> &cluster_results,
                std::vector<int> &                 labels,
                int                                num_cluster = -1,
                int                                max_cluster = 15,
-               int                                color_space = 2)
+               int                                color_space = 2,
+               const ProgressFn&                  progress_fn = {})
     {
+        const bool automatic_cluster_count = num_cluster < 1;
+        const int  progress_total = automatic_cluster_count ? std::max(max_cluster + 4, 5) : 5;
+        int        progress_current = 0;
+        auto report_progress = [&](bool finished = false) {
+            if (!progress_fn)
+                return true;
+            const int current = finished ? progress_total : std::min(progress_current, progress_total - 1);
+            return progress_fn(current, progress_total);
+        };
+        if (!report_progress())
+            return false;
+
         cv::Mat image8UC3;
         convert_color_space(flatten_image8UC3, image8UC3, color_space);
 
         cv::Mat image32FC3(image8UC3.rows, 1, CV_32FC3);
         for (int i = 0; i < image8UC3.rows; i++)
             image32FC3.at<cv::Vec3f>(i, 0) = image8UC3.at<cv::Vec3b>(i, 0);
+        ++progress_current;
+        if (!report_progress())
+            return false;
 
         int    best_cluster = 1;
         double cur_score = 0, best_score = 100;
         num_cluster = fmin(num_cluster, max_cluster);
         if (num_cluster < 1) {
             if (!this->more_than_request(image8UC3, max_cluster)) max_cluster = compute_num_colors(image8UC3);
+            ++progress_current;
+            if (!report_progress())
+                return false;
             num_cluster = fmin(num_cluster, max_cluster);
             cur_score  = cv::kmeans(image32FC3, 1, this->m_flatten_labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 300, 0.5), 3, cv::KMEANS_PP_CENTERS);
             best_score = cur_score;
+            ++progress_current;
+            if (!report_progress())
+                return false;
 
             for (int cur_cluster = 2; cur_cluster < max_cluster + 1; cur_cluster++) {
                 cv::Mat centers32FC3;
@@ -87,17 +116,29 @@ public:
                     break;
                 best_cluster = cur_score < best_score ? cur_cluster : best_cluster;
                 best_score   = cur_score < best_score ? cur_score : best_score;
+                ++progress_current;
+                if (!report_progress())
+                    return false;
             }
-        } else if (this->more_than_request(image8UC3, num_cluster))
+        } else if (this->more_than_request(image8UC3, num_cluster)) {
             best_cluster = num_cluster;
-        else {
+            ++progress_current;
+            if (!report_progress())
+                return false;
+        } else {
             best_cluster = compute_num_colors(image8UC3);
             std::cout << "num of image color is " << best_cluster << ", less than custom number " << num_cluster << std::endl;
+            ++progress_current;
+            if (!report_progress())
+                return false;
         }
 
         cv::Mat centers32FC3;
         cv::kmeans(image32FC3, best_cluster, this->m_flatten_labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 300, 0.5), 3, cv::KMEANS_PP_CENTERS,
                    centers32FC3);
+        ++progress_current;
+        if (!report_progress())
+            return false;
         this->m_centers8UC3 = cv::Mat(best_cluster, 1, CV_8UC3);
         for (int i = 0; i < best_cluster; i++) {
             auto center                          = centers32FC3.row(i);
@@ -113,6 +154,7 @@ public:
             cv::Vec3f center = this->m_centers8UC3.at<cv::Vec3b>(i, 0);
             cluster_results.emplace_back(std::array<float, 4>{center[0] / 255.f, center[1] / 255.f, center[2] / 255.f, 1.f});
         }
+        return report_progress(true);
     }
 
     bool more_than_request(const cv::Mat &image8UC3, int target_num)

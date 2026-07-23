@@ -21,6 +21,7 @@
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/ImageMap/ContinuousColorSolver.hpp"
 #include "libslic3r/ImageMap/FacetRasterizer.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Tesselate.hpp"
@@ -32,8 +33,14 @@
 #include <assert.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 
 #include <boost/log/trivial.hpp>
 
@@ -110,6 +117,238 @@ Slic3r::ColorRGBA adjust_color_for_rendering(const Slic3r::ColorRGBA& colors)
 }
 
 namespace Slic3r {
+
+enum class SourceColorPreviewStatus : unsigned char
+{
+    Running,
+    Ready,
+    Cancelled,
+    Failed
+};
+
+struct SourceColorPreviewJob
+{
+    explicit SourceColorPreviewJob(std::shared_ptr<const ImageMap::VolumeData> source_data)
+        : data(std::move(source_data))
+    {}
+
+    std::shared_ptr<const ImageMap::VolumeData> data;
+    std::atomic<SourceColorPreviewStatus>       status{SourceColorPreviewStatus::Running};
+    std::atomic<int>                            progress{1};
+    std::atomic<bool>                           cancel{false};
+    std::mutex                                  result_mutex;
+    std::unique_ptr<GUI::GLModel::Geometry>     geometry;
+};
+
+namespace {
+
+constexpr size_t k_source_color_preview_triangle_cap = 250'000;
+constexpr size_t k_source_color_preview_cache_cap    = 65'536;
+
+struct SourceColorPreviewAssignment
+{
+    RGBA         target_color{1.f, 1.f, 1.f, 1.f};
+    unsigned int filament_id{0};
+};
+
+unsigned int nearest_source_color_filament(const std::vector<SourceColorPreviewAssignment>& assignments, const RGBA& color)
+{
+    unsigned int filament_id  = 0;
+    double       best_distance = std::numeric_limits<double>::infinity();
+    for (const SourceColorPreviewAssignment& assignment : assignments) {
+        double distance = 0.0;
+        for (size_t component = 0; component < 3; ++component) {
+            const double delta = double(color[component]) - double(assignment.target_color[component]);
+            distance += delta * delta;
+        }
+        if (distance < best_distance) {
+            best_distance = distance;
+            filament_id   = assignment.filament_id;
+        }
+    }
+    return filament_id;
+}
+
+size_t source_color_preview_signature(const std::vector<ImageMap::ContinuousColorComponent>& components)
+{
+    size_t seed = components.size();
+    auto hash_combine = [&seed](size_t value) {
+        seed ^= value + size_t(0x9e3779b9) + (seed << 6) + (seed >> 2);
+    };
+    for (const ImageMap::ContinuousColorComponent& component : components) {
+        hash_combine(std::hash<std::string>{}(component.color_hex));
+        hash_combine(component.transmission_distance_mm ? std::hash<double>{}(*component.transmission_distance_mm) : 0u);
+        hash_combine(component.material_id ? std::hash<std::string>{}(*component.material_id) : 0u);
+    }
+    return seed;
+}
+
+std::vector<ImageMap::ContinuousColorComponent> source_color_preview_components()
+{
+    std::vector<ImageMap::ContinuousColorComponent> components;
+    PresetBundle* preset_bundle = GUI::wxGetApp().preset_bundle;
+    if (preset_bundle == nullptr)
+        return components;
+
+    const ConfigOptionStrings* colors = preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
+    if (colors == nullptr)
+        return components;
+    const ConfigOptionFloats* transmission_distances =
+        preset_bundle->project_config.option<ConfigOptionFloats>("filament_transmission_distance");
+    const ConfigOptionStrings* material_ids =
+        preset_bundle->project_config.option<ConfigOptionStrings>("filament_full_spectrum_material_id");
+
+    components.reserve(colors->values.size());
+    for (size_t index = 0; index < colors->values.size(); ++index) {
+        ImageMap::ContinuousColorComponent component;
+        component.color_hex = colors->values[index];
+        if (MixedFilamentManager::use_td_for_color_prediction() && transmission_distances != nullptr &&
+            index < transmission_distances->values.size()) {
+            const double td_mm = transmission_distances->values[index];
+            if (std::isfinite(td_mm) && td_mm > EPSILON)
+                component.transmission_distance_mm = td_mm;
+        }
+        if (material_ids != nullptr && index < material_ids->values.size() && !material_ids->values[index].empty())
+            component.material_id = material_ids->values[index];
+        components.emplace_back(std::move(component));
+    }
+    return components;
+}
+
+uint32_t preview_color_key(const RGBA& color)
+{
+    auto channel = [](float value) {
+        return uint32_t(std::lround(std::clamp(value, 0.f, 1.f) * 255.f));
+    };
+    return (channel(color[0]) << 16) | (channel(color[1]) << 8) | channel(color[2]);
+}
+
+std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
+    std::shared_ptr<const TriangleMesh>          mesh,
+    std::shared_ptr<const ImageMap::VolumeData>  data,
+    std::vector<ImageMap::ContinuousColorComponent> components,
+    std::vector<SourceColorPreviewAssignment>    assignments,
+    std::string                                  volume_name,
+    ImageMap::RenderMode                         render_mode)
+{
+    auto job = std::make_shared<SourceColorPreviewJob>(data);
+    std::thread([job, mesh = std::move(mesh), data = std::move(data), components = std::move(components),
+                  assignments = std::move(assignments), volume_name = std::move(volume_name), render_mode]() {
+        const auto started_at = std::chrono::steady_clock::now();
+        try {
+            job->progress.store(2, std::memory_order_relaxed);
+            ImageMap::ContinuousColorSolver solver(std::move(components));
+            job->progress.store(5, std::memory_order_relaxed);
+
+            ImageMap::SourceColorRasterizationOptions options;
+            options.max_leaf_triangles = k_source_color_preview_triangle_cap;
+            options.cancelled          = [job]() { return job->cancel.load(std::memory_order_relaxed); };
+            options.progress           = [job](int progress) {
+                int current = job->progress.load(std::memory_order_relaxed);
+                while (current < progress &&
+                       !job->progress.compare_exchange_weak(current, progress, std::memory_order_relaxed))
+                    ;
+            };
+
+            ImageMap::SourceColorRasterization rasterized = ImageMap::rasterize_source_colors(
+                *mesh, *data, render_mode, RGBA{1.f, 1.f, 1.f, 1.f}, options);
+            if (job->cancel.load(std::memory_order_relaxed)) {
+                job->status.store(SourceColorPreviewStatus::Cancelled, std::memory_order_release);
+                return;
+            }
+
+            auto geometry = std::make_unique<GUI::GLModel::Geometry>();
+            geometry->format.type          = GUI::GLModel::Geometry::EPrimitiveType::Triangles;
+            geometry->format.vertex_layout = GUI::GLModel::Geometry::EVertexLayout::P3N3C4;
+            geometry->reserve_vertices(rasterized.vertices.size());
+            geometry->reserve_indices(rasterized.indices.size());
+            geometry->indices = std::move(rasterized.indices);
+            geometry->color   = ColorRGBA::WHITE();
+
+            const size_t vertex_count = rasterized.vertices.size();
+            int          last_progress = 85;
+            struct CachedPreviewColor
+            {
+                RGBA         color{1.f, 1.f, 1.f, 1.f};
+                unsigned int filament_id{0};
+            };
+            std::unordered_map<uint32_t, CachedPreviewColor> color_cache;
+            color_cache.reserve(std::min(vertex_count, k_source_color_preview_cache_cap));
+            for (size_t vertex_idx = 0; vertex_idx < vertex_count; ++vertex_idx) {
+                if ((vertex_idx & 0x3fffu) == 0u) {
+                    if (job->cancel.load(std::memory_order_relaxed)) {
+                        job->status.store(SourceColorPreviewStatus::Cancelled, std::memory_order_release);
+                        return;
+                    }
+                    const int progress = vertex_count == 0 ? 99 : 85 + int(14 * vertex_idx / vertex_count);
+                    if (progress != last_progress) {
+                        job->progress.store(progress, std::memory_order_relaxed);
+                        last_progress = progress;
+                    }
+                }
+                const ImageMap::SourceColorVertex &vertex = rasterized.vertices[vertex_idx];
+                RGBA                               result_color = vertex.color;
+                unsigned int                       filament_id  = 0;
+                if (solver.valid()) {
+                    const uint32_t key = preview_color_key(vertex.color);
+                    const auto     cached = color_cache.find(key);
+                    if (cached != color_cache.end()) {
+                        result_color = cached->second.color;
+                        filament_id  = cached->second.filament_id;
+                    } else {
+                        RGBA quantized_target{float((key >> 16) & 0xffu) / 255.f,
+                                              float((key >> 8) & 0xffu) / 255.f,
+                                              float(key & 0xffu) / 255.f,
+                                              vertex.color[3]};
+                        if (const std::optional<RGBA> predicted = solver.predict_color(quantized_target))
+                            result_color = *predicted;
+                        filament_id = nearest_source_color_filament(assignments, quantized_target);
+                        if (color_cache.size() < k_source_color_preview_cache_cap) {
+                            RGBA cached_color = result_color;
+                            cached_color[3]   = 1.f;
+                            color_cache.emplace(key, CachedPreviewColor{cached_color, filament_id});
+                        }
+                    }
+                } else {
+                    filament_id = nearest_source_color_filament(assignments, vertex.color);
+                }
+                // The source-preview shader treats alpha as a compact, transient
+                // palette assignment. It restores the volume alpha before
+                // lighting, so normal image-map rendering remains opaque.
+                result_color[3] = assignments.empty() ? vertex.color[3] : float(std::min(filament_id, 255u)) / 255.f;
+                geometry->add_vertex(vertex.position, vertex.normal, result_color);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(job->result_mutex);
+                job->geometry = std::move(geometry);
+            }
+            job->progress.store(100, std::memory_order_relaxed);
+            job->status.store(SourceColorPreviewStatus::Ready, std::memory_order_release);
+
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started_at).count();
+            BOOST_LOG_TRIVIAL(info) << "KM/K-S image-map result preview prepared"
+                                    << " volume=\"" << volume_name << "\""
+                                    << " source_triangles=" << rasterized.source_triangle_count
+                                    << " preview_triangles=" << rasterized.sampled_leaf_count
+                                    << " elapsed_ms=" << elapsed_ms;
+        } catch (const std::exception &error) {
+            BOOST_LOG_TRIVIAL(error) << "KM/K-S image-map result preview failed"
+                                     << " volume=\"" << volume_name << "\""
+                                     << " error=\"" << error.what() << "\"";
+            job->status.store(SourceColorPreviewStatus::Failed, std::memory_order_release);
+        } catch (...) {
+            BOOST_LOG_TRIVIAL(error) << "KM/K-S image-map result preview failed"
+                                     << " volume=\"" << volume_name << "\""
+                                     << " error=\"unknown exception\"";
+            job->status.store(SourceColorPreviewStatus::Failed, std::memory_order_release);
+        }
+    }).detach();
+    return job;
+}
+
+} // namespace
 
 const float GLVolume::SinkingContours::HalfWidth = 0.25f;
 
@@ -234,6 +473,20 @@ GLVolume::GLVolume(float r, float g, float b, float a)
     color = {r, g, b, a};
     set_render_color(color);
     mmuseg_ts = 0;
+}
+
+GLVolume::~GLVolume()
+{
+    if (image_map_source_preview_job)
+        image_map_source_preview_job->cancel.store(true, std::memory_order_relaxed);
+}
+
+std::optional<float> GLVolume::source_color_preview_progress() const
+{
+    if (!image_map_source_preview_job ||
+        image_map_source_preview_job->status.load(std::memory_order_acquire) != SourceColorPreviewStatus::Running)
+        return std::nullopt;
+    return float(std::clamp(image_map_source_preview_job->progress.load(std::memory_order_relaxed), 0, 100)) / 100.f;
 }
 
 // BBS
@@ -688,7 +941,9 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
         glFrontFace(GL_CW);
     glsafe(::glCullFace(GL_BACK));
 
-    bool         color_volume = false;
+    bool         color_volume                 = false;
+    bool         source_color_volume          = false;
+    bool         adaptive_source_color_volume = false;
     ModelObject* model_object = nullptr;
     ModelVolume* model_volume = nullptr;
     do {
@@ -702,6 +957,79 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
         const std::shared_ptr<const ImageMap::VolumeData> image_map_data = model_volume->image_map_data();
         if (model_volume->mmu_segmentation_facets.empty() && (!image_map_data || image_map_data->empty()))
             break;
+
+        std::optional<ImageMap::RenderMode> perimeter_preview_mode;
+        if (image_map_data) {
+            const auto zone_it = std::find_if(image_map_data->zones.begin(), image_map_data->zones.end(), [](const ImageMap::Zone& zone) {
+                return zone.enabled && (zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2 ||
+                                        zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles);
+            });
+            if (zone_it != image_map_data->zones.end())
+                perimeter_preview_mode = zone_it->render_mode;
+        }
+        if (perimeter_preview_mode) {
+            if (!picking) {
+                std::vector<ImageMap::ContinuousColorComponent> preview_components = source_color_preview_components();
+                const ImageMapPreviewPalette preview_palette = image_map_preview_palette();
+                const unsigned int base_filament_id =
+                    unsigned(std::clamp(model_volume->extruder_id(), 1, int(std::max<size_t>(1, preview_palette.num_total))));
+                size_t preview_signature = source_color_preview_signature(preview_components);
+                if (*perimeter_preview_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+                    const size_t palette_signature = preview_palette.signature(*image_map_data, base_filament_id);
+                    preview_signature ^= palette_signature + size_t(0x9e3779b9) + (preview_signature << 6) + (preview_signature >> 2);
+                }
+                if (image_map_data != image_map_source_preview_data ||
+                    preview_signature != image_map_source_preview_signature) {
+                    image_map_source_model.reset();
+                    if (image_map_source_preview_job)
+                        image_map_source_preview_job->cancel.store(true, std::memory_order_relaxed);
+                    image_map_source_preview_data = image_map_data;
+                    image_map_source_preview_signature = preview_signature;
+                    std::vector<SourceColorPreviewAssignment> assignments;
+                    if (*perimeter_preview_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+                        for (const ImageMap::Zone& zone : image_map_data->zones) {
+                            if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles)
+                                continue;
+                            for (const ImageMap::PaletteEntry& entry : zone.palette) {
+                                const unsigned int filament_id = preview_palette.resolve(entry);
+                                if (filament_id != 0)
+                                    assignments.push_back({entry.target_color, filament_id});
+                            }
+                        }
+                    }
+                    image_map_source_preview_job  = start_source_color_preview(
+                        model_volume->mesh_ptr(), image_map_data, std::move(preview_components), std::move(assignments), model_volume->name,
+                        *perimeter_preview_mode);
+                }
+
+                if (image_map_source_preview_job) {
+                    const SourceColorPreviewStatus status =
+                        image_map_source_preview_job->status.load(std::memory_order_acquire);
+                    if (status == SourceColorPreviewStatus::Ready) {
+                        std::unique_ptr<GUI::GLModel::Geometry> geometry;
+                        {
+                            std::lock_guard<std::mutex> lock(image_map_source_preview_job->result_mutex);
+                            geometry = std::move(image_map_source_preview_job->geometry);
+                        }
+                        if (geometry && geometry->vertices_count() != 0 && geometry->indices_count() != 0)
+                            image_map_source_model.init_from(std::move(*geometry));
+                        image_map_source_preview_job.reset();
+                    } else if (status == SourceColorPreviewStatus::Cancelled || status == SourceColorPreviewStatus::Failed) {
+                        image_map_source_preview_job.reset();
+                    }
+                }
+
+                if (image_map_source_model.is_initialized()) {
+                    color_volume                 = true;
+                    source_color_volume          = true;
+                    adaptive_source_color_volume = *perimeter_preview_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles;
+                }
+            }
+            // While the worker is running (and for picking), retain the normal
+            // source mesh. Never fall through to the quantized image-map path,
+            // which would repeat the expensive work synchronously.
+            break;
+        }
 
         const ImageMapPreviewPalette preview_palette = image_map_preview_palette();
         const unsigned int base_filament_id = unsigned(std::clamp(model_volume->extruder_id(), 1, int(std::max<size_t>(1, preview_palette.num_total))));
@@ -738,7 +1066,22 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
         }
     } while (0);
 
-    if (color_volume && !picking) {
+    if (source_color_volume) {
+        if (image_map_source_model.is_initialized()) {
+            ColorRGBA source_color = ColorRGBA::WHITE();
+            source_color.a(render_color.a());
+            image_map_source_model.set_color(source_color);
+            if (shader != nullptr && adaptive_source_color_volume) {
+                shader->set_uniform("image_map_cycle_preview", true);
+                shader->set_uniform("image_map_highlight_filament_id", int(image_map_highlight_filament_id));
+            }
+            image_map_source_model.render();
+            if (shader != nullptr && adaptive_source_color_volume) {
+                shader->set_uniform("image_map_cycle_preview", false);
+                shader->set_uniform("image_map_highlight_filament_id", 0);
+            }
+        }
+    } else if (color_volume && !picking) {
         // when force_transparent, we need to keep the alpha
         if (force_native_color && render_color.is_transparent()) {
             for (auto& extruder_color : extruder_colors)
@@ -1630,6 +1973,20 @@ std::string GLVolumeCollection::log_memory_info() const
 {
     return " (GLVolumeCollection RAM: " + format_memsize_MB(this->cpu_memory_used()) +
            " GPU: " + format_memsize_MB(this->gpu_memory_used()) + " Both: " + format_memsize_MB(this->gpu_memory_used()) + ")";
+}
+
+std::optional<float> GLVolumeCollection::source_color_preview_progress() const
+{
+    float  progress_sum = 0.f;
+    size_t pending_count = 0;
+    for (const GLVolume *volume : volumes) {
+        const std::optional<float> progress = volume->source_color_preview_progress();
+        if (!progress)
+            continue;
+        progress_sum += *progress;
+        ++pending_count;
+    }
+    return pending_count == 0 ? std::nullopt : std::optional<float>(progress_sum / float(pending_count));
 }
 
 static void thick_lines_to_geometry(const Lines&               lines,

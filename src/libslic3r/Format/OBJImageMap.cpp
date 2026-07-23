@@ -18,6 +18,29 @@ namespace {
 
 constexpr unsigned int k_max_subdivision_depth = 6;
 
+bool report_progress(const ObjImageMapProgressFn& progress_fn,
+                     ObjImageMapProgressStage     stage,
+                     size_t                       current,
+                     size_t                       total)
+{
+    if (!progress_fn)
+        return true;
+
+    total   = std::max<size_t>(total, 1);
+    current = std::min(current, total);
+    const size_t stride = std::max<size_t>(total / 100, 1);
+    if (current != 0 && current != total && current % stride != 0)
+        return true;
+    return progress_fn(stage, current, total);
+}
+
+bool cancelled(std::string* warning)
+{
+    if (warning != nullptr)
+        *warning = "OBJ image-map processing was cancelled.";
+    return false;
+}
+
 struct LoadedTexture
 {
     std::vector<uint8_t> rgba;
@@ -168,7 +191,8 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
                                      float                  target_sample_size_mm,
                                      size_t                 max_samples,
                                      ObjImageMapSamplePlan& out_plan,
-                                     std::string*           warning)
+                                     std::string*           warning,
+                                     const ObjImageMapProgressFn& progress_fn)
 {
     out_plan                                   = ObjImageMapSamplePlan{};
     const indexed_triangle_set& its            = mesh.its;
@@ -178,24 +202,41 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
         obj_info.triangle_texture_files.size() != triangle_count)
         return false;
 
+    std::set<std::string> texture_names;
+    for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        const std::string& texture_name = obj_info.triangle_texture_files[triangle_idx];
+        if (!texture_name.empty())
+            texture_names.emplace(texture_name);
+        if (!report_progress(progress_fn, ObjImageMapProgressStage::DecodeTextures, triangle_idx + 1,
+                             triangle_count + texture_names.size()))
+            return cancelled(warning);
+    }
+
     std::map<std::string, LoadedTexture> loaded;
     std::set<std::string>                failed;
-    for (const std::string& texture_name : obj_info.triangle_texture_files) {
-        if (texture_name.empty() || loaded.count(texture_name) != 0 || failed.count(texture_name) != 0)
-            continue;
+    size_t                               texture_idx = 0;
+    for (const std::string& texture_name : texture_names) {
+        if (!report_progress(progress_fn, ObjImageMapProgressStage::DecodeTextures,
+                             triangle_count + texture_idx, triangle_count + texture_names.size()))
+            return cancelled(warning);
         const boost::filesystem::path path = resolve_texture_path(obj_info.obj_directory, texture_name);
         LoadedTexture                 texture;
         if (!decode_imported_texture_rgba_from_file(path.string(), texture.rgba, texture.width, texture.height)) {
             failed.emplace(texture_name);
-            continue;
+        } else {
+            loaded.emplace(texture_name, std::move(texture));
         }
-        loaded.emplace(texture_name, std::move(texture));
+        ++texture_idx;
     }
+    if (!report_progress(progress_fn, ObjImageMapProgressStage::DecodeTextures, 1, 1))
+        return cancelled(warning);
     out_plan.loaded_texture_count = loaded.size();
 
     std::vector<unsigned int> depths(triangle_count, 0);
     size_t                    sample_count = 0;
     for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        if (!report_progress(progress_fn, ObjImageMapProgressStage::AnalyzeSurface, triangle_idx, triangle_count))
+            return cancelled(warning);
         const std::string& texture_name = obj_info.triangle_texture_files[triangle_idx];
         const auto         texture_it   = loaded.find(texture_name);
         if (obj_info.triangle_uvs_valid[triangle_idx] == 0 || texture_it == loaded.end())
@@ -212,29 +253,36 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
         ++out_plan.textured_triangle_count;
     }
 
+    if (!report_progress(progress_fn, ObjImageMapProgressStage::AnalyzeSurface, triangle_count, triangle_count))
+        return cancelled(warning);
+
     const size_t effective_budget = std::max(max_samples, out_plan.textured_triangle_count);
-    while (sample_count > effective_budget) {
-        size_t best_triangle = triangle_count;
-        size_t best_saving   = 0;
+    // A subdivision depth is capped at six, so reducing the deepest triangles
+    // in six descending passes is equivalent to repeatedly searching for the
+    // largest saving, without the previous O(triangles * reductions) loop.
+    for (unsigned int depth = k_max_subdivision_depth; depth > 0 && sample_count > effective_budget; --depth) {
         for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
-            if (out_plan.triangle_subdivision_depths[triangle_idx] <= 0)
+            if (depths[triangle_idx] != depth)
                 continue;
             const size_t current = obj_image_map_leaf_count(depths[triangle_idx]);
             const size_t reduced = obj_image_map_leaf_count(depths[triangle_idx] - 1);
-            if (current - reduced > best_saving) {
-                best_saving   = current - reduced;
-                best_triangle = triangle_idx;
-            }
+            --depths[triangle_idx];
+            out_plan.triangle_subdivision_depths[triangle_idx] = int8_t(depths[triangle_idx]);
+            sample_count -= current - reduced;
+            if (sample_count <= effective_budget)
+                break;
         }
-        if (best_triangle == triangle_count)
-            break;
-        --depths[best_triangle];
-        out_plan.triangle_subdivision_depths[best_triangle] = int8_t(depths[best_triangle]);
-        sample_count -= best_saving;
+        if (!report_progress(progress_fn, ObjImageMapProgressStage::AllocateSamples,
+                             k_max_subdivision_depth - depth + 1, k_max_subdivision_depth))
+            return cancelled(warning);
     }
+    if (!report_progress(progress_fn, ObjImageMapProgressStage::AllocateSamples, 1, 1))
+        return cancelled(warning);
 
     out_plan.colors.reserve(sample_count);
     for (size_t triangle_idx = 0; triangle_idx < triangle_count; ++triangle_idx) {
+        if (!report_progress(progress_fn, ObjImageMapProgressStage::SampleColors, triangle_idx, triangle_count))
+            return cancelled(warning);
         if (out_plan.triangle_subdivision_depths[triangle_idx] < 0)
             continue;
         const auto texture_it = loaded.find(obj_info.triangle_texture_files[triangle_idx]);
@@ -243,6 +291,9 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
         const RGBA background = triangle_idx < obj_info.face_colors.size() ? obj_info.face_colors[triangle_idx] : RGBA{1.f, 1.f, 1.f, 1.f};
         append_leaf_colors(obj_info.triangle_uvs[triangle_idx], depths[triangle_idx], texture_it->second, background, out_plan.colors);
     }
+
+    if (!report_progress(progress_fn, ObjImageMapProgressStage::SampleColors, triangle_count, triangle_count))
+        return cancelled(warning);
 
     if (warning != nullptr && !failed.empty()) {
         std::ostringstream stream;
@@ -258,7 +309,8 @@ bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
                                                   float                  target_sample_size_mm,
                                                   size_t                 max_samples,
                                                   ObjImageMapSamplePlan& out_plan,
-                                                  std::string*           warning)
+                                                  std::string*           warning,
+                                                  const ObjImageMapProgressFn& progress_fn)
 {
     if (texture_file.empty()) {
         out_plan = ObjImageMapSamplePlan{};
@@ -293,7 +345,7 @@ bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
         return false;
     }
 
-    const bool built = build_obj_image_map_sample_plan(mesh, texture_info, target_sample_size_mm, max_samples, out_plan, warning);
+    const bool built = build_obj_image_map_sample_plan(mesh, texture_info, target_sample_size_mm, max_samples, out_plan, warning, progress_fn);
     if (!built && warning != nullptr && warning->empty())
         *warning = "The selected image could not be used as an OBJ texture.";
     return built;
@@ -305,7 +357,8 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
                                      const std::string&        selected_texture_file,
                                      ImageMap::Zone            zone,
                                      ImageMap::VolumeData&     out_data,
-                                     std::string*              warning)
+                                     std::string*              warning,
+                                     const ObjImageMapProgressFn& progress_fn)
 {
     out_data = ImageMap::VolumeData{};
     out_data.topology_fingerprint = ImageMap::topology_fingerprint(mesh);
@@ -347,7 +400,11 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
     };
 
     size_t skipped = 0;
+    if (!report_progress(progress_fn, ObjImageMapProgressStage::StoreSource, 0, its.indices.size()))
+        return cancelled(warning);
     for (size_t triangle_idx = 0; triangle_idx < its.indices.size(); ++triangle_idx) {
+        if (!report_progress(progress_fn, ObjImageMapProgressStage::StoreSource, triangle_idx, its.indices.size()))
+            return cancelled(warning);
         const stl_triangle_vertex_indices& indices = its.indices[triangle_idx];
         if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0 || size_t(indices[0]) >= its.vertices.size() ||
             size_t(indices[1]) >= its.vertices.size() || size_t(indices[2]) >= its.vertices.size()) {
@@ -400,7 +457,10 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
 
     if (warning && skipped > 0)
         *warning = "Skipped " + std::to_string(skipped) + " OBJ triangles without a usable image-map source.";
-    return !out_data.empty() && out_data.validate(mesh).valid;
+    const bool valid = !out_data.empty() && out_data.validate(mesh).valid;
+    if (!report_progress(progress_fn, ObjImageMapProgressStage::StoreSource, its.indices.size(), its.indices.size()))
+        return cancelled(warning);
+    return valid;
 }
 
 std::string encode_obj_image_map_triangle_filaments(const std::vector<unsigned char>& filament_ids,

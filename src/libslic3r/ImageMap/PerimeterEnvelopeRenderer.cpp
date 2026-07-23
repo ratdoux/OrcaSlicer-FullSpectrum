@@ -20,13 +20,18 @@
 namespace Slic3r::ImageMap {
 namespace {
 
-bool data_has_perimeter_modulation_v2(const VolumeData& data)
+bool is_perimeter_modulation_mode(RenderMode mode)
+{
+    return mode == RenderMode::PerimeterModulationV2 || mode == RenderMode::AdaptiveLocalizedCycles;
+}
+
+bool data_has_perimeter_modulation(const VolumeData& data)
 {
     return std::any_of(data.triangle_bindings.begin(), data.triangle_bindings.end(), [&data](const TriangleBinding& binding) {
         if (binding.zone_index >= data.zones.size())
             return false;
         const Zone& zone = data.zones[binding.zone_index];
-        return zone.enabled && zone.render_mode == RenderMode::PerimeterModulationV2 && !zone.palette.empty();
+        return zone.enabled && is_perimeter_modulation_mode(zone.render_mode) && !zone.palette.empty();
     });
 }
 
@@ -70,8 +75,10 @@ struct PerimeterEnvelopeRenderer::Impl
 {
     struct LayerCadence
     {
-        unsigned int     filament_id{0};
-        std::vector<int> component_percents;
+        unsigned int                                filament_id{0};
+        std::vector<int>                            component_percents;
+        std::shared_ptr<const ContinuousColorSolver> restricted_solver;
+        std::vector<size_t>                         solver_to_physical;
     };
 
     const MixedFilamentManager*                   manager{nullptr};
@@ -81,26 +88,30 @@ struct PerimeterEnvelopeRenderer::Impl
     float                                         max_displacement_mm{0.35f};
     float                                         sample_spacing_mm{0.25f};
     std::unique_ptr<ContinuousColorSolver>        solver;
+    std::unordered_map<std::string, std::shared_ptr<const ContinuousColorSolver>> restricted_solvers;
     std::vector<VolumeSampler>                    volumes;
-    std::unordered_map<const Zone*, LayerCadence> cadences;
+    std::unordered_map<const Zone*,         LayerCadence> shared_cadences;
+    std::unordered_map<const PaletteEntry*, LayerCadence> adaptive_cadences;
 
     std::optional<SelectedSample> sample(const Vec3d& print_point, double max_world_distance) const
     {
         std::optional<SelectedSample> best;
         for (const VolumeSampler& volume : volumes) {
             const Vec3d                        local_point = volume.print_to_local * print_point;
-            const std::optional<SurfaceSample> candidate   = volume.sampler.sample(local_point, max_world_distance / volume.minimum_scale,
-                                                                                   RenderMode::PerimeterModulationV2);
-            if (!candidate)
-                continue;
-            const Vec3d  closest_print    = volume.local_to_print * candidate->closest_local_point;
-            const double squared_distance = (closest_print - print_point).squaredNorm();
-            if (!std::isfinite(squared_distance) || squared_distance > max_world_distance * max_world_distance)
-                continue;
-            if (!best || squared_distance < best->squared_world_distance - 1e-9 ||
-                (std::abs(squared_distance - best->squared_world_distance) <= 1e-9 &&
-                 candidate->zone->priority > best->sample.zone->priority))
-                best = SelectedSample{*candidate, squared_distance};
+            for (const RenderMode mode : {RenderMode::PerimeterModulationV2, RenderMode::AdaptiveLocalizedCycles}) {
+                const std::optional<SurfaceSample> candidate =
+                    volume.sampler.sample(local_point, max_world_distance / volume.minimum_scale, mode);
+                if (!candidate)
+                    continue;
+                const Vec3d  closest_print    = volume.local_to_print * candidate->closest_local_point;
+                const double squared_distance = (closest_print - print_point).squaredNorm();
+                if (!std::isfinite(squared_distance) || squared_distance > max_world_distance * max_world_distance)
+                    continue;
+                if (!best || squared_distance < best->squared_world_distance - 1e-9 ||
+                    (std::abs(squared_distance - best->squared_world_distance) <= 1e-9 &&
+                     candidate->zone->priority > best->sample.zone->priority))
+                    best = SelectedSample{*candidate, squared_distance};
+            }
         }
         return best;
     }
@@ -116,19 +127,41 @@ struct PerimeterEnvelopeRenderer::Impl
 
     std::optional<float> continuous_offset(const SurfaceSample& sample, const Layer& layer) const
     {
-        if (!solver || !solver->valid() || sample.zone == nullptr)
+        if (manager == nullptr || sample.zone == nullptr)
             return std::nullopt;
-        const auto cadence_it = cadences.find(sample.zone);
-        if (cadence_it == cadences.end())
+        const LayerCadence* cadence = nullptr;
+        if (sample.zone->render_mode == RenderMode::AdaptiveLocalizedCycles && sample.palette_entry != nullptr) {
+            const auto cadence_it = adaptive_cadences.find(sample.palette_entry);
+            if (cadence_it != adaptive_cadences.end())
+                cadence = &cadence_it->second;
+        } else {
+            const auto cadence_it = shared_cadences.find(sample.zone);
+            if (cadence_it != shared_cadences.end())
+                cadence = &cadence_it->second;
+        }
+        if (cadence == nullptr)
             return std::nullopt;
-        const LayerCadence& cadence          = cadence_it->second;
-        const unsigned int  active_component = manager->resolve(cadence.filament_id, num_physical, int(layer.id()), float(layer.print_z),
-                                                                float(layer.height));
+        const unsigned int active_component = manager->resolve(cadence->filament_id, num_physical, int(layer.id()), float(layer.print_z),
+                                                               float(layer.height));
         if (active_component < 1 || active_component > num_physical)
             return std::nullopt;
 
-        const std::vector<double> target_weights = solver->solve(sample.color);
-        const std::vector<float>  offsets = mixed_filament_surface_offsets_for_apparent_weights(cadence.component_percents, target_weights,
+        std::vector<double> target_weights;
+        if (cadence->restricted_solver && cadence->restricted_solver->valid()) {
+            const std::vector<double> restricted_weights = cadence->restricted_solver->solve(sample.color);
+            if (restricted_weights.size() != cadence->solver_to_physical.size())
+                return std::nullopt;
+            target_weights.assign(num_physical, 0.0);
+            for (size_t index = 0; index < restricted_weights.size(); ++index) {
+                if (cadence->solver_to_physical[index] < target_weights.size())
+                    target_weights[cadence->solver_to_physical[index]] = restricted_weights[index];
+            }
+        } else {
+            if (!solver || !solver->valid())
+                return std::nullopt;
+            target_weights = solver->solve(sample.color);
+        }
+        const std::vector<float>  offsets = mixed_filament_surface_offsets_for_apparent_weights(cadence->component_percents, target_weights,
                                                                                                 reference_width_mm);
         if (offsets.size() != num_physical)
             return std::nullopt;
@@ -164,21 +197,21 @@ struct PerimeterEnvelopeRenderer::Impl
     }
 };
 
-bool model_has_perimeter_modulation_v2(const ModelObject& model_object)
+bool model_has_perimeter_modulation(const ModelObject& model_object)
 {
     for (const ModelVolume* volume : model_object.volumes) {
         if (volume == nullptr || !volume->is_model_part())
             continue;
         const std::shared_ptr<const VolumeData> data = volume->image_map_data();
-        if (data && data_has_perimeter_modulation_v2(*data))
+        if (data && data_has_perimeter_modulation(*data))
             return true;
     }
     return false;
 }
 
-bool model_uses_perimeter_modulation_v2_filament(const ModelObject& model_object,
-                                                 uint64_t           mixed_filament_stable_id,
-                                                 unsigned int       fallback_filament_id)
+bool model_uses_perimeter_modulation_filament(const ModelObject& model_object,
+                                              uint64_t           mixed_filament_stable_id,
+                                              unsigned int       fallback_filament_id)
 {
     if (mixed_filament_stable_id == 0 && fallback_filament_id == 0)
         return false;
@@ -189,7 +222,7 @@ bool model_uses_perimeter_modulation_v2_filament(const ModelObject& model_object
         if (!data)
             continue;
         for (const Zone& zone : data->zones) {
-            if (!zone.enabled || zone.render_mode != RenderMode::PerimeterModulationV2)
+            if (!zone.enabled || !is_perimeter_modulation_mode(zone.render_mode))
                 continue;
             if (std::any_of(zone.palette.begin(), zone.palette.end(), [&](const PaletteEntry& entry) {
                     return (mixed_filament_stable_id != 0 && entry.mixed_filament_stable_id == mixed_filament_stable_id) ||
@@ -206,7 +239,7 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
     const Print*       print        = print_object.print();
     const ModelObject* model_object = print_object.model_object();
     if (print == nullptr || model_object == nullptr || !print->config().mixed_filament_component_bias_enabled.value ||
-        !model_has_perimeter_modulation_v2(*model_object))
+        !model_has_perimeter_modulation(*model_object))
         return nullptr;
 
     auto impl                 = std::make_unique<Impl>();
@@ -229,7 +262,8 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
     for (size_t component_index = 0; component_index < impl->num_physical; ++component_index) {
         ContinuousColorComponent component;
         component.color_hex = print->config().filament_colour.values[component_index];
-        if (component_index < print->config().filament_transmission_distance.values.size() &&
+        if (MixedFilamentManager::use_td_for_color_prediction() &&
+            component_index < print->config().filament_transmission_distance.values.size() &&
             print->config().filament_transmission_distance.values[component_index] > EPSILON)
             component.transmission_distance_mm = print->config().filament_transmission_distance.values[component_index];
         if (component_index < print->config().filament_full_spectrum_material_id.values.size() &&
@@ -237,34 +271,79 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
             component.material_id = print->config().filament_full_spectrum_material_id.values[component_index];
         solver_components.emplace_back(std::move(component));
     }
-    impl->solver = std::make_unique<ContinuousColorSolver>(std::move(solver_components));
+    impl->solver = std::make_unique<ContinuousColorSolver>(solver_components);
 
     const Transform3d object_to_print = print_object.trafo_centered();
     for (const ModelVolume* volume : model_object->volumes) {
         if (volume == nullptr || !volume->is_model_part())
             continue;
         const std::shared_ptr<const VolumeData> data = volume->image_map_data();
-        if (!data || !data_has_perimeter_modulation_v2(*data) || !data->validate(volume->mesh()).valid)
+        if (!data || !data_has_perimeter_modulation(*data) || !data->validate(volume->mesh()).valid)
             continue;
         for (const Zone& zone : data->zones) {
-            if (zone.enabled && zone.render_mode == RenderMode::PerimeterModulationV2) {
+            if (zone.enabled && is_perimeter_modulation_mode(zone.render_mode)) {
                 impl->sample_spacing_mm  = std::min(impl->sample_spacing_mm, std::clamp(zone.modulation_sample_spacing_mm, 0.03f, 2.f));
-                unsigned int filament_id = 0;
-                for (const PaletteEntry& entry : zone.palette) {
-                    filament_id = resolve_palette_filament(entry, *impl->manager, impl->num_physical, impl->num_total);
-                    if (filament_id != 0)
-                        break;
-                }
-                const std::optional<MixedFilamentDefinition> definition =
-                    impl->manager->mixed_filament_definition_from_id(filament_id, impl->num_physical);
-                if (definition && definition->behavior.surface_bias.perimeter_modulation) {
+                auto cadence_for_entry = [&impl, &solver_components](const PaletteEntry& entry,
+                                                                     bool                require_all_components) -> std::optional<Impl::LayerCadence> {
+                    const unsigned int filament_id =
+                        resolve_palette_filament(entry, *impl->manager, impl->num_physical, impl->num_total);
+                    const std::optional<MixedFilamentDefinition> definition =
+                        impl->manager->mixed_filament_definition_from_id(filament_id, impl->num_physical);
+                    if (!definition || !definition->behavior.surface_bias.perimeter_modulation)
+                        return std::nullopt;
                     std::vector<int> component_percents(impl->num_physical, 0);
                     for (const MixedFilamentWeightedComponent& component : definition->recipe.blend.components) {
                         if (component.filament.id >= 1 && component.filament.id <= impl->num_physical)
                             component_percents[component.filament.id - 1] += std::max(0, component.percent);
                     }
-                    if (std::all_of(component_percents.begin(), component_percents.end(), [](int percent) { return percent > 0; }))
-                        impl->cadences.emplace(&zone, Impl::LayerCadence{filament_id, std::move(component_percents)});
+                    const bool has_components =
+                        std::any_of(component_percents.begin(), component_percents.end(), [](int percent) { return percent > 0; });
+                    const bool has_all_components =
+                        std::all_of(component_percents.begin(), component_percents.end(), [](int percent) { return percent > 0; });
+                    if (!has_components || (require_all_components && !has_all_components))
+                        return std::nullopt;
+
+                    Impl::LayerCadence cadence;
+                    cadence.filament_id       = filament_id;
+                    cadence.component_percents = std::move(component_percents);
+                    if (!require_all_components && !has_all_components) {
+                        std::string mask(impl->num_physical, '0');
+                        std::vector<ContinuousColorComponent> restricted_components;
+                        for (size_t component_idx = 0; component_idx < cadence.component_percents.size(); ++component_idx) {
+                            if (cadence.component_percents[component_idx] <= 0 || component_idx >= solver_components.size())
+                                continue;
+                            mask[component_idx] = '1';
+                            cadence.solver_to_physical.emplace_back(component_idx);
+                            restricted_components.emplace_back(solver_components[component_idx]);
+                        }
+                        if (restricted_components.size() < 2)
+                            return std::nullopt;
+                        const auto cached = impl->restricted_solvers.find(mask);
+                        if (cached != impl->restricted_solvers.end()) {
+                            cadence.restricted_solver = cached->second;
+                        } else {
+                            auto restricted_solver = std::make_shared<ContinuousColorSolver>(std::move(restricted_components));
+                            if (!restricted_solver->valid())
+                                return std::nullopt;
+                            cadence.restricted_solver = restricted_solver;
+                            impl->restricted_solvers.emplace(std::move(mask), std::move(restricted_solver));
+                        }
+                    }
+                    return cadence;
+                };
+
+                if (zone.render_mode == RenderMode::PerimeterModulationV2) {
+                    for (const PaletteEntry& entry : zone.palette) {
+                        if (std::optional<Impl::LayerCadence> cadence = cadence_for_entry(entry, true)) {
+                            impl->shared_cadences.emplace(&zone, std::move(*cadence));
+                            break;
+                        }
+                    }
+                } else {
+                    for (const PaletteEntry& entry : zone.palette) {
+                        if (std::optional<Impl::LayerCadence> cadence = cadence_for_entry(entry, false))
+                            impl->adaptive_cadences.emplace(&entry, std::move(*cadence));
+                    }
                 }
             }
         }

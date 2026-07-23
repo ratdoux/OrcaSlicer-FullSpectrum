@@ -1,7 +1,9 @@
 #include "Internal.hpp"
+#include "../LocalesUtils.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <sstream>
 
 namespace Slic3r { namespace MixedFilamentInternal {
@@ -76,16 +78,12 @@ bool parse_row_definition(const std::string& row,
         const std::string t = trim_copy(tok);
         if (t.empty())
             return false;
-        try {
-            size_t      consumed = 0;
-            const float v        = std::stof(t, &consumed);
-            if (consumed != t.size())
-                return false;
-            out = v;
-            return true;
-        } catch (...) {
+        size_t       consumed = 0;
+        const double value    = string_to_double_decimal_point(t, &consumed);
+        if (consumed != t.size() || !std::isfinite(value))
             return false;
-        }
+        out = float(value);
+        return true;
     };
 
     std::vector<std::string> tokens;
