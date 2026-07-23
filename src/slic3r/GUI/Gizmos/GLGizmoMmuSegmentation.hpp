@@ -123,6 +123,9 @@ protected:
     // Minimal context for gradient rendering; only physical_colors is used
     MixedFilamentDisplayContext       m_mixed_display_context;
 
+    bool                              m_rectangle_mask_active = false;
+    bool                              m_polygon_mask_active = false;
+
     static const constexpr float      CursorRadiusMin = 0.1f; // cannot be zero
 
 private:

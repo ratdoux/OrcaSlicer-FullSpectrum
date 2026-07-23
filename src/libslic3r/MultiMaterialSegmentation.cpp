@@ -2194,12 +2194,44 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     return segmented_regions_merged;
 }
 
+static float surface_paint_shell_width(const PrintObject &print_object)
+{
+    const PrintConfig &print_config = print_object.print()->config();
+    if (print_config.nozzle_diameter.values.empty())
+        return 0.8f;
+
+    float shell_width = 0.f;
+    for (const PrintRegion &region : print_object.all_regions()) {
+        const PrintRegionConfig &region_config = region.config();
+        const size_t extruder_idx = size_t(std::max(1, region_config.wall_filament.value) - 1);
+        const double nozzle_diameter = print_config.nozzle_diameter.get_at(extruder_idx);
+
+        double outer_width = region_config.get_abs_value("outer_wall_line_width", nozzle_diameter);
+        double inner_width = region_config.get_abs_value("inner_wall_line_width", nozzle_diameter);
+        if (outer_width <= 0.)
+            outer_width = region_config.get_abs_value("line_width", nozzle_diameter);
+        if (inner_width <= 0.)
+            inner_width = outer_width;
+        if (outer_width <= 0.)
+            outer_width = nozzle_diameter;
+        if (inner_width <= 0.)
+            inner_width = nozzle_diameter;
+
+        const int wall_count = std::max(1, region_config.wall_loops.value);
+        shell_width = std::max(shell_width, float(outer_width + double(wall_count - 1) * inner_width));
+    }
+
+    return shell_width > 0.f ? shell_width : float(2. * print_config.nozzle_diameter.get_at(0));
+}
+
 // Returns multi-material segmentation based on painting in multi-material segmentation gizmo
 std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(const PrintObject &print_object, const std::function<void()> &throw_on_cancel_callback) {
     const size_t num_physical_filaments = print_object.print()->config().filament_colour.size();
     const size_t num_total_filaments    = print_object.print()->mixed_filament_manager().total_filaments(num_physical_filaments);
     const size_t num_facets_states      = num_total_filaments + 1;
-    const float  max_width          = float(print_object.config().mmu_segmented_region_max_width.value);
+    const float  max_width          = print_object.config().fs_surface_paint_only.value
+                                         ? surface_paint_shell_width(print_object)
+                                         : float(print_object.config().mmu_segmented_region_max_width.value);
     const float  interlocking_depth = float(print_object.config().mmu_segmented_region_interlocking_depth.value);
     const bool   interlocking_beam  = print_object.config().interlocking_beam.value;
 

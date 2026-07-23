@@ -3529,6 +3529,23 @@ void PrintConfigDef::init_fff_params()
     def->mode     = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.));
 
+    def           = this->add("fs_surface_paint_only", coBool);
+    def->label    = L("Surface paint only");
+    def->tooltip  = L("Restricts color-painted regions to the object's wall shell instead of filling the painted area through solid infill.");
+    def->category = L("Advanced");
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def           = this->add("fs_painted_zone_extra_perimeters", coInt);
+    def->label    = L("Extra perimeters in painted zones");
+    def->tooltip  = L("Adds this many perimeter walls to color-painted regions, on top of the object's normal perimeter count. "
+                      "The rest of the object keeps its normal perimeter count.");
+    def->min      = 0;
+    def->max      = 8;
+    def->category = L("Advanced");
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(0));
+
     def           = this->add("mmu_segmented_region_interlocking_depth", coFloat);
     def->label    = L("Interlocking depth of a segmented region");
     def->tooltip  = L("Interlocking depth of a segmented region. It will be ignored if "

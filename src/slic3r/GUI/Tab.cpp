@@ -2652,6 +2652,8 @@ void TabPrint::build()
         optgroup->append_single_option_line("interlocking_boundary_avoidance", "multimaterial_settings_advanced#interlocking-boundary-avoidance");
 
         optgroup = page->new_optgroup(L("Color Mixing (Experimental)"), L"param_mixed_color");
+        optgroup->append_single_option_line("fs_surface_paint_only");
+        optgroup->append_single_option_line("fs_painted_zone_extra_perimeters");
         optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_local_z_whole_objects");
         optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");

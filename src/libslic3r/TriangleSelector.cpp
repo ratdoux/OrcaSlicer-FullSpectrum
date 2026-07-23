@@ -244,15 +244,19 @@ void TriangleSelector::select_patch(int facet_start, std::unique_ptr<Cursor> &&c
     // In case user changed cursor size since last time, update triangle edge limit.
     // It is necessary to compare the internal radius in m_cursor! radius is in
     // world coords and does not change after scaling.
+    const bool is_area_cursor = dynamic_cast<TriangleSelector::HeightRange *>(m_cursor.get()) != nullptr
+        || dynamic_cast<TriangleSelector::RectangleProjectionCursor *>(m_cursor.get()) != nullptr
+        || dynamic_cast<TriangleSelector::PolygonProjectionCursor *>(m_cursor.get()) != nullptr;
+
     if (m_old_cursor_radius_sqr != m_cursor->radius_sqr) {
         // BBS: improve details for large cursor radius
-        TriangleSelector::HeightRange* hr_cursor = dynamic_cast<TriangleSelector::HeightRange*>(m_cursor.get());
-        if (hr_cursor == nullptr) {
-            set_edge_limit(std::min(std::sqrt(m_cursor->radius_sqr) / 5.f, 0.05f));
+        if (!is_area_cursor) {
+            set_edge_limit(std::min(std::sqrt(m_cursor->radius_sqr) / (5.f * m_precision_factor),
+                                    0.05f / m_precision_factor));
             m_old_cursor_radius_sqr = m_cursor->radius_sqr;
         }
         else {
-            set_edge_limit(0.1);
+            set_edge_limit(0.1f / m_precision_factor);
             m_old_cursor_radius_sqr = 0.1;
         }
     }
@@ -261,11 +265,11 @@ void TriangleSelector::select_patch(int facet_start, std::unique_ptr<Cursor> &&c
 
     // BBS
     std::vector<int> start_facets;
-    HeightRange* hr_cursor = dynamic_cast<HeightRange*>(m_cursor.get());
-    if (hr_cursor) {
+    if (is_area_cursor) {
         for (int facet_id = 0; facet_id < m_orig_size_indices; facet_id++) {
             const Triangle& tr = m_triangles[facet_id];
-            if (m_cursor->is_edge_inside_cursor(tr, m_vertices)) {
+            if ((m_cursor->is_edge_inside_cursor(tr, m_vertices) || m_cursor->is_pointer_in_triangle(tr, m_vertices))
+                && m_cursor->is_facet_visible(facet_id, m_face_normals)) {
                 start_facets.push_back(facet_id);
             }
         }
@@ -919,7 +923,12 @@ bool TriangleSelector::select_triangle_recursive(int facet_idx, const Vec3i32 &n
      && ! m_cursor->is_edge_inside_cursor(*tr, m_vertices))
         return false;
 
-    if (num_of_inside_vertices == 3) {
+    bool whole_triangle_inside = num_of_inside_vertices == 3;
+    if (whole_triangle_inside && !m_cursor->all_vertices_inside_implies_whole_triangle_inside()
+        && m_cursor->is_pointer_in_triangle(*tr, m_vertices))
+        whole_triangle_inside = false;
+
+    if (whole_triangle_inside) {
         // dump any subdivision and select whole triangle
         undivide_triangle(facet_idx);
         tr->set_state(type);
@@ -1302,6 +1311,12 @@ void TriangleSelector::reset()
 void TriangleSelector::set_edge_limit(float edge_limit)
 {
     m_edge_limit_sqr = std::pow(edge_limit, 2.f);
+}
+
+void TriangleSelector::set_precision_factor(float factor)
+{
+    m_precision_factor = std::clamp(factor, 1.f, 16.f);
+    m_old_cursor_radius_sqr = 0.f;
 }
 
 int TriangleSelector::push_triangle(int a, int b, int c, int source_triangle, const EnforcerBlockerType state)
@@ -2245,6 +2260,182 @@ bool TriangleSelector::Capsule2D::is_edge_inside_cursor(const Triangle &tr, cons
             return true;
     }
 
+    return false;
+}
+
+static bool project_mesh_point_to_screen(const Transform3f &trafo, const Matrix4d &view_projection_matrix,
+                                         const std::array<int, 4> &viewport, const Vec3f &mesh_point, Vec2f &out_screen)
+{
+    const Vec3d world_point = (trafo * mesh_point).cast<double>();
+    const Vec4d clip = view_projection_matrix * Vec4d(world_point.x(), world_point.y(), world_point.z(), 1.0);
+    if (clip.w() <= 0.0)
+        return false;
+
+    const Vec3d ndc = clip.head<3>() / clip.w();
+    const double screen_x = viewport[0] + (ndc.x() * 0.5 + 0.5) * viewport[2];
+    const double screen_y_gl = viewport[1] + (ndc.y() * 0.5 + 0.5) * viewport[3];
+    out_screen = Vec2f(float(screen_x), float(viewport[3] - screen_y_gl));
+    return true;
+}
+
+static float screen_side_of_line(const Vec2f &a, const Vec2f &b, const Vec2f &p)
+{
+    return (b.x() - a.x()) * (p.y() - a.y()) - (p.x() - a.x()) * (b.y() - a.y());
+}
+
+static bool screen_segments_intersect(const Vec2f &p1, const Vec2f &p2, const Vec2f &p3, const Vec2f &p4)
+{
+    const float d1 = screen_side_of_line(p3, p4, p1);
+    const float d2 = screen_side_of_line(p3, p4, p2);
+    const float d3 = screen_side_of_line(p1, p2, p3);
+    const float d4 = screen_side_of_line(p1, p2, p4);
+    return ((d1 > 0.f && d2 < 0.f) || (d1 < 0.f && d2 > 0.f))
+        && ((d3 > 0.f && d4 < 0.f) || (d3 < 0.f && d4 > 0.f));
+}
+
+static bool point_in_screen_triangle(const Vec2f &p, const Vec2f &t1, const Vec2f &t2, const Vec2f &t3)
+{
+    const float d1 = screen_side_of_line(t1, t2, p);
+    const float d2 = screen_side_of_line(t2, t3, p);
+    const float d3 = screen_side_of_line(t3, t1, p);
+    const bool has_neg = d1 < 0.f || d2 < 0.f || d3 < 0.f;
+    const bool has_pos = d1 > 0.f || d2 > 0.f || d3 > 0.f;
+    return !(has_neg && has_pos);
+}
+
+bool TriangleSelector::RectangleProjectionCursor::project_to_screen(const Vec3f &mesh_point, Vec2f &out_screen) const
+{
+    return project_mesh_point_to_screen(trafo, m_view_projection_matrix, m_viewport, mesh_point, out_screen);
+}
+
+bool TriangleSelector::RectangleProjectionCursor::is_mesh_point_inside(const Vec3f &point) const
+{
+    Vec2f screen;
+    return project_to_screen(point, screen) && screen.x() >= m_rect_min.x() && screen.x() <= m_rect_max.x()
+        && screen.y() >= m_rect_min.y() && screen.y() <= m_rect_max.y()
+        && is_mesh_point_not_clipped(point, clipping_plane);
+}
+
+static bool point_in_screen_rect(const Vec2f &p, const Vec2f &rect_min, const Vec2f &rect_max)
+{
+    return p.x() >= rect_min.x() && p.x() <= rect_max.x() && p.y() >= rect_min.y() && p.y() <= rect_max.y();
+}
+
+static bool screen_segment_intersects_rect(const Vec2f &a, const Vec2f &b, const Vec2f &rect_min, const Vec2f &rect_max)
+{
+    if (point_in_screen_rect(a, rect_min, rect_max) || point_in_screen_rect(b, rect_min, rect_max))
+        return true;
+
+    const std::array<Vec2f, 4> corners = {
+        Vec2f(rect_min.x(), rect_min.y()), Vec2f(rect_max.x(), rect_min.y()),
+        Vec2f(rect_max.x(), rect_max.y()), Vec2f(rect_min.x(), rect_max.y())
+    };
+    for (int i = 0; i < 4; ++i)
+        if (screen_segments_intersect(a, b, corners[i], corners[(i + 1) % 4]))
+            return true;
+    return false;
+}
+
+bool TriangleSelector::RectangleProjectionCursor::is_pointer_in_triangle(const Vec3f &p1, const Vec3f &p2, const Vec3f &p3) const
+{
+    std::array<Vec2f, 3> triangle;
+    if (!project_to_screen(p1, triangle[0]) || !project_to_screen(p2, triangle[1]) || !project_to_screen(p3, triangle[2]))
+        return false;
+
+    const std::array<Vec2f, 4> corners = {
+        Vec2f(m_rect_min.x(), m_rect_min.y()), Vec2f(m_rect_max.x(), m_rect_min.y()),
+        Vec2f(m_rect_max.x(), m_rect_max.y()), Vec2f(m_rect_min.x(), m_rect_max.y())
+    };
+    return std::any_of(corners.begin(), corners.end(), [&triangle](const Vec2f &corner) {
+        return point_in_screen_triangle(corner, triangle[0], triangle[1], triangle[2]);
+    });
+}
+
+bool TriangleSelector::RectangleProjectionCursor::is_edge_inside_cursor(const Triangle &tr,
+                                                                         const std::vector<Vertex> &vertices) const
+{
+    std::array<Vec2f, 3> points;
+    std::array<bool, 3> valid;
+    for (int i = 0; i < 3; ++i)
+        valid[i] = project_to_screen(vertices[tr.verts_idxs[i]].v, points[i]);
+
+    for (int side = 0; side < 3; ++side) {
+        const int next = side < 2 ? side + 1 : 0;
+        if (valid[side] && valid[next] && screen_segment_intersects_rect(points[side], points[next], m_rect_min, m_rect_max))
+            return true;
+    }
+    return false;
+}
+
+static bool point_in_screen_polygon(const Vec2f &point, const std::vector<Vec2f> &polygon)
+{
+    int winding_number = 0;
+    for (size_t i = 0, previous = polygon.size() - 1; i < polygon.size(); previous = i++) {
+        const Vec2f &a = polygon[previous];
+        const Vec2f &b = polygon[i];
+        if (a.y() <= point.y()) {
+            if (b.y() > point.y() && screen_side_of_line(a, b, point) > 0.f)
+                ++winding_number;
+        } else if (b.y() <= point.y() && screen_side_of_line(a, b, point) < 0.f) {
+            --winding_number;
+        }
+    }
+    return winding_number != 0;
+}
+
+static bool screen_segment_intersects_polygon(const Vec2f &a, const Vec2f &b, const std::vector<Vec2f> &polygon)
+{
+    if (point_in_screen_polygon(a, polygon) || point_in_screen_polygon(b, polygon))
+        return true;
+
+    for (size_t i = 0, previous = polygon.size() - 1; i < polygon.size(); previous = i++)
+        if (screen_segments_intersect(a, b, polygon[previous], polygon[i]))
+            return true;
+    return false;
+}
+
+bool TriangleSelector::PolygonProjectionCursor::project_to_screen(const Vec3f &mesh_point, Vec2f &out_screen) const
+{
+    return project_mesh_point_to_screen(trafo, m_view_projection_matrix, m_viewport, mesh_point, out_screen);
+}
+
+bool TriangleSelector::PolygonProjectionCursor::is_mesh_point_inside(const Vec3f &point) const
+{
+    Vec2f screen;
+    return project_to_screen(point, screen) && point_in_screen_polygon(screen, m_polygon)
+        && is_mesh_point_not_clipped(point, clipping_plane);
+}
+
+bool TriangleSelector::PolygonProjectionCursor::is_edge_inside_cursor(const Triangle &tr,
+                                                                       const std::vector<Vertex> &vertices) const
+{
+    std::array<Vec2f, 3> points;
+    std::array<bool, 3> valid;
+    for (int i = 0; i < 3; ++i)
+        valid[i] = project_to_screen(vertices[tr.verts_idxs[i]].v, points[i]);
+
+    for (int side = 0; side < 3; ++side) {
+        const int next = side < 2 ? side + 1 : 0;
+        if (valid[side] && valid[next] && screen_segment_intersects_polygon(points[side], points[next], m_polygon))
+            return true;
+    }
+    return false;
+}
+
+bool TriangleSelector::PolygonProjectionCursor::is_pointer_in_triangle(const Vec3f &p1, const Vec3f &p2, const Vec3f &p3) const
+{
+    std::array<Vec2f, 3> triangle;
+    if (!project_to_screen(p1, triangle[0]) || !project_to_screen(p2, triangle[1]) || !project_to_screen(p3, triangle[2]))
+        return false;
+
+    for (const Vec2f &polygon_vertex : m_polygon)
+        if (point_in_screen_triangle(polygon_vertex, triangle[0], triangle[1], triangle[2]))
+            return true;
+
+    for (size_t i = 0, previous = m_polygon.size() - 1; i < m_polygon.size(); previous = i++)
+        for (int side = 0; side < 3; ++side)
+            if (screen_segments_intersect(m_polygon[previous], m_polygon[i], triangle[side], triangle[side < 2 ? side + 1 : 0]))
+                return true;
     return false;
 }
 

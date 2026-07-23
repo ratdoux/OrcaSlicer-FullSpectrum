@@ -956,6 +956,8 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "mixed_filament_component_bias_enabled"
             || opt_key == "mixed_filament_region_collapse"
             || opt_key == "mmu_segmented_region_max_width"
+            || opt_key == "fs_surface_paint_only"
+            || opt_key == "fs_painted_zone_extra_perimeters"
             || opt_key == "mmu_segmented_region_interlocking_depth"
             || opt_key == "raft_layers"
             || opt_key == "raft_contact_distance"

@@ -97,6 +97,7 @@ void GLGizmoMmuSegmentation::on_opening()
 {
     if (get_extruders_colors().size() > GLGizmoMmuSegmentation::EXTRUDERS_LIMIT)
         show_notification_extruders_limit_exceeded();
+
 }
 
 void GLGizmoMmuSegmentation::on_shutdown()
@@ -731,11 +732,19 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(1);
 
-        if (btn_clicked && m_current_tool != tool_ids[i]) {
+        if (btn_clicked) {
+            const bool changed_tool = m_current_tool != tool_ids[i];
             m_current_tool = tool_ids[i];
-            for (auto &triangle_selector : m_triangle_selectors) {
-                triangle_selector->seed_fill_unselect_all_triangles();
-                triangle_selector->request_update_render_data();
+            m_rectangle_mask_active = false;
+            m_polygon_mask_active = false;
+            m_rect_dragging = false;
+            m_polygon_points.clear();
+            m_polygon_dragged_vertex = -1;
+            if (changed_tool) {
+                for (auto &triangle_selector : m_triangle_selectors) {
+                    triangle_selector->seed_fill_unselect_all_triangles();
+                    triangle_selector->request_update_render_data();
+                }
             }
         }
 
@@ -910,6 +919,42 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::PushItemWidth(1.5 * slider_icon_width);
         ImGui::BBLDragFloat("##gap_area_input", &TriangleSelectorPatch::gap_area, 0.05f, 0.0f, 0.0f, "%.2f");
     }
+
+    ImGui::Separator();
+    ImGui::AlignTextToFramePadding();
+    m_imgui->text(_L("Paint precision"));
+    ImGui::SameLine(sliders_left_width);
+    ImGui::PushItemWidth(sliders_width);
+    m_imgui->bbl_slider_float_style("##paint_precision", &m_precision_factor, PrecisionFactorMin, PrecisionFactorMax,
+                                    "%.0fx", 1.f, true);
+    ImGui::SameLine(drag_left_width + sliders_left_width);
+    ImGui::PushItemWidth(1.5f * slider_icon_width);
+    ImGui::BBLDragFloat("##paint_precision_input", &m_precision_factor, 0.5f, PrecisionFactorMin, PrecisionFactorMax, "%.0fx");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", _u8L("Subdivides the mesh more finely at painted boundaries. Higher values use more CPU and memory.").c_str());
+
+    if (m_imgui->bbl_checkbox(_L("Rectangle mask"), m_rectangle_mask_active)) {
+        m_polygon_mask_active = false;
+        m_polygon_points.clear();
+        m_polygon_dragged_vertex = -1;
+        m_rect_dragging = false;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", _u8L("Drag a screen-space rectangle to paint front-facing facets inside it. Shift-drag erases; right-click cancels.").c_str());
+
+    if (m_imgui->bbl_checkbox(_L("Polygon mask"), m_polygon_mask_active)) {
+        m_rectangle_mask_active = false;
+        m_rect_dragging = false;
+        m_polygon_points.clear();
+        m_polygon_dragged_vertex = -1;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", _u8L("Click to place vertices, drag an existing vertex to edit it, then click the first vertex to paint. Right-click cancels.").c_str());
+
+    if (m_rectangle_mask_active)
+        m_tool_type = ToolType::RECTANGLE;
+    else if (m_polygon_mask_active)
+        m_tool_type = ToolType::POLYGON;
 
     ImGui::Separator();
     if(m_imgui->bbl_checkbox(_L("Vertical"), m_vertical_only)){
