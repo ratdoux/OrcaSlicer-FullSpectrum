@@ -37,6 +37,7 @@ struct SourceColorRasterization
     std::vector<unsigned int>      indices;
     size_t                         sampled_leaf_count{0};
     size_t                         source_triangle_count{0};
+    size_t                         lod_pass_count{0};
 };
 
 struct SourceColorRasterizationOptions
@@ -44,6 +45,9 @@ struct SourceColorRasterizationOptions
     // Adaptive subdivision is useful on small, coarse meshes, but a viewport
     // preview must never amplify an already dense source mesh without bound.
     size_t                     max_leaf_triangles{250'000};
+    // ModelVolume validates immutable image-map data when it is attached.
+    // Viewport workers may skip repeating that full topology/binding scan.
+    bool                       source_data_validated{false};
     std::function<void(int)>   progress;
     std::function<bool(void)>  cancelled;
 };

@@ -912,6 +912,87 @@ static void configure_surface_bias_color_match_mode(PresetBundle &preset_bundle)
     set_color_match_config_bool(preset_bundle, "dithering_local_z_mode", false);
 }
 
+static std::pair<unsigned int, double> closest_physical_color_match(
+    const wxColour& target_color, const std::vector<std::string>& physical_colors)
+{
+    std::pair<unsigned int, double> closest{1, std::numeric_limits<double>::infinity()};
+    for (size_t index = 0; index < physical_colors.size(); ++index) {
+        const double delta = color_delta_e00(target_color, parse_mixed_color(physical_colors[index]));
+        if (delta + 1e-6 < closest.second)
+            closest = {unsigned(index + 1), delta};
+    }
+    return closest;
+}
+
+static MixedColorMatchCreationResult create_adaptive_localized_color_match(
+    const wxColour&                    target_color,
+    const std::vector<std::string>&    physical_colors,
+    int                                min_component_percent,
+    size_t                             max_total_filaments,
+    const MixedFilamentDisplayContext& context,
+    MixedFilamentManager&              manager,
+    MixedColorMatchCreationResult      result)
+{
+    size_t visible_idx = 0;
+    for (const MixedFilamentDefinition& definition : manager.mixed_filament_definitions(physical_colors.size())) {
+        if (definition.visibility.tombstoned)
+            continue;
+        const unsigned int filament_id = unsigned(physical_colors.size() + visible_idx + 1);
+        ++visible_idx;
+        if (!definition_has_adaptive_perimeter_cycle(definition, physical_colors.size()))
+            continue;
+
+        const wxColour existing_color = parse_mixed_color(compute_mixed_filament_display_color(definition, context));
+        const double   delta          = color_delta_e00(target_color, existing_color);
+        if (delta + 1e-6 < result.delta_e) {
+            result.valid                = true;
+            result.filament_id          = filament_id;
+            result.delta_e              = delta;
+            result.used_surface_bias    = true;
+        }
+        if (delta <= 0.5)
+            return result;
+    }
+
+    MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
+        physical_colors,
+        target_color,
+        min_component_percent,
+        context.physical_tds,
+        context.physical_material_ids,
+        MixedFilamentManager::color_engine(),
+        MixedFilamentManager::use_td_for_color_prediction());
+    float  reference_width_mm = 0.4f;
+    double nozzle_sum         = 0.0;
+    size_t nozzle_count       = 0;
+    for (size_t index = 0; index < physical_colors.size() && index < context.nozzle_diameters.size(); ++index) {
+        nozzle_sum += std::max(0.05, context.nozzle_diameters[index]);
+        ++nozzle_count;
+    }
+    if (nozzle_count > 0)
+        reference_width_mm = float(nozzle_sum / double(nozzle_count));
+    if (recipe.valid)
+        refine_color_match_recipe_with_surface_bias(recipe, target_color, physical_colors.size(), context, reference_width_mm);
+    if (!recipe.valid || recipe.delta_e >= result.delta_e - 1e-6)
+        return result;
+
+    const size_t visible_before = manager.visible_count();
+    if (physical_colors.size() + visible_before >= max_total_filaments)
+        return result;
+
+    MixedFilamentDefinition definition = mixed_filament_definition_from_color_match_recipe(
+        recipe, physical_colors.size(), MixedColorMatchEncoding::AdaptiveLocalizedCycles, reference_width_mm);
+    if (!manager.add_custom_filament_definition(std::move(definition), physical_colors))
+        return result;
+
+    result.valid             = true;
+    result.created           = true;
+    result.used_surface_bias = true;
+    result.filament_id       = unsigned(physical_colors.size() + visible_before + 1);
+    result.delta_e           = recipe.delta_e;
+    return result;
+}
+
 MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour                 &target_color,
                                                                  const std::vector<std::string> &physical_colors,
                                                                  int                             min_component_percent,
@@ -922,17 +1003,7 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
     if (!target_color.IsOk() || physical_colors.empty())
         return result;
 
-    auto choose_closest = [&target_color](const std::vector<std::string> &colors, unsigned int first_id) {
-        std::pair<unsigned int, double> closest{first_id, std::numeric_limits<double>::infinity()};
-        for (size_t index = 0; index < colors.size(); ++index) {
-            const double delta = color_delta_e00(target_color, parse_mixed_color(colors[index]));
-            if (delta + 1e-6 < closest.second)
-                closest = {first_id + unsigned(index), delta};
-        }
-        return closest;
-    };
-
-    const auto closest_physical = choose_closest(physical_colors, 1);
+    const auto closest_physical = closest_physical_color_match(target_color, physical_colors);
     result.valid       = true;
     result.filament_id = closest_physical.first;
     result.delta_e     = closest_physical.second;
@@ -1035,78 +1106,17 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
     }
 
     if (adaptive_perimeter_cycles) {
-        bool result_uses_adaptive_cycles = false;
-        size_t visible_idx = 0;
-        for (const MixedFilamentDefinition& definition : definitions) {
-            if (definition.visibility.tombstoned)
-                continue;
-            const unsigned int filament_id = unsigned(physical_colors.size() + visible_idx + 1);
-            ++visible_idx;
-            if (!definition_has_adaptive_perimeter_cycle(definition, physical_colors.size()))
-                continue;
-
-            const wxColour existing_color = parse_mixed_color(compute_mixed_filament_display_color(definition, context));
-            const double   delta          = color_delta_e00(target_color, existing_color);
-            if (delta + 1e-6 < result.delta_e) {
-                result.valid                  = true;
-                result.filament_id            = filament_id;
-                result.delta_e                = delta;
-                result.used_surface_bias      = true;
-                result_uses_adaptive_cycles   = true;
-            }
-            if (delta <= 0.5) {
-                configure_surface_bias_color_match_mode(*preset_bundle);
-                return result;
-            }
-        }
-
-        MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
-            physical_colors,
-            target_color,
-            min_component_percent,
-            context.physical_tds,
-            context.physical_material_ids,
-            MixedFilamentManager::color_engine(),
-            MixedFilamentManager::use_td_for_color_prediction());
-        float  reference_width_mm = 0.4f;
-        double nozzle_sum         = 0.0;
-        size_t nozzle_count       = 0;
-        for (size_t index = 0; index < physical_colors.size() && index < context.nozzle_diameters.size(); ++index) {
-            nozzle_sum += std::max(0.05, context.nozzle_diameters[index]);
-            ++nozzle_count;
-        }
-        if (nozzle_count > 0)
-            reference_width_mm = float(nozzle_sum / double(nozzle_count));
-        if (recipe.valid)
-            refine_color_match_recipe_with_surface_bias(recipe, target_color, physical_colors.size(), context, reference_width_mm);
-        if (!recipe.valid || recipe.delta_e >= result.delta_e - 1e-6) {
-            if (result_uses_adaptive_cycles)
-                configure_surface_bias_color_match_mode(*preset_bundle);
-            return result;
-        }
-
-        const size_t visible_before = manager.visible_count();
-        if (physical_colors.size() + visible_before >= max_total_filaments) {
-            if (result_uses_adaptive_cycles)
-                configure_surface_bias_color_match_mode(*preset_bundle);
-            return result;
-        }
-
-        MixedFilamentDefinition definition = mixed_filament_definition_from_color_match_recipe(
-            recipe, physical_colors.size(), encoding, reference_width_mm);
-        if (!manager.add_custom_filament_definition(std::move(definition), physical_colors)) {
-            if (result_uses_adaptive_cycles)
-                configure_surface_bias_color_match_mode(*preset_bundle);
-            return result;
-        }
-
-        configure_surface_bias_color_match_mode(*preset_bundle);
-        result.valid             = true;
-        result.created           = true;
-        result.used_surface_bias = true;
-        result.filament_id       = unsigned(physical_colors.size() + visible_before + 1);
-        result.delta_e           = recipe.delta_e;
-        preset_bundle->sync_mixed_filament_definitions_to_project_config();
+        result = create_adaptive_localized_color_match(target_color,
+                                                       physical_colors,
+                                                       min_component_percent,
+                                                       max_total_filaments,
+                                                       context,
+                                                       manager,
+                                                       result);
+        if (result.used_surface_bias)
+            configure_surface_bias_color_match_mode(*preset_bundle);
+        if (result.created)
+            preset_bundle->sync_mixed_filament_definitions_to_project_config();
         return result;
     }
 
@@ -1201,6 +1211,69 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour  
     result.delta_e           = recipe.delta_e;
     preset_bundle->sync_mixed_filament_definitions_to_project_config();
     return result;
+}
+
+AdaptiveColorMatchPreviewResult preview_adaptive_localized_color_matches(
+    const std::vector<wxColour>& target_colors,
+    const std::vector<std::string>& physical_colors,
+    int min_component_percent,
+    size_t max_total_filaments)
+{
+    AdaptiveColorMatchPreviewResult preview;
+    if (target_colors.empty() || physical_colors.size() < 2 || wxGetApp().preset_bundle == nullptr)
+        return preview;
+
+    MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    context.preview_settings.local_z_mode = false;
+    context.component_bias_enabled        = true;
+
+    MixedFilamentManager simulated_manager = wxGetApp().preset_bundle->mixed_filaments;
+    simulated_manager.set_display_context(context);
+
+    preview.target_filament_ids.reserve(target_colors.size());
+    for (const wxColour& target_color : target_colors) {
+        const auto closest_physical = closest_physical_color_match(target_color, physical_colors);
+        MixedColorMatchCreationResult result;
+        result.valid       = true;
+        result.filament_id = closest_physical.first;
+        result.delta_e     = closest_physical.second;
+        result = create_adaptive_localized_color_match(target_color,
+                                                       physical_colors,
+                                                       min_component_percent,
+                                                       max_total_filaments,
+                                                       context,
+                                                       simulated_manager,
+                                                       result);
+        if (!result.valid)
+            return AdaptiveColorMatchPreviewResult{};
+        preview.target_filament_ids.emplace_back(result.filament_id);
+        if (result.filament_id <= physical_colors.size())
+            ++preview.direct_physical_target_count;
+    }
+
+    for (size_t target_index = 0; target_index < preview.target_filament_ids.size(); ++target_index) {
+        const unsigned int filament_id = preview.target_filament_ids[target_index];
+        if (filament_id <= physical_colors.size())
+            continue;
+
+        auto cycle = std::find_if(preview.mixed_cycles.begin(),
+                                  preview.mixed_cycles.end(),
+                                  [filament_id](const AdaptiveColorMatchPreviewCycle& item) {
+                                      return item.filament_id == filament_id;
+                                  });
+        if (cycle == preview.mixed_cycles.end()) {
+            const std::optional<MixedFilamentDefinition> definition =
+                simulated_manager.mixed_filament_definition_from_id(filament_id, physical_colors.size());
+            if (!definition)
+                return AdaptiveColorMatchPreviewResult{};
+            preview.mixed_cycles.push_back({filament_id, *definition, {}});
+            cycle = std::prev(preview.mixed_cycles.end());
+        }
+        cycle->target_indices.emplace_back(target_index);
+    }
+
+    preview.valid = preview.target_filament_ids.size() == target_colors.size();
+    return preview;
 }
 
 static std::vector<double> selected_filament_transmission_distances(PresetBundle *preset_bundle, size_t count)

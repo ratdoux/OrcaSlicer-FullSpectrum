@@ -91,12 +91,23 @@ private:
     std::vector<FilamentCardImageMap*>   m_image_map_cards;
     std::vector<unsigned int>            m_image_map_adaptive_filament_ids;
     unsigned int                         m_selected_adaptive_filament_id{0};
+    size_t                               m_image_map_entries_signature{0};
+    bool                                 m_image_map_entries_signature_valid{false};
     
     void build_ui(const wxColour& title_bg);
 
     void on_physical_change(size_t physical_count);
     void on_mixed_change(std::vector<MixedFilamentDefinition>& mixed_filaments);
+    void rebuild_mixed_cards(const std::vector<MixedFilamentDefinition>& mixed_filaments);
+    void begin_mixed_card_callback();
+    void end_mixed_card_callback();
+    void schedule_pending_mixed_rebuild();
     void set_adaptive_cycle_highlight(unsigned int filament_id);
+
+    int                                  m_mixed_card_callback_depth{0};
+    bool                                 m_mixed_rebuild_pending{false};
+    bool                                 m_mixed_rebuild_scheduled{false};
+    std::vector<MixedFilamentDefinition> m_pending_mixed_filaments;
     
     std::function<std::vector<std::pair<std::string, std::string>>()>   m_get_physical_filaments;
     void                                        update_physical_filaments();

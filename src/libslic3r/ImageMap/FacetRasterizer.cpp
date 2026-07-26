@@ -227,10 +227,14 @@ SourceColorRasterization rasterize_dense_source_lod(
                                                            std::max(size.norm() / std::sqrt(target_clusters), double(EPSILON));
     cell_size = std::max(cell_size, double(EPSILON));
 
-    constexpr size_t max_attempts = 16;
+    // The initial cell estimate is normally sufficient. If it is not, project
+    // the final triangle count from the point where the cap was crossed. The
+    // old fixed 10% growth could rescan a large OBJ up to sixteen times.
+    constexpr size_t max_attempts = 4;
     const std::array<Vec3f, 3> corner_weights{
         Vec3f(1.f, 0.f, 0.f), Vec3f(0.f, 1.f, 0.f), Vec3f(0.f, 0.f, 1.f)};
     for (size_t attempt = 0; attempt < max_attempts; ++attempt) {
+        result.lod_pass_count = attempt + 1;
         if (!source_preview_continue(options, 20 + int(std::min<size_t>(attempt, 5))))
             return {};
 
@@ -243,8 +247,10 @@ SourceColorRasterization rasterize_dense_source_lod(
         emitted_triangles.reserve(options.max_leaf_triangles);
         indices.reserve(options.max_leaf_triangles * 3);
 
-        bool over_budget = false;
+        bool   over_budget              = false;
+        size_t processed_triangle_count = 0;
         for (size_t triangle_idx = 0; triangle_idx < mesh.its.indices.size(); ++triangle_idx) {
+            processed_triangle_count = triangle_idx + 1;
             if ((triangle_idx & 0x7ffu) == 0u) {
                 if (options.cancelled && options.cancelled())
                     return {};
@@ -302,7 +308,11 @@ SourceColorRasterization rasterize_dense_source_lod(
 
         if (over_budget) {
             const double measured_triangles = double(indices.size() / 3);
-            cell_size *= std::max(1.15, std::sqrt(measured_triangles / double(options.max_leaf_triangles)) * 1.1);
+            const double processed_fraction = double(std::max<size_t>(processed_triangle_count, 1)) /
+                                              double(mesh.its.indices.size());
+            const double projected_triangles = measured_triangles / std::max(processed_fraction, 1e-6);
+            const double projected_ratio = projected_triangles / double(options.max_leaf_triangles);
+            cell_size *= std::max(1.25, std::sqrt(std::max(projected_ratio, 1.0)) * 1.1);
             continue;
         }
         if (indices.empty()) {
@@ -416,7 +426,7 @@ SourceColorRasterization rasterize_source_colors(const TriangleMesh             
                                                  const SourceColorRasterizationOptions &options)
 {
     SourceColorRasterization result;
-    if (!data.validate(mesh).valid || mesh.its.indices.empty())
+    if ((!options.source_data_validated && !data.validate(mesh).valid) || mesh.its.indices.empty())
         return result;
     if (!source_preview_continue(options, 5))
         return result;

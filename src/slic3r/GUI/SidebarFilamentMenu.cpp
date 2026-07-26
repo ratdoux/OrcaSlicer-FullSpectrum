@@ -52,6 +52,39 @@ std::vector<wxColour> image_map_spectrum_colors(const ModelObject& object)
     return wx_spectrum_colors(representative);
 }
 
+size_t image_map_entries_signature()
+{
+    size_t seed = 0;
+    auto hash_combine = [&seed](size_t value) {
+        seed ^= value + size_t(0x9e3779b9) + (seed << 6) + (seed >> 2);
+    };
+
+    const ModelObjectPtrs& objects = wxGetApp().model().objects;
+    for (size_t object_index = 0; object_index < objects.size(); ++object_index) {
+        const ModelObject* object = objects[object_index];
+        if (object == nullptr)
+            continue;
+        bool object_added = false;
+        for (const ModelVolume* volume : object->volumes) {
+            if (volume == nullptr)
+                continue;
+            const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+            if (!data || data->empty())
+                continue;
+            if (!object_added) {
+                hash_combine(object_index);
+                hash_combine(std::hash<std::string>{}(object->name));
+                object_added = true;
+            }
+            // VolumeData is immutable once attached to a ModelVolume. Any
+            // image-map edit replaces the shared snapshot, while transforms
+            // leave this identity unchanged.
+            hash_combine(reinterpret_cast<size_t>(data.get()));
+        }
+    }
+    return seed;
+}
+
 } // namespace
 
 SidebarFilamentMenu::SidebarFilamentMenu(wxWindow* parent, const wxColour& title_bg) : ::wxPanel(parent, wxID_ANY) { build_ui(title_bg); }
@@ -86,6 +119,13 @@ void SidebarFilamentMenu::refresh_image_map_entries()
     auto* preset_bundle = wxGetApp().preset_bundle;
     if (preset_bundle == nullptr)
         return;
+
+    const size_t signature = image_map_entries_signature();
+    if (m_image_map_entries_signature_valid && signature == m_image_map_entries_signature)
+        return;
+    m_image_map_entries_signature       = signature;
+    m_image_map_entries_signature_valid = true;
+
     std::vector<MixedFilamentDefinition> mixed = preset_bundle->mixed_filaments.mixed_filament_definitions(m_physical_filaments.size());
     on_mixed_change(mixed);
 }
@@ -191,6 +231,19 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
 
 void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& mixed_filaments)
 {
+    if (m_mixed_card_callback_depth > 0 || m_mixed_rebuild_scheduled) {
+        m_pending_mixed_filaments = mixed_filaments;
+        m_mixed_rebuild_pending   = true;
+        if (m_mixed_card_callback_depth == 0)
+            schedule_pending_mixed_rebuild();
+        return;
+    }
+
+    rebuild_mixed_cards(mixed_filaments);
+}
+
+void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDefinition>& mixed_filaments)
+{
     const int previous_count = int(m_mixed_cards.size() + m_image_map_cards.size());
     m_mixed_filaments        = mixed_filaments;
 
@@ -272,8 +325,10 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
                                                             wxString::FromUTF8(object->name);
         auto*          card        = new FilamentCardImageMap(m_mixed_panel, object_name, image_map_spectrum_colors(*object));
         card->set_on_delete_callback([this, object_index]() {
+            begin_mixed_card_callback();
             if (m_on_delete_image_map)
                 m_on_delete_image_map(int(object_index));
+            end_mixed_card_callback();
         });
         m_image_map_cards.push_back(card);
         m_image_map_adaptive_filament_ids.push_back(0);
@@ -397,6 +452,40 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
     m_title_panel->Refresh();
 }
 
+void SidebarFilamentMenu::begin_mixed_card_callback()
+{
+    ++m_mixed_card_callback_depth;
+}
+
+void SidebarFilamentMenu::end_mixed_card_callback()
+{
+    wxASSERT(m_mixed_card_callback_depth > 0);
+    if (m_mixed_card_callback_depth == 0)
+        return;
+
+    --m_mixed_card_callback_depth;
+    if (m_mixed_card_callback_depth == 0)
+        schedule_pending_mixed_rebuild();
+}
+
+void SidebarFilamentMenu::schedule_pending_mixed_rebuild()
+{
+    if (!m_mixed_rebuild_pending || m_mixed_rebuild_scheduled)
+        return;
+
+    m_mixed_rebuild_scheduled = true;
+    CallAfter([this]() {
+        m_mixed_rebuild_scheduled = false;
+        if (!m_mixed_rebuild_pending)
+            return;
+
+        std::vector<MixedFilamentDefinition> mixed_filaments = std::move(m_pending_mixed_filaments);
+        m_pending_mixed_filaments.clear();
+        m_mixed_rebuild_pending = false;
+        rebuild_mixed_cards(mixed_filaments);
+    });
+}
+
 void SidebarFilamentMenu::set_adaptive_cycle_highlight(unsigned int filament_id)
 {
     m_selected_adaptive_filament_id = filament_id;
@@ -435,6 +524,8 @@ void SidebarFilamentMenu::edit_mixed_filament(int index, bool edit_by_color)
     FilamentCardMixed* card = find_card();
     if (card == nullptr)
         return;
+
+    begin_mixed_card_callback();
     card->set_dialog_open(true);
 
     if (m_on_edit_mixed)
@@ -444,16 +535,20 @@ void SidebarFilamentMenu::edit_mixed_filament(int index, bool edit_by_color)
     // Resolve the current card again instead of dereferencing the stale pointer.
     if (FilamentCardMixed* current_card = find_card())
         current_card->set_dialog_open(false);
+    end_mixed_card_callback();
 }
 
 void SidebarFilamentMenu::delete_mixed_filament(int index)
 {
+    begin_mixed_card_callback();
     if (m_on_delete_mixed)
         m_on_delete_mixed(index);
+    end_mixed_card_callback();
 }
 
 void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& screen_pos, wxWindow* anchor)
 {
+    begin_mixed_card_callback();
     wxMenu menu;
 
     // Edit item
@@ -474,6 +569,7 @@ void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& scr
         wxPoint client_pos = this->ScreenToClient(screen_pos);
         PopupMenu(&menu, client_pos);
     }
+    end_mixed_card_callback();
 }
 
 void SidebarFilamentMenu::update_physical_filaments()

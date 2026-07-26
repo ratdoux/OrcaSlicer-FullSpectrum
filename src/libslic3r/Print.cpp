@@ -96,8 +96,8 @@ static bool local_z_segments_exist(Polylines segments)
     return false;
 }
 
-static bool extrusion_collection_has_local_z_perimeter_segment(const ExtrusionEntityCollection &source,
-                                                               const ExPolygons               &include_masks)
+static bool extrusion_collection_has_local_z_segment(const ExtrusionEntityCollection &source,
+                                                      const ExPolygons               &include_masks)
 {
     if (source.entities.empty() || include_masks.empty())
         return false;
@@ -123,7 +123,7 @@ static bool extrusion_collection_has_local_z_perimeter_segment(const ExtrusionEn
     return false;
 }
 
-static bool layer_has_local_z_perimeters(const Layer &layer, const ExPolygons &pass_masks)
+static bool layer_has_local_z_paths(const Layer &layer, const ExPolygons &pass_masks, bool include_infill)
 {
     if (pass_masks.empty())
         return false;
@@ -133,7 +133,16 @@ static bool layer_has_local_z_perimeters(const Layer &layer, const ExPolygons &p
             const auto *extrusions = dynamic_cast<const ExtrusionEntityCollection*>(entity);
             if (extrusions == nullptr)
                 continue;
-            if (extrusion_collection_has_local_z_perimeter_segment(*extrusions, pass_masks))
+            if (extrusion_collection_has_local_z_segment(*extrusions, pass_masks))
+                return true;
+        }
+        if (!include_infill)
+            continue;
+        for (const ExtrusionEntity *entity : layer_region->fills.entities) {
+            const auto *extrusions = dynamic_cast<const ExtrusionEntityCollection*>(entity);
+            if (extrusions == nullptr)
+                continue;
+            if (extrusion_collection_has_local_z_segment(*extrusions, pass_masks))
                 return true;
         }
     }
@@ -168,6 +177,7 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
 {
     std::vector<LocalZWipeTowerPassRef> pass_refs;
     const float local_z_perimeter_mask_expand = float(scale_(LOCAL_Z_PERIMETER_MASK_EXPAND_MM));
+    const bool  local_z_infill_enabled = print.full_print_config().opt_bool("dithering_local_z_infill");
 
     for (size_t layer_to_print_idx = 0; layer_to_print_idx < layers.size(); ++layer_to_print_idx) {
         const GCode::LayerToPrint &layer_to_print = layers[layer_to_print_idx];
@@ -185,8 +195,10 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
         const auto interval_it = std::find_if(intervals.begin(), intervals.end(), [layer_id](const LocalZInterval &interval) {
             return interval.layer_id == layer_id;
         });
-        if (interval_it == intervals.end() || !interval_it->has_mixed_paint || interval_it->sublayer_count <= 1 ||
-            interval_it->first_sublayer_idx >= plans.size()) {
+        const bool independent_interval =
+            interval_it != intervals.end() && interval_it->independent_layer_height && !interval_it->managed_masks.empty();
+        if (interval_it == intervals.end() || !interval_it->has_mixed_paint || interval_it->sublayer_count == 0 ||
+            (!independent_interval && interval_it->sublayer_count <= 1) || interval_it->first_sublayer_idx >= plans.size()) {
             continue;
         }
 
@@ -248,7 +260,7 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
                 const ExPolygons &pass_masks = compensated_masks_by_extruder[extruder_id];
                 if (pass_masks.empty())
                     continue;
-                if (layer_has_local_z_perimeters(*layer_to_print.object_layer, pass_masks))
+                if (layer_has_local_z_paths(*layer_to_print.object_layer, pass_masks, local_z_infill_enabled))
                     pass_ref.extruders.push_back(unsigned(extruder_id));
             }
 
@@ -378,10 +390,21 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
                pass_state.remaining_extruders.end();
     };
 
-    auto choose_ready_extruder = [&](int active_extruder) -> int {
-        std::vector<unsigned int> ready_extruders;
+    auto lowest_ready_print_z = [&]() {
+        double print_z = std::numeric_limits<double>::infinity();
         for (const PassState &pass_state : pass_states) {
             if (!pass_state.ready || pass_state.completed)
+                continue;
+            print_z = std::min(print_z, pass_state.pass_ref->plan->print_z);
+        }
+        return print_z;
+    };
+
+    auto choose_ready_extruder = [&](int active_extruder, double ready_print_z) -> int {
+        std::vector<unsigned int> ready_extruders;
+        for (const PassState &pass_state : pass_states) {
+            if (!pass_state.ready || pass_state.completed ||
+                std::abs(pass_state.pass_ref->plan->print_z - ready_print_z) > EPSILON)
                 continue;
             for (unsigned int extruder_id : pass_state.remaining_extruders)
                 if (std::find(ready_extruders.begin(), ready_extruders.end(), extruder_id) == ready_extruders.end())
@@ -404,7 +427,8 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
                 if (pass_state.completed || !pass_contains_extruder(pass_state, extruder_id))
                     continue;
                 ++future_count;
-                if (pass_state.ready)
+                if (pass_state.ready &&
+                    std::abs(pass_state.pass_ref->plan->print_z - ready_print_z) <= EPSILON)
                     ++ready_count;
             }
 
@@ -424,7 +448,8 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
     int                                    active_extruder = start_extruder;
     size_t                                 completed_passes = 0;
     while (completed_passes < pass_states.size()) {
-        const int chosen_extruder = choose_ready_extruder(active_extruder);
+        const double ready_print_z = lowest_ready_print_z();
+        const int chosen_extruder = choose_ready_extruder(active_extruder, ready_print_z);
         if (chosen_extruder < 0) {
             BOOST_LOG_TRIVIAL(warning) << "Local-Z wipe tower dependency scheduler deadlocked, falling back"
                                        << " start_extruder=" << start_extruder
@@ -440,7 +465,8 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
         std::vector<size_t> newly_completed;
         for (size_t pass_state_idx = 0; pass_state_idx < pass_states.size(); ++pass_state_idx) {
             PassState &pass_state = pass_states[pass_state_idx];
-            if (!pass_state.ready || pass_state.completed)
+            if (!pass_state.ready || pass_state.completed ||
+                std::abs(pass_state.pass_ref->plan->print_z - ready_print_z) > EPSILON)
                 continue;
 
             auto it_extruder = std::find(pass_state.remaining_extruders.begin(),
@@ -691,6 +717,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "dithering_local_z_whole_objects"
             || opt_key == "dithering_local_z_preserve_first_layer"
             || opt_key == "dithering_local_z_direct_multicolor"
+            || opt_key == "dithering_local_z_independent_layer_height"
             || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mixed_filament_gradient_mode"
             || opt_key == "mixed_filament_height_lower_bound"

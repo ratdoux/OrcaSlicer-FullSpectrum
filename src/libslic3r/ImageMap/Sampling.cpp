@@ -315,16 +315,25 @@ std::vector<std::vector<RGBA>> representative_palette_source_colors(const Volume
     };
 
     std::vector<bool> referenced_textures(data.texture_assets.size(), false);
-    size_t            non_texture_binding_count = 0;
-    for (const TriangleBinding& binding : data.triangle_bindings) {
+    // This function is called while rebuilding sidebar cards. Inspect a
+    // deterministic, uniformly distributed subset instead of scanning every
+    // binding twice; large image-mapped OBJs routinely contain 800k+ entries.
+    const size_t binding_probe_count = std::min(
+        data.triangle_bindings.size(), std::max<size_t>(1024, max_samples * 4));
+    for (size_t probe_index = 0; probe_index < binding_probe_count; ++probe_index) {
+        const uint64_t numerator = (uint64_t(2 * probe_index) + 1u) * uint64_t(data.triangle_bindings.size());
+        const size_t binding_index = std::min(data.triangle_bindings.size() - 1,
+                                              size_t(numerator / uint64_t(2 * binding_probe_count)));
+        const TriangleBinding& binding = data.triangle_bindings[binding_index];
         if (binding.zone_index != zone_index)
             continue;
         if (binding.source.kind == SourceKind::Texture) {
             if (binding.source.texture_asset_index >= 0 && size_t(binding.source.texture_asset_index) < data.texture_assets.size())
                 referenced_textures[size_t(binding.source.texture_asset_index)] = true;
-            continue;
+        } else {
+            for (const RGBA& color : binding.source.corner_colors)
+                append_sample(color);
         }
-        ++non_texture_binding_count;
     }
 
     const size_t referenced_texture_count = size_t(std::count(referenced_textures.begin(), referenced_textures.end(), true));
@@ -345,20 +354,6 @@ std::vector<std::vector<RGBA>> representative_palette_source_colors(const Volume
                                float(asset.rgba[offset + 2]) / 255.f, float(asset.rgba[offset + 3]) / 255.f});
             }
         }
-    }
-
-    const size_t binding_sample_count = std::min(non_texture_binding_count, max_samples / 3 + 1);
-    size_t       binding_ordinal      = 0;
-    size_t       selected_count       = 0;
-    for (const TriangleBinding& binding : data.triangle_bindings) {
-        if (binding.zone_index != zone_index || binding.source.kind == SourceKind::Texture)
-            continue;
-        if (selected_count < binding_sample_count && binding_ordinal == selected_count * non_texture_binding_count / binding_sample_count) {
-            for (const RGBA& color : binding.source.corner_colors)
-                append_sample(color);
-            ++selected_count;
-        }
-        ++binding_ordinal;
     }
 
     std::vector<std::vector<RGBA>> representative(zone.palette.size());

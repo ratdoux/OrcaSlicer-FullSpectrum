@@ -4405,6 +4405,19 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
+    def = this->add("dithering_local_z_independent_layer_height", coBool);
+    def->label = L("Use independent Local-Z layer heights");
+    def->category = L("Others");
+    def->tooltip = L("Experimental. Decouple direct multicolor Local-Z pass heights from the nominal layer height. "
+                     "The smallest active component uses the Local-Z minimum sublayer height and the other component heights "
+                     "are scaled to preserve the exact blend ratio. The resulting cadence may span multiple nominal layers.\n\n"
+                     "For example, a 1/1/3 blend with a 0.04 mm Local-Z minimum uses a repeating "
+                     "0.04/0.04/0.12 mm cadence even when the normal layer height is 0.08 mm.\n\n"
+                     "Every pass is capped to the printer profile's maximum layer height. If a component's ratio requires "
+                     "more thickness, it is divided into multiple equal passes while preserving the total ratio.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("dithering_local_z_gradient_overlap_window", coPercent);
     def->label = L("Gradient overlap window");
     def->category = L("Others");

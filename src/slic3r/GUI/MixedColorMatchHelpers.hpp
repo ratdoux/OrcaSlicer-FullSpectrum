@@ -73,6 +73,21 @@ struct MixedColorMatchCreationResult
     double       delta_e     = std::numeric_limits<double>::infinity();
 };
 
+struct AdaptiveColorMatchPreviewCycle
+{
+    unsigned int                    filament_id = 0;
+    MixedFilamentDefinition         definition;
+    std::vector<size_t>             target_indices;
+};
+
+struct AdaptiveColorMatchPreviewResult
+{
+    bool                                        valid = false;
+    std::vector<unsigned int>                   target_filament_ids;
+    std::vector<AdaptiveColorMatchPreviewCycle> mixed_cycles;
+    size_t                                      direct_physical_target_count = 0;
+};
+
 enum class MixedColorMatchEncoding
 {
     LayerRatio,
@@ -133,6 +148,15 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(
     int                             min_component_percent = 15,
     size_t                          max_total_filaments = 16,
     MixedColorMatchEncoding         encoding = MixedColorMatchEncoding::LayerRatio);
+
+// Dry-run the same sequential reuse/creation decisions used when adaptive OBJ
+// colors are committed. This lets the import dialog show the unique physical
+// cycles that will actually appear instead of one duplicate card per region.
+AdaptiveColorMatchPreviewResult preview_adaptive_localized_color_matches(
+    const std::vector<wxColour>    &target_colors,
+    const std::vector<std::string> &physical_colors,
+    int                             min_component_percent = 15,
+    size_t                          max_total_filaments = 16);
 
 // ---- display context helpers ----
 MixedFilamentDisplayContext build_mixed_filament_display_context(

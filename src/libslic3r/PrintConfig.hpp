@@ -1384,6 +1384,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionBool,               dithering_local_z_preserve_first_layer))
     ((ConfigOptionBool,               dithering_local_z_infill))
     ((ConfigOptionBool,               dithering_local_z_direct_multicolor))
+    ((ConfigOptionBool,               dithering_local_z_independent_layer_height))
     ((ConfigOptionPercent,            dithering_local_z_gradient_overlap_window))
     ((ConfigOptionBool,               dithering_step_painted_zones_only))
     ((ConfigOptionString,             printer_model))

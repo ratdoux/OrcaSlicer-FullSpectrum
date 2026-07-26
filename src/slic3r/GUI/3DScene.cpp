@@ -122,6 +122,8 @@ enum class SourceColorPreviewStatus : unsigned char
 {
     Running,
     Ready,
+    Uploading,
+    Uploaded,
     Cancelled,
     Failed
 };
@@ -136,25 +138,31 @@ struct SourceColorPreviewJob
     std::atomic<SourceColorPreviewStatus>       status{SourceColorPreviewStatus::Running};
     std::atomic<int>                            progress{1};
     std::atomic<bool>                           cancel{false};
+    std::atomic<bool>                           ready_presented{false};
+    std::atomic<bool>                           uploaded_presented{false};
     std::mutex                                  result_mutex;
     std::unique_ptr<GUI::GLModel::Geometry>     geometry;
 };
 
 namespace {
 
-constexpr size_t k_source_color_preview_triangle_cap = 250'000;
+constexpr size_t k_source_color_preview_triangle_cap = 80'000;
 constexpr size_t k_source_color_preview_cache_cap    = 65'536;
 
 struct SourceColorPreviewAssignment
 {
     RGBA         target_color{1.f, 1.f, 1.f, 1.f};
     unsigned int filament_id{0};
+    RGBA         display_color{1.f, 1.f, 1.f, 1.f};
+    std::vector<ImageMap::ContinuousColorComponent> components;
 };
 
-unsigned int nearest_source_color_filament(const std::vector<SourceColorPreviewAssignment>& assignments, const RGBA& color)
+const SourceColorPreviewAssignment* nearest_source_color_assignment(
+    const std::vector<SourceColorPreviewAssignment>& assignments,
+    const RGBA&                                      color)
 {
-    unsigned int filament_id  = 0;
-    double       best_distance = std::numeric_limits<double>::infinity();
+    const SourceColorPreviewAssignment* best_assignment = nullptr;
+    double                              best_distance   = std::numeric_limits<double>::infinity();
     for (const SourceColorPreviewAssignment& assignment : assignments) {
         double distance = 0.0;
         for (size_t component = 0; component < 3; ++component) {
@@ -162,11 +170,17 @@ unsigned int nearest_source_color_filament(const std::vector<SourceColorPreviewA
             distance += delta * delta;
         }
         if (distance < best_distance) {
-            best_distance = distance;
-            filament_id   = assignment.filament_id;
+            best_distance   = distance;
+            best_assignment = &assignment;
         }
     }
-    return filament_id;
+    return best_assignment;
+}
+
+unsigned int nearest_source_color_filament(const std::vector<SourceColorPreviewAssignment>& assignments, const RGBA& color)
+{
+    const SourceColorPreviewAssignment* assignment = nearest_source_color_assignment(assignments, color);
+    return assignment != nullptr ? assignment->filament_id : 0;
 }
 
 size_t source_color_preview_signature(const std::vector<ImageMap::ContinuousColorComponent>& components)
@@ -223,25 +237,94 @@ uint32_t preview_color_key(const RGBA& color)
     return (channel(color[0]) << 16) | (channel(color[1]) << 8) | channel(color[2]);
 }
 
+RGBA source_color_preview_rgba(const std::string& color_hex)
+{
+    const wxColour color = GUI::parse_mixed_color(color_hex);
+    return {float(color.Red()) / 255.f, float(color.Green()) / 255.f, float(color.Blue()) / 255.f, 1.f};
+}
+
+size_t source_color_preview_assignment_signature(const std::vector<SourceColorPreviewAssignment>& assignments)
+{
+    size_t seed = assignments.size();
+    auto hash_combine = [&seed](size_t value) {
+        seed ^= value + size_t(0x9e3779b9) + (seed << 6) + (seed >> 2);
+    };
+    for (const SourceColorPreviewAssignment& assignment : assignments) {
+        hash_combine(preview_color_key(assignment.target_color));
+        hash_combine(assignment.filament_id);
+        hash_combine(preview_color_key(assignment.display_color));
+        for (const ImageMap::ContinuousColorComponent& component : assignment.components) {
+            hash_combine(std::hash<std::string>{}(component.color_hex));
+            hash_combine(component.transmission_distance_mm ? std::hash<double>{}(*component.transmission_distance_mm) : 0u);
+            hash_combine(component.material_id ? std::hash<std::string>{}(*component.material_id) : 0u);
+        }
+    }
+    return seed;
+}
+
 std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
     std::shared_ptr<const TriangleMesh>          mesh,
     std::shared_ptr<const ImageMap::VolumeData>  data,
     std::vector<ImageMap::ContinuousColorComponent> components,
     std::vector<SourceColorPreviewAssignment>    assignments,
     std::string                                  volume_name,
-    ImageMap::RenderMode                         render_mode)
+    ImageMap::RenderMode                         render_mode,
+    bool                                         quantize_to_palette)
 {
     auto job = std::make_shared<SourceColorPreviewJob>(data);
     std::thread([job, mesh = std::move(mesh), data = std::move(data), components = std::move(components),
-                  assignments = std::move(assignments), volume_name = std::move(volume_name), render_mode]() {
+                  assignments = std::move(assignments), volume_name = std::move(volume_name), render_mode,
+                  quantize_to_palette]() mutable {
         const auto started_at = std::chrono::steady_clock::now();
         try {
             job->progress.store(2, std::memory_order_relaxed);
-            ImageMap::ContinuousColorSolver solver(std::move(components));
-            job->progress.store(5, std::memory_order_relaxed);
+            const bool adaptive_cycle_preview = render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles;
+            std::unique_ptr<ImageMap::ContinuousColorSolver> shared_solver;
+            constexpr size_t no_solver = std::numeric_limits<size_t>::max();
+            std::vector<std::unique_ptr<ImageMap::ContinuousColorSolver>> cycle_solvers;
+            std::vector<size_t> assignment_solver_indices(assignments.size(), no_solver);
+            if (adaptive_cycle_preview) {
+                std::unordered_map<unsigned int, size_t> solver_by_filament;
+                solver_by_filament.reserve(assignments.size());
+                for (size_t assignment_index = 0; assignment_index < assignments.size(); ++assignment_index) {
+                    const unsigned int filament_id = assignments[assignment_index].filament_id;
+                    const auto existing = solver_by_filament.find(filament_id);
+                    if (existing != solver_by_filament.end()) {
+                        assignment_solver_indices[assignment_index] = existing->second;
+                    } else if (assignments[assignment_index].components.size() >= 2) {
+                        const size_t solver_index = cycle_solvers.size();
+                        cycle_solvers.emplace_back(std::make_unique<ImageMap::ContinuousColorSolver>(
+                            std::move(assignments[assignment_index].components)));
+                        if (cycle_solvers.back()->valid()) {
+                            solver_by_filament.emplace(filament_id, solver_index);
+                            assignment_solver_indices[assignment_index] = solver_index;
+                        } else {
+                            cycle_solvers.pop_back();
+                        }
+                    }
+                    job->progress.store(2 + int(8 * (assignment_index + 1) / std::max<size_t>(assignments.size(), 1)),
+                                        std::memory_order_relaxed);
+                }
+                // Every palette target sharing a cycle reuses the same solver.
+                // Store a guaranteed-attainable fallback as well, so a failed
+                // lookup can never leak the original texture RGB into the
+                // printable-result preview.
+                for (size_t assignment_index = 0; assignment_index < assignments.size(); ++assignment_index) {
+                    const size_t solver_index = assignment_solver_indices[assignment_index];
+                    if (solver_index == no_solver || solver_index >= cycle_solvers.size())
+                        continue;
+                    if (const std::optional<RGBA> predicted =
+                            cycle_solvers[solver_index]->predict_color(assignments[assignment_index].target_color))
+                        assignments[assignment_index].display_color = *predicted;
+                }
+            } else if (!quantize_to_palette) {
+                shared_solver = std::make_unique<ImageMap::ContinuousColorSolver>(std::move(components));
+            }
+            job->progress.store(10, std::memory_order_relaxed);
 
             ImageMap::SourceColorRasterizationOptions options;
             options.max_leaf_triangles = k_source_color_preview_triangle_cap;
+            options.source_data_validated = true;
             options.cancelled          = [job]() { return job->cancel.load(std::memory_order_relaxed); };
             options.progress           = [job](int progress) {
                 int current = job->progress.load(std::memory_order_relaxed);
@@ -287,9 +370,66 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                     }
                 }
                 const ImageMap::SourceColorVertex &vertex = rasterized.vertices[vertex_idx];
-                RGBA                               result_color = vertex.color;
+                RGBA                               result_color =
+                    adaptive_cycle_preview ? RGBA{0.55f, 0.55f, 0.55f, vertex.color[3]} : vertex.color;
                 unsigned int                       filament_id  = 0;
-                if (solver.valid()) {
+                if (quantize_to_palette) {
+                    const uint32_t key = preview_color_key(vertex.color);
+                    const auto     cached = color_cache.find(key);
+                    if (cached != color_cache.end()) {
+                        result_color = cached->second.color;
+                        filament_id  = cached->second.filament_id;
+                    } else {
+                        const RGBA quantized_target{float((key >> 16) & 0xffu) / 255.f,
+                                                    float((key >> 8) & 0xffu) / 255.f,
+                                                    float(key & 0xffu) / 255.f,
+                                                    vertex.color[3]};
+                        if (const SourceColorPreviewAssignment* assignment =
+                                nearest_source_color_assignment(assignments, quantized_target);
+                            assignment != nullptr) {
+                            result_color = assignment->display_color;
+                            filament_id  = assignment->filament_id;
+                        }
+                        if (color_cache.size() < k_source_color_preview_cache_cap) {
+                            RGBA cached_color = result_color;
+                            cached_color[3]   = 1.f;
+                            color_cache.emplace(key, CachedPreviewColor{cached_color, filament_id});
+                        }
+                    }
+                } else if (adaptive_cycle_preview) {
+                    const uint32_t key = preview_color_key(vertex.color);
+                    const auto     cached = color_cache.find(key);
+                    if (cached != color_cache.end()) {
+                        result_color = cached->second.color;
+                        filament_id  = cached->second.filament_id;
+                    } else {
+                        const RGBA quantized_target{float((key >> 16) & 0xffu) / 255.f,
+                                                    float((key >> 8) & 0xffu) / 255.f,
+                                                    float(key & 0xffu) / 255.f,
+                                                    vertex.color[3]};
+                        const SourceColorPreviewAssignment* assignment =
+                            nearest_source_color_assignment(assignments, quantized_target);
+                        if (assignment != nullptr) {
+                            filament_id = assignment->filament_id;
+                            result_color = assignment->display_color;
+                            const size_t assignment_index = size_t(assignment - assignments.data());
+                            const size_t solver_index = assignment_index < assignment_solver_indices.size() ?
+                                                            assignment_solver_indices[assignment_index] :
+                                                            no_solver;
+                            if (solver_index != no_solver && solver_index < cycle_solvers.size() &&
+                                cycle_solvers[solver_index] != nullptr && cycle_solvers[solver_index]->valid()) {
+                                if (const std::optional<RGBA> predicted =
+                                        cycle_solvers[solver_index]->predict_color(quantized_target))
+                                    result_color = *predicted;
+                            }
+                        }
+                        if (color_cache.size() < k_source_color_preview_cache_cap) {
+                            RGBA cached_color = result_color;
+                            cached_color[3]   = 1.f;
+                            color_cache.emplace(key, CachedPreviewColor{cached_color, filament_id});
+                        }
+                    }
+                } else if (shared_solver != nullptr && shared_solver->valid()) {
                     const uint32_t key = preview_color_key(vertex.color);
                     const auto     cached = color_cache.find(key);
                     if (cached != color_cache.end()) {
@@ -300,7 +440,7 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                                               float((key >> 8) & 0xffu) / 255.f,
                                               float(key & 0xffu) / 255.f,
                                               vertex.color[3]};
-                        if (const std::optional<RGBA> predicted = solver.predict_color(quantized_target))
+                        if (const std::optional<RGBA> predicted = shared_solver->predict_color(quantized_target))
                             result_color = *predicted;
                         filament_id = nearest_source_color_filament(assignments, quantized_target);
                         if (color_cache.size() < k_source_color_preview_cache_cap) {
@@ -323,15 +463,19 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                 std::lock_guard<std::mutex> lock(job->result_mutex);
                 job->geometry = std::move(geometry);
             }
-            job->progress.store(100, std::memory_order_relaxed);
+            // Keep the 99% overlay visible for one frame before the UI thread
+            // initializes and uploads the GL model.
+            job->progress.store(99, std::memory_order_relaxed);
             job->status.store(SourceColorPreviewStatus::Ready, std::memory_order_release);
 
             const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - started_at).count();
-            BOOST_LOG_TRIVIAL(info) << "KM/K-S image-map result preview prepared"
+            BOOST_LOG_TRIVIAL(info) << "Image-map result preview prepared"
                                     << " volume=\"" << volume_name << "\""
+                                    << " mode=\"" << (quantize_to_palette ? "quantized" : "optical") << "\""
                                     << " source_triangles=" << rasterized.source_triangle_count
                                     << " preview_triangles=" << rasterized.sampled_leaf_count
+                                    << " lod_passes=" << rasterized.lod_pass_count
                                     << " elapsed_ms=" << elapsed_ms;
         } catch (const std::exception &error) {
             BOOST_LOG_TRIVIAL(error) << "KM/K-S image-map result preview failed"
@@ -483,8 +627,11 @@ GLVolume::~GLVolume()
 
 std::optional<float> GLVolume::source_color_preview_progress() const
 {
-    if (!image_map_source_preview_job ||
-        image_map_source_preview_job->status.load(std::memory_order_acquire) != SourceColorPreviewStatus::Running)
+    if (!image_map_source_preview_job)
+        return std::nullopt;
+    const SourceColorPreviewStatus status = image_map_source_preview_job->status.load(std::memory_order_acquire);
+    if (status != SourceColorPreviewStatus::Running && status != SourceColorPreviewStatus::Ready &&
+        status != SourceColorPreviewStatus::Uploading && status != SourceColorPreviewStatus::Uploaded)
         return std::nullopt;
     return float(std::clamp(image_map_source_preview_job->progress.load(std::memory_order_relaxed), 0, 100)) / 100.f;
 }
@@ -943,6 +1090,7 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
 
     bool         color_volume                 = false;
     bool         source_color_volume          = false;
+    bool         palette_source_color_volume  = false;
     bool         adaptive_source_color_volume = false;
     ModelObject* model_object = nullptr;
     ModelVolume* model_volume = nullptr;
@@ -958,62 +1106,128 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
         if (model_volume->mmu_segmentation_facets.empty() && (!image_map_data || image_map_data->empty()))
             break;
 
-        std::optional<ImageMap::RenderMode> perimeter_preview_mode;
+        std::optional<ImageMap::RenderMode> image_map_render_mode;
         if (image_map_data) {
             const auto zone_it = std::find_if(image_map_data->zones.begin(), image_map_data->zones.end(), [](const ImageMap::Zone& zone) {
-                return zone.enabled && (zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2 ||
-                                        zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles);
+                return zone.enabled;
             });
             if (zone_it != image_map_data->zones.end())
-                perimeter_preview_mode = zone_it->render_mode;
+                image_map_render_mode = zone_it->render_mode;
         }
-        if (perimeter_preview_mode) {
+        const bool quantized_image_map = image_map_render_mode == ImageMap::RenderMode::NormalMix;
+        // Filament-ID thumbnails require exact per-filament geometry. Normal
+        // interactive rendering uses the bounded asynchronous preview below.
+        if (image_map_render_mode && !(quantized_image_map && ban_light)) {
             if (!picking) {
-                std::vector<ImageMap::ContinuousColorComponent> preview_components = source_color_preview_components();
+                std::vector<ImageMap::ContinuousColorComponent> preview_components =
+                    quantized_image_map ? std::vector<ImageMap::ContinuousColorComponent>() : source_color_preview_components();
                 const ImageMapPreviewPalette preview_palette = image_map_preview_palette();
                 const unsigned int base_filament_id =
                     unsigned(std::clamp(model_volume->extruder_id(), 1, int(std::max<size_t>(1, preview_palette.num_total))));
-                size_t preview_signature = source_color_preview_signature(preview_components);
-                if (*perimeter_preview_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
-                    const size_t palette_signature = preview_palette.signature(*image_map_data, base_filament_id);
-                    preview_signature ^= palette_signature + size_t(0x9e3779b9) + (preview_signature << 6) + (preview_signature >> 2);
+                std::vector<SourceColorPreviewAssignment> assignments;
+                if (quantized_image_map || *image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+                    std::optional<MixedFilamentDisplayContext> adaptive_display_context;
+                    if (*image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+                        std::vector<std::string> physical_colors;
+                        physical_colors.reserve(preview_components.size());
+                        for (const ImageMap::ContinuousColorComponent& component : preview_components)
+                            physical_colors.emplace_back(component.color_hex);
+                        adaptive_display_context = GUI::build_mixed_filament_display_context(physical_colors);
+                    }
+                    for (const ImageMap::Zone& zone : image_map_data->zones) {
+                        if (!zone.enabled || zone.render_mode != *image_map_render_mode)
+                            continue;
+                        for (const ImageMap::PaletteEntry& entry : zone.palette) {
+                            const unsigned int filament_id = preview_palette.resolve(entry);
+                            if (filament_id == 0)
+                                continue;
+                            RGBA display_color =
+                                *image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles ?
+                                    RGBA{0.55f, 0.55f, 0.55f, 1.f} :
+                                    entry.target_color;
+                            if (quantized_image_map && filament_id <= extruder_colors.size()) {
+                                const ColorRGBA adjusted = adjust_color_for_rendering(extruder_colors[filament_id - 1]);
+                                display_color = {adjusted.r(), adjusted.g(), adjusted.b(), adjusted.a()};
+                            }
+                            std::vector<ImageMap::ContinuousColorComponent> assignment_components;
+                            if (*image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+                                if (filament_id >= 1 && filament_id <= preview_components.size())
+                                    display_color = source_color_preview_rgba(preview_components[filament_id - 1].color_hex);
+                            }
+                            if (*image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles &&
+                                preview_palette.manager != nullptr && adaptive_display_context) {
+                                const std::optional<MixedFilamentDefinition> definition =
+                                    preview_palette.manager->mixed_filament_definition_from_id(filament_id,
+                                                                                               preview_palette.num_physical);
+                                if (definition) {
+                                    display_color = source_color_preview_rgba(
+                                        compute_mixed_filament_display_color(*definition, *adaptive_display_context));
+                                    for (const MixedFilamentWeightedComponent& component : definition->recipe.blend.components) {
+                                        const unsigned int component_id = component.filament.id;
+                                        const bool already_added =
+                                            std::any_of(assignment_components.begin(), assignment_components.end(),
+                                                        [component_id, &preview_components](
+                                                            const ImageMap::ContinuousColorComponent& existing) {
+                                                            return component_id >= 1 &&
+                                                                   component_id <= preview_components.size() &&
+                                                                   existing.color_hex ==
+                                                                       preview_components[component_id - 1].color_hex;
+                                                        });
+                                        if (component.percent > 0 && component_id >= 1 &&
+                                            component_id <= preview_components.size() && !already_added)
+                                            assignment_components.push_back(preview_components[component_id - 1]);
+                                    }
+                                }
+                            }
+                            assignments.push_back(
+                                {entry.target_color, filament_id, display_color, std::move(assignment_components)});
+                        }
+                    }
                 }
+                size_t preview_signature = source_color_preview_signature(preview_components);
+                preview_signature ^= size_t(*image_map_render_mode) + size_t(0x9e3779b9) +
+                                     (preview_signature << 6) + (preview_signature >> 2);
+                const size_t assignment_signature = source_color_preview_assignment_signature(assignments);
+                preview_signature ^= assignment_signature + size_t(0x9e3779b9) +
+                                     (preview_signature << 6) + (preview_signature >> 2);
+                const size_t palette_signature = preview_palette.signature(*image_map_data, base_filament_id);
+                preview_signature ^= palette_signature + size_t(0x9e3779b9) +
+                                     (preview_signature << 6) + (preview_signature >> 2);
                 if (image_map_data != image_map_source_preview_data ||
                     preview_signature != image_map_source_preview_signature) {
-                    image_map_source_model.reset();
+                    mmuseg_models.clear();
                     if (image_map_source_preview_job)
                         image_map_source_preview_job->cancel.store(true, std::memory_order_relaxed);
                     image_map_source_preview_data = image_map_data;
                     image_map_source_preview_signature = preview_signature;
-                    std::vector<SourceColorPreviewAssignment> assignments;
-                    if (*perimeter_preview_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
-                        for (const ImageMap::Zone& zone : image_map_data->zones) {
-                            if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles)
-                                continue;
-                            for (const ImageMap::PaletteEntry& entry : zone.palette) {
-                                const unsigned int filament_id = preview_palette.resolve(entry);
-                                if (filament_id != 0)
-                                    assignments.push_back({entry.target_color, filament_id});
-                            }
-                        }
-                    }
-                    image_map_source_preview_job  = start_source_color_preview(
+                    image_map_source_preview_job = start_source_color_preview(
                         model_volume->mesh_ptr(), image_map_data, std::move(preview_components), std::move(assignments), model_volume->name,
-                        *perimeter_preview_mode);
+                        *image_map_render_mode, quantized_image_map);
                 }
 
                 if (image_map_source_preview_job) {
                     const SourceColorPreviewStatus status =
                         image_map_source_preview_job->status.load(std::memory_order_acquire);
                     if (status == SourceColorPreviewStatus::Ready) {
-                        std::unique_ptr<GUI::GLModel::Geometry> geometry;
-                        {
-                            std::lock_guard<std::mutex> lock(image_map_source_preview_job->result_mutex);
-                            geometry = std::move(image_map_source_preview_job->geometry);
+                        // Present the completed progress state before doing the
+                        // unavoidable render-thread GL model initialization.
+                        if (image_map_source_preview_job->ready_presented.exchange(true, std::memory_order_acq_rel)) {
+                            std::unique_ptr<GUI::GLModel::Geometry> geometry;
+                            {
+                                std::lock_guard<std::mutex> lock(image_map_source_preview_job->result_mutex);
+                                geometry = std::move(image_map_source_preview_job->geometry);
+                            }
+                            if (geometry && geometry->vertices_count() != 0 && geometry->indices_count() != 0) {
+                                image_map_source_model.reset();
+                                image_map_source_model.init_from(std::move(*geometry));
+                            }
+                            image_map_source_preview_job->progress.store(99, std::memory_order_relaxed);
+                            image_map_source_preview_job->status.store(SourceColorPreviewStatus::Uploading,
+                                                                       std::memory_order_release);
                         }
-                        if (geometry && geometry->vertices_count() != 0 && geometry->indices_count() != 0)
-                            image_map_source_model.init_from(std::move(*geometry));
-                        image_map_source_preview_job.reset();
+                    } else if (status == SourceColorPreviewStatus::Uploaded) {
+                        if (image_map_source_preview_job->uploaded_presented.exchange(true, std::memory_order_acq_rel))
+                            image_map_source_preview_job.reset();
                     } else if (status == SourceColorPreviewStatus::Cancelled || status == SourceColorPreviewStatus::Failed) {
                         image_map_source_preview_job.reset();
                     }
@@ -1022,12 +1236,17 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
                 if (image_map_source_model.is_initialized()) {
                     color_volume                 = true;
                     source_color_volume          = true;
-                    adaptive_source_color_volume = *perimeter_preview_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles;
+                    palette_source_color_volume  = quantized_image_map ||
+                                                   *image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles;
+                    adaptive_source_color_volume = *image_map_render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles;
+                } else if (image_map_source_preview_job) {
+                    // Do not show the photographic source texture as if it
+                    // were an attainable print while the first KM/K-S preview
+                    // is still being prepared.
+                    source_color_volume = true;
                 }
             }
-            // While the worker is running (and for picking), retain the normal
-            // source mesh. Never fall through to the quantized image-map path,
-            // which would repeat the expensive work synchronously.
+            // Exact facet reconstruction remains a slice-time task.
             break;
         }
 
@@ -1071,12 +1290,18 @@ void GLVolume::simple_render(GLShaderProgram*        shader,
             ColorRGBA source_color = ColorRGBA::WHITE();
             source_color.a(render_color.a());
             image_map_source_model.set_color(source_color);
-            if (shader != nullptr && adaptive_source_color_volume) {
+            if (shader != nullptr && palette_source_color_volume) {
                 shader->set_uniform("image_map_cycle_preview", true);
-                shader->set_uniform("image_map_highlight_filament_id", int(image_map_highlight_filament_id));
+                shader->set_uniform("image_map_highlight_filament_id",
+                                    adaptive_source_color_volume ? int(image_map_highlight_filament_id) : 0);
             }
             image_map_source_model.render();
-            if (shader != nullptr && adaptive_source_color_volume) {
+            if (image_map_source_preview_job &&
+                image_map_source_preview_job->status.load(std::memory_order_acquire) == SourceColorPreviewStatus::Uploading) {
+                image_map_source_preview_job->progress.store(100, std::memory_order_relaxed);
+                image_map_source_preview_job->status.store(SourceColorPreviewStatus::Uploaded, std::memory_order_release);
+            }
+            if (shader != nullptr && palette_source_color_volume) {
                 shader->set_uniform("image_map_cycle_preview", false);
                 shader->set_uniform("image_map_highlight_filament_id", 0);
             }

@@ -38,7 +38,8 @@ std::vector<std::vector<RGBA>> representative_labeled_source_colors(const std::v
 // Builds one bounded source-color spectrum for each palette entry in a zone.
 // Texture and vertex colors are assigned to the nearest palette target, so the
 // result describes the colors actually represented by each localized cycle.
-// The outer vector follows Zone::palette order.
+// Binding inspection is bounded as well; the outer vector follows
+// Zone::palette order.
 std::vector<std::vector<RGBA>> representative_palette_source_colors(const VolumeData& data,
                                                                     size_t            zone_index,
                                                                     size_t            max_colors  = 8,

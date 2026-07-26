@@ -278,8 +278,6 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
     } else {//cluster deal
         deal_algo(-1);
     }
-    if (m_is_image_map)
-        update_adaptive_cycle_spectra();
     //end first cluster
     //draw ui
     auto sizer_width = FromDIP(300);
@@ -314,8 +312,9 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
         m_image_map_mode_ctrl->SetSelection(initial_mode);
         m_image_map_mode_ctrl->SetToolTip(
             _L("Perimeter modulation uses one shared physical-filament sequence and one tool per layer. "
-               "Adaptive localized cycles use a sparse KM/K-S mixed-filament recipe for each image color. Each region follows its own "
-               "layer cadence while perimeter modulation refines the sampled texture color; this may require more toolchanges."));
+               "Adaptive localized cycles cluster the source into localized color regions, then share a sparse KM/K-S mixed-filament "
+               "cycle wherever the same physical recipe is sufficient. Perimeter modulation refines the sampled texture color; this may "
+               "require more toolchanges."));
         mode_sizer->Add(m_image_map_mode_ctrl, 1, wxALIGN_CENTER_VERTICAL);
         mode_sizer->AddSpacer(FromDIP(8));
         mode_sizer->Add(create_image_map_btn_sizer(m_page_simple), 0, wxALIGN_CENTER_VERTICAL);
@@ -331,9 +330,9 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
     {
         //color cluster results
         wxBoxSizer *  specify_cluster_sizer               = new wxBoxSizer(wxHORIZONTAL);
-        wxStaticText *specify_color_cluster_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Quantized colors:"));
-        specify_color_cluster_title->SetFont(Label::Head_14);
-        specify_cluster_sizer->Add(specify_color_cluster_title, 0, wxALIGN_CENTER | wxALL, FromDIP(5));
+        m_color_cluster_title = new wxStaticText(m_page_simple, wxID_ANY, _L("Quantized colors:"));
+        m_color_cluster_title->SetFont(Label::Head_14);
+        specify_cluster_sizer->Add(m_color_cluster_title, 0, wxALIGN_CENTER | wxALL, FromDIP(5));
 
         m_color_cluster_num_by_user_ebox = new wxTextCtrl(m_page_simple, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(FromDIP(25), -1), wxTE_PROCESS_ENTER);
         m_color_cluster_num_by_user_ebox->SetValue(std::to_string(m_color_cluster_num_by_algo).c_str());
@@ -506,7 +505,7 @@ bool ObjColorPanel::is_ok() {
     if (m_is_image_map && uses_layer_sequence_image_map())
         return m_colours.size() >= 2 && !m_source_spectrum_colours.empty();
     if (m_is_image_map && uses_adaptive_local_cycles_image_map())
-        return adaptive_cycle_mixes_ready() && !m_adaptive_cycle_spectrum_colours.empty() &&
+        return adaptive_cycle_mixes_ready() && m_adaptive_cycle_preview_valid &&
                std::all_of(m_adaptive_cycle_spectrum_colours.begin(), m_adaptive_cycle_spectrum_colours.end(),
                            [](const std::vector<wxColour>& colors) { return !colors.empty(); });
     for (auto item : m_result_icon_list) {
@@ -581,7 +580,7 @@ bool ObjColorPanel::update_filament_ids()
 
     if (m_is_image_map && uses_adaptive_local_cycles_image_map() && !adaptive_cycle_mixes_ready()) {
         m_warning_text->SetLabelText(
-            _L("Unable to generate every adaptive cycle within the 16 printable color slots. Reduce the quantized color count."));
+            _L("Unable to generate every adaptive cycle within the 16 printable color slots. Reduce the adaptive color region count."));
         return false;
     }
 
@@ -1033,6 +1032,14 @@ int ObjColorPanel::append_new_filament_option(const wxColour &color, std::vector
         }
     }
 
+    return append_new_filament_color_option(color);
+}
+
+int ObjColorPanel::append_new_filament_color_option(const wxColour& color)
+{
+    if (m_colours.size() + m_new_add_colors.size() >= g_max_color)
+        return 0;
+
     m_new_add_colors.emplace_back(color);
     const int selection = static_cast<int>(m_colours.size() + m_new_add_colors.size());
     auto *    bitmap    = get_extruder_color_icon(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString(), std::to_string(selection), m_combox_icon_width, m_combox_icon_height);
@@ -1247,7 +1254,6 @@ void ObjColorPanel::deal_algo(char cluster_number, bool redraw_ui)
     }
     //redraw ui
     if (redraw_ui) {
-        update_adaptive_cycle_spectra();
         redraw_part_table();
         deal_default_strategy();
         rebuild_adaptive_cycle_spectrum_table();
@@ -1283,17 +1289,27 @@ bool ObjColorPanel::uses_adaptive_local_cycles_image_map() const
 bool ObjColorPanel::adaptive_cycle_mixes_ready() const
 {
     if (m_colours.size() < 2 || m_cluster_map_filaments.size() < m_cluster_colors_from_algo.size() ||
-        m_cluster_colors_from_algo.empty())
+        m_cluster_colors_from_algo.empty() || !m_adaptive_cycle_preview_valid)
         return false;
     return std::all_of(m_cluster_map_filaments.begin(),
                        m_cluster_map_filaments.begin() + m_cluster_colors_from_algo.size(),
-                       [this](int filament_id) { return filament_id > int(m_colours.size()); });
+                       [](int filament_id) { return filament_id > 0; });
 }
 
-void ObjColorPanel::update_adaptive_cycle_spectra()
+void ObjColorPanel::update_adaptive_cycle_spectra(const AdaptiveColorMatchPreviewResult* supplied_preview)
 {
     m_adaptive_cycle_spectrum_colours.clear();
-    if (!m_is_image_map || m_cluster_colors_from_algo.empty())
+    m_adaptive_cycle_display_component_filament_ids.clear();
+    m_adaptive_cycle_display_filament_ids.clear();
+    m_adaptive_cycle_display_region_counts.clear();
+    m_adaptive_direct_physical_region_count = 0;
+    m_adaptive_cycle_preview_valid          = false;
+
+    const bool adaptive_requested =
+        uses_adaptive_local_cycles_image_map() ||
+        (m_image_map_mode_ctrl == nullptr &&
+         m_import_context.image_map_render_mode == ObjImageMapRenderMode::AdaptiveLocalizedCycles);
+    if (!m_is_image_map || !adaptive_requested || m_cluster_colors_from_algo.empty())
         return;
 
     const std::vector<std::vector<RGBA>> representative = ImageMap::representative_labeled_source_colors(
@@ -1304,15 +1320,51 @@ void ObjColorPanel::update_adaptive_cycle_spectra()
         physical_colors.emplace_back(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString());
     const MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
 
-    m_adaptive_cycle_spectrum_colours.reserve(representative.size());
-    for (size_t cycle_index = 0; cycle_index < representative.size(); ++cycle_index) {
-        std::vector<wxColour> attainable;
-        if (cycle_index < m_adaptive_cycle_component_filament_ids.size()) {
-            attainable = build_adaptive_cycle_attainable_colors(
-                m_adaptive_cycle_component_filament_ids[cycle_index], representative[cycle_index], context);
+    std::vector<wxColour> target_colors;
+    target_colors.reserve(m_cluster_colors_from_algo.size());
+    for (const RGBA& target : m_cluster_colors_from_algo)
+        target_colors.emplace_back(convert_to_wxColour(target));
+    AdaptiveColorMatchPreviewResult computed_preview;
+    if (supplied_preview == nullptr) {
+        computed_preview = preview_adaptive_localized_color_matches(
+            target_colors, physical_colors, min_component_percent(), g_max_color);
+        supplied_preview = &computed_preview;
+    }
+    const AdaptiveColorMatchPreviewResult& preview = *supplied_preview;
+    if (!preview.valid)
+        return;
+
+    m_adaptive_cycle_preview_valid          = true;
+    m_adaptive_direct_physical_region_count = preview.direct_physical_target_count;
+    m_adaptive_cycle_spectrum_colours.reserve(preview.mixed_cycles.size());
+    m_adaptive_cycle_display_component_filament_ids.reserve(preview.mixed_cycles.size());
+    m_adaptive_cycle_display_filament_ids.reserve(preview.mixed_cycles.size());
+    m_adaptive_cycle_display_region_counts.reserve(preview.mixed_cycles.size());
+
+    for (const AdaptiveColorMatchPreviewCycle& cycle : preview.mixed_cycles) {
+        std::vector<unsigned int> component_filament_ids;
+        for (const MixedFilamentWeightedComponent& component : cycle.definition.recipe.blend.components) {
+            if (component.percent > 0 && component.filament.id >= 1 && component.filament.id <= m_colours.size())
+                component_filament_ids.emplace_back(component.filament.id);
         }
+
+        std::vector<RGBA> represented_colors;
+        for (const size_t target_index : cycle.target_indices) {
+            if (target_index >= representative.size())
+                continue;
+            represented_colors.insert(represented_colors.end(),
+                                      representative[target_index].begin(),
+                                      representative[target_index].end());
+        }
+        represented_colors = ImageMap::representative_source_colors(represented_colors, 64, 512);
+        std::vector<wxColour> attainable =
+            build_adaptive_cycle_attainable_colors(component_filament_ids, represented_colors, context);
+
         m_adaptive_cycle_spectrum_colours.emplace_back(
-            attainable.empty() ? wx_spectrum_colors(representative[cycle_index]) : std::move(attainable));
+            attainable.empty() ? wx_spectrum_colors(represented_colors) : std::move(attainable));
+        m_adaptive_cycle_display_component_filament_ids.emplace_back(std::move(component_filament_ids));
+        m_adaptive_cycle_display_filament_ids.emplace_back(cycle.filament_id);
+        m_adaptive_cycle_display_region_counts.emplace_back(cycle.target_indices.size());
     }
 }
 
@@ -1332,18 +1384,29 @@ void ObjColorPanel::rebuild_adaptive_cycle_spectrum_table()
 
     for (size_t cycle_index = 0; cycle_index < m_adaptive_cycle_spectrum_colours.size(); ++cycle_index) {
         std::vector<FilamentCardImageMap::ComponentFilament> component_filaments;
-        if (cycle_index < m_adaptive_cycle_component_filament_ids.size()) {
-            for (unsigned int filament_id : m_adaptive_cycle_component_filament_ids[cycle_index]) {
+        if (cycle_index < m_adaptive_cycle_display_component_filament_ids.size()) {
+            for (unsigned int filament_id : m_adaptive_cycle_display_component_filament_ids[cycle_index]) {
                 if (filament_id >= 1 && filament_id <= m_colours.size())
                     component_filaments.emplace_back(filament_id, m_colours[filament_id - 1]);
             }
         }
+        const unsigned int filament_id = cycle_index < m_adaptive_cycle_display_filament_ids.size() ?
+                                             m_adaptive_cycle_display_filament_ids[cycle_index] :
+                                             unsigned(m_colours.size() + cycle_index + 1);
+        const size_t region_count = cycle_index < m_adaptive_cycle_display_region_counts.size() ?
+                                        m_adaptive_cycle_display_region_counts[cycle_index] :
+                                        size_t(0);
         auto* card = new FilamentCardImageMap(
             m_adaptive_spectrum_window,
-            wxString::Format(_L("Adaptive cycle %d"), int(cycle_index + 1)),
+            wxString::Format(_L("Mixed filament %u — %llu regions"),
+                             filament_id,
+                             static_cast<unsigned long long>(region_count)),
             m_adaptive_cycle_spectrum_colours[cycle_index],
             false,
-            _L("KM/K-S-predicted colors attainable by this localized cycle; out-of-gamut image colors are projected to the closest attainable color"),
+            wxString::Format(
+                _L("%llu adaptive color regions use this cycle. The gradient shows their KM/K-S-predicted attainable colors; "
+                   "out-of-gamut image colors are projected to the closest attainable color."),
+                static_cast<unsigned long long>(region_count)),
             std::move(component_filaments));
         card->SetMinSize(wxSize(FromDIP(PANEL_WIDTH - 20), FromDIP(34)));
         spectrum_sizer->Add(card, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(5));
@@ -1381,6 +1444,14 @@ void ObjColorPanel::update_image_map_mode_ui()
 
     const bool layer_sequence = uses_layer_sequence_image_map();
     const bool adaptive_local_cycles = uses_adaptive_local_cycles_image_map();
+    if (m_color_cluster_title != nullptr) {
+        m_color_cluster_title->SetLabelText(
+            adaptive_local_cycles ? _L("Adaptive color regions:") : _L("Quantized colors:"));
+        m_color_cluster_title->SetToolTip(
+            adaptive_local_cycles ?
+                _L("Number of localized source-color regions. Several regions may share one physical mixed-filament cycle.") :
+                _L("Number of source-color clusters mapped to printable filaments."));
+    }
     if (m_quantized_settings_sizer != nullptr)
         m_quantized_settings_sizer->ShowItems(!layer_sequence);
     if (m_physical_title_sizer != nullptr)
@@ -1403,14 +1474,25 @@ void ObjColorPanel::update_image_map_mode_ui()
             m_warning_text->SetLabelText(
                 _L("Colors are sampled from the image source. One shared physical-filament sequence will reproduce them by perimeter exposure."));
         } else if (adaptive_local_cycles) {
-            if (!adaptive_cycle_mixes_ready()) {
+            if (!m_adaptive_cycle_preview_valid) {
                 m_warning_text->SetLabelText(
-                    _L("Unable to generate every adaptive cycle within the 16 printable color slots. Reduce the quantized color count."));
+                    _L("Unable to preview the adaptive region-to-cycle mapping."));
+            } else if (!adaptive_cycle_mixes_ready()) {
+                m_warning_text->SetLabelText(
+                    _L("Unable to generate every adaptive cycle within the 16 printable color slots. Reduce the adaptive color region count."));
             } else {
-                m_warning_text->SetLabelText(
-                    _L("Each gradient shows the KM/K-S-predicted colors its listed filaments can actually produce. Out-of-gamut image "
-                       "colors are projected to the closest attainable color; perimeter modulation varies that exposure at the cost of "
-                       "additional toolchanges."));
+                wxString summary = wxString::Format(
+                    _L("%llu adaptive color regions map to %llu unique mixed-filament cycles"),
+                    static_cast<unsigned long long>(m_cluster_colors_from_algo.size()),
+                    static_cast<unsigned long long>(m_adaptive_cycle_display_filament_ids.size()));
+                if (m_adaptive_direct_physical_region_count > 0) {
+                    summary += wxString::Format(
+                        _L(" and %llu regions use a physical filament directly"),
+                        static_cast<unsigned long long>(m_adaptive_direct_physical_region_count));
+                }
+                summary += _L(". Each gradient combines all source colors assigned to that cycle and shows the KM/K-S-predicted "
+                              "attainable result. Perimeter modulation refines their exposure.");
+                m_warning_text->SetLabelText(summary);
             }
         } else if (m_colours.size() >= 2) {
             m_warning_text->SetLabelText(
@@ -1430,22 +1512,78 @@ void ObjColorPanel::update_image_map_mode_ui()
 
 void ObjColorPanel::deal_add_btn()
 {
-    m_adaptive_cycle_component_filament_ids.clear();
     if (m_colours.size() >= g_max_color) { return; }
     deal_reset_btn();
+
+    if (uses_adaptive_local_cycles_image_map()) {
+        std::vector<std::string> physical_colors;
+        physical_colors.reserve(m_colours.size());
+        for (const wxColour& color : m_colours)
+            physical_colors.emplace_back(color.GetAsString(wxC2S_HTML_SYNTAX).ToStdString());
+
+        std::vector<wxColour> target_colors;
+        target_colors.reserve(m_cluster_colors_from_algo.size());
+        for (const RGBA& target : m_cluster_colors_from_algo)
+            target_colors.emplace_back(convert_to_wxColour(target));
+
+        const AdaptiveColorMatchPreviewResult preview = preview_adaptive_localized_color_matches(
+            target_colors, physical_colors, min_component_percent(), g_max_color);
+        if (!preview.valid) {
+            update_adaptive_cycle_spectra(&preview);
+            m_warning_text->SetLabelText(_L("Unable to generate the adaptive region-to-cycle mapping."));
+            update_keep_color_buttons();
+            return;
+        }
+
+        std::map<unsigned int, int> cycle_selections;
+        for (const AdaptiveColorMatchPreviewCycle& cycle : preview.mixed_cycles) {
+            if (cycle.target_indices.empty() || cycle.target_indices.front() >= target_colors.size())
+                continue;
+            const int selection = append_new_filament_color_option(target_colors[cycle.target_indices.front()]);
+            if (selection == 0) {
+                m_warning_text->SetLabelText(
+                    _L("The adaptive cycles would exceed the 16 printable color slots."));
+                update_keep_color_buttons();
+                return;
+            }
+            cycle_selections.emplace(cycle.filament_id, selection);
+        }
+
+        for (size_t region_index = 0;
+             region_index < preview.target_filament_ids.size() && region_index < m_result_icon_list.size();
+             ++region_index) {
+            const unsigned int preview_filament_id = preview.target_filament_ids[region_index];
+            int selection = int(preview_filament_id);
+            if (preview_filament_id > m_colours.size()) {
+                const auto found = cycle_selections.find(preview_filament_id);
+                if (found == cycle_selections.end()) {
+                    m_warning_text->SetLabelText(
+                        _L("Unable to map one or more adaptive color regions to a physical cycle."));
+                    update_keep_color_buttons();
+                    return;
+                }
+                selection = found->second;
+            }
+            m_result_icon_list[region_index]->bitmap_combox->SetSelection(selection);
+            m_cluster_map_filaments[region_index] = selection;
+        }
+
+        update_adaptive_cycle_spectra(&preview);
+        update_keep_color_buttons();
+        return;
+    }
+
     bool is_exceed = false;
     std::vector<int> appended_selections;
     appended_selections.reserve(m_cluster_colors_from_algo.size());
     for (size_t i = 0; i < m_cluster_colors_from_algo.size(); i++) {
         const wxColour cur_color  = convert_to_wxColour(m_cluster_colors_from_algo[i]);
-        std::vector<unsigned int> component_filament_ids;
-        const int selection = append_new_filament_option(cur_color, &component_filament_ids);
+        const int selection = append_new_filament_option(cur_color);
         if (selection == 0) {
             is_exceed = true;
             break;
         }
         appended_selections.emplace_back(selection);
-        m_adaptive_cycle_component_filament_ids.emplace_back(std::move(component_filament_ids));
     }
     if (is_exceed) {
         deal_approximate_match_btn();

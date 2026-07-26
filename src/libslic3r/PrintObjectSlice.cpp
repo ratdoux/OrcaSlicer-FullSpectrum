@@ -2035,9 +2035,7 @@ static void append_local_z_pair_option(std::vector<LocalZActivePair> &out,
 static std::vector<LocalZActivePair> build_local_z_pair_cycle_for_definition(const MixedFilamentDefinition &definition, size_t num_physical)
 {
     std::vector<LocalZActivePair> pair_options;
-    if (definition.visibility.tombstoned || num_physical == 0 ||
-        definition.behavior.distribution == MixedFilamentDistributionMode::Simple ||
-        definition.behavior.gradient.enabled)
+    if (definition.visibility.tombstoned || num_physical == 0 || definition.behavior.gradient.enabled)
         return pair_options;
 
     const std::vector<unsigned int> blend_ids = definition.recipe.blend.component_ids(num_physical);
@@ -2250,6 +2248,61 @@ static std::vector<unsigned int> build_local_z_direct_multicolor_sequence(const 
     }
 
     return sequence;
+}
+
+struct LocalZIndependentDirectPass
+{
+    unsigned int extruder_id { 0 };
+    double       height { 0.0 };
+};
+
+static double local_z_max_layer_height_for_extruder(const PrintConfig &print_config, unsigned int extruder_id)
+{
+    const size_t extruder_idx = extruder_id > 0 ? size_t(extruder_id - 1) : 0;
+    const double configured_max =
+        print_config.max_layer_height.values.empty() ? 0.0 : print_config.max_layer_height.get_at(extruder_idx);
+    const double nozzle_diameter =
+        print_config.nozzle_diameter.values.empty() ? 0.4 : print_config.nozzle_diameter.get_at(extruder_idx);
+    return std::max(0.01, configured_max > EPSILON ? configured_max : 0.75 * nozzle_diameter);
+}
+
+static std::vector<LocalZIndependentDirectPass> build_local_z_independent_direct_cadence(
+    const std::vector<unsigned int> &component_ids,
+    const std::vector<int>          &component_weights,
+    double                           min_sublayer_height,
+    const PrintConfig               &print_config)
+{
+    std::vector<LocalZIndependentDirectPass> cadence;
+    if (component_ids.empty())
+        return cadence;
+
+    int minimum_positive_weight = std::numeric_limits<int>::max();
+    for (size_t idx = 0; idx < component_ids.size(); ++idx) {
+        const int weight = idx < component_weights.size() ? component_weights[idx] : 0;
+        if (component_ids[idx] > 0 && weight > 0)
+            minimum_positive_weight = std::min(minimum_positive_weight, weight);
+    }
+    if (minimum_positive_weight == std::numeric_limits<int>::max())
+        return cadence;
+
+    const double minimum = std::max<double>(0.01, min_sublayer_height);
+    for (size_t idx = 0; idx < component_ids.size(); ++idx) {
+        const int weight = idx < component_weights.size() ? component_weights[idx] : 0;
+        if (component_ids[idx] == 0 || weight <= 0)
+            continue;
+
+        const double total_component_height =
+            minimum * double(weight) / double(minimum_positive_weight);
+        const double max_layer_height =
+            local_z_max_layer_height_for_extruder(print_config, component_ids[idx]);
+        const size_t split_count = std::max<size_t>(
+            1,
+            size_t(std::ceil(total_component_height / max_layer_height - EPSILON)));
+        const double split_height = total_component_height / double(split_count);
+        for (size_t split_idx = 0; split_idx < split_count; ++split_idx)
+            cadence.push_back(LocalZIndependentDirectPass{component_ids[idx], split_height});
+    }
+    return cadence;
 }
 
 static LocalZActivePair derive_local_z_active_pair(const MixedFilamentDefinition     &definition,
@@ -2835,6 +2888,10 @@ static void build_local_z_plan(PrintObject &print_object,
     const bool local_z_direct_multicolor =
         bool_from_full_config(full_cfg, "dithering_local_z_direct_multicolor",
                               print_cfg.dithering_local_z_direct_multicolor.value);
+    const bool local_z_independent_layer_height =
+        local_z_direct_multicolor &&
+        bool_from_full_config(full_cfg, "dithering_local_z_independent_layer_height",
+                              print_cfg.dithering_local_z_independent_layer_height.value);
     coordf_t min_sublayer_height = float_from_full_config(full_cfg, "mixed_filament_height_lower_bound",
                                                           coordf_t(print_cfg.mixed_filament_height_lower_bound.value));
     coordf_t preferred_a = float_from_full_config(full_cfg, "mixed_color_layer_height_a",
@@ -2892,6 +2949,7 @@ static void build_local_z_plan(PrintObject &print_object,
     std::vector<std::vector<unsigned int>> row_direct_component_ids(mixed_definitions.size());
     std::vector<std::vector<int>>          row_direct_component_weights(mixed_definitions.size());
     std::vector<std::vector<double>>       row_direct_component_error_mm(mixed_definitions.size());
+    std::vector<std::vector<LocalZIndependentDirectPass>> row_independent_direct_cadences(mixed_definitions.size());
     std::vector<uint8_t>                   row_uses_direct_multicolor_solver(mixed_definitions.size(), uint8_t(0));
     if (local_z_direct_multicolor && preferred_a <= EPSILON && preferred_b <= EPSILON) {
         for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
@@ -2901,7 +2959,36 @@ static void build_local_z_plan(PrintObject &print_object,
                                                      &row_direct_component_weights[row_idx])) {
                 row_uses_direct_multicolor_solver[row_idx] = uint8_t(1);
                 row_direct_component_error_mm[row_idx].assign(row_direct_component_ids[row_idx].size(), 0.0);
+                row_independent_direct_cadences[row_idx] =
+                    build_local_z_independent_direct_cadence(row_direct_component_ids[row_idx],
+                                                             row_direct_component_weights[row_idx],
+                                                             min_sublayer_height,
+                                                             print_cfg);
             }
+        }
+    }
+    if (local_z_independent_layer_height && preferred_a <= EPSILON && preferred_b <= EPSILON) {
+        for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
+            if (!row_independent_direct_cadences[row_idx].empty() ||
+                row_uses_local_z[row_idx] == 0 ||
+                !local_z_eligible_mixed_definition(mixed_definitions[row_idx]) ||
+                mixed_definitions[row_idx].behavior.gradient.enabled) {
+                continue;
+            }
+
+            const std::vector<unsigned int> component_ids =
+                decode_blend_component_ids(mixed_definitions[row_idx], num_physical);
+            if (component_ids.size() < 2)
+                continue;
+            std::vector<int> component_weights =
+                decode_blend_component_weights(mixed_definitions[row_idx], num_physical, component_ids.size());
+            if (component_weights.empty())
+                component_weights.assign(component_ids.size(), 1);
+            row_independent_direct_cadences[row_idx] =
+                build_local_z_independent_direct_cadence(component_ids,
+                                                         component_weights,
+                                                         min_sublayer_height,
+                                                         print_cfg);
         }
     }
     std::vector<std::vector<LocalZActivePair>> row_pair_cycles(mixed_definitions.size());
@@ -2921,6 +3008,7 @@ static void build_local_z_plan(PrintObject &print_object,
                              << " preferred_a=" << preferred_a
                              << " preferred_b=" << preferred_b
                              << " direct_multicolor=" << (local_z_direct_multicolor ? 1 : 0)
+                             << " independent_layer_height=" << (local_z_independent_layer_height ? 1 : 0)
                              << " global_mode=" << (local_z_mode ? 1 : 0)
                              << " enabled_rows=" << enabled_row_count
                              << " full_domain=" << (local_z_whole_objects ? 1 : 0)
@@ -2948,6 +3036,13 @@ static void build_local_z_plan(PrintObject &print_object,
     constexpr size_t LOCAL_Z_MAX_ISOLATED_MASK_COMPONENTS = 24;
     constexpr size_t LOCAL_Z_MAX_ISOLATED_MASK_VERTICES = 1200;
     constexpr bool   LOCAL_Z_SHARED_FALLBACK_ENABLED = false;
+    struct IndependentDirectCadenceState {
+        bool   active { false };
+        double z_cursor { 0.0 };
+        size_t cadence_index { 0 };
+        size_t emitted_passes { 0 };
+    };
+    std::vector<IndependentDirectCadenceState> row_independent_direct_states(mixed_definitions.size());
     // Keep local-Z cadence isolated per mixed row so independent painted zones
     // do not influence each other when resolving fallback cadence.
     std::vector<int> row_cadence_index(mixed_definitions.size(), 0);
@@ -3093,6 +3188,22 @@ static void build_local_z_plan(PrintObject &print_object,
                                                         row_direct_component_weights[row_idx],
                                                         pass_heights,
                                                         row_direct_component_error_mm[row_idx]);
+    };
+
+    auto row_is_active_on_layer = [&](size_t row_idx, size_t layer_id) {
+        if (row_idx >= mixed_definitions.size() || layer_id >= segmentation.size())
+            return false;
+        for (size_t channel_idx = 0; channel_idx < segmentation[layer_id].size(); ++channel_idx) {
+            if (segmentation[layer_id][channel_idx].empty())
+                continue;
+            const unsigned int state_id = segmentation_channel_filament_id(channel_idx);
+            if (!mixed_mgr.is_mixed(state_id, num_physical))
+                continue;
+            const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+            if (mixed_idx >= 0 && size_t(mixed_idx) == row_idx)
+                return true;
+        }
+        return false;
     };
 
     for (size_t layer_id = 0; layer_id < print_object.layer_count(); ++layer_id) {
@@ -3313,6 +3424,161 @@ static void build_local_z_plan(PrintObject &print_object,
                         active_row_mask_vertices += hole.points.size();
                 }
             }
+
+        bool independent_direct_rows_eligible = active_mixed_definitions > 0;
+        for (size_t row_idx = 0; row_idx < row_active_this_layer.size(); ++row_idx) {
+            if (row_active_this_layer[row_idx] == 0)
+                continue;
+            independent_direct_rows_eligible =
+                independent_direct_rows_eligible &&
+                row_idx < row_independent_direct_cadences.size() &&
+                !row_independent_direct_cadences[row_idx].empty();
+        }
+        const bool independent_direct_interval =
+            local_z_independent_layer_height &&
+            interval.has_mixed_paint &&
+            subdivide_this_layer &&
+            independent_direct_rows_eligible;
+
+        if (independent_direct_interval) {
+            interval.independent_layer_height = true;
+            interval.managed_masks            = mixed_masks;
+            ++split_intervals;
+
+            std::vector<SubLayerPlan> independent_plans;
+            independent_plans.reserve(std::max<size_t>(2, active_mixed_definitions * 2));
+            for (size_t row_idx = 0; row_idx < row_active_this_layer.size(); ++row_idx) {
+                if (row_active_this_layer[row_idx] == 0 || row_state_masks[row_idx].empty())
+                    continue;
+
+                IndependentDirectCadenceState &state = row_independent_direct_states[row_idx];
+                const std::vector<LocalZIndependentDirectPass> &cadence = row_independent_direct_cadences[row_idx];
+                if (!state.active || row_active_prev_layer[row_idx] == 0 ||
+                    state.z_cursor > interval.z_hi + EPSILON) {
+                    state.active         = true;
+                    state.z_cursor       = interval.z_lo;
+                    state.cadence_index  = 0;
+                    state.emitted_passes = 0;
+                }
+
+                auto append_independent_pass = [&](double z_hi, double flow_height, unsigned int target_extruder) {
+                    if (flow_height <= EPSILON || target_extruder == 0 || target_extruder > num_physical)
+                        return;
+
+                    SubLayerPlan plan;
+                    plan.layer_id         = layer_id;
+                    plan.pass_index       = independent_plans.size();
+                    plan.split_interval   = true;
+                    plan.z_lo             = z_hi - flow_height;
+                    plan.z_hi             = z_hi;
+                    plan.print_z          = z_hi;
+                    plan.flow_height      = flow_height;
+                    plan.dependency_group = row_idx + 1;
+                    plan.dependency_order = state.emitted_passes++;
+                    plan.painted_masks_by_extruder.assign(num_physical, ExPolygons());
+                    plan.fixed_painted_masks_by_extruder.assign(num_physical, ExPolygons());
+                    append(plan.painted_masks_by_extruder[target_extruder - 1], row_state_masks[row_idx]);
+                    independent_plans.emplace_back(std::move(plan));
+                    ++split_passes_total;
+                    ++split_passes_with_painted_masks;
+                    ++forced_height_resolve_calls;
+                };
+
+                while (true) {
+                    const LocalZIndependentDirectPass &cadence_pass = cadence[state.cadence_index % cadence.size()];
+                    const double next_z = state.z_cursor + cadence_pass.height;
+                    if (next_z > interval.z_hi + EPSILON)
+                        break;
+
+                    append_independent_pass(std::min(next_z, interval.z_hi),
+                                            cadence_pass.height,
+                                            cadence_pass.extruder_id);
+                    state.z_cursor = next_z;
+                    ++state.cadence_index;
+                    if (state.z_cursor >= interval.z_hi - EPSILON)
+                        break;
+                }
+
+                const bool continues_next_layer =
+                    layer_id + 1 < print_object.layer_count() &&
+                    mixed_filament_local_z_should_subdivide_layer(layer_id + 1,
+                                                                  local_z_whole_objects,
+                                                                  local_z_preserve_first_layer) &&
+                    row_is_active_on_layer(row_idx, layer_id + 1);
+                if (!continues_next_layer) {
+                    const double remaining_height = interval.z_hi - state.z_cursor;
+                    if (remaining_height > EPSILON) {
+                        const LocalZIndependentDirectPass &cadence_pass = cadence[state.cadence_index % cadence.size()];
+                        append_independent_pass(interval.z_hi, remaining_height, cadence_pass.extruder_id);
+                    }
+                    state.active = false;
+                }
+            }
+
+            if (local_z_whole_objects && !fixed_state_masks_union.empty()) {
+                const size_t fixed_dependency_group = mixed_definitions.size() + 1;
+                for (size_t extruder_idx = 0; extruder_idx < fixed_state_masks_by_extruder.size(); ++extruder_idx) {
+                    if (fixed_state_masks_by_extruder[extruder_idx].empty())
+                        continue;
+                    SubLayerPlan plan;
+                    plan.layer_id         = layer_id;
+                    plan.pass_index       = independent_plans.size();
+                    plan.split_interval   = true;
+                    plan.z_lo             = interval.z_lo;
+                    plan.z_hi             = interval.z_hi;
+                    plan.print_z          = interval.z_hi;
+                    plan.flow_height      = interval.base_height;
+                    plan.dependency_group = fixed_dependency_group;
+                    plan.dependency_order = extruder_idx;
+                    plan.painted_masks_by_extruder.assign(num_physical, ExPolygons());
+                    plan.fixed_painted_masks_by_extruder.assign(num_physical, ExPolygons());
+                    append(plan.fixed_painted_masks_by_extruder[extruder_idx], fixed_state_masks_by_extruder[extruder_idx]);
+                    independent_plans.emplace_back(std::move(plan));
+                    ++split_passes_total;
+                    ++split_passes_with_painted_masks;
+                }
+            }
+
+            std::sort(independent_plans.begin(), independent_plans.end(), [](const SubLayerPlan &lhs, const SubLayerPlan &rhs) {
+                if (std::abs(lhs.print_z - rhs.print_z) > EPSILON)
+                    return lhs.print_z < rhs.print_z;
+                if (lhs.dependency_group != rhs.dependency_group)
+                    return lhs.dependency_group < rhs.dependency_group;
+                return lhs.dependency_order < rhs.dependency_order;
+            });
+
+            double min_pass_height = interval.base_height;
+            double max_pass_height = 0.0;
+            for (size_t pass_idx = 0; pass_idx < independent_plans.size(); ++pass_idx) {
+                SubLayerPlan &plan = independent_plans[pass_idx];
+                plan.pass_index = pass_idx;
+                min_pass_height = std::min(min_pass_height, plan.flow_height);
+                max_pass_height = std::max(max_pass_height, plan.flow_height);
+                if (pass_idx + 1 == independent_plans.size())
+                    plan.base_masks = base_masks;
+                plans.emplace_back(std::move(plan));
+                ++interval.sublayer_count;
+                ++total_generated_sublayer_cnt;
+            }
+            interval.sublayer_height = independent_plans.empty() ? interval.base_height : min_pass_height;
+
+            BOOST_LOG_TRIVIAL(debug) << "Local-Z independent interval"
+                                     << " object=" << object_name
+                                     << " layer_id=" << layer_id
+                                     << " base_height=" << interval.base_height
+                                     << " pass_count=" << interval.sublayer_count
+                                     << " pass_min_height=" << (interval.sublayer_count == 0 ? 0.0 : min_pass_height)
+                                     << " pass_max_height=" << max_pass_height
+                                     << " active_mixed_definitions=" << active_mixed_definitions
+                                     << " managed_mask_count=" << interval.managed_masks.size();
+
+            row_active_prev_layer = row_active_this_layer;
+            intervals.emplace_back(std::move(interval));
+            continue;
+        }
+
+        for (IndependentDirectCadenceState &state : row_independent_direct_states)
+            state.active = false;
 
         std::vector<std::vector<double>> isolated_row_pass_heights(mixed_definitions.size());
         bool isolated_multi_row_mode = false;

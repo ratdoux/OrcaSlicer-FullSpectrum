@@ -10,6 +10,7 @@
 #include "libslic3r/ImageMap/Sampling.hpp"
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Model.hpp"
+#include "libslic3r/ObjColorUtils.hpp"
 #include "libslic3r/PNGReadWrite.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 
@@ -21,6 +22,47 @@
 #include <set>
 
 using namespace Slic3r;
+
+TEST_CASE("OBJ color quantization bounds training while classifying every source region", "[ObjImageMap][Quantization]")
+{
+    QuantKMeans quantizer;
+
+    cv::Mat rare_color_input(QuantKMeans::MAX_TRAINING_SAMPLES + 4096, 1, CV_8UC3,
+                             cv::Scalar(255, 0, 0));
+    rare_color_input.at<cv::Vec3b>(rare_color_input.rows - 1, 0) = cv::Vec3b(0, 255, 0);
+    const cv::Mat training = quantizer.bounded_training_sample(rare_color_input,
+                                                               QuantKMeans::MAX_TRAINING_SAMPLES);
+    CHECK(training.rows <= QuantKMeans::MAX_TRAINING_SAMPLES);
+    CHECK(std::any_of(training.begin<cv::Vec3b>(), training.end<cv::Vec3b>(),
+                      [](const cv::Vec3b& color) { return color == cv::Vec3b(0, 255, 0); }));
+
+    const std::array<std::array<float, 4>, 4> palette{{
+        {1.f, 0.f, 0.f, 1.f},
+        {0.f, 1.f, 0.f, 1.f},
+        {0.f, 0.f, 1.f, 1.f},
+        {1.f, 1.f, 1.f, 1.f},
+    }};
+    std::vector<std::array<float, 4>> source_colors(size_t(QuantKMeans::MAX_TRAINING_SAMPLES) + 4096);
+    for (size_t idx = 0; idx < source_colors.size(); ++idx)
+        source_colors[idx] = palette[idx % palette.size()];
+
+    std::vector<std::array<float, 4>> cluster_results;
+    std::vector<int>                  labels;
+    std::vector<int>                  progress;
+    REQUIRE(quantizer.apply(source_colors, cluster_results, labels, 4, 4, 2,
+                            [&progress](int current, int) {
+                                progress.push_back(current);
+                                return true;
+                            }));
+    CHECK(cluster_results.size() == palette.size());
+    CHECK(labels.size() == source_colors.size());
+    CHECK(std::all_of(labels.begin(), labels.end(),
+                      [&cluster_results](int label) {
+                          return label >= 0 && size_t(label) < cluster_results.size();
+                      }));
+    REQUIRE_FALSE(progress.empty());
+    CHECK(progress.back() == 100);
+}
 
 TEST_CASE("Continuous image-map colors solve physical filament weights without a display palette", "[ImageMap][ColorSolver]")
 {
@@ -561,6 +603,8 @@ TEST_CASE("V2 dense source preview produces a genuinely bounded LOD", "[ImageMap
                                                                                          RGBA{1.f, 1.f, 1.f, 1.f}, options);
     REQUIRE_FALSE(preview.indices.empty());
     CHECK(preview.source_triangle_count == mesh->its.indices.size());
+    CHECK(preview.lod_pass_count >= 1);
+    CHECK(preview.lod_pass_count <= 4);
     CHECK(preview.sampled_leaf_count <= options.max_leaf_triangles);
     CHECK(preview.indices.size() == preview.sampled_leaf_count * 3);
     CHECK(preview.vertices.size() <= preview.sampled_leaf_count * 3);

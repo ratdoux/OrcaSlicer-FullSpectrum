@@ -7716,24 +7716,21 @@ void GLCanvas3D::_render_overlays()
 
 void GLCanvas3D::_render_source_color_preview_progress()
 {
-    if (m_canvas_type != ECanvasType::CanvasView3D)
-        return;
-
     const std::optional<float> progress = m_volumes.source_color_preview_progress();
     if (!progress)
         return;
 
-    const float  window_width = std::max(260.f, ImGui::GetFontSize() * 18.f);
+    const float  window_width = std::max(320.f, ImGui::GetFontSize() * 22.f);
     const ImVec2 display_size = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(display_size.x * 0.5f, ImGui::GetFontSize() * 5.f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.f));
+    ImGui::SetNextWindowPos(ImVec2(display_size.x * 0.5f, display_size.y - ImGui::GetFontSize() * 6.f),
+                            ImGuiCond_Always, ImVec2(0.5f, 1.f));
     ImGui::SetNextWindowSize(ImVec2(window_width, 0.f));
-    ImGui::SetNextWindowBgAlpha(0.92f);
+    ImGui::SetNextWindowBgAlpha(0.97f);
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
-                                   ImGuiWindowFlags_AlwaysAutoResize;
+                                   ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##source_color_preview_progress", nullptr, flags)) {
-        ImGui::TextUnformatted(_u8L("Preparing color preview").c_str());
+        ImGui::TextUnformatted(_u8L("Computing printable color preview...").c_str());
         const int percent = int(std::lround(std::clamp(*progress, 0.f, 1.f) * 100.f));
         const std::string overlay = std::to_string(percent) + "%";
         ImGui::ProgressBar(std::clamp(*progress, 0.f, 1.f), ImVec2(window_width - ImGui::GetStyle().WindowPadding.x * 2.f, 0.f),
@@ -7743,7 +7740,7 @@ void GLCanvas3D::_render_source_color_preview_progress()
 
     // Keep polling the worker without making the normal idle loop render at
     // full speed. The model remains interactive between these frames.
-    schedule_extra_frame(100);
+    schedule_extra_frame(50);
 }
 
 void GLCanvas3D::_render_style_editor()
