@@ -472,8 +472,9 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
         m_warning_text            = new wxStaticText(m_page_simple, wxID_ANY, "");
         if (!m_import_context.warning_message.empty())
             m_warning_text->SetLabelText(wxString::FromUTF8(m_import_context.warning_message));
-        warning_sizer->Add(m_warning_text, 0, wxALIGN_CENTER | wxALL, 0);
-        m_sizer_simple->Add(warning_sizer, 0, wxEXPAND | wxLEFT, FromDIP(30));
+        m_warning_text->Wrap(FromDIP(PANEL_WIDTH - 40));
+        warning_sizer->Add(m_warning_text, 1, wxEXPAND | wxALL, 0);
+        m_sizer_simple->Add(warning_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(30));
 
         m_sizer_simple->AddSpacer(10);
     }
@@ -1500,6 +1501,10 @@ void ObjColorPanel::update_image_map_mode_ui()
         } else {
             m_warning_text->SetLabelText(wxEmptyString);
         }
+        // wxStaticText reports the unwrapped label as its best width. Without
+        // an explicit wrap, the adaptive summary makes the top-level Fit()
+        // expand the import dialog across the screen.
+        m_warning_text->Wrap(FromDIP(PANEL_WIDTH - 40));
     }
 
     m_page_simple->Layout();

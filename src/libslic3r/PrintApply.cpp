@@ -570,14 +570,18 @@ static inline bool trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(const
     return std::abs(d * d) < EPSILON * lx2 * ly2;
 }
 
-static PrintObjectRegions::BoundingBox transformed_its_bbox2d(const indexed_triangle_set &its, const Transform3f &m, float offset)
+static PrintObjectRegions::BoundingBox transformed_mesh_bbox2d(const ModelVolume& volume, const Transform3f& m, float offset)
 {
+    // A convex hull has exactly the same extrema as its source mesh. Using it
+    // here avoids a full triangle walk in synchronous Print::apply() whenever
+    // a dense object is reoriented.
+    const TriangleMesh& hull = volume.get_convex_hull();
+    const indexed_triangle_set& its = hull.its.indices.empty() ? volume.mesh().its : hull.its;
     assert(! its.indices.empty());
 
-    PrintObjectRegions::BoundingBox bbox(m * its.vertices[its.indices.front()(0)]);
-    for (const stl_triangle_vertex_indices &tri : its.indices)
-        for (int i = 0; i < 3; ++ i)
-            bbox.extend(m * its.vertices[tri(i)]);
+    PrintObjectRegions::BoundingBox bbox(m * its.vertices.front());
+    for (const Vec3f& vertex : its.vertices)
+        bbox.extend(m * vertex);
     bbox.min() -= Vec3f(offset, offset, float(EPSILON));
     bbox.max() += Vec3f(offset, offset, float(EPSILON));
     return bbox;
@@ -933,8 +937,9 @@ void update_volume_bboxes(
                     if (it != volumes_old.end() && it->volume_id == model_volume->id())
                         layer_range.volumes.emplace_back(*it);
                 } else
-                    layer_range.volumes.push_back({ model_volume->id(),
-                        transformed_its_bbox2d(model_volume->mesh().its, trafo_for_bbox(object_trafo, model_volume->get_matrix()), offset) });
+                    layer_range.volumes.push_back(
+                        {model_volume->id(),
+                         transformed_mesh_bbox2d(*model_volume, trafo_for_bbox(object_trafo, model_volume->get_matrix()), offset)});
             }
     } else {
         std::vector<std::vector<PrintObjectRegions::VolumeExtents>> volumes_old;
@@ -1676,7 +1681,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 	        						           l->get_transformation().get_matrix().isApprox(r->get_transformation().get_matrix()); })) {
 	        	// If some of the instances changed, the bounding box of the updated ModelObject is likely no more valid.
 	        	// This is safe as the ModelObject's bounding box is only accessed from this function, which is called from the main thread only.
-	 			model_object.invalidate_bounding_box();
+                model_object.invalidate_instance_bounding_box();
 	        	// Synchronize the content of instances.
 	        	auto new_instance = model_object_new.instances.begin();
 				for (auto old_instance = model_object.instances.begin(); old_instance != model_object.instances.end(); ++ old_instance, ++ new_instance) {

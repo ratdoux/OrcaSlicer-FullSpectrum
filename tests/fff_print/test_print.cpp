@@ -34,6 +34,12 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
         expected_size_mm = 19.8;
         expected_first_layer_size_mm = 20.2;
     }
+    SECTION("adaptive localized cycles modulate their local cycle envelope")
+    {
+        render_mode                  = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+        expected_size_mm             = 19.8;
+        expected_first_layer_size_mm = 20.2;
+    }
 
     Model model;
     ModelObject *model_object = model.add_object();

@@ -451,11 +451,24 @@ public:
     double                  max_z() const;
 
     void invalidate_bounding_box() {
+        invalidate_instance_bounding_box();
+        m_raw_mesh_bounding_box_valid   = false;
+    }
+
+    // Instance rotation/scaling changes transformed bounds, but never changes
+    // the raw, volume-local mesh bounds.
+    void invalidate_instance_bounding_box() {
         m_bounding_box_approx_valid     = false;
         m_bounding_box_exact_valid      = false;
         m_min_max_z_valid               = false;
         m_raw_bounding_box_valid        = false;
-        m_raw_mesh_bounding_box_valid   = false;
+    }
+
+    // An instance translation does not affect either raw bounding-box cache.
+    void invalidate_instance_translation_bounding_box() {
+        m_bounding_box_approx_valid = false;
+        m_bounding_box_exact_valid  = false;
+        m_min_max_z_valid           = false;
     }
 
     // A mesh containing all transformed instances of this object.

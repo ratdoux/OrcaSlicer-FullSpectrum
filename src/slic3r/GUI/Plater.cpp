@@ -7345,6 +7345,7 @@ struct Plater::priv
     std::string                 delayed_error_message;
 
     wxTimer                     background_process_timer;
+    bool                        image_map_prepare_progress_pending{false};
 
     std::string                 label_btn_export;
     std::string                 label_btn_send;
@@ -7942,8 +7943,32 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     this->background_process_timer.SetOwner(this->q, 0);
     this->q->Bind(wxEVT_TIMER, [this](wxTimerEvent &evt)
     {
-        if (!this->suppressed_backround_processing_update)
-            this->update_restart_background_process(false, false);
+        if (this->suppressed_backround_processing_update)
+            return;
+
+        const bool has_image_map = std::any_of(model.objects.begin(), model.objects.end(), [](const ModelObject* object) {
+            return object != nullptr &&
+                   std::any_of(object->volumes.begin(), object->volumes.end(), [](const ModelVolume* volume) {
+                       return volume != nullptr && volume->has_image_map_data();
+                   });
+        });
+        if (has_image_map && !image_map_prepare_progress_pending) {
+            // Print::apply() runs on the UI thread before background slicing
+            // can report its own percentages. Give the notification one event
+            // turn to paint so dense image-map bounds/validation never look
+            // like an unexplained freeze.
+            image_map_prepare_progress_pending = true;
+            notification_manager->set_slicing_progress_began();
+            notification_manager->set_slicing_progress_percentage(_u8L("Preparing image-map slicing..."), 0.01f);
+            view3D->get_canvas3d()->schedule_extra_frame(0);
+            background_process_timer.Start(75, wxTIMER_ONE_SHOT);
+            return;
+        }
+
+        image_map_prepare_progress_pending = false;
+        const unsigned int state = this->update_restart_background_process(false, false);
+        if ((state & UPDATE_BACKGROUND_PROCESS_RESTART) == 0 && !background_process.running())
+            notification_manager->set_slicing_progress_hidden();
     });
 
     update();

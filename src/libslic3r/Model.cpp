@@ -1621,7 +1621,10 @@ void ModelObject::update_min_max_z()
                 const double shift_z = m.translation().z();
                 double this_min_z = std::numeric_limits<double>::max();
                 double this_max_z = - std::numeric_limits<double>::max();
-                for (const Vec3f &p : v->mesh().its.vertices) {
+                const TriangleMesh& hull = v->get_convex_hull();
+                const indexed_triangle_set& bounds_its =
+                    hull.its.indices.empty() ? v->mesh().its : hull.its;
+                for (const Vec3f &p : bounds_its.vertices) {
                     double z = row_z.dot(p.cast<double>());
                     this_min_z = std::min(this_min_z, z);
                     this_max_z = std::max(this_max_z, z);
@@ -1704,8 +1707,11 @@ const BoundingBoxf3& ModelObject::raw_mesh_bounding_box() const
         m_raw_mesh_bounding_box_valid = true;
         m_raw_mesh_bounding_box.reset();
         for (const ModelVolume *v : this->volumes)
-            if (v->is_model_part())
-                m_raw_mesh_bounding_box.merge(v->mesh().transformed_bounding_box(v->get_matrix()));
+            if (v->is_model_part()) {
+                const TriangleMesh& hull = v->get_convex_hull();
+                const TriangleMesh& bounds_mesh = hull.its.indices.empty() ? v->mesh() : hull;
+                m_raw_mesh_bounding_box.merge(bounds_mesh.transformed_bounding_box(v->get_matrix()));
+            }
     }
     return m_raw_mesh_bounding_box;
 }
@@ -1730,8 +1736,11 @@ const BoundingBoxf3& ModelObject::raw_bounding_box() const
 
         const Transform3d inst_matrix = this->instances.front()->get_transformation().get_matrix_no_offset();
         for (const ModelVolume *v : this->volumes)
-            if (v->is_model_part())
-                m_raw_bounding_box.merge(v->mesh().transformed_bounding_box(inst_matrix * v->get_matrix()));
+            if (v->is_model_part()) {
+                const TriangleMesh& hull = v->get_convex_hull();
+                const TriangleMesh& bounds_mesh = hull.its.indices.empty() ? v->mesh() : hull;
+                m_raw_bounding_box.merge(bounds_mesh.transformed_bounding_box(inst_matrix * v->get_matrix()));
+            }
     }
 	return m_raw_bounding_box;
 }
@@ -1749,8 +1758,11 @@ BoundingBoxf3 ModelObject::instance_bounding_box(const ModelInstance &instance, 
         instance.get_transformation().get_matrix();
 
     for (ModelVolume *v : this->volumes) {
-        if (v->is_model_part())
-            bb.merge(v->mesh().transformed_bounding_box(inst_matrix * v->get_matrix()));
+        if (v->is_model_part()) {
+            const TriangleMesh& hull = v->get_convex_hull();
+            const TriangleMesh& bounds_mesh = hull.its.indices.empty() ? v->mesh() : hull;
+            bb.merge(bounds_mesh.transformed_bounding_box(inst_matrix * v->get_matrix()));
+        }
     }
     return bb;
 }
@@ -2391,21 +2403,13 @@ double ModelObject::get_instance_min_z(size_t instance_idx) const
 
         const Transform3d mv = mi * v->get_matrix();
         const TriangleMesh& hull = v->get_convex_hull();
-        //BBS: in some case the convex hull is empty due to the qhull algo
-        //use the original mesh instead
-        //TODO: when the vertex's x/y/z are all the same, the run_qhull can not get correct result
-        //we need to find another algo then
-        if (hull.its.indices.size() == 0) {
-            const TriangleMesh& mesh = v->mesh();
-            for (const stl_triangle_vertex_indices& facet : mesh.its.indices)
-                for (int i = 0; i < 3; ++i)
-                    min_z = std::min(min_z, (mv * mesh.its.vertices[facet[i]].cast<double>()).z());
-        }
-        else {
-            for (const stl_triangle_vertex_indices& facet : hull.its.indices)
-                for (int i = 0; i < 3; ++i)
-                    min_z = std::min(min_z, (mv * hull.its.vertices[facet[i]].cast<double>()).z());
-        }
+        // BBS: in some cases qhull cannot produce a hull. Falling back to the
+        // source vertices is still exact, and iterating vertices avoids
+        // visiting the same point once per adjacent facet.
+        const indexed_triangle_set& bounds_its =
+            hull.its.indices.empty() ? v->mesh().its : hull.its;
+        for (const Vec3f& vertex : bounds_its.vertices)
+            min_z = std::min(min_z, (mv * vertex.cast<double>()).z());
     }
 
     //BBS: add some logic to avoid wrong compute for min_z
@@ -2427,9 +2431,10 @@ double ModelObject::get_instance_max_z(size_t instance_idx) const
 
         const Transform3d mv = mi * v->get_matrix();
         const TriangleMesh& hull = v->get_convex_hull();
-        for (const stl_triangle_vertex_indices& facet : hull.its.indices)
-            for (int i = 0; i < 3; ++i)
-                max_z = std::max(max_z, (mv * hull.its.vertices[facet[i]].cast<double>()).z());
+        const indexed_triangle_set& bounds_its =
+            hull.its.indices.empty() ? v->mesh().its : hull.its;
+        for (const Vec3f& vertex : bounds_its.vertices)
+            max_z = std::max(max_z, (mv * vertex.cast<double>()).z());
     }
 
     return max_z + inst->get_offset(Z);
@@ -3694,8 +3699,15 @@ ModelInstanceEPrintVolumeState ModelInstance::calc_print_volume_state(const Buil
             BuildVolume::ObjectState state;
             if (!build_volume.bounding_volume2d().inflated(BuildVolume::SceneEpsilon).overlap(bbox2d))
                 state = BuildVolume::ObjectState::Outside;
-            else
-                state = build_volume.object_state(vol->mesh().its, matrix.cast<float>(), true /* may be below print bed */);
+            else {
+                // Plate-membership tests only need the object's outer envelope.
+                // The 3D scene uses this same convex representation; avoiding
+                // the source triangles keeps dense image-map meshes responsive
+                // when an instance is moved or reoriented.
+                const TriangleMesh& hull = vol->get_convex_hull();
+                const indexed_triangle_set& bounds_its = hull.its.indices.empty() ? vol->mesh().its : hull.its;
+                state = build_volume.object_state(bounds_its, matrix.cast<float>(), true /* may be below print bed */);
+            }
             if (state == BuildVolume::ObjectState::Inside)
                 // Volume is completely inside.
                 inside_outside |= INSIDE;

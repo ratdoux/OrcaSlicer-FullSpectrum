@@ -146,7 +146,10 @@ struct SourceColorPreviewJob
 
 namespace {
 
-constexpr size_t k_source_color_preview_triangle_cap = 80'000;
+// Preserve enough facial/texture detail for large scanned OBJs. Rasterization
+// is bounded, cancellable and runs off the UI thread, so this can be materially
+// higher than the old emergency cap without bringing back transform stalls.
+constexpr size_t k_source_color_preview_triangle_cap = 200'000;
 constexpr size_t k_source_color_preview_cache_cap    = 65'536;
 
 struct SourceColorPreviewAssignment

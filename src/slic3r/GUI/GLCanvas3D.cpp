@@ -4791,7 +4791,10 @@ void GLCanvas3D::do_move(const std::string& snapshot_type)
                 }
 
                 object_moved = true;
-                model_object->invalidate_bounding_box();
+                if (selection_mode == Selection::Instance)
+                    model_object->invalidate_instance_translation_bounding_box();
+                else
+                    model_object->invalidate_bounding_box();
             }
         }
         else if (object_idx >= 1000 && object_idx < 1000 + n_plates) {
@@ -4908,7 +4911,10 @@ void GLCanvas3D::do_rotate(const std::string& snapshot_type)
                     Slic3r::save_object_mesh(*model_object);
                 }
             }
-            model_object->invalidate_bounding_box();
+            if (selection_mode == Selection::Instance)
+                model_object->invalidate_instance_bounding_box();
+            else
+                model_object->invalidate_bounding_box();
         }
     }
 
@@ -4993,7 +4999,10 @@ void GLCanvas3D::do_scale(const std::string& snapshot_type)
                     Slic3r::save_object_mesh(*model_object);
                 }
             }
-            model_object->invalidate_bounding_box();
+            if (selection_mode == Selection::Instance)
+                model_object->invalidate_instance_bounding_box();
+            else
+                model_object->invalidate_bounding_box();
         }
     }
 
@@ -5096,7 +5105,10 @@ void GLCanvas3D::do_mirror(const std::string& snapshot_type)
                 }
             }
 
-            model_object->invalidate_bounding_box();
+            if (selection_mode == Selection::Instance)
+                model_object->invalidate_instance_bounding_box();
+            else
+                model_object->invalidate_bounding_box();
         }
     }
 
