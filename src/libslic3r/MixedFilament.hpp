@@ -315,6 +315,7 @@ struct MixedFilamentPreviewSettings
     bool   local_z_mode { false };
     bool   local_z_direct_multicolor { false };
     size_t wall_loops { 1 };
+    double gradient_nominal_layer_height { 0.2 };
 };
 
 struct MixedFilamentDisplayContext

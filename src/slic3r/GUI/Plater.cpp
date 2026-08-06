@@ -4282,11 +4282,15 @@ std::string MixedFilamentConfigPanel::summarize_local_z_breakdown(const MixedFil
         std::ostringstream ss;
         ss << "Local-Z pair split: requested F" << component_a << "/F" << component_b
            << ' ' << pct_a << '/' << pct_b;
-        if (preview_settings.local_z_mode) {
-            const std::vector<double> effective_passes = build_local_z_preview_pass_heights(preview_settings.nominal_layer_height,
+        if (mixed_filament_definition_uses_local_z(definition, preview_settings.local_z_mode)) {
+            const double preview_layer_height = definition.behavior.gradient.enabled ?
+                preview_settings.gradient_nominal_layer_height : preview_settings.nominal_layer_height;
+            const double preferred_a_height = definition.behavior.gradient.enabled ? 0.0 : preview_settings.preferred_a_height;
+            const double preferred_b_height = definition.behavior.gradient.enabled ? 0.0 : preview_settings.preferred_b_height;
+            const std::vector<double> effective_passes = build_local_z_preview_pass_heights(preview_layer_height,
                                                                                             preview_settings.min_sublayer_height,
-                                                                                            preview_settings.preferred_a_height,
-                                                                                            preview_settings.preferred_b_height,
+                                                                                            preferred_a_height,
+                                                                                            preferred_b_height,
                                                                                             pct_b,
                                                                                             0);
             if (!effective_passes.empty()) {
@@ -5575,6 +5579,9 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
     if (print_cfg && print_cfg->has("layer_height"))
         nominal_layer_height = float(print_cfg->opt_float("layer_height"));
     nominal_layer_height = std::max(0.01f, nominal_layer_height);
+    const float gradient_nominal_layer_height = std::max(
+        2.f * min_sublayer_height,
+        get_mixed_float("dithering_local_z_gradient_layer_height", 0.20f));
     size_t wall_loops = 1;
     if (print_cfg && print_cfg->has("wall_loops"))
         wall_loops = std::max<size_t>(1, size_t(std::max(1, print_cfg->opt_int("wall_loops"))));
@@ -5594,7 +5601,8 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
         preferred_local_z_b,
         local_z_mode,
         local_z_direct_multicolor,
-        wall_loops
+        wall_loops,
+        gradient_nominal_layer_height
     };
     const MixedFilamentDisplayContext display_context {
         num_physical,
@@ -8951,6 +8959,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                     "dithering_local_z_whole_objects",
                                     "dithering_local_z_preserve_first_layer",
                                     "dithering_local_z_direct_multicolor",
+                                    "dithering_local_z_gradient_layer_height",
                                     "dithering_step_painted_zones_only"
                                 };
                                 preset_bundle->project_config.apply_only(config_loaded, imported_project_option_keys, true);

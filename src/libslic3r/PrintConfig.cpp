@@ -4418,6 +4418,19 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
+    def = this->add("dithering_local_z_gradient_layer_height", coFloat);
+    def->label = L("Gradient Local-Z layer height");
+    def->category = L("Others");
+    def->tooltip = L("Independent nominal height used to build gradient Local-Z A/B cycles. "
+                     "This does not change the object's normal slicing layer height. Gradient passes may span multiple normal layers, "
+                     "so gradients continue to work even when the normal layer height is too small to contain two Local-Z passes.\n\n"
+                     "The effective value is automatically raised when necessary so two active components can each satisfy the "
+                     "Local-Z minimum sublayer height.");
+    def->sidetext = "mm";
+    def->min = 0.01;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.20));
+
     def = this->add("dithering_local_z_gradient_overlap_window", coPercent);
     def->label = L("Gradient overlap window");
     def->category = L("Others");

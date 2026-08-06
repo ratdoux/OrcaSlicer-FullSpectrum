@@ -3707,6 +3707,53 @@ static inline void append_clipped_path(const ExtrusionPath& src_path,
     }
 }
 
+static inline bool local_z_clipping_keeps_path_complete(const ExtrusionPath& src_path,
+                                                        const ExPolygons*    include_masks,
+                                                        const ExPolygons*    exclude_masks)
+{
+    if (include_masks != nullptr && !include_masks->empty()) {
+        const Polylines outside = diff_pl(Polylines{src_path.polyline}, *include_masks);
+        if (std::any_of(outside.begin(), outside.end(), [](const Polyline& segment) { return segment.is_valid(); }))
+            return false;
+    }
+
+    if (exclude_masks != nullptr && !exclude_masks->empty()) {
+        const Polylines excluded = intersection_pl(Polylines{src_path.polyline}, *exclude_masks);
+        if (std::any_of(excluded.begin(), excluded.end(), [](const Polyline& segment) { return segment.is_valid(); }))
+            return false;
+    }
+
+    return true;
+}
+
+static inline void append_clipped_loop(const ExtrusionLoop&       src_loop,
+                                       const ExPolygons*          include_masks,
+                                       const ExPolygons*          exclude_masks,
+                                       const double               flow_height_override,
+                                       ExtrusionEntityCollection& dst)
+{
+    if (src_loop.paths.empty())
+        return;
+
+    const bool loop_is_complete = std::all_of(src_loop.paths.begin(), src_loop.paths.end(),
+                                              [include_masks, exclude_masks](const ExtrusionPath& path) {
+                                                  return local_z_clipping_keeps_path_complete(path, include_masks, exclude_masks);
+                                              });
+
+    if (loop_is_complete) {
+        ExtrusionLoop preserved_loop(src_loop);
+        for (ExtrusionPath& path : preserved_loop.paths)
+            apply_local_z_flow_height_override(path, flow_height_override);
+        dst.append(std::move(preserved_loop));
+        return;
+    }
+
+    // Once a mask cuts a loop, the resulting open path endpoints are physical
+    // material boundaries and cannot be moved by the regular seam placer.
+    for (const ExtrusionPath& path : src_loop.paths)
+        append_clipped_path(path, include_masks, exclude_masks, flow_height_override, dst);
+}
+
 static inline ExPolygons local_z_compensate_masks(const ExPolygons& src_masks,
                                                   const float       delta_scaled,
                                                   const bool        fallback_to_source)
@@ -3831,8 +3878,7 @@ static std::unique_ptr<ExtrusionEntityCollection> clip_extrusion_collection_for_
             for (const ExtrusionPath& path : multipath->paths)
                 append_clipped_path(path, include_masks, exclude_masks, flow_height_override, *out);
         } else if (const auto* loop = dynamic_cast<const ExtrusionLoop*>(entity)) {
-            for (const ExtrusionPath& path : loop->paths)
-                append_clipped_path(path, include_masks, exclude_masks, flow_height_override, *out);
+            append_clipped_loop(*loop, include_masks, exclude_masks, flow_height_override, *out);
         } else {
             // Fallback for unknown entity subclasses: keep behavior unchanged for now.
             if (include_masks == nullptr && exclude_masks == nullptr && flow_height_override <= EPSILON)

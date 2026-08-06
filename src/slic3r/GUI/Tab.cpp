@@ -1979,6 +1979,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "dithering_local_z_preserve_first_layer" ||
          opt_key == "dithering_local_z_direct_multicolor" ||
          opt_key == "dithering_local_z_independent_layer_height" ||
+         opt_key == "dithering_local_z_gradient_layer_height" ||
          opt_key == "dithering_local_z_gradient_overlap_window" ||
          opt_key == "dithering_step_painted_zones_only" ||
          opt_key == "mixed_filament_definitions")) {
@@ -2690,6 +2691,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("dithering_local_z_infill");
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
+        optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
 
     page = add_options_page(L("Others"), "custom-gcode_other"); // ORCA: icon only visible on placeholders
         optgroup = page->new_optgroup(L("Skirt"), L"param_skirt");
@@ -2737,6 +2739,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
+        optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
         optgroup->append_single_option_line("dithering_local_z_gradient_overlap_window");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");
 

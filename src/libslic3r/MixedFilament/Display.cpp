@@ -73,19 +73,23 @@ int mixed_filament_effective_local_z_preview_mix_b_percent(const MixedFilamentDe
     if (definition.recipe.blend.components.size() >= 3)
         return std::clamp(mix_b_percent, 0, 100);
 
-    const std::vector<double> pass_heights = mixed_filament_local_z_preview_pass_heights(preview_settings.nominal_layer_height,
+    const double preview_layer_height = definition.behavior.gradient.enabled ?
+        preview_settings.gradient_nominal_layer_height : preview_settings.nominal_layer_height;
+    const double preferred_a_height = definition.behavior.gradient.enabled ? 0.0 : preview_settings.preferred_a_height;
+    const double preferred_b_height = definition.behavior.gradient.enabled ? 0.0 : preview_settings.preferred_b_height;
+    const std::vector<double> pass_heights = mixed_filament_local_z_preview_pass_heights(preview_layer_height,
                                                                                          preview_settings.min_sublayer_height,
-                                                                                         preview_settings.preferred_a_height,
-                                                                                         preview_settings.preferred_b_height,
+                                                                                         preferred_a_height,
+                                                                                         preferred_b_height,
                                                                                          mix_b_percent,
                                                                                          0);
     if (pass_heights.empty())
         return std::clamp(mix_b_percent, 0, 100);
 
-    double expected_h_a = preview_settings.preferred_a_height;
-    double expected_h_b = preview_settings.preferred_b_height;
+    double expected_h_a = preferred_a_height;
+    double expected_h_b = preferred_b_height;
     if (expected_h_a <= EPSILON && expected_h_b <= EPSILON) {
-        const auto targets = mixed_filament_local_z_pair_heights(preview_settings.nominal_layer_height,
+        const auto targets = mixed_filament_local_z_pair_heights(preview_layer_height,
                                                                   preview_settings.min_sublayer_height,
                                                                   mix_b_percent);
         expected_h_a       = targets.first;

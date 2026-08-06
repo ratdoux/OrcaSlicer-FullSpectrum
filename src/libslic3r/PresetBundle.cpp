@@ -188,6 +188,7 @@ static std::vector<std::string> s_project_options {
     "dithering_local_z_infill",
     "dithering_local_z_direct_multicolor",
     "dithering_local_z_independent_layer_height",
+    "dithering_local_z_gradient_layer_height",
     "dithering_step_painted_zones_only",
 };
 
