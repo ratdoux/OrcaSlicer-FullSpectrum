@@ -80,6 +80,7 @@ static inline void model_volume_list_copy_configs(ModelObject &model_object_dst,
         mv_dst.seam_facets.assign(mv_src.seam_facets);
         assert(mv_dst.mmu_segmentation_facets.id() == mv_src.mmu_segmentation_facets.id());
         mv_dst.mmu_segmentation_facets.assign(mv_src.mmu_segmentation_facets);
+        mv_dst.assign_image_map_data(mv_src);
         assert(mv_dst.fuzzy_skin_facets.id() == mv_src.fuzzy_skin_facets.id());
         mv_dst.fuzzy_skin_facets.assign(mv_src.fuzzy_skin_facets);
         //FIXME what to do with the materials?
@@ -1103,7 +1104,9 @@ static PrintObjectRegions* generate_print_object_regions(
                     mm_paint_applies_to_parent_region(layer_range, parent_region_id)) {
                     PrintRegionConfig cfg = painted_region_config(parent_region.region->config(), painted_extruder_id,
                                                                   painted_zone_extra_perimeters);
-                    PrintRegion *painted_region = create_unique_region(std::move(cfg));
+                    PrintRegion *painted_region = cfg == parent_region.region->config() ?
+                                                      parent_region.region :
+                                                      create_unique_region(std::move(cfg));
                     if (painted_region->config().wall_filament.value != painted_extruder_id ||
                         painted_region->config().solid_infill_filament.value != painted_extruder_id ||
                         painted_region->config().sparse_infill_filament.value != painted_extruder_id) {
@@ -1587,6 +1590,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
         // Only volume IDs, volume types, transformation matrices and their order are checked, configuration and other parameters are NOT checked.
         bool solid_or_modifier_differ   = model_volume_list_changed(model_object, model_object_new, solid_or_modifier_types) ||
                                           model_mmu_segmentation_data_changed(model_object, model_object_new) ||
+                                          model_image_map_data_changed(model_object, model_object_new) ||
                                           (model_object_new.is_mm_painted() && num_extruders_changed) ||
                                           model_fuzzy_skin_data_changed(model_object, model_object_new);
         bool supports_differ            = model_volume_list_changed(model_object, model_object_new, ModelVolumeType::SUPPORT_BLOCKER) ||

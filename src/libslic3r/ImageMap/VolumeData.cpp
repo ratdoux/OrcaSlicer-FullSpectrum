@@ -43,6 +43,57 @@ bool TextureAsset::valid() const
     return rgba.size() == size_t(width) * size_t(height) * 4;
 }
 
+bool VolumeData::content_equals(const VolumeData &other) const
+{
+    if (this == &other)
+        return true;
+    if (schema_version != other.schema_version || topology_fingerprint != other.topology_fingerprint ||
+        texture_assets.size() != other.texture_assets.size() || zones.size() != other.zones.size() ||
+        triangle_bindings.size() != other.triangle_bindings.size())
+        return false;
+
+    for (size_t i = 0; i < texture_assets.size(); ++i) {
+        const TextureAsset &lhs = texture_assets[i];
+        const TextureAsset &rhs = other.texture_assets[i];
+        if (lhs.stable_id != rhs.stable_id || lhs.display_name != rhs.display_name || lhs.width != rhs.width || lhs.height != rhs.height ||
+            lhs.rgba != rhs.rgba)
+            return false;
+    }
+
+    for (size_t i = 0; i < zones.size(); ++i) {
+        const Zone &lhs = zones[i];
+        const Zone &rhs = other.zones[i];
+        if (lhs.stable_id != rhs.stable_id || lhs.display_name != rhs.display_name || lhs.enabled != rhs.enabled ||
+            lhs.priority != rhs.priority || lhs.render_mode != rhs.render_mode ||
+            lhs.minimum_component_percent != rhs.minimum_component_percent || lhs.target_sample_size_mm != rhs.target_sample_size_mm ||
+            lhs.max_facet_samples != rhs.max_facet_samples || lhs.modulation_sample_spacing_mm != rhs.modulation_sample_spacing_mm ||
+            lhs.corner_smoothing_radius_mm != rhs.corner_smoothing_radius_mm || lhs.palette.size() != rhs.palette.size())
+            return false;
+        for (size_t palette_idx = 0; palette_idx < lhs.palette.size(); ++palette_idx) {
+            const PaletteEntry &lhs_entry = lhs.palette[palette_idx];
+            const PaletteEntry &rhs_entry = rhs.palette[palette_idx];
+            if (lhs_entry.target_color != rhs_entry.target_color ||
+                lhs_entry.mixed_filament_stable_id != rhs_entry.mixed_filament_stable_id ||
+                lhs_entry.fallback_filament_id != rhs_entry.fallback_filament_id)
+                return false;
+        }
+    }
+
+    for (size_t i = 0; i < triangle_bindings.size(); ++i) {
+        const TriangleBinding &lhs = triangle_bindings[i];
+        const TriangleBinding &rhs = other.triangle_bindings[i];
+        if (lhs.triangle_index != rhs.triangle_index || lhs.zone_index != rhs.zone_index || lhs.source.kind != rhs.source.kind ||
+            lhs.source.texture_asset_index != rhs.source.texture_asset_index || lhs.source.wrap_u != rhs.source.wrap_u ||
+            lhs.source.wrap_v != rhs.source.wrap_v || lhs.source.corner_colors != rhs.source.corner_colors)
+            return false;
+        for (size_t corner = 0; corner < lhs.source.uvs.size(); ++corner)
+            if (lhs.source.uvs[corner].x() != rhs.source.uvs[corner].x() || lhs.source.uvs[corner].y() != rhs.source.uvs[corner].y())
+                return false;
+    }
+
+    return true;
+}
+
 uint64_t topology_fingerprint(const TriangleMesh &mesh)
 {
     constexpr uint64_t fnv_offset = 1469598103934665603ull;

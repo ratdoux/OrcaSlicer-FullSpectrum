@@ -883,6 +883,8 @@ public:
     void                clear_image_map_data() { m_image_map_data.reset(); }
     bool                has_image_map_data() const { return m_image_map_data && !m_image_map_data->empty(); }
     std::shared_ptr<const ImageMap::VolumeData> image_map_data() const { return m_image_map_data; }
+    bool                image_map_data_matches(const ModelVolume &other) const;
+    void                assign_image_map_data(const ModelVolume &other) { m_image_map_data = other.m_image_map_data; }
     // Configuration parameters specific to an object model geometry or a modifier volume, 
     // overriding the global Slic3r settings and the ModelObject settings.
     ModelConfigObject	config;
@@ -1788,6 +1790,7 @@ bool model_custom_seam_data_changed(const ModelObject& mo, const ModelObject& mo
 // Test whether the now ModelObject has newer MMU segmentation data than the old one.
 // The function assumes that volumes list is synchronized.
 extern bool model_mmu_segmentation_data_changed(const ModelObject& mo, const ModelObject& mo_new);
+extern bool model_image_map_data_changed(const ModelObject &mo, const ModelObject &mo_new);
 
 // Test whether the now ModelObject has newer fuzzy skin data than the old one.
 // The function assumes that volumes list is synchronized.

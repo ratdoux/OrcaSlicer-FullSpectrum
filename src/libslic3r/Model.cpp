@@ -2109,6 +2109,15 @@ bool ModelVolume::set_image_map_data(ImageMap::VolumeData data)
     return true;
 }
 
+bool ModelVolume::image_map_data_matches(const ModelVolume &other) const
+{
+    if (m_image_map_data == other.m_image_map_data)
+        return true;
+    if (!m_image_map_data || !other.m_image_map_data)
+        return false;
+    return m_image_map_data->content_equals(*other.m_image_map_data);
+}
+
 void ModelVolume::reset_extra_facets()
 {
     this->supported_facets.reset();
@@ -3971,6 +3980,13 @@ bool model_mmu_segmentation_data_changed(const ModelObject& mo, const ModelObjec
     return model_property_changed(mo, mo_new,
         [](const ModelVolumeType t) { return t == ModelVolumeType::MODEL_PART; },
         [](const ModelVolume &mv_old, const ModelVolume &mv_new){ return mv_old.mmu_segmentation_facets.timestamp_matches(mv_new.mmu_segmentation_facets); });
+}
+
+bool model_image_map_data_changed(const ModelObject &mo, const ModelObject &mo_new)
+{
+    return model_property_changed(mo, mo_new,
+        [](const ModelVolumeType t) { return t == ModelVolumeType::MODEL_PART; },
+        [](const ModelVolume &mv_old, const ModelVolume &mv_new) { return mv_old.image_map_data_matches(mv_new); });
 }
 
 bool model_fuzzy_skin_data_changed(const ModelObject &mo, const ModelObject &mo_new)

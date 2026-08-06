@@ -145,6 +145,7 @@ struct VolumeData
 
     ValidationResult validate(const TriangleMesh &mesh) const;
     bool             empty() const { return zones.empty() || triangle_bindings.empty(); }
+    bool             content_equals(const VolumeData &other) const;
 
     // Immutable VolumeData instances are shared by the undo/redo stack. These
     // methods provide the same accounting interface as other large immutable
