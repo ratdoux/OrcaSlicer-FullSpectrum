@@ -38,6 +38,10 @@ enum class EnforcerBlockerType : int16_t {
     ExtruderMax = 255
 };
 
+// Encodes one unsplit facet state using the hexadecimal string representation
+// consumed by FacetsAnnotation::set_triangle_from_string().
+std::string encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType state);
+
 // Type alias for the state mapping array to improve code readability
 using EnforcerBlockerStateMap = std::array<EnforcerBlockerType, (size_t)EnforcerBlockerType::ExtruderMax + 1>;
 

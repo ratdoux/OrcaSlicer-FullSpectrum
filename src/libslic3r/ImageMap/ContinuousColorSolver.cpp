@@ -198,6 +198,18 @@ size_t continuous_color_solver_candidate_count(size_t component_count, int total
     return result;
 }
 
+size_t continuous_color_solver_max_component_count()
+{
+    size_t component_count = 2;
+    for (;;) {
+        const size_t next_count = continuous_color_solver_candidate_count(component_count + 1);
+        if (next_count == 0 || next_count > MAX_CANDIDATES)
+            break;
+        ++component_count;
+    }
+    return component_count;
+}
+
 ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponent> components) : m_impl(std::make_unique<Impl>())
 {
     m_impl->components = std::move(components);
@@ -217,7 +229,7 @@ ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponen
         if (component_index + 1 == units.size()) {
             units[component_index] = remaining_units;
             std::vector<FullSpectrumKSPairResidualColorInput> ks_inputs;
-            std::vector<MixedFilamentColorInput>               fallback_inputs;
+            std::vector<MixedFilamentColorInput>              fallback_inputs;
             ks_inputs.reserve(units.size());
             fallback_inputs.reserve(units.size());
             for (size_t index = 0; index < units.size(); ++index) {
@@ -260,8 +272,7 @@ ContinuousColorSolver& ContinuousColorSolver::operator=(ContinuousColorSolver&&)
 
 bool ContinuousColorSolver::valid() const
 {
-    return m_impl && m_impl->components.size() >= 2 && m_impl->kd_root >= 0 &&
-           m_impl->predicted_colors.size() == candidate_count() * 3 &&
+    return m_impl && m_impl->components.size() >= 2 && m_impl->kd_root >= 0 && m_impl->predicted_colors.size() == candidate_count() * 3 &&
            m_impl->weights.size() == candidate_count() * component_count();
 }
 
@@ -294,6 +305,97 @@ std::optional<RGBA> ContinuousColorSolver::predict_color(const RGBA& target_colo
 
     const size_t base = best_index * 3;
     return RGBA{m_impl->predicted_colors[base], m_impl->predicted_colors[base + 1], m_impl->predicted_colors[base + 2], target_color[3]};
+}
+
+std::vector<size_t> select_continuous_color_components(const std::vector<ContinuousColorComponent>& components,
+                                                       const std::vector<RGBA>&                     representative_colors,
+                                                       size_t                                       requested_count,
+                                                       double                                       minimum_component_weight)
+{
+    if (components.empty())
+        return {};
+    if (components.size() == 1)
+        return {0};
+
+    const size_t max_supported = std::min(components.size(), continuous_color_solver_max_component_count());
+    requested_count            = requested_count == 0 ? 0 : std::clamp(requested_count, size_t(2), max_supported);
+
+    // Very large physical palettes cannot be enumerated directly. Keep the
+    // components closest to at least one representative source color, then run
+    // the same continuous solver used by the perimeter renderer on that pool.
+    std::vector<size_t> pool(components.size());
+    std::iota(pool.begin(), pool.end(), size_t(0));
+    if (pool.size() > max_supported) {
+        std::vector<std::array<float, 3>> targets;
+        targets.reserve(representative_colors.size());
+        for (const RGBA& color : representative_colors)
+            targets.emplace_back(oklab_from_srgb({color[0], color[1], color[2]}));
+
+        auto relevance = [&](size_t component_index) {
+            const std::array<float, 3> component = oklab_from_srgb(decode_rgb(components[component_index].color_hex));
+            float                      best      = std::numeric_limits<float>::max();
+            for (const std::array<float, 3>& target : targets) {
+                const float dl = component[0] - target[0];
+                const float da = component[1] - target[1];
+                const float db = component[2] - target[2];
+                best           = std::min(best, dl * dl + da * da + db * db);
+            }
+            return best;
+        };
+        std::stable_sort(pool.begin(), pool.end(), [&](size_t lhs, size_t rhs) {
+            const float lhs_relevance = relevance(lhs);
+            const float rhs_relevance = relevance(rhs);
+            return lhs_relevance != rhs_relevance ? lhs_relevance < rhs_relevance : lhs < rhs;
+        });
+        pool.resize(max_supported);
+    }
+
+    std::vector<ContinuousColorComponent> solver_components;
+    solver_components.reserve(pool.size());
+    for (const size_t component_index : pool)
+        solver_components.emplace_back(components[component_index]);
+
+    ContinuousColorSolver solver(std::move(solver_components));
+    if (!solver.valid()) {
+        pool.resize(requested_count == 0 ? std::min<size_t>(2, pool.size()) : std::min(requested_count, pool.size()));
+        std::sort(pool.begin(), pool.end());
+        return pool;
+    }
+
+    std::vector<double> maximum_weights(pool.size(), 0.0);
+    std::vector<double> accumulated_weights(pool.size(), 0.0);
+    for (const RGBA& target : representative_colors) {
+        const std::vector<double> weights = solver.solve(target);
+        for (size_t index = 0; index < weights.size() && index < pool.size(); ++index) {
+            maximum_weights[index] = std::max(maximum_weights[index], weights[index]);
+            accumulated_weights[index] += weights[index];
+        }
+    }
+
+    std::vector<size_t> ranked(pool.size());
+    std::iota(ranked.begin(), ranked.end(), size_t(0));
+    std::stable_sort(ranked.begin(), ranked.end(), [&](size_t lhs, size_t rhs) {
+        if (std::abs(maximum_weights[lhs] - maximum_weights[rhs]) > 1e-9)
+            return maximum_weights[lhs] > maximum_weights[rhs];
+        if (std::abs(accumulated_weights[lhs] - accumulated_weights[rhs]) > 1e-9)
+            return accumulated_weights[lhs] > accumulated_weights[rhs];
+        return pool[lhs] < pool[rhs];
+    });
+
+    size_t selected_count = requested_count;
+    if (selected_count == 0) {
+        const double threshold = std::clamp(minimum_component_weight, 0.01, 0.5);
+        selected_count         = size_t(
+            std::count_if(ranked.begin(), ranked.end(), [&](size_t index) { return maximum_weights[index] + 1e-9 >= threshold; }));
+        selected_count = std::clamp(selected_count, size_t(2), pool.size());
+    }
+
+    std::vector<size_t> selected;
+    selected.reserve(selected_count);
+    for (size_t rank = 0; rank < selected_count; ++rank)
+        selected.emplace_back(pool[ranked[rank]]);
+    std::sort(selected.begin(), selected.end());
+    return selected;
 }
 
 } // namespace Slic3r::ImageMap

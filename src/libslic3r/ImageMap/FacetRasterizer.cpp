@@ -1,6 +1,7 @@
 #include "FacetRasterizer.hpp"
 
 #include "Sampling.hpp"
+#include "../TriangleSelector.hpp"
 #include "../TriangleMesh.hpp"
 
 #include <algorithm>
@@ -68,16 +69,11 @@ unsigned int desired_depth(const TriangleMesh &mesh, const TriangleBinding &bind
 
 std::string encode_leaf(unsigned int filament_id, unsigned int base_filament_id)
 {
-    if (filament_id == 0 || filament_id > 16)
+    if (filament_id == 0 || filament_id > unsigned(EnforcerBlockerType::ExtruderMax))
         return {};
     if (filament_id == base_filament_id)
         return "0";
-    if (filament_id <= 2) {
-        const int code = int(filament_id) << 2;
-        return std::string(1, char(code < 10 ? '0' + code : 'A' + code - 10));
-    }
-    const int extension = int(filament_id) - 3;
-    return std::string(1, char(extension < 10 ? '0' + extension : 'A' + extension - 10)) + "C";
+    return encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType(filament_id));
 }
 
 std::string encode_tree(const std::vector<unsigned int> &ids, size_t &cursor, unsigned int depth, unsigned int base_id)
@@ -105,9 +101,9 @@ void sample_leaves(const VolumeData &data,
         const Vec3f center = (barycentric[0] + barycentric[1] + barycentric[2]) / 3.f;
         const PaletteEntry *entry = nearest_palette_entry(zone, sample_source(data, binding, center));
         unsigned int id = entry ? resolver(*entry) : 0;
-        if (id == 0 || id > 16)
+        if (id == 0 || id > unsigned(EnforcerBlockerType::ExtruderMax))
             ++unresolved;
-        if (id == 0 || id > 16)
+        if (id == 0 || id > unsigned(EnforcerBlockerType::ExtruderMax))
             id = base_filament_id;
         ids.push_back(id);
         return;
@@ -363,7 +359,8 @@ FacetRasterization rasterize_facets(const TriangleMesh            &mesh,
                                     const PaletteFilamentResolver &resolve_filament)
 {
     FacetRasterization result;
-    if (!resolve_filament || !data.validate(mesh).valid || base_filament_id == 0 || base_filament_id > 16)
+    if (!resolve_filament || !data.validate(mesh).valid || base_filament_id == 0 ||
+        base_filament_id > unsigned(EnforcerBlockerType::ExtruderMax))
         return result;
 
     std::vector<const TriangleBinding *> selected(mesh.its.indices.size(), nullptr);

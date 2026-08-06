@@ -45,6 +45,16 @@ private:
 
 int    continuous_color_solver_total_units(size_t component_count);
 size_t continuous_color_solver_candidate_count(size_t component_count, int total_units = 0);
+size_t continuous_color_solver_max_component_count();
+
+// Selects the physical components that are materially used by a bounded set of
+// representative source colors. requested_count == 0 enables automatic mode;
+// otherwise exactly that many components are returned (within solver limits).
+// Returned indices are zero-based and sorted in physical-filament order.
+std::vector<size_t> select_continuous_color_components(const std::vector<ContinuousColorComponent>& components,
+                                                       const std::vector<RGBA>&                     representative_colors,
+                                                       size_t                                       requested_count          = 0,
+                                                       double                                       minimum_component_weight = 0.15);
 
 } // namespace Slic3r::ImageMap
 

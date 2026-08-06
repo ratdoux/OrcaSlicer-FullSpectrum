@@ -1660,6 +1660,28 @@ void TriangleSelector::get_seed_fill_contour_recursive(const int facet_idx, cons
     }
 }
 
+std::string encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType state)
+{
+    int value = int(state);
+    if (value < 0 || value > int(EnforcerBlockerType::ExtruderMax))
+        return {};
+    if (value <= 2)
+        return std::string(1, char('0' + (value << 2)));
+
+    auto hex_digit = [](int nibble) {
+        return char(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
+    };
+
+    value -= 3;
+    std::string encoded("C");
+    while (value >= 15) {
+        encoded.insert(encoded.begin(), 'F');
+        value -= 15;
+    }
+    encoded.insert(encoded.begin(), hex_digit(value));
+    return encoded;
+}
+
 TriangleSelector::TriangleSplittingData TriangleSelector::serialize() const {
     // Each original triangle of the mesh is assigned a number encoding its state
     // or how it is split. Each triangle is encoded by 4 bits (xxyy) or by

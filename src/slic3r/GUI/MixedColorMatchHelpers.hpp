@@ -6,6 +6,7 @@
 
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Color.hpp"
+#include "libslic3r/libslic3r.h"
 
 #include <wx/wx.h>
 #include <wx/bitmap.h>
@@ -73,6 +74,44 @@ struct MixedColorMatchCreationResult
     double       delta_e     = std::numeric_limits<double>::infinity();
 };
 
+struct NormalColorMatchPlanEntry
+{
+    unsigned int filament_id       = 0;
+    wxColour     target_color;
+    wxColour     predicted_color;
+    double       delta_e           = std::numeric_limits<double>::infinity();
+    bool         newly_created     = false;
+    bool         used_surface_bias = false;
+    std::string  recipe_summary;
+};
+
+struct NormalColorMatchPlannedFilament
+{
+    unsigned int            filament_id = 0;
+    MixedFilamentDefinition definition;
+    std::string             recipe_summary;
+};
+
+// Immutable dry-run of the normal OBJ image-map mapping. The mixed-filament
+// manager is copied while this plan is built, so opening or editing the import
+// prompt never mutates the project. Committing applies these exact definitions
+// instead of solving the colors a second time.
+struct NormalColorMatchPlan
+{
+    bool                                         valid = false;
+    std::vector<std::string>                     physical_colors;
+    std::vector<uint64_t>                        base_visible_stable_ids;
+    std::vector<NormalColorMatchPlanEntry>       entries;
+    std::vector<NormalColorMatchPlannedFilament> new_filaments;
+};
+
+struct NormalColorMatchPlanCommitResult
+{
+    bool        valid   = false;
+    bool        created = false;
+    std::string error;
+};
+
 struct AdaptiveColorMatchPreviewCycle
 {
     unsigned int                    filament_id = 0;
@@ -125,29 +164,48 @@ CIELab blend_weighted_lab_accurate(const std::vector<wxColour>& palette,
                                     const std::vector<unsigned int>& ids,
                                     const std::vector<int>& weights);
 
-MixedColorMatchRecipeResult build_best_color_match_recipe(
-    const std::vector<std::string> &physical_colors,
-    const wxColour                 &target_color,
-    int                             min_component_percent,
-    const std::vector<double>      &physical_tds,
-    const std::vector<std::string> &physical_material_ids,
-    MixedFilamentColorEngine        color_engine,
-    bool                            use_td_prediction);
+MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std::string>& physical_colors,
+                                                          const wxColour&                 target_color,
+                                                          int                             min_component_percent,
+                                                          const std::vector<double>&      physical_tds,
+                                                          const std::vector<std::string>& physical_material_ids,
+                                                          MixedFilamentColorEngine        color_engine,
+                                                          bool                            use_td_prediction);
 
 MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(
-    const MixedColorMatchRecipeResult &recipe,
+    const MixedColorMatchRecipeResult& recipe,
     size_t                             num_physical,
-    MixedColorMatchEncoding            encoding = MixedColorMatchEncoding::LayerRatio,
-    float                              reference_width_mm = 0.4f);
+    MixedColorMatchEncoding            encoding                = MixedColorMatchEncoding::LayerRatio,
+    float                              reference_width_mm      = 0.4f,
+    const std::vector<unsigned int>&   perimeter_component_ids = {});
 
 // Reuse an exact physical or virtual color when possible; otherwise create a
 // custom mixed filament using the active FullSpectrum color engine.
-MixedColorMatchCreationResult create_mixed_filament_color_match(
-    const wxColour                 &target_color,
-    const std::vector<std::string> &physical_colors,
-    int                             min_component_percent = 15,
-    size_t                          max_total_filaments = 16,
-    MixedColorMatchEncoding         encoding = MixedColorMatchEncoding::LayerRatio);
+MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour&                 target_color,
+                                                                const std::vector<std::string>& physical_colors,
+                                                                int                             min_component_percent = 15,
+                                                                size_t                  max_total_filaments = MAXIMUM_FILAMENT_NUMBER,
+                                                                MixedColorMatchEncoding encoding = MixedColorMatchEncoding::LayerRatio,
+                                                                const std::vector<unsigned int>& perimeter_component_ids = {});
+
+NormalColorMatchPlan preview_normal_color_matches(const std::vector<wxColour>&    target_colors,
+                                                  const std::vector<std::string>& physical_colors,
+                                                  int                             min_component_percent = 15,
+                                                  size_t                          max_total_filaments   = MAXIMUM_FILAMENT_NUMBER);
+
+NormalColorMatchPlan build_normal_color_match_plan(const std::vector<wxColour>&       target_colors,
+                                                   const std::vector<std::string>&    physical_colors,
+                                                   int                                min_component_percent,
+                                                   size_t                             max_total_filaments,
+                                                   const MixedFilamentDisplayContext& context,
+                                                   const MixedFilamentManager&        base_manager);
+
+NormalColorMatchPlanCommitResult apply_normal_color_match_plan(
+    const NormalColorMatchPlan       &plan,
+    MixedFilamentManager             &manager,
+    const MixedFilamentDisplayContext& context);
+
+NormalColorMatchPlanCommitResult commit_normal_color_match_plan(const NormalColorMatchPlan& plan);
 
 // Dry-run the same sequential reuse/creation decisions used when adaptive OBJ
 // colors are committed. This lets the import dialog show the unique physical
@@ -156,7 +214,7 @@ AdaptiveColorMatchPreviewResult preview_adaptive_localized_color_matches(
     const std::vector<wxColour>    &target_colors,
     const std::vector<std::string> &physical_colors,
     int                             min_component_percent = 15,
-    size_t                          max_total_filaments = 16);
+    size_t                          max_total_filaments = MAXIMUM_FILAMENT_NUMBER);
 
 // ---- display context helpers ----
 MixedFilamentDisplayContext build_mixed_filament_display_context(

@@ -75,32 +75,32 @@ struct PerimeterEnvelopeRenderer::Impl
 {
     struct LayerCadence
     {
-        unsigned int                                filament_id{0};
-        std::vector<int>                            component_percents;
+        unsigned int                                 filament_id{0};
+        std::vector<int>                             component_percents;
         std::shared_ptr<const ContinuousColorSolver> restricted_solver;
-        std::vector<size_t>                         solver_to_physical;
+        std::vector<size_t>                          solver_to_physical;
     };
 
-    const MixedFilamentManager*                   manager{nullptr};
-    size_t                                        num_physical{0};
-    size_t                                        num_total{0};
-    float                                         reference_width_mm{0.4f};
-    float                                         max_displacement_mm{0.35f};
-    float                                         sample_spacing_mm{0.25f};
-    std::unique_ptr<ContinuousColorSolver>        solver;
+    const MixedFilamentManager*                                                   manager{nullptr};
+    size_t                                                                        num_physical{0};
+    size_t                                                                        num_total{0};
+    float                                                                         reference_width_mm{0.4f};
+    float                                                                         max_displacement_mm{0.35f};
+    float                                                                         sample_spacing_mm{0.25f};
+    std::unique_ptr<ContinuousColorSolver>                                        solver;
     std::unordered_map<std::string, std::shared_ptr<const ContinuousColorSolver>> restricted_solvers;
-    std::vector<VolumeSampler>                    volumes;
-    std::unordered_map<const Zone*,         LayerCadence> shared_cadences;
-    std::unordered_map<const PaletteEntry*, LayerCadence> adaptive_cadences;
+    std::vector<VolumeSampler>                                                    volumes;
+    std::unordered_map<const Zone*, LayerCadence>                                 shared_cadences;
+    std::unordered_map<const PaletteEntry*, LayerCadence>                         adaptive_cadences;
 
     std::optional<SelectedSample> sample(const Vec3d& print_point, double max_world_distance) const
     {
         std::optional<SelectedSample> best;
         for (const VolumeSampler& volume : volumes) {
-            const Vec3d                        local_point = volume.print_to_local * print_point;
+            const Vec3d local_point = volume.print_to_local * print_point;
             for (const RenderMode mode : {RenderMode::PerimeterModulationV2, RenderMode::AdaptiveLocalizedCycles}) {
-                const std::optional<SurfaceSample> candidate =
-                    volume.sampler.sample(local_point, max_world_distance / volume.minimum_scale, mode);
+                const std::optional<SurfaceSample> candidate = volume.sampler.sample(local_point, max_world_distance / volume.minimum_scale,
+                                                                                     mode);
                 if (!candidate)
                     continue;
                 const Vec3d  closest_print    = volume.local_to_print * candidate->closest_local_point;
@@ -146,21 +146,31 @@ struct PerimeterEnvelopeRenderer::Impl
         if (active_component < 1 || active_component > num_physical)
             return std::nullopt;
 
-        std::vector<double> target_weights;
         if (cadence->restricted_solver && cadence->restricted_solver->valid()) {
             const std::vector<double> restricted_weights = cadence->restricted_solver->solve(sample.color);
             if (restricted_weights.size() != cadence->solver_to_physical.size())
                 return std::nullopt;
-            target_weights.assign(num_physical, 0.0);
-            for (size_t index = 0; index < restricted_weights.size(); ++index) {
-                if (cadence->solver_to_physical[index] < target_weights.size())
-                    target_weights[cadence->solver_to_physical[index]] = restricted_weights[index];
+            std::vector<int> active_component_percents;
+            active_component_percents.reserve(cadence->solver_to_physical.size());
+            size_t active_solver_index = size_t(-1);
+            for (size_t index = 0; index < cadence->solver_to_physical.size(); ++index) {
+                const size_t physical_index = cadence->solver_to_physical[index];
+                if (physical_index >= cadence->component_percents.size())
+                    return std::nullopt;
+                active_component_percents.emplace_back(cadence->component_percents[physical_index]);
+                if (physical_index + 1 == active_component)
+                    active_solver_index = index;
             }
-        } else {
-            if (!solver || !solver->valid())
+            const std::vector<float> offsets = mixed_filament_surface_offsets_for_apparent_weights(active_component_percents,
+                                                                                                   restricted_weights, reference_width_mm);
+            if (active_solver_index >= offsets.size())
                 return std::nullopt;
-            target_weights = solver->solve(sample.color);
+            return std::clamp(offsets[active_solver_index], -max_displacement_mm, max_displacement_mm);
         }
+
+        if (!solver || !solver->valid())
+            return std::nullopt;
+        const std::vector<double> target_weights = solver->solve(sample.color);
         const std::vector<float>  offsets = mixed_filament_surface_offsets_for_apparent_weights(cadence->component_percents, target_weights,
                                                                                                 reference_width_mm);
         if (offsets.size() != num_physical)
@@ -282,11 +292,10 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
             continue;
         for (const Zone& zone : data->zones) {
             if (zone.enabled && is_perimeter_modulation_mode(zone.render_mode)) {
-                impl->sample_spacing_mm  = std::min(impl->sample_spacing_mm, std::clamp(zone.modulation_sample_spacing_mm, 0.03f, 2.f));
-                auto cadence_for_entry = [&impl, &solver_components](const PaletteEntry& entry,
-                                                                     bool                require_all_components) -> std::optional<Impl::LayerCadence> {
-                    const unsigned int filament_id =
-                        resolve_palette_filament(entry, *impl->manager, impl->num_physical, impl->num_total);
+                impl->sample_spacing_mm = std::min(impl->sample_spacing_mm, std::clamp(zone.modulation_sample_spacing_mm, 0.03f, 2.f));
+                auto cadence_for_entry  = [&impl, &solver_components](const PaletteEntry& entry,
+                                                                     bool shared_sequence) -> std::optional<Impl::LayerCadence> {
+                    const unsigned int filament_id = resolve_palette_filament(entry, *impl->manager, impl->num_physical, impl->num_total);
                     const std::optional<MixedFilamentDefinition> definition =
                         impl->manager->mixed_filament_definition_from_id(filament_id, impl->num_physical);
                     if (!definition || !definition->behavior.surface_bias.perimeter_modulation)
@@ -296,18 +305,20 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
                         if (component.filament.id >= 1 && component.filament.id <= impl->num_physical)
                             component_percents[component.filament.id - 1] += std::max(0, component.percent);
                     }
-                    const bool has_components =
-                        std::any_of(component_percents.begin(), component_percents.end(), [](int percent) { return percent > 0; });
-                    const bool has_all_components =
-                        std::all_of(component_percents.begin(), component_percents.end(), [](int percent) { return percent > 0; });
-                    if (!has_components || (require_all_components && !has_all_components))
+                    const bool   has_components         = std::any_of(component_percents.begin(), component_percents.end(),
+                                                                       [](int percent) { return percent > 0; });
+                    const bool   has_all_components     = std::all_of(component_percents.begin(), component_percents.end(),
+                                                                       [](int percent) { return percent > 0; });
+                    const size_t active_component_count = size_t(
+                        std::count_if(component_percents.begin(), component_percents.end(), [](int percent) { return percent > 0; }));
+                    if (!has_components || (shared_sequence && active_component_count < 2))
                         return std::nullopt;
 
                     Impl::LayerCadence cadence;
-                    cadence.filament_id       = filament_id;
+                    cadence.filament_id        = filament_id;
                     cadence.component_percents = std::move(component_percents);
-                    if (!require_all_components && !has_all_components) {
-                        std::string mask(impl->num_physical, '0');
+                    if (!has_all_components) {
+                        std::string                           mask(impl->num_physical, '0');
                         std::vector<ContinuousColorComponent> restricted_components;
                         for (size_t component_idx = 0; component_idx < cadence.component_percents.size(); ++component_idx) {
                             if (cadence.component_percents[component_idx] <= 0 || component_idx >= solver_components.size())

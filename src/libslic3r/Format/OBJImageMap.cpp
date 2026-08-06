@@ -1,6 +1,7 @@
 #include "OBJImageMap.hpp"
 
 #include "ImportedTexture.hpp"
+#include "../TriangleSelector.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 
 #include <algorithm>
@@ -149,16 +150,11 @@ void append_leaf_colors(
 
 std::string encode_leaf(unsigned char filament_id, unsigned char base_filament_id)
 {
-    if (filament_id == 0 || filament_id > 16)
+    if (filament_id == 0)
         return {};
     if (filament_id == base_filament_id)
         return "0";
-    if (filament_id <= 2) {
-        const int code = int(filament_id) << 2;
-        return std::string(1, char(code < 10 ? '0' + code : 'A' + code - 10));
-    }
-    const int extension = int(filament_id) - 3;
-    return std::string(1, char(extension < 10 ? '0' + extension : 'A' + extension - 10)) + "C";
+    return encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType(filament_id));
 }
 
 std::string encode_tree(const std::vector<unsigned char>& filament_ids, size_t& offset, unsigned int depth, unsigned char base_filament_id)
