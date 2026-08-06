@@ -579,6 +579,10 @@ TEST_CASE("Local-Z preview reports the effective direct thickness ratio", "[Mixe
 
     MixedFilamentDefinition gradient = definition;
     gradient.behavior.gradient.enabled = true;
+    settings.nominal_layer_height          = 0.08;
+    settings.gradient_nominal_layer_height = 0.20;
+    settings.preferred_a_height            = 0.03;
+    settings.preferred_b_height            = 0.03;
     CHECK(mixed_filament_effective_local_z_preview_mix_b_percent(gradient, settings) == 30);
     CHECK_FALSE(mixed_filament_supports_bias_apparent_color(gradient, settings, true));
 }

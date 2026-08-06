@@ -11,6 +11,7 @@
 
 #include <boost/filesystem.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <limits>
 
@@ -19,19 +20,21 @@ using namespace Slic3r::Test;
 
 TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice envelope", "[PrintObject][ImageMap]")
 {
-    ImageMap::RenderMode render_mode;
-    double               expected_size_mm;
-    double               expected_first_layer_size_mm;
+    ImageMap::RenderMode                        render_mode;
+    double                                      expected_size_mm;
+    double                                      expected_first_layer_size_mm;
+    std::vector<std::string>                    physical_colors{"#FF0000", "#00FF00"};
+    std::vector<MixedFilamentWeightedComponent> cadence_components{{{1}, 50}, {{2}, 50}};
     SECTION("normal mixed filaments are assigned without changing the envelope")
     {
-        render_mode      = ImageMap::RenderMode::NormalMix;
-        expected_size_mm = 20.0;
+        render_mode                  = ImageMap::RenderMode::NormalMix;
+        expected_size_mm             = 20.0;
         expected_first_layer_size_mm = 20.0;
     }
     SECTION("V2 modulation changes the shared wall and support envelope")
     {
-        render_mode      = ImageMap::RenderMode::PerimeterModulationV2;
-        expected_size_mm = 19.8;
+        render_mode                  = ImageMap::RenderMode::PerimeterModulationV2;
+        expected_size_mm             = 19.8;
         expected_first_layer_size_mm = 20.2;
     }
     SECTION("adaptive localized cycles modulate their local cycle envelope")
@@ -40,38 +43,47 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
         expected_size_mm             = 19.8;
         expected_first_layer_size_mm = 20.2;
     }
+    SECTION("V2 modulation supports a selected subset of the loaded physical filaments")
+    {
+        render_mode                  = ImageMap::RenderMode::PerimeterModulationV2;
+        expected_size_mm             = 19.8;
+        expected_first_layer_size_mm = 20.2;
+        physical_colors              = {"#FF0000", "#FFFFFF", "#00FF00", "#0000FF"};
+        cadence_components           = {{{1}, 50}, {{3}, 50}};
+    }
 
-    Model model;
-    ModelObject *model_object = model.add_object();
-    ModelVolume *volume = model_object->add_volume(Test::mesh(TestMesh::cube_20x20x20));
+    Model        model;
+    ModelObject* model_object = model.add_object();
+    ModelVolume* volume       = model_object->add_volume(Test::mesh(TestMesh::cube_20x20x20));
     model_object->add_instance();
     model_object->ensure_on_bed();
 
     MixedFilamentDefinition definition;
-    definition.identity.stable_id = 424242;
-    definition.source.kind = MixedFilamentSourceKind::Custom;
-    definition.recipe.kind = MixedFilamentRecipeKind::WeightedBlend;
-    definition.recipe.blend.components = {{{1}, 50}, {{2}, 50}};
-    definition.behavior.distribution = MixedFilamentDistributionMode::LayerCycle;
+    definition.identity.stable_id                         = 424242;
+    definition.source.kind                                = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind                                = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components                    = cadence_components;
+    definition.behavior.distribution                      = MixedFilamentDistributionMode::LayerCycle;
     definition.behavior.surface_bias.perimeter_modulation = true;
     set_mixed_filament_component_surface_offsets(definition, {0.2f, 0.2f});
     definition.presentation.display_color = "#808000";
     MixedFilamentManager definitions;
-    REQUIRE(definitions.add_custom_filament_definition(definition, {"#FF0000", "#00FF00"}));
+    REQUIRE(definitions.add_custom_filament_definition(definition, physical_colors));
+    const unsigned int mixed_filament_id = unsigned(physical_colors.size() + 1);
 
     ImageMap::VolumeData image_map;
     image_map.topology_fingerprint = ImageMap::topology_fingerprint(volume->mesh());
     ImageMap::Zone zone;
-    zone.stable_id = "image-map-zone";
-    zone.render_mode = render_mode;
+    zone.stable_id                    = "image-map-zone";
+    zone.render_mode                  = render_mode;
     zone.modulation_sample_spacing_mm = 0.25f;
-    zone.corner_smoothing_radius_mm = 0.6f;
-    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 424242, 3});
+    zone.corner_smoothing_radius_mm   = 0.6f;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 424242, mixed_filament_id});
     image_map.zones.push_back(zone);
     for (size_t triangle_index = 0; triangle_index < volume->mesh().its.indices.size(); ++triangle_index) {
         ImageMap::TriangleBinding binding;
-        binding.triangle_index = uint32_t(triangle_index);
-        binding.source.kind = ImageMap::SourceKind::FaceColor;
+        binding.triangle_index       = uint32_t(triangle_index);
+        binding.source.kind          = ImageMap::SourceKind::FaceColor;
         binding.source.corner_colors = {RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{1.f, 0.f, 0.f, 1.f}};
         image_map.triangle_bindings.push_back(binding);
     }
@@ -79,9 +91,9 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
     REQUIRE(volume->set_image_map_data(std::move(image_map)));
 
     DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
-    config.set_key_value("filament_colour", new ConfigOptionStrings({"#FF0000", "#00FF00"}));
-    config.set_key_value("filament_diameter", new ConfigOptionFloats({1.75, 1.75}));
-    config.set_key_value("nozzle_diameter", new ConfigOptionFloats({0.4, 0.4}));
+    config.set_key_value("filament_colour", new ConfigOptionStrings(physical_colors));
+    config.set_key_value("filament_diameter", new ConfigOptionFloats(std::vector<double>(physical_colors.size(), 1.75)));
+    config.set_key_value("nozzle_diameter", new ConfigOptionFloats(std::vector<double>(physical_colors.size(), 0.4)));
     config.set_key_value("layer_height", new ConfigOptionFloat(0.2));
     config.set_key_value("initial_layer_print_height", new ConfigOptionFloat(0.2));
     config.set_key_value("line_width", new ConfigOptionFloatOrPercent(0.45, false));
@@ -99,16 +111,16 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
     REQUIRE(print.objects().size() == 1);
     print.get_object(0)->slice();
 
-    const PrintObject &print_object = *print.objects().front();
+    const PrintObject& print_object = *print.objects().front();
     REQUIRE(print_object.layer_count() > 2);
-    const Layer *layer = print_object.get_layer(1);
+    const Layer* layer = print_object.get_layer(1);
     REQUIRE(layer != nullptr);
     REQUIRE_FALSE(layer->lslices.empty());
     const BoundingBox bounds = get_extents(layer->lslices);
     CHECK(unscale<double>(bounds.size().x()) == Approx(expected_size_mm).margin(0.04));
     CHECK(unscale<double>(bounds.size().y()) == Approx(expected_size_mm).margin(0.04));
 
-    const Layer *first_layer = print_object.get_layer(0);
+    const Layer* first_layer = print_object.get_layer(0);
     REQUIRE(first_layer != nullptr);
     REQUIRE_FALSE(first_layer->lslices.empty());
     const BoundingBox first_layer_bounds = get_extents(first_layer->lslices);
@@ -117,9 +129,9 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
 
     ExPolygons region_geometry;
     bool       mapped_to_mixed_filament = false;
-    for (const LayerRegion *region : layer->regions()) {
+    for (const LayerRegion* region : layer->regions()) {
         append(region_geometry, to_expolygons(region->slices.surfaces));
-        mapped_to_mixed_filament |= !region->slices.empty() && region->region().config().wall_filament.value == 3;
+        mapped_to_mixed_filament |= !region->slices.empty() && region->region().config().wall_filament.value == int(mixed_filament_id);
     }
     CHECK(mapped_to_mixed_filament);
     REQUIRE_FALSE(region_geometry.empty());
@@ -128,19 +140,30 @@ TEST_CASE("Persistent image maps assign normal mixes and modulate the V2 slice e
     CHECK(unscale<double>(region_bounds.min.y()) == Approx(unscale<double>(bounds.min.y())).margin(0.002));
     CHECK(unscale<double>(region_bounds.max.x()) == Approx(unscale<double>(bounds.max.x())).margin(0.002));
     CHECK(unscale<double>(region_bounds.max.y()) == Approx(unscale<double>(bounds.max.y())).margin(0.002));
+
+    CHECK(print.apply(model, config) == PrintBase::APPLY_STATUS_UNCHANGED);
+
+    ImageMap::VolumeData equivalent_image_map = *volume->image_map_data();
+    REQUIRE(volume->set_image_map_data(std::move(equivalent_image_map)));
+    CHECK(print.apply(model, config) == PrintBase::APPLY_STATUS_UNCHANGED);
+
+    ImageMap::VolumeData changed_image_map = *volume->image_map_data();
+    changed_image_map.zones.front().palette.front().target_color[0] = 0.5f;
+    REQUIRE(volume->set_image_map_data(std::move(changed_image_map)));
+    CHECK(print.apply(model, config) == PrintBase::APPLY_STATUS_INVALIDATED);
 }
 
 TEST_CASE("Local-Z simple multicolor mixes subdivide walls and infill with every component", "[PrintObject][MixedFilament][LocalZ]")
 {
     MixedFilamentDefinition definition;
-    definition.identity.stable_id          = 737373;
-    definition.source.kind                 = MixedFilamentSourceKind::Custom;
-    definition.recipe.kind                 = MixedFilamentRecipeKind::WeightedBlend;
-    definition.recipe.blend.components     = {{{1}, 50}, {{2}, 25}, {{3}, 25}};
-    definition.behavior.distribution       = MixedFilamentDistributionMode::Simple;
-    definition.presentation.display_color  = "#806040";
+    definition.identity.stable_id         = 737373;
+    definition.source.kind                = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind                = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components    = {{{1}, 50}, {{2}, 25}, {{3}, 25}};
+    definition.behavior.distribution      = MixedFilamentDistributionMode::Simple;
+    definition.presentation.display_color = "#806040";
 
-    MixedFilamentManager definitions;
+    MixedFilamentManager           definitions;
     const std::vector<std::string> colors{"#FF0000", "#0000FF", "#FFFF00"};
     REQUIRE(definitions.add_custom_filament_definition(definition, colors));
 
@@ -221,6 +244,227 @@ TEST_CASE("Local-Z simple multicolor mixes subdivide walls and infill with every
         section_begin = section_end + 1;
     }
     CHECK(local_z_infill_seen);
+}
+
+TEST_CASE("Gradient Local-Z preserves configured and painted seam placement", "[PrintObject][MixedFilament][LocalZ][Seam]")
+{
+    bool paint_front = false;
+    SECTION("configured rear seam") { paint_front = false; }
+    SECTION("painted front seam overrides the configured rear seam")
+    {
+        paint_front = true;
+    }
+
+    MixedFilamentDefinition definition;
+    definition.identity.stable_id                  = 737374;
+    definition.source.kind                         = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind                         = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components             = {{{1}, 50}, {{2}, 50}};
+    definition.behavior.distribution               = MixedFilamentDistributionMode::Simple;
+    definition.behavior.gradient.enabled           = true;
+    definition.behavior.gradient.component_a_start = 0.8f;
+    definition.behavior.gradient.component_a_end   = 0.2f;
+    definition.presentation.display_color          = "#808000";
+
+    MixedFilamentManager           definitions;
+    const std::vector<std::string> colors{"#FF0000", "#00FF00"};
+    REQUIRE(definitions.add_custom_filament_definition(definition, colors));
+
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_num_extruders(2);
+    config.set_num_filaments(2);
+    for (const std::string& key : config.keys()) {
+        const ConfigOption* option = config.option(key);
+        if (option->type() != coEnums)
+            continue;
+        ConfigOption* replacement = print_config_def.get(key)->create_default_option();
+        replacement->set(option);
+        config.set_key_value(key, replacement);
+    }
+    config.set_key_value("filament_colour", new ConfigOptionStrings(colors));
+    config.set_key_value("filament_diameter", new ConfigOptionFloats({1.75, 1.75}));
+    config.set_key_value("nozzle_diameter", new ConfigOptionFloats({0.4, 0.4}));
+    config.set_key_value("wall_filament", new ConfigOptionInt(3));
+    config.set_key_value("layer_height", new ConfigOptionFloat(0.2));
+    config.set_key_value("initial_layer_print_height", new ConfigOptionFloat(0.2));
+    config.set_key_value("sparse_infill_density", new ConfigOptionPercent(0.0));
+    config.set_key_value("mixed_filament_definitions", new ConfigOptionString(definitions.serialize_custom_entries()));
+    config.set_key_value("mixed_filament_height_lower_bound", new ConfigOptionFloat(0.04));
+    config.set_key_value("dithering_local_z_mode", new ConfigOptionBool(false));
+    config.set_key_value("dithering_local_z_whole_objects", new ConfigOptionBool(false));
+    config.set_key_value("dithering_local_z_preserve_first_layer", new ConfigOptionBool(false));
+    config.set_key_value("enable_prime_tower", new ConfigOptionBool(false));
+    config.set_key_value("seam_position", new ConfigOptionEnum<SeamPosition>(spRear));
+
+    Model        model;
+    ModelObject* model_object = model.add_object();
+    ModelVolume* model_volume = model_object->add_volume(make_cube(20., 20., 2.));
+    if (paint_front) {
+        TriangleSelector selector(model_volume->mesh());
+        // its_make_cube() facets 6 and 7 cover the Y-min vertical face.
+        selector.set_facet(6, EnforcerBlockerType::ENFORCER);
+        selector.set_facet(7, EnforcerBlockerType::ENFORCER);
+        REQUIRE(model_volume->seam_facets.set(selector));
+    }
+    model_object->add_instance();
+    model_object->ensure_on_bed();
+
+    Print print;
+    print.auto_assign_extruders(model_object);
+    print.apply(model, config);
+    print.validate();
+    print.set_status_silent();
+    print.process();
+
+    REQUIRE(print.objects().size() == 1);
+    REQUIRE_FALSE(print.objects().front()->local_z_sublayer_plan().empty());
+
+    const boost::filesystem::path gcode_path = boost::filesystem::temp_directory_path() /
+                                               boost::filesystem::unique_path("local-z-seam-%%%%-%%%%-%%%%.gcode");
+    GCodeProcessorResult processor_result;
+    print.export_gcode(gcode_path.string(), &processor_result, nullptr);
+    boost::filesystem::remove(gcode_path);
+
+    float min_external_y = std::numeric_limits<float>::max();
+    float max_external_y = std::numeric_limits<float>::lowest();
+    for (const GCodeProcessorResult::MoveVertex& move : processor_result.moves) {
+        if (move.type != EMoveType::Extrude || move.extrusion_role != erExternalPerimeter)
+            continue;
+        min_external_y = std::min(min_external_y, move.position.y());
+        max_external_y = std::max(max_external_y, move.position.y());
+    }
+    REQUIRE(min_external_y < max_external_y);
+
+    size_t seam_count = 0;
+    for (const GCodeProcessorResult::MoveVertex& move : processor_result.moves) {
+        if (move.type != EMoveType::Seam)
+            continue;
+        ++seam_count;
+        if (paint_front)
+            CHECK(move.position.y() == Approx(min_external_y).margin(0.5));
+        else
+            CHECK(move.position.y() == Approx(max_external_y).margin(0.5));
+    }
+    CHECK(seam_count > 0);
+}
+
+TEST_CASE("Gradient Local-Z uses its configured nominal height independently of process layers",
+          "[PrintObject][MixedFilament][LocalZ][Gradient]")
+{
+    bool painted_gradient = false;
+    SECTION("whole-object gradient assignment") { painted_gradient = false; }
+    SECTION("painted gradient assignment") { painted_gradient = true; }
+
+    MixedFilamentDefinition definition;
+    definition.identity.stable_id                  = 737375;
+    definition.source.kind                         = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind                         = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components             = {{{1}, 50}, {{2}, 50}};
+    definition.behavior.distribution               = MixedFilamentDistributionMode::Simple;
+    definition.behavior.gradient.enabled           = true;
+    definition.behavior.gradient.component_a_start = 0.75f;
+    definition.behavior.gradient.component_a_end   = 0.25f;
+    definition.presentation.display_color          = "#808000";
+
+    MixedFilamentManager           definitions;
+    const std::vector<std::string> colors{"#FF0000", "#00FF00"};
+    REQUIRE(definitions.add_custom_filament_definition(definition, colors));
+
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_num_extruders(2);
+    config.set_num_filaments(2);
+    for (const std::string &key : config.keys()) {
+        const ConfigOption *option = config.option(key);
+        if (option->type() != coEnums)
+            continue;
+        ConfigOption *replacement = print_config_def.get(key)->create_default_option();
+        replacement->set(option);
+        config.set_key_value(key, replacement);
+    }
+    config.set_key_value("filament_colour", new ConfigOptionStrings(colors));
+    config.set_key_value("filament_diameter", new ConfigOptionFloats({1.75, 1.75}));
+    config.set_key_value("nozzle_diameter", new ConfigOptionFloats({0.4, 0.4}));
+    config.set_key_value("max_layer_height", new ConfigOptionFloats({0.2, 0.2}));
+    config.set_key_value("line_width", new ConfigOptionFloatOrPercent(0.45, false));
+    config.set_key_value("initial_layer_line_width", new ConfigOptionFloatOrPercent(0.45, false));
+    config.set_key_value("outer_wall_line_width", new ConfigOptionFloatOrPercent(0.45, false));
+    config.set_key_value("inner_wall_line_width", new ConfigOptionFloatOrPercent(0.45, false));
+    config.set_key_value("top_surface_line_width", new ConfigOptionFloatOrPercent(0.45, false));
+    config.set_key_value("wall_filament", new ConfigOptionInt(painted_gradient ? 1 : 3));
+    config.set_key_value("layer_height", new ConfigOptionFloat(0.08));
+    config.set_key_value("initial_layer_print_height", new ConfigOptionFloat(0.08));
+    config.set_key_value("sparse_infill_density", new ConfigOptionPercent(0.0));
+    config.set_key_value("mixed_filament_definitions", new ConfigOptionString(definitions.serialize_custom_entries()));
+    config.set_key_value("mixed_filament_height_lower_bound", new ConfigOptionFloat(0.06));
+    config.set_key_value("mixed_color_layer_height_a", new ConfigOptionFloat(0.03));
+    config.set_key_value("mixed_color_layer_height_b", new ConfigOptionFloat(0.03));
+    config.set_key_value("dithering_local_z_gradient_layer_height", new ConfigOptionFloat(0.20));
+    config.set_key_value("dithering_local_z_mode", new ConfigOptionBool(false));
+    config.set_key_value("dithering_local_z_whole_objects", new ConfigOptionBool(false));
+    config.set_key_value("dithering_local_z_preserve_first_layer", new ConfigOptionBool(false));
+    config.set_key_value("dithering_local_z_direct_multicolor", new ConfigOptionBool(false));
+    config.set_key_value("dithering_local_z_independent_layer_height", new ConfigOptionBool(false));
+    config.set_key_value("enable_prime_tower", new ConfigOptionBool(false));
+
+    Model        model;
+    ModelObject *model_object = model.add_object();
+    ModelVolume *model_volume = model_object->add_volume(make_cube(20., 20., 1.0));
+    if (painted_gradient) {
+        TriangleSelector selector(model_volume->mesh());
+        for (int facet_idx = 0; facet_idx < 12; ++facet_idx)
+            selector.set_facet(facet_idx, EnforcerBlockerType::Extruder3);
+        REQUIRE(model_volume->mmu_segmentation_facets.set(selector));
+    }
+    model_object->add_instance();
+    model_object->ensure_on_bed();
+
+    Print print;
+    print.auto_assign_extruders(model_object);
+    print.apply(model, config);
+    print.validate();
+    print.set_status_silent();
+    print.process();
+
+    REQUIRE(print.objects().size() == 1);
+    const PrintObject &print_object = *print.objects().front();
+    REQUIRE(print_object.layer_count() >= 3);
+    CHECK(print_object.get_layer(0)->height == Approx(0.08).margin(1e-6));
+    CHECK(print_object.get_layer(1)->height == Approx(0.08).margin(1e-6));
+    CHECK(print_object.get_layer(2)->height == Approx(0.08).margin(1e-6));
+
+    const std::vector<LocalZInterval> &intervals = print_object.local_z_intervals();
+    REQUIRE_FALSE(intervals.empty());
+    CHECK(std::any_of(intervals.begin(), intervals.end(), [](const LocalZInterval &interval) {
+        return interval.independent_layer_height && !interval.managed_masks.empty();
+    }));
+
+    const std::vector<SubLayerPlan> &plans = print_object.local_z_sublayer_plan();
+    std::vector<unsigned int> gradient_components;
+    std::vector<double>       gradient_heights;
+    std::vector<double>       gradient_print_zs;
+    for (const SubLayerPlan &plan : plans) {
+        if (plan.dependency_group != 1)
+            continue;
+        for (size_t component_idx = 0; component_idx < plan.painted_masks_by_extruder.size(); ++component_idx) {
+            if (plan.painted_masks_by_extruder[component_idx].empty())
+                continue;
+            gradient_components.push_back(unsigned(component_idx + 1));
+            gradient_heights.push_back(plan.flow_height);
+            gradient_print_zs.push_back(plan.print_z);
+            break;
+        }
+    }
+
+    REQUIRE(gradient_components.size() >= 2);
+    REQUIRE(gradient_heights.size() >= 2);
+    REQUIRE(gradient_print_zs.size() >= 2);
+    CHECK(gradient_components[0] == 2);
+    CHECK(gradient_components[1] == 1);
+    CHECK(gradient_heights[0] == Approx(0.06).margin(1e-6));
+    CHECK(gradient_heights[1] == Approx(0.14).margin(1e-6));
+    CHECK(gradient_print_zs[0] == Approx(0.06).margin(1e-6));
+    CHECK(gradient_print_zs[1] == Approx(0.20).margin(1e-6));
+    CHECK(*std::max_element(gradient_heights.begin(), gradient_heights.end()) > 0.08 + EPSILON);
 }
 
 TEST_CASE("Independent direct multicolor Local-Z preserves ratios within printer height limits",

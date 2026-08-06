@@ -37,3 +37,15 @@ TEST_CASE("Triangle selector round-trips painted states above sixteen", "[Triang
     restored.deserialize(data, true, static_cast<EnforcerBlockerType>(painted_state));
     CHECK(restored.has_facets(static_cast<EnforcerBlockerType>(painted_state)));
 }
+
+TEST_CASE("Facet string leaf encoding supports the complete painted-state range", "[TriangleSelector][MMUPaint]")
+{
+    CHECK(encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType::NONE) == "0");
+    CHECK(encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType::Extruder1) == "4");
+    CHECK(encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType::Extruder2) == "8");
+    CHECK(encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType::Extruder3) == "0C");
+    CHECK(encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType::Extruder16) == "DC");
+    CHECK(encode_enforcer_blocker_type_as_facet_string(static_cast<EnforcerBlockerType>(17)) == "EC");
+    CHECK_FALSE(encode_enforcer_blocker_type_as_facet_string(static_cast<EnforcerBlockerType>(120)).empty());
+    CHECK_FALSE(encode_enforcer_blocker_type_as_facet_string(EnforcerBlockerType::ExtruderMax).empty());
+}

@@ -62,6 +62,18 @@ TEST_CASE("OBJ color quantization bounds training while classifying every source
                       }));
     REQUIRE_FALSE(progress.empty());
     CHECK(progress.back() == 100);
+
+    std::vector<std::array<float, 4>> extended_source_colors;
+    extended_source_colors.reserve(256);
+    for (int color_index = 0; color_index < 256; ++color_index) {
+        const float channel = float(color_index) / 255.f;
+        extended_source_colors.push_back({channel, channel, channel, 1.f});
+    }
+    // Use the native RGB space here so the 256 deliberately distinct input
+    // values are not merged by the 8-bit Lab conversion before clustering.
+    REQUIRE(quantizer.apply(extended_source_colors, cluster_results, labels, 256, 256, 0));
+    CHECK(cluster_results.size() == 256);
+    CHECK(labels.size() == extended_source_colors.size());
 }
 
 TEST_CASE("Continuous image-map colors solve physical filament weights without a display palette", "[ImageMap][ColorSolver]")
@@ -110,6 +122,33 @@ TEST_CASE("Continuous image-map colors solve physical filament weights without a
     CHECK((*predicted_purple)[0] == Approx(expected_rgb.r()));
     CHECK((*predicted_purple)[1] == Approx(expected_rgb.g()));
     CHECK((*predicted_purple)[2] == Approx(expected_rgb.b()));
+}
+
+TEST_CASE("Simple perimeter modulation selects only source-relevant physical filaments", "[ImageMap][ColorSolver][PerimeterModulation]")
+{
+    struct ColorEngineRestore
+    {
+        MixedFilamentColorEngine previous;
+        ~ColorEngineRestore() { MixedFilamentManager::set_color_engine(previous); }
+    } restore{MixedFilamentManager::color_engine()};
+    MixedFilamentManager::set_color_engine(MixedFilamentColorEngine::FilamentMixer);
+
+    const std::vector<ImageMap::ContinuousColorComponent> components{
+        {"#FF0000", std::nullopt, std::nullopt},
+        {"#00FF00", std::nullopt, std::nullopt},
+        {"#0000FF", std::nullopt, std::nullopt},
+        {"#FFFFFF", std::nullopt, std::nullopt},
+    };
+    const std::vector<RGBA> red_blue_source{
+        RGBA{1.f, 0.f, 0.f, 1.f},
+        RGBA{0.5f, 0.f, 0.5f, 1.f},
+        RGBA{0.f, 0.f, 1.f, 1.f},
+    };
+
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 0, 0.15) == std::vector<size_t>{0, 2});
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 3, 0.15).size() == 3);
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 4, 0.15) == std::vector<size_t>{0, 1, 2, 3});
+    CHECK(ImageMap::continuous_color_solver_max_component_count() >= 4);
 }
 
 TEST_CASE("Image-map spectrum sampling is bounded and representative", "[ImageMap][Spectrum]")
@@ -290,6 +329,9 @@ TEST_CASE("OBJ image-map facet trees preserve quantized filament regions", "[Obj
     const std::vector<unsigned char> ids{1, 2, 3, 4};
     CHECK(encode_obj_image_map_triangle_filaments(ids, 0, 1, 1) == "080C1C3");
     CHECK(encode_obj_image_map_triangle_filaments(std::vector<unsigned char>{2, 2, 2, 2}, 0, 1, 2).empty());
+    const std::vector<unsigned char> high_ids{17, 120, 255, 1};
+    const std::string high_encoded = encode_obj_image_map_triangle_filaments(high_ids, 0, 1, 1);
+    REQUIRE_FALSE(high_encoded.empty());
 
     Model        model;
     ModelObject* object = model.add_object();
@@ -306,6 +348,12 @@ TEST_CASE("OBJ image-map facet trees preserve quantized filament regions", "[Obj
     CHECK(object->config.opt_int("extruder") == 1);
     CHECK(volume->config.opt_int("extruder") == 1);
     CHECK(volume->mmu_segmentation_facets.get_triangle_as_string(0) == "080C1C3");
+    volume->mmu_segmentation_facets.set_triangle_from_string(1, high_encoded);
+    CHECK(volume->mmu_segmentation_facets.get_triangle_as_string(1) == high_encoded);
+    const auto& used_states = volume->mmu_segmentation_facets.get_data().used_states;
+    CHECK(used_states[17]);
+    CHECK(used_states[120]);
+    CHECK(used_states[255]);
 }
 
 TEST_CASE("OBJ image-map sampling decodes UV textures with a bounded detail plan", "[ObjImageMap]")
@@ -458,8 +506,8 @@ TEST_CASE("Image-map sources are sampled and rasterized only for the current sli
     CHECK(sample->palette_entry->fallback_filament_id == 2);
     CHECK(sample->color[1] == Approx(1.f));
 
-    const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(*mesh, *data, 1, [](const ImageMap::PaletteEntry& entry) {
-        return entry.fallback_filament_id;
+    const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(*mesh, *data, 255, [](const ImageMap::PaletteEntry& entry) {
+        return entry.fallback_filament_id == 2 ? 120u : entry.fallback_filament_id;
     });
     CHECK(rasterized.unresolved_palette_entries == 0);
     CHECK(rasterized.sampled_leaf_count == 16);
