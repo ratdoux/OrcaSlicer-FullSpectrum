@@ -1,5 +1,4 @@
 #include "Internal.hpp"
-#include "../LocalesUtils.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -76,14 +75,7 @@ bool parse_row_definition(const std::string& row,
 
     auto parse_float_token = [&trim_copy](const std::string& tok, float& out) {
         const std::string t = trim_copy(tok);
-        if (t.empty())
-            return false;
-        size_t       consumed = 0;
-        const double value    = string_to_double_decimal_point(t, &consumed);
-        if (consumed != t.size() || !std::isfinite(value))
-            return false;
-        out = float(value);
-        return true;
+        return parse_invariant_float(t, out);
     };
 
     std::vector<std::string> tokens;

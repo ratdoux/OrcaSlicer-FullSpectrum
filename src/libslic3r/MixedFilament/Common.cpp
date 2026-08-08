@@ -6,6 +6,9 @@
 #include <cmath>
 #include <cstdio>
 #include <numeric>
+#include <system_error>
+
+#include <fast_float/fast_float.h>
 
 namespace Slic3r {
 
@@ -98,6 +101,33 @@ int clamp_int(int v, int lo, int hi) { return std::max(lo, std::min(hi, v)); }
 
 float clamp_surface_offset(float v) { return std::clamp(v, -2.f, 2.f); }
 
+bool parse_invariant_float(std::string_view text, float& output)
+{
+    if (text.empty())
+        return false;
+
+    const char* first = text.data();
+    const char* last  = first + text.size();
+    if (*first == '+') {
+        ++first;
+        if (first == last)
+            return false;
+    }
+
+    float value = 0.f;
+    const fast_float::from_chars_result result = fast_float::from_chars(first, last, value);
+    if (result.ec != std::errc() || result.ptr != last || !std::isfinite(value))
+        return false;
+
+    output = value;
+    return true;
+}
+
+std::string format_invariant_decimal(double value, int precision)
+{
+    return float_to_string_decimal_point(value, precision);
+}
+
 float canonical_signed_bias_value(float component_a_surface_offset, float component_b_surface_offset)
 {
     const float offset_a = clamp_surface_offset(component_a_surface_offset);
@@ -112,7 +142,7 @@ float canonical_signed_bias_value(float component_a_surface_offset, float compon
 
 std::string format_surface_offset_token(float value)
 {
-    std::string out = float_to_string_decimal_point(clamp_surface_offset(value), 4);
+    std::string out = format_invariant_decimal(clamp_surface_offset(value), 4);
     while (!out.empty() && out.back() == '0')
         out.pop_back();
     if (!out.empty() && out.back() == '.')

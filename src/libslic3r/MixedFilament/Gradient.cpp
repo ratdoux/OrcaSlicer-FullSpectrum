@@ -1,5 +1,4 @@
 #include "Internal.hpp"
-#include "../LocalesUtils.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -210,28 +209,14 @@ std::vector<unsigned int> build_weighted_gradient_sequence(const std::vector<uns
 std::vector<float> parse_gradient_stop_position_tokens(const std::string& positions)
 {
     std::vector<float> out;
-    std::string        token;
-    auto flush_token = [&out, &token]() {
-        if (token.empty())
-            return;
-
-        size_t       consumed = 0;
-        const double value    = string_to_double_decimal_point(token, &consumed);
-        if (consumed == token.size() && std::isfinite(value))
-            out.emplace_back(float(value));
-        token.clear();
-    };
-
-    for (const char c : positions) {
-        const bool numeric_char = (c >= '0' && c <= '9') || c == '.' || c == '+' || c == '-' || c == 'e' || c == 'E';
-        if (numeric_char) {
-            token.push_back(c);
-            continue;
-        }
-
-        flush_token();
+    std::stringstream stream(positions);
+    std::string       token;
+    while (std::getline(stream, token, '/')) {
+        float value = 0.f;
+        if (!parse_invariant_float(token, value))
+            return {};
+        out.emplace_back(value);
     }
-    flush_token();
     return out;
 }
 
@@ -289,7 +274,7 @@ std::string legacy_gradient_positions_from_float_vector(const std::vector<float>
     for (size_t i = 0; i < positions.size(); ++i) {
         if (i != 0)
             out << '/';
-        out << float_to_string_decimal_point(std::clamp(positions[i], 0.f, 1.f), 4);
+        out << format_invariant_decimal(std::clamp(positions[i], 0.f, 1.f), 4);
     }
     return out.str();
 }

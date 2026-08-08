@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -29,6 +30,8 @@ RGB         parse_hex_color(const std::string& hex);
 std::string rgb_to_hex(const RGB& c);
 int         clamp_int(int v, int lo, int hi);
 float       clamp_surface_offset(float v);
+bool        parse_invariant_float(std::string_view text, float& output);
+std::string format_invariant_decimal(double value, int precision);
 float       canonical_signed_bias_value(float component_a_surface_offset, float component_b_surface_offset);
 std::string format_surface_offset_token(float value);
 void compute_gradient_heights_from_mix(int mix_b_percent,

@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <clocale>
+#include <cstdio>
 #include <map>
 #include <set>
 #include <sstream>
@@ -804,6 +805,10 @@ TEST_CASE("Mixed filament gradients round-trip under a comma decimal locale", "[
         return;
     }
 
+    char localized_number[16] = {};
+    std::snprintf(localized_number, sizeof(localized_number), "%.1f", 0.5);
+    REQUIRE(std::string(localized_number) == "0,5");
+
     const std::vector<std::string> colors = {"#FF0000", "#00FF00", "#0000FF"};
 
     MixedFilamentDefinition definition;
@@ -840,6 +845,60 @@ TEST_CASE("Mixed filament gradients round-trip under a comma decimal locale", "[
     CHECK(round_tripped.behavior.gradient.stop_positions[2] == Approx(0.45f));
     CHECK(round_tripped.behavior.gradient.stop_positions[3] == Approx(0.70f));
     CHECK(mixed_filament_component_surface_offsets(round_tripped) == std::vector<float>{0.02f, 0.04f, -0.02f});
+
+    SECTION("hardcoded dot-decimal metadata loads independently of the writer")
+    {
+        const std::string dot_decimal_row =
+            "1,2,1,1,50,0,g12,w50/50,m2,z2,xa+0.15,xb-0.1,xv+0.15/-0.1,d0,o0,u42,"
+            "p0.0000/+0.5000/1.0000,cm3,r1/+0.8000/0.2000";
+
+        MixedFilamentManager hardcoded;
+        hardcoded.load_custom_entries(dot_decimal_row, colors);
+        const std::vector<MixedFilamentLegacyRow> &rows = hardcoded.mixed_filament_legacy_rows();
+        REQUIRE(rows.size() == 1);
+
+        const MixedFilamentLegacyRow &row = rows.front();
+        CHECK(row.gradient_enabled);
+        CHECK(row.gradient_start == Approx(0.80f));
+        CHECK(row.gradient_end == Approx(0.20f));
+        CHECK(row.component_a_surface_offset == Approx(0.15f));
+        CHECK(row.component_b_surface_offset == Approx(-0.10f));
+        CHECK(row.gradient_stop_positions == "0.0000/0.5000/1.0000");
+
+        const std::vector<MixedFilamentDefinition> hardcoded_definitions = hardcoded.mixed_filament_definitions(colors.size());
+        REQUIRE(hardcoded_definitions.size() == 1);
+        CHECK(mixed_filament_component_surface_offsets(hardcoded_definitions.front()) == std::vector<float>{0.15f, -0.10f});
+    }
+
+    SECTION("malformed and non-finite metadata is rejected without partial parsing")
+    {
+        const std::string malformed_row =
+            "1,2,1,1,50,0,g12,w50/50,m2,z2,xa0.15garbage,xbinf,xv0.15/inf,d0,o0,u43,"
+            "p0.0000/0.5000garbage/1.0000,cm3,r1/0.8000/0.2000";
+
+        MixedFilamentManager malformed;
+        malformed.load_custom_entries(malformed_row, colors);
+        const std::vector<MixedFilamentLegacyRow> &rows = malformed.mixed_filament_legacy_rows();
+        REQUIRE(rows.size() == 1);
+        CHECK(rows.front().component_a_surface_offset == Approx(0.f));
+        CHECK(rows.front().component_b_surface_offset == Approx(0.f));
+        CHECK(rows.front().component_surface_offsets.empty());
+        CHECK(rows.front().gradient_stop_positions.empty());
+
+        const std::string malformed_gradient_row =
+            "1,2,1,1,50,0,g12,w50/50,m2,z2,xa0.15,xb-0.1,d0,o0,u44,cm3,r1/0.8000garbage/0.2000";
+        MixedFilamentManager malformed_gradient;
+        malformed_gradient.load_custom_entries(malformed_gradient_row, colors);
+        REQUIRE(malformed_gradient.mixed_filament_legacy_rows().size() == 1);
+        CHECK_FALSE(malformed_gradient.mixed_filament_legacy_rows().front().gradient_enabled);
+
+        const std::string non_finite_gradient_row =
+            "1,2,1,1,50,0,g12,w50/50,m2,z2,xa0.15,xb-0.1,d0,o0,u45,cm3,r1/inf/0.2000";
+        MixedFilamentManager non_finite_gradient;
+        non_finite_gradient.load_custom_entries(non_finite_gradient_row, colors);
+        REQUIRE(non_finite_gradient.mixed_filament_legacy_rows().size() == 1);
+        CHECK_FALSE(non_finite_gradient.mixed_filament_legacy_rows().front().gradient_enabled);
+    }
 }
 
 TEST_CASE("Surface-bias encoding reproduces requested apparent component percentages", "[MixedFilament][SurfaceBias]")

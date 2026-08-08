@@ -3,6 +3,8 @@
 #ifdef _WIN32
     #include <charconv>
 #endif
+#include <locale>
+#include <sstream>
 #include <stdexcept>
 
 #include <fast_float/fast_float.h>
@@ -77,6 +79,7 @@ std::string float_to_string_decimal_point(double value, int precision/* = -1*/)
     return std::string(out, res.ptr - out);
 #else
     std::stringstream buf;
+    buf.imbue(std::locale::classic());
     if (precision >= 0)
         buf << std::fixed << std::setprecision(precision);
     buf << value;
