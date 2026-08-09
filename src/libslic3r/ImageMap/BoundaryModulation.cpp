@@ -149,7 +149,8 @@ std::vector<BoundaryPoint> sample_polygon(const Polygon&                     pol
             const double inward_length = point.inward.norm();
             if (!std::isfinite(inward_length) || inward_length <= EPSILON)
                 point.inward = edge_inward;
-            const Vec2d query_inward = point.inward.squaredNorm() > EPSILON ? point.inward.normalized() : edge_inward;
+            const Vec2d query_inward =
+                point.inward.squaredNorm() > EPSILON ? Vec2d(point.inward.normalized()) : edge_inward;
             const Vec2d point_mm(unscale<double>(point.point.x()), unscale<double>(point.point.y()));
             if (const std::optional<BoundaryDisplacement> sampled = sampler(point_mm, query_inward)) {
                 point.inset_mm = std::clamp(sampled->inset_mm, -options.max_abs_displacement_mm, options.max_abs_displacement_mm);
