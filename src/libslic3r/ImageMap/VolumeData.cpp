@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <set>
 
 namespace Slic3r::ImageMap {
@@ -106,6 +107,99 @@ uint64_t topology_fingerprint(const TriangleMesh &mesh)
     for (const stl_triangle_vertex_indices &indices : its.indices)
         hash_bytes(hash, indices.data(), sizeof(indices[0]) * 3);
     return hash;
+}
+
+size_t stitch_perimeter_modulation_uv_cracks(const TriangleMesh &mesh, VolumeData &data)
+{
+    struct EdgeUse
+    {
+        size_t binding_index{0};
+        size_t first_corner{0};
+        size_t second_corner{0};
+    };
+
+    using EdgeKey = std::pair<int, int>;
+    std::map<EdgeKey, std::vector<EdgeUse>> edge_uses;
+    const indexed_triangle_set &its = mesh.its;
+    for (size_t binding_index = 0; binding_index < data.triangle_bindings.size(); ++binding_index) {
+        const TriangleBinding &binding = data.triangle_bindings[binding_index];
+        if (binding.triangle_index >= its.indices.size() || binding.zone_index >= data.zones.size() ||
+            binding.source.kind != SourceKind::Texture || data.zones[binding.zone_index].render_mode == RenderMode::NormalMix)
+            continue;
+        const stl_triangle_vertex_indices &indices = its.indices[binding.triangle_index];
+        for (size_t corner = 0; corner < 3; ++corner) {
+            const size_t next = (corner + 1) % 3;
+            const int vertex = indices[int(corner)];
+            const int next_vertex = indices[int(next)];
+            if (vertex < 0 || next_vertex < 0 || vertex == next_vertex)
+                continue;
+            if (vertex < next_vertex)
+                edge_uses[{vertex, next_vertex}].push_back({binding_index, corner, next});
+            else
+                edge_uses[{next_vertex, vertex}].push_back({binding_index, next, corner});
+        }
+    }
+
+    auto triangle_normal = [&its](uint32_t triangle_index) -> Vec3f {
+        if (triangle_index >= its.indices.size())
+            return Vec3f::Zero();
+        const stl_triangle_vertex_indices &indices = its.indices[triangle_index];
+        if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0 || size_t(indices[0]) >= its.vertices.size() ||
+            size_t(indices[1]) >= its.vertices.size() || size_t(indices[2]) >= its.vertices.size())
+            return Vec3f::Zero();
+        Vec3f normal = (its.vertices[size_t(indices[1])] - its.vertices[size_t(indices[0])])
+                           .cross(its.vertices[size_t(indices[2])] - its.vertices[size_t(indices[0])]);
+        const float length = normal.norm();
+        if (!normal.allFinite() || length <= EPSILON)
+            return Vec3f::Zero();
+        normal /= length;
+        return normal;
+    };
+
+    constexpr float max_gap_pixels = 12.f;
+    constexpr float min_gap_pixels = 0.5f;
+    constexpr float max_gap_variation_pixels = 2.5f;
+    size_t stitched_edges = 0;
+    for (const auto &edge_entry : edge_uses) {
+        const std::vector<EdgeUse> &uses = edge_entry.second;
+        if (uses.size() != 2)
+            continue;
+        const EdgeUse &first_use = uses[0];
+        const EdgeUse &second_use = uses[1];
+        TriangleBinding &first = data.triangle_bindings[first_use.binding_index];
+        TriangleBinding &second = data.triangle_bindings[second_use.binding_index];
+        if (first.triangle_index == second.triangle_index || first.zone_index != second.zone_index ||
+            first.source.texture_asset_index != second.source.texture_asset_index || first.source.wrap_u != second.source.wrap_u ||
+            first.source.wrap_v != second.source.wrap_v || first.source.texture_asset_index < 0 ||
+            size_t(first.source.texture_asset_index) >= data.texture_assets.size())
+            continue;
+
+        const Vec3f first_normal = triangle_normal(first.triangle_index);
+        const Vec3f second_normal = triangle_normal(second.triangle_index);
+        if (first_normal.squaredNorm() <= EPSILON || second_normal.squaredNorm() <= EPSILON || first_normal.dot(second_normal) < 0.9999f)
+            continue;
+
+        const TextureAsset &asset = data.texture_assets[size_t(first.source.texture_asset_index)];
+        if (asset.width < 2 || asset.height < 2)
+            continue;
+        const Vec2f pixel_scale(float(asset.width - 1), float(asset.height - 1));
+        const Vec2f first_gap = (second.source.uvs[second_use.first_corner] - first.source.uvs[first_use.first_corner]).cwiseProduct(pixel_scale);
+        const Vec2f second_gap =
+            (second.source.uvs[second_use.second_corner] - first.source.uvs[first_use.second_corner]).cwiseProduct(pixel_scale);
+        const float largest_gap = std::max(first_gap.norm(), second_gap.norm());
+        if (!first_gap.allFinite() || !second_gap.allFinite() || largest_gap < min_gap_pixels || largest_gap > max_gap_pixels ||
+            (first_gap - second_gap).norm() > max_gap_variation_pixels)
+            continue;
+
+        const Vec2f first_midpoint =
+            0.5f * (first.source.uvs[first_use.first_corner] + second.source.uvs[second_use.first_corner]);
+        const Vec2f second_midpoint =
+            0.5f * (first.source.uvs[first_use.second_corner] + second.source.uvs[second_use.second_corner]);
+        first.source.uvs[first_use.first_corner] = second.source.uvs[second_use.first_corner] = first_midpoint;
+        first.source.uvs[first_use.second_corner] = second.source.uvs[second_use.second_corner] = second_midpoint;
+        ++stitched_edges;
+    }
+    return stitched_edges;
 }
 
 ValidationResult VolumeData::validate(const TriangleMesh &mesh) const

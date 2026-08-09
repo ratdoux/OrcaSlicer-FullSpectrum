@@ -162,6 +162,11 @@ struct VolumeData
 
 uint64_t topology_fingerprint(const TriangleMesh &mesh);
 
+// Repairs small UV cracks across the internal diagonal of a coplanar textured
+// surface. Large gaps remain untouched because they represent authored UV
+// islands. Returns the number of shared edges that were stitched.
+size_t stitch_perimeter_modulation_uv_cracks(const TriangleMesh &mesh, VolumeData &data);
+
 } // namespace ImageMap
 } // namespace Slic3r
 

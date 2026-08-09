@@ -147,7 +147,7 @@ struct PerimeterEnvelopeRenderer::Impl
             return std::nullopt;
 
         if (cadence->restricted_solver && cadence->restricted_solver->valid()) {
-            const std::vector<double> restricted_weights = cadence->restricted_solver->solve(sample.color);
+            const std::vector<double> restricted_weights = cadence->restricted_solver->solve_modulation(sample.color);
             if (restricted_weights.size() != cadence->solver_to_physical.size())
                 return std::nullopt;
             std::vector<int> active_component_percents;
@@ -170,7 +170,7 @@ struct PerimeterEnvelopeRenderer::Impl
 
         if (!solver || !solver->valid())
             return std::nullopt;
-        const std::vector<double> target_weights = solver->solve(sample.color);
+        const std::vector<double> target_weights = solver->solve_modulation(sample.color);
         const std::vector<float>  offsets = mixed_filament_surface_offsets_for_apparent_weights(cadence->component_percents, target_weights,
                                                                                                 reference_width_mm);
         if (offsets.size() != num_physical)
@@ -281,7 +281,7 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
             component.material_id = print->config().filament_full_spectrum_material_id.values[component_index];
         solver_components.emplace_back(std::move(component));
     }
-    impl->solver = std::make_unique<ContinuousColorSolver>(solver_components);
+    impl->solver = std::make_unique<ContinuousColorSolver>(solver_components, true);
 
     const Transform3d object_to_print = print_object.trafo_centered();
     for (const ModelVolume* volume : model_object->volumes) {
@@ -333,7 +333,7 @@ std::unique_ptr<PerimeterEnvelopeRenderer> PerimeterEnvelopeRenderer::create(con
                         if (cached != impl->restricted_solvers.end()) {
                             cadence.restricted_solver = cached->second;
                         } else {
-                            auto restricted_solver = std::make_shared<ContinuousColorSolver>(std::move(restricted_components));
+                            auto restricted_solver = std::make_shared<ContinuousColorSolver>(std::move(restricted_components), true);
                             if (!restricted_solver->valid())
                                 return std::nullopt;
                             cadence.restricted_solver = restricted_solver;

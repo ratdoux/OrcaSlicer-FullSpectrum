@@ -25,7 +25,7 @@ struct ContinuousColorComponent
 class ContinuousColorSolver
 {
 public:
-    explicit ContinuousColorSolver(std::vector<ContinuousColorComponent> components);
+    explicit ContinuousColorSolver(std::vector<ContinuousColorComponent> components, bool prepare_modulation = false);
     ~ContinuousColorSolver();
     ContinuousColorSolver(ContinuousColorSolver&&) noexcept;
     ContinuousColorSolver& operator=(ContinuousColorSolver&&) noexcept;
@@ -36,7 +36,14 @@ public:
     size_t              component_count() const;
     size_t              candidate_count() const;
     std::vector<double> solve(const RGBA& target_color) const;
+    // Perimeter modulation needs a continuous transfer function: a hard
+    // nearest-candidate boundary turns imperceptible texture changes into
+    // visible geometric bands. These methods softly project onto the physical
+    // gamut and interpolate a small RGB lookup table so neighboring source
+    // colors always produce neighboring mixture weights.
+    std::vector<double> solve_modulation(const RGBA& target_color) const;
     std::optional<RGBA> predict_color(const RGBA& target_color) const;
+    std::optional<RGBA> predict_modulation_color(const RGBA& target_color) const;
 
 private:
     struct Impl;

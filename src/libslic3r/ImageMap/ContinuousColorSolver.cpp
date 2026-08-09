@@ -22,11 +22,14 @@ namespace {
 // Candidate enumeration, Oklab weighting and KD lookup are adapted from
 // OrcaSlicer-ImageMap's AGPLv3 ColorSolver at commit
 // 1ff08f86146450141cf18af14af884ebcaa68092 (sentientstardust, 2026).
-constexpr float OKLAB_MIN_L_WEIGHT  = 1.f;
-constexpr float OKLAB_MAX_AB_WEIGHT = 4.f;
-constexpr float DARK_PENALTY        = 4.f;
-constexpr float DARK_TOLERANCE      = 0.04f;
-constexpr size_t MAX_CANDIDATES      = 250000;
+constexpr float  OKLAB_MIN_L_WEIGHT             = 1.f;
+constexpr float  OKLAB_MAX_AB_WEIGHT            = 4.f;
+constexpr float  DARK_PENALTY                   = 4.f;
+constexpr float  DARK_TOLERANCE                 = 0.04f;
+constexpr size_t MAX_CANDIDATES                 = 250000;
+constexpr int    MODULATION_LUT_CELLS           = 8;
+constexpr float  MODULATION_MIN_VARIANCE        = 0.0004f;
+constexpr float  MODULATION_OUT_OF_GAMUT_FACTOR = 0.4f;
 
 float clamp01(float value) { return std::isfinite(value) ? std::clamp(value, 0.f, 1.f) : 0.f; }
 
@@ -124,6 +127,8 @@ struct ContinuousColorSolver::Impl
     std::vector<float>                    predicted_colors;
     std::vector<float>                    perceptual_coordinates;
     std::vector<float>                    weights;
+    std::vector<float>                    modulation_lut_weights;
+    std::vector<float>                    modulation_lut_colors;
     std::vector<KdNode>                   kd_nodes;
     int                                   kd_root{-1};
 
@@ -135,6 +140,90 @@ struct ContinuousColorSolver::Impl
         float                      best_error   = std::numeric_limits<float>::max();
         query(kd_root, target, axis_weights, best_index, best_error);
         return best_index;
+    }
+
+    void append_smooth_projection(const RGBA& target_color)
+    {
+        const std::array<float, 3> target       = oklab_from_srgb({target_color[0], target_color[1], target_color[2]});
+        const std::array<float, 3> axis_weights = perceptual_axis_weights(target);
+        size_t                     best_index   = size_t(-1);
+        float                      best_error   = std::numeric_limits<float>::max();
+        query(kd_root, target, axis_weights, best_index, best_error);
+        if (best_index >= perceptual_coordinates.size() / 3)
+            return;
+
+        const float variance = std::max(1e-7f, MODULATION_MIN_VARIANCE + std::max(0.f, best_error) * MODULATION_OUT_OF_GAMUT_FACTOR);
+        std::vector<double>   projected_weights(components.size(), 0.0);
+        std::array<double, 3> projected_color{0.0, 0.0, 0.0};
+        double                total = 0.0;
+        for (size_t candidate_index = 0; candidate_index < perceptual_coordinates.size() / 3; ++candidate_index) {
+            const float exponent = -(candidate_error(candidate_index, target, axis_weights) - best_error) / variance;
+            if (exponent < -16.f)
+                continue;
+            const double contribution = std::exp(double(exponent));
+            const size_t weight_base  = candidate_index * components.size();
+            for (size_t component_index = 0; component_index < components.size(); ++component_index)
+                projected_weights[component_index] += contribution * double(weights[weight_base + component_index]);
+            const size_t color_base = candidate_index * 3;
+            for (size_t channel = 0; channel < 3; ++channel)
+                projected_color[channel] += contribution * double(predicted_colors[color_base + channel]);
+            total += contribution;
+        }
+        if (total <= std::numeric_limits<double>::epsilon())
+            return;
+        for (const double weight : projected_weights)
+            modulation_lut_weights.emplace_back(float(weight / total));
+        for (const double channel : projected_color)
+            modulation_lut_colors.emplace_back(float(channel / total));
+    }
+
+    void build_modulation_lut()
+    {
+        const size_t side        = size_t(MODULATION_LUT_CELLS + 1);
+        const size_t point_count = side * side * side;
+        modulation_lut_weights.clear();
+        modulation_lut_colors.clear();
+        modulation_lut_weights.reserve(point_count * components.size());
+        modulation_lut_colors.reserve(point_count * 3);
+        for (int red = 0; red <= MODULATION_LUT_CELLS; ++red)
+            for (int green = 0; green <= MODULATION_LUT_CELLS; ++green)
+                for (int blue = 0; blue <= MODULATION_LUT_CELLS; ++blue)
+                    append_smooth_projection(RGBA{float(red) / float(MODULATION_LUT_CELLS), float(green) / float(MODULATION_LUT_CELLS),
+                                                  float(blue) / float(MODULATION_LUT_CELLS), 1.f});
+        if (modulation_lut_weights.size() != point_count * components.size() || modulation_lut_colors.size() != point_count * 3) {
+            modulation_lut_weights.clear();
+            modulation_lut_colors.clear();
+        }
+    }
+
+    std::vector<double> interpolate_modulation_lut(const RGBA& target_color, const std::vector<float>& table, size_t value_count) const
+    {
+        const size_t side = size_t(MODULATION_LUT_CELLS + 1);
+        if (table.size() != side * side * side * value_count)
+            return {};
+
+        std::array<int, 3>   low{};
+        std::array<float, 3> fraction{};
+        for (size_t channel = 0; channel < 3; ++channel) {
+            const float scaled = clamp01(target_color[channel]) * float(MODULATION_LUT_CELLS);
+            low[channel]       = std::min(int(std::floor(scaled)), MODULATION_LUT_CELLS - 1);
+            fraction[channel]  = scaled - float(low[channel]);
+        }
+
+        std::vector<double> result(value_count, 0.0);
+        for (int corner = 0; corner < 8; ++corner) {
+            std::array<size_t, 3> coordinate{};
+            double                coefficient = 1.0;
+            for (size_t channel = 0; channel < 3; ++channel) {
+                const bool high     = (corner & (1 << channel)) != 0;
+                coordinate[channel] = size_t(low[channel] + (high ? 1 : 0));
+                coefficient *= high ? double(fraction[channel]) : double(1.f - fraction[channel]);
+            }
+            const size_t base = ((coordinate[0] * side + coordinate[1]) * side + coordinate[2]) * value_count;
+            for (size_t value_index = 0; value_index < value_count; ++value_index)
+                result[value_index] += coefficient * double(table[base + value_index]);
+        }
+        return result;
     }
 
     float candidate_error(size_t candidate_index, const std::array<float, 3>& target, const std::array<float, 3>& axis_weights) const
@@ -210,7 +299,8 @@ size_t continuous_color_solver_max_component_count()
     return component_count;
 }
 
-ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponent> components) : m_impl(std::make_unique<Impl>())
+ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponent> components, bool prepare_modulation)
+    : m_impl(std::make_unique<Impl>())
 {
     m_impl->components = std::move(components);
     if (m_impl->components.size() < 2)
@@ -264,6 +354,8 @@ ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponen
     };
     enumerate(0, total_units);
     m_impl->kd_root = build_kd_tree(m_impl->perceptual_coordinates, m_impl->kd_nodes);
+    if (prepare_modulation)
+        m_impl->build_modulation_lut();
 }
 
 ContinuousColorSolver::~ContinuousColorSolver()                                           = default;
@@ -295,6 +387,13 @@ std::vector<double> ContinuousColorSolver::solve(const RGBA& target_color) const
     return result;
 }
 
+std::vector<double> ContinuousColorSolver::solve_modulation(const RGBA& target_color) const
+{
+    if (!valid())
+        return {};
+    return m_impl->interpolate_modulation_lut(target_color, m_impl->modulation_lut_weights, component_count());
+}
+
 std::optional<RGBA> ContinuousColorSolver::predict_color(const RGBA& target_color) const
 {
     if (!valid())
@@ -305,6 +404,16 @@ std::optional<RGBA> ContinuousColorSolver::predict_color(const RGBA& target_colo
 
     const size_t base = best_index * 3;
     return RGBA{m_impl->predicted_colors[base], m_impl->predicted_colors[base + 1], m_impl->predicted_colors[base + 2], target_color[3]};
+}
+
+std::optional<RGBA> ContinuousColorSolver::predict_modulation_color(const RGBA& target_color) const
+{
+    if (!valid())
+        return std::nullopt;
+    const std::vector<double> projected = m_impl->interpolate_modulation_lut(target_color, m_impl->modulation_lut_colors, 3);
+    if (projected.size() != 3)
+        return std::nullopt;
+    return RGBA{float(projected[0]), float(projected[1]), float(projected[2]), target_color[3]};
 }
 
 std::vector<size_t> select_continuous_color_components(const std::vector<ContinuousColorComponent>& components,

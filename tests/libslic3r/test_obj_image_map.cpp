@@ -109,6 +109,35 @@ TEST_CASE("Continuous image-map colors solve physical filament weights without a
     REQUIRE(predicted_purple);
     CHECK((*predicted_purple)[3] == Approx(0.75f));
 
+    SECTION("perimeter projection does not amplify imperceptible texture changes")
+    {
+        ImageMap::ContinuousColorSolver cmy_solver({{"#FF0080", std::nullopt, std::nullopt},
+                                                     {"#F9ED3D", std::nullopt, std::nullopt},
+                                                     {"#08ABFB", std::nullopt, std::nullopt}}, true);
+        REQUIRE(cmy_solver.valid());
+        const RGBA             first{0.961259f, 0.0602889f, 0.230826f, 1.f};
+        const RGBA             second{0.96146f, 0.0617287f, 0.233602f, 1.f};
+        const std::vector<int> base_percents{34, 33, 33};
+        const std::vector<float> nearest_first =
+            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve(first), 0.4f);
+        const std::vector<float> nearest_second =
+            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve(second), 0.4f);
+        const std::vector<float> modulation_first =
+            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve_modulation(first), 0.4f);
+        const std::vector<float> modulation_second =
+            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve_modulation(second), 0.4f);
+        REQUIRE(nearest_first.size() == 3);
+        REQUIRE(nearest_second.size() == 3);
+        REQUIRE(modulation_first.size() == 3);
+        REQUIRE(modulation_second.size() == 3);
+        CHECK(std::abs(nearest_first[0] - nearest_second[0]) > 0.03f);
+        CHECK(std::abs(modulation_first[0] - modulation_second[0]) < 0.005f);
+
+        const std::optional<RGBA> modulation_preview = cmy_solver.predict_modulation_color(RGBA{first[0], first[1], first[2], 0.75f});
+        REQUIRE(modulation_preview);
+        CHECK((*modulation_preview)[3] == Approx(0.75f));
+    }
+
     std::vector<FullSpectrumKSPairResidualColorInput> expected_inputs;
     if (purple[0] > 0.0)
         expected_inputs.push_back({"#FF0000", int(std::lround(purple[0] * 40.0)), std::nullopt, std::nullopt});
@@ -149,6 +178,60 @@ TEST_CASE("Simple perimeter modulation selects only source-relevant physical fil
     CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 3, 0.15).size() == 3);
     CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 4, 0.15) == std::vector<size_t>{0, 1, 2, 3});
     CHECK(ImageMap::continuous_color_solver_max_component_count() >= 4);
+}
+
+TEST_CASE("Perimeter modulation stitches only small coplanar UV cracks", "[ImageMap][PerimeterModulation][UV]")
+{
+    auto make_data = [] {
+        ImageMap::VolumeData data;
+        ImageMap::TextureAsset texture;
+        texture.stable_id = "texture";
+        texture.width     = 2048;
+        texture.height    = 2048;
+        data.texture_assets.emplace_back(std::move(texture));
+        ImageMap::Zone zone;
+        zone.stable_id   = "zone";
+        zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+        data.zones.emplace_back(std::move(zone));
+
+        ImageMap::TriangleBinding first;
+        first.triangle_index              = 0;
+        first.source.kind                 = ImageMap::SourceKind::Texture;
+        first.source.texture_asset_index = 0;
+        first.source.uvs                  = {Vec2f(0.804362f, 0.001758f), Vec2f(0.999993f, 0.001275f),
+                                             Vec2f(0.999993f, 0.205478f)};
+        ImageMap::TriangleBinding second;
+        second.triangle_index              = 1;
+        second.source.kind                 = ImageMap::SourceKind::Texture;
+        second.source.texture_asset_index = 0;
+        second.source.uvs                  = {Vec2f(0.804865f, 0.005842f), Vec2f(0.999993f, 0.210044f),
+                                              Vec2f(0.804362f, 0.210044f)};
+        data.triangle_bindings = {first, second};
+        return data;
+    };
+
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(0.f, 0.f, 0.f), Vec3f(1.f, 0.f, 0.f), Vec3f(1.f, 1.f, 0.f), Vec3f(0.f, 1.f, 0.f)};
+    its.indices.emplace_back(0, 1, 2);
+    its.indices.emplace_back(0, 2, 3);
+    const TriangleMesh mesh(std::move(its));
+
+    SECTION("a sub-pixel-to-twelve-pixel internal crack is stitched")
+    {
+        ImageMap::VolumeData data = make_data();
+        CHECK(ImageMap::stitch_perimeter_modulation_uv_cracks(mesh, data) == 1);
+        CHECK((data.triangle_bindings[0].source.uvs[0] - data.triangle_bindings[1].source.uvs[0]).norm() == Approx(0.f));
+        CHECK((data.triangle_bindings[0].source.uvs[2] - data.triangle_bindings[1].source.uvs[1]).norm() == Approx(0.f));
+    }
+
+    SECTION("a genuine UV island seam is preserved")
+    {
+        ImageMap::VolumeData data = make_data();
+        data.triangle_bindings[1].source.uvs[0] += Vec2f(0.1f, 0.1f);
+        data.triangle_bindings[1].source.uvs[1] += Vec2f(0.1f, 0.1f);
+        CHECK(ImageMap::stitch_perimeter_modulation_uv_cracks(mesh, data) == 0);
+        CHECK((data.triangle_bindings[0].source.uvs[0] - data.triangle_bindings[1].source.uvs[0]).norm() > 0.1f);
+    }
 }
 
 TEST_CASE("Image-map spectrum sampling is bounded and representative", "[ImageMap][Spectrum]")

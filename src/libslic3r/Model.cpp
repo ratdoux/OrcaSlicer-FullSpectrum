@@ -2105,6 +2105,7 @@ bool ModelVolume::set_image_map_data(ImageMap::VolumeData data)
 {
     if (!data.validate(this->mesh()).valid)
         return false;
+    ImageMap::stitch_perimeter_modulation_uv_cracks(this->mesh(), data);
     m_image_map_data = std::make_shared<const ImageMap::VolumeData>(std::move(data));
     return true;
 }

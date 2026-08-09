@@ -297,7 +297,7 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                     } else if (assignments[assignment_index].components.size() >= 2) {
                         const size_t solver_index = cycle_solvers.size();
                         cycle_solvers.emplace_back(std::make_unique<ImageMap::ContinuousColorSolver>(
-                            std::move(assignments[assignment_index].components)));
+                            std::move(assignments[assignment_index].components), true));
                         if (cycle_solvers.back()->valid()) {
                             solver_by_filament.emplace(filament_id, solver_index);
                             assignment_solver_indices[assignment_index] = solver_index;
@@ -317,11 +317,11 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                     if (solver_index == no_solver || solver_index >= cycle_solvers.size())
                         continue;
                     if (const std::optional<RGBA> predicted =
-                            cycle_solvers[solver_index]->predict_color(assignments[assignment_index].target_color))
+                            cycle_solvers[solver_index]->predict_modulation_color(assignments[assignment_index].target_color))
                         assignments[assignment_index].display_color = *predicted;
                 }
             } else if (!quantize_to_palette) {
-                shared_solver = std::make_unique<ImageMap::ContinuousColorSolver>(std::move(components));
+                shared_solver = std::make_unique<ImageMap::ContinuousColorSolver>(std::move(components), true);
             }
             job->progress.store(10, std::memory_order_relaxed);
 
@@ -422,7 +422,7 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                             if (solver_index != no_solver && solver_index < cycle_solvers.size() &&
                                 cycle_solvers[solver_index] != nullptr && cycle_solvers[solver_index]->valid()) {
                                 if (const std::optional<RGBA> predicted =
-                                        cycle_solvers[solver_index]->predict_color(quantized_target))
+                                        cycle_solvers[solver_index]->predict_modulation_color(quantized_target))
                                     result_color = *predicted;
                             }
                         }
@@ -443,7 +443,7 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(
                                               float((key >> 8) & 0xffu) / 255.f,
                                               float(key & 0xffu) / 255.f,
                                               vertex.color[3]};
-                        if (const std::optional<RGBA> predicted = shared_solver->predict_color(quantized_target))
+                        if (const std::optional<RGBA> predicted = shared_solver->predict_modulation_color(quantized_target))
                             result_color = *predicted;
                         filament_id = nearest_source_color_filament(assignments, quantized_target);
                         if (color_cache.size() < k_source_color_preview_cache_cap) {

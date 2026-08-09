@@ -626,6 +626,12 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
     color_sizer->Add(m_adaptive_sub_panel, 0, wxEXPAND);
 
     m_sizer_simple->Add(content_row, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
+
+    // Separate the Method/Color controls from the full-width mapping content.
+    auto* mapping_divider = new wxPanel(m_page_simple, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
+    mapping_divider->SetBackgroundColour(MFDTheme::divider());
+    m_sizer_simple->Add(mapping_divider, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
+
     m_sizer_simple->Add(m_standard_mapping_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(12));
     m_sizer_simple->Add(m_simple_pm_mapping_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(12));
     m_sizer_simple->Add(m_adaptive_mapping_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(12));
