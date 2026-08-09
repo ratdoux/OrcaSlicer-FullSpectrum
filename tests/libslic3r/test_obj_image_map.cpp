@@ -2,6 +2,7 @@
 
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
+#include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/FullSpectrumKSPairResidual.hpp"
 #include "libslic3r/ImageMap/BoundaryModulation.hpp"
 #include "libslic3r/ImageMap/ContinuousColorSolver.hpp"
@@ -12,6 +13,7 @@
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ObjColorUtils.hpp"
 #include "libslic3r/PNGReadWrite.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 
 #include <boost/filesystem.hpp>
@@ -22,6 +24,76 @@
 #include <set>
 
 using namespace Slic3r;
+
+TEST_CASE("BBS 3MF round trip restores image maps after creating model volumes", "[3mf][ImageMap]")
+{
+    const boost::filesystem::path working_dir = boost::filesystem::temp_directory_path() /
+                                                boost::filesystem::unique_path("fs-image-map-roundtrip-%%%%-%%%%");
+    REQUIRE(boost::filesystem::create_directory(working_dir));
+    const boost::filesystem::path path = working_dir / "roundtrip.3mf";
+    struct RemoveTemporaryDirectory {
+        boost::filesystem::path path;
+        ~RemoveTemporaryDirectory() { boost::filesystem::remove_all(path); }
+    } remove_temporary_directory{working_dir};
+
+    Model source_model;
+    source_model.set_backup_path(working_dir.string());
+    ModelObject *source_object = source_model.add_object();
+    source_object->add_instance();
+    ModelVolume *source_volume = source_object->add_volume(make_cube(1., 1., 1.));
+
+    ImageMap::VolumeData data;
+    data.topology_fingerprint = ImageMap::topology_fingerprint(source_volume->mesh());
+    data.texture_assets.push_back({"roundtrip-texture", "Round-trip texture", 2, 1,
+                                   {12, 34, 56, 255, 210, 180, 90, 255}});
+    ImageMap::Zone zone;
+    zone.stable_id   = "roundtrip-zone";
+    zone.display_name = "Round-trip image map";
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    data.zones.push_back(std::move(zone));
+    ImageMap::TriangleBinding binding;
+    binding.triangle_index             = 0;
+    binding.zone_index                 = 0;
+    binding.source.kind                = ImageMap::SourceKind::Texture;
+    binding.source.texture_asset_index = 0;
+    binding.source.uvs                 = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
+    data.triangle_bindings.push_back(binding);
+    REQUIRE(source_volume->set_image_map_data(std::move(data)));
+
+    PresetBundle preset_bundle;
+    DynamicPrintConfig config = preset_bundle.project_config;
+    StoreParams store;
+    store.model  = &source_model;
+    store.config = &config;
+    store.strategy = SaveStrategy::Zip64 | SaveStrategy::Silence | SaveStrategy::SkipStatic;
+    const std::string path_string = path.string();
+    store.path = path_string.c_str();
+    REQUIRE(store_bbs_3mf(store));
+
+    ConfigSubstitutionContext substitutions{ForwardCompatibilitySubstitutionRule::Disable};
+    Model imported_model;
+    PlateDataPtrs plates;
+    std::vector<Preset *> presets;
+    bool is_bbs = false;
+    Semver version;
+    REQUIRE(load_bbs_3mf(path_string.c_str(), &config, &substitutions, &imported_model, &plates, &presets, &is_bbs, &version, nullptr,
+                         LoadStrategy::LoadModel));
+    REQUIRE(imported_model.objects.size() == 1);
+    REQUIRE(imported_model.objects.front()->volumes.size() == 1);
+    ModelVolume *imported_volume = imported_model.objects.front()->volumes.front();
+    REQUIRE(imported_volume->has_image_map_data());
+    REQUIRE(imported_volume->image_map_data()->texture_assets.size() == 1);
+    CHECK(imported_volume->image_map_data()->texture_assets.front().rgba ==
+          std::vector<uint8_t>{12, 34, 56, 255, 210, 180, 90, 255});
+    REQUIRE(imported_volume->image_map_data()->zones.size() == 1);
+    CHECK(imported_volume->image_map_data()->zones.front().render_mode == ImageMap::RenderMode::PerimeterModulationV2);
+    REQUIRE(imported_volume->image_map_data()->zones.front().palette.size() == 1);
+    CHECK(imported_volume->image_map_data()->zones.front().palette.front().target_color == RGBA{1.f, 0.f, 0.f, 1.f});
+    REQUIRE(imported_volume->image_map_data()->triangle_bindings.size() == 1);
+    CHECK(imported_volume->image_map_data()->triangle_bindings.front().source.uvs ==
+          std::array<Vec2f, 3>{Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)});
+}
 
 TEST_CASE("OBJ color quantization bounds training while classifying every source region", "[ObjImageMap][Quantization]")
 {

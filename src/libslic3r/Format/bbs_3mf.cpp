@@ -1933,8 +1933,6 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
             }
         }
 
-        _apply_fullspectrum_canonical_config(model, config);
-
         lock.close();
 
         if (!m_is_bbl_3mf) {
@@ -2191,6 +2189,12 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                 }
             }
         }
+
+        // Canonical volume data must be restored only after the legacy 3MF
+        // geometry has been materialized. Before this point the identity map
+        // contains object IDs, but there are no ModelVolume instances to
+        // receive image maps or canonical volume assignments.
+        _apply_fullspectrum_canonical_config(model, config);
 
 //        // fixes the min z of the model if negative
 //        model.adjust_min_z();
