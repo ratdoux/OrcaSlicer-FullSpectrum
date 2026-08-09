@@ -14,6 +14,8 @@
 
 #include <wx/app.h>
 #include <wx/button.h>
+#include <wx/checkbox.h>
+#include <wx/choice.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
 
@@ -2683,6 +2685,57 @@ void TabPrint::build()
         optgroup->append_single_option_line("interlocking_boundary_avoidance", "multimaterial_settings_advanced#interlocking-boundary-avoidance");
 
         optgroup = page->new_optgroup(L("Color Mixing (Experimental)"), L"param_mixed_color");
+        if (m_type == Preset::TYPE_PRINT) {
+            Line prediction_controls = {"", ""};
+            prediction_controls.full_width = 1;
+            prediction_controls.widget = [this](wxWindow* parent) {
+                auto* sizer = new wxBoxSizer(wxHORIZONTAL);
+
+                auto* label = new wxStaticText(parent, wxID_ANY, _L("Color prediction engine") + ":");
+                label->SetFont(wxGetApp().normal_font());
+                label->SetMinSize({20 * wxGetApp().em_unit(), -1});
+                sizer->Add(label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, parent->FromDIP(5));
+
+                m_mixed_color_engine_choice = new wxChoice(parent, wxID_ANY);
+                m_mixed_color_engine_choice->Append(_L("Mixer"));
+                m_mixed_color_engine_choice->Append(_L("KM/K-S"));
+                m_mixed_color_engine_choice->SetToolTip(
+                    _L("Choose the color prediction engine used for mixed-filament previews."));
+                m_mixed_color_engine_choice->SetMinSize({parent->FromDIP(100), parent->FromDIP(24)});
+                m_mixed_color_engine_choice->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+                    const MixedFilamentColorEngine engine = m_mixed_color_engine_choice->GetSelection() == 1 ?
+                                                                MixedFilamentColorEngine::FullSpectrumKSPairResidual :
+                                                                MixedFilamentColorEngine::FilamentMixer;
+                    MixedFilamentManager::set_color_engine(engine);
+                    if (wxGetApp().app_config != nullptr) {
+                        wxGetApp().app_config->set("mixed_filament_color_engine",
+                                                  MixedFilamentManager::color_engine_to_string(engine));
+                        wxGetApp().app_config->save();
+                    }
+                    sync_mixed_color_prediction_controls();
+                    refresh_mixed_color_previews();
+                });
+                sizer->Add(m_mixed_color_engine_choice, 0, wxALIGN_CENTER_VERTICAL);
+
+                m_mixed_use_td_checkbox = new wxCheckBox(parent, wxID_ANY, _L("TD"));
+                m_mixed_use_td_checkbox->SetToolTip(
+                    _L("Use each filament's transmission distance in KM/K-S color prediction."));
+                m_mixed_use_td_checkbox->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) {
+                    const bool enabled = m_mixed_use_td_checkbox->GetValue();
+                    MixedFilamentManager::set_use_td_for_color_prediction(enabled);
+                    if (wxGetApp().app_config != nullptr) {
+                        wxGetApp().app_config->set_bool("mixed_filament_use_td_prediction", enabled);
+                        wxGetApp().app_config->save();
+                    }
+                    refresh_mixed_color_previews();
+                });
+                sizer->Add(m_mixed_use_td_checkbox, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, parent->FromDIP(8));
+
+                sync_mixed_color_prediction_controls();
+                return sizer;
+            };
+            optgroup->append_line(prediction_controls);
+        }
         optgroup->append_single_option_line("fs_surface_paint_only");
         optgroup->append_single_option_line("fs_painted_zone_extra_perimeters");
         optgroup->append_single_option_line("dithering_local_z_mode");
@@ -2800,6 +2853,26 @@ void TabPrint::reload_config()
 {
     this->compatible_widget_reload(m_compatible_printers);
     Tab::reload_config();
+    sync_mixed_color_prediction_controls();
+}
+
+void TabPrint::sync_mixed_color_prediction_controls()
+{
+    const MixedFilamentColorEngine engine = MixedFilamentManager::color_engine();
+    if (m_mixed_color_engine_choice != nullptr)
+        m_mixed_color_engine_choice->SetSelection(engine == MixedFilamentColorEngine::FullSpectrumKSPairResidual ? 1 : 0);
+    if (m_mixed_use_td_checkbox != nullptr) {
+        m_mixed_use_td_checkbox->SetValue(MixedFilamentManager::use_td_for_color_prediction());
+        m_mixed_use_td_checkbox->Enable(engine == MixedFilamentColorEngine::FullSpectrumKSPairResidual);
+    }
+}
+
+void TabPrint::refresh_mixed_color_previews()
+{
+    if (wxGetApp().plater() == nullptr)
+        return;
+    if (SidebarFilamentMenu* filament_menu = wxGetApp().sidebar().filament_menu())
+        filament_menu->refresh_mixed_color_previews();
 }
 
 void TabPrint::update_description_lines()
@@ -2956,6 +3029,8 @@ void TabPrint::clear_pages()
 
     m_recommended_thin_wall_thickness_description_line = nullptr;
     m_top_bottom_shell_thickness_explanation = nullptr;
+    m_mixed_color_engine_choice = nullptr;
+    m_mixed_use_td_checkbox = nullptr;
 }
 
 

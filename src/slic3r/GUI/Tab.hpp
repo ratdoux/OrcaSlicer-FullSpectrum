@@ -43,6 +43,8 @@
 #include "Widgets/CheckBox.hpp" // ORCA
 
 class TabCtrl;
+class wxCheckBox;
+class wxChoice;
 
 namespace Slic3r {
 
@@ -457,8 +459,13 @@ public:
 	bool 		supports_printer_technology(const PrinterTechnology tech) const override { return tech == ptFFF; }
 
 private:
+	void sync_mixed_color_prediction_controls();
+	void refresh_mixed_color_previews();
+
 	ogStaticText*	m_recommended_thin_wall_thickness_description_line = nullptr;
 	ogStaticText*	m_top_bottom_shell_thickness_explanation = nullptr;
+	wxChoice*      m_mixed_color_engine_choice = nullptr;
+	wxCheckBox*    m_mixed_use_td_checkbox = nullptr;
 };
 
 class TabPrintModel : public TabPrint

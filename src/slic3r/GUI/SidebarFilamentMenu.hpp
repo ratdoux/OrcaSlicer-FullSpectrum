@@ -181,8 +181,6 @@ private:
     wxStaticText*   m_lbl_mixed_title{nullptr};
     wxStaticText*   m_lbl_mixed_counter{nullptr};
     wxPanel*        m_mixed_divider{nullptr};
-    wxChoice*       m_choice_mixed_color_engine{nullptr};
-    wxCheckBox*     m_check_mixed_use_td{nullptr};
     Button*         m_btn_mixed_manage{nullptr};
     ScalableButton* m_btn_mixed_del{nullptr};
     ScalableButton* m_btn_mixed_add{nullptr};
