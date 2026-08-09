@@ -607,7 +607,10 @@ void MFDRatioAccordion::paint_min_ratio_overlay(wxGraphicsContext& gc, const wxS
 
     if (needs_update) {
         wxBitmap bmp(size.x, size.y, 32);
+#if defined(WIN32) || defined(__APPLE__)
+        // wxBitmap::UseAlpha() is unavailable on GTK and is not needed there.
         bmp.UseAlpha();
+#endif
         wxMemoryDC mdc;
         mdc.SelectObject(bmp);
         mdc.SetBackground(*wxTRANSPARENT_BRUSH);

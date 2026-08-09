@@ -8318,12 +8318,6 @@ msgstr ""
 msgid "Add this cluster color as a new filament."
 msgstr ""
 
-msgid "Keep color"
-msgstr ""
-
-msgid "Add this cluster color as a new filament."
-msgstr ""
-
 msgid "Reset mapped extruders."
 msgstr ""
 
