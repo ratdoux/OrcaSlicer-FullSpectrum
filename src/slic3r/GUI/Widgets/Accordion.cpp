@@ -3,10 +3,10 @@
 #include <wx/wx.h>
 #include <wx/dcgraph.h>
 
-#include "Slic3r/GUI/GUI.hpp"
-#include "Slic3r/GUI/GUI_App.hpp"
-#include "Slic3r/GUI/GUI_Factories.hpp"
-#include "Slic3r/GUI/MFDTheme.hpp"
+#include "slic3r/GUI/GUI.hpp"
+#include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/GUI_Factories.hpp"
+#include "slic3r/GUI/MFDTheme.hpp"
 
 namespace Slic3r::GUI {
 

@@ -5,9 +5,9 @@
 #include <cmath>
 #include <algorithm>
 
-#include "Slic3r/GUI/I18N.hpp"
-#include "Slic3r/GUI/GUI.hpp"
-#include "Slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/I18N.hpp"
+#include "slic3r/GUI/GUI.hpp"
+#include "slic3r/GUI/GUI_App.hpp"
 #include "Label.hpp"
 
 namespace Slic3r::GUI {
