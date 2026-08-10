@@ -9,6 +9,8 @@
 #include "Widgets/StaticLine.hpp"
 #include "Widgets/LabeledStaticBox.hpp"
 
+#include <algorithm>
+#include <iterator>
 #include <utility>
 #include <wx/bookctrl.h>
 #include <wx/numformatter.h>
@@ -233,7 +235,8 @@ Line* OptionsGroup::get_line(const std::string& opt_key)
     {
         if(l.is_separator())
             continue;
-        if (l.get_first_option_key() == opt_key)
+        const std::vector<Option>& options = l.get_options();
+        if (!options.empty() && options.front().opt_id == opt_key)
             return &l;
     }
 
@@ -789,14 +792,12 @@ bool ConfigOptionsGroup::update_visibility(ConfigOptionMode mode)
     int coef = 0;
     int hidden_row_cnt = 0;
     const int cols = m_grid_sizer->GetCols();
-    Line * line = &m_lines.front();
-    size_t line_opt_end = line->get_options().size();
+    auto line = std::find_if(m_lines.begin(), m_lines.end(), [](const Line& candidate) { return !candidate.get_options().empty(); });
     for (auto opt_mode : m_options_mode) {
+        if (line == m_lines.end())
+            break;
         const bool show = opt_mode <= mode && line->toggle_visible;
-        if (--line_opt_end == 0) {
-            ++line;
-            line_opt_end = line->get_options().size();
-        }
+        line = std::find_if(std::next(line), m_lines.end(), [](const Line& candidate) { return !candidate.get_options().empty(); });
         if (!show) {
             hidden_row_cnt++;
             for (int i = 0; i < cols; ++i)
