@@ -673,7 +673,7 @@ wxBoxSizer* PreferencesDialog::create_item_darkmode_checkbox(wxString title, wxW
     m_sizer_checkbox->Add(0, 0, 0, wxEXPAND | wxLEFT, 23);
 
     auto checkbox = new ::CheckBox(parent);
-    checkbox->SetValue((app_config->get(param) == "1") ? true : false);
+    checkbox->SetValue(wxGetApp().dark_mode());
     m_dark_mode_ckeckbox = checkbox;
 
     m_sizer_checkbox->Add(checkbox, 0, wxALIGN_CENTER, 0);
@@ -1096,6 +1096,7 @@ void PreferencesDialog::create()
     auto main_sizer = new wxBoxSizer(wxVERTICAL);
 
     m_scrolledWindow = new MyscrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
+    m_scrolledWindow->SetBackgroundColour(*wxWHITE);
     m_scrolledWindow->SetScrollRate(5, 5);
 
     m_sizer_body = new wxBoxSizer(wxVERTICAL);

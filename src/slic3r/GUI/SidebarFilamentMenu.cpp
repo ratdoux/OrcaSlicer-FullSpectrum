@@ -584,8 +584,10 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 {
     const wxColour material_bg            = StateColor::darkModeColorFor(*wxWHITE);
     const wxColour material_divider       = StateColor::darkModeColorFor(wxColour("#CECECE"));
-    const wxColour material_title_chip_bg = StateColor::darkModeColorFor(wxColour("#F0F0F1"));
+    const wxColour material_title_chip_bg = material_bg;
     const wxColour material_title_fg      = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
+
+    SetBackgroundColour(material_bg);
 
     m_main_sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -593,6 +595,8 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // 1. Title Bar
     // ####################################
     m_title_panel = new StaticBox(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
+    m_title_panel->SetCornerRadius(0);
+    m_title_panel->SetBorderWidth(0);
     m_title_panel->SetBackgroundColor(title_bg);
     m_title_panel->SetBackgroundColor2(0xF1F1F1);
     m_title_panel->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& e) {
@@ -686,12 +690,10 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 
         title_label = new wxStaticText(chip, wxID_ANY, title, wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
         title_label->SetForegroundColour(material_title_fg);
-        title_label->SetBackgroundColour(material_title_chip_bg);
         title_label->SetFont(::Label::Body_14);
 
         counter_label = new wxStaticText(chip, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
         counter_label->SetForegroundColour(material_title_fg);
-        counter_label->SetBackgroundColour(material_title_chip_bg);
         counter_label->SetFont(::Label::Body_14);
 
         chip_sizer->AddSpacer(FromDIP(4));
@@ -1161,6 +1163,7 @@ void SidebarFilamentMenu::msw_rescale()
 
 void SidebarFilamentMenu::sys_color_changed()
 {
+    SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
     m_btn_icon->msw_rescale();
     m_btn_physical_add->msw_rescale();
     m_btn_physical_del->msw_rescale();

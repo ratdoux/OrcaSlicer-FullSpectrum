@@ -260,7 +260,7 @@ bool check_dark_mode() {
 void update_dark_ui(wxWindow* window)
 {
 #ifdef SUPPORT_DARK_MODE
-    bool is_dark = wxGetApp().app_config->get("dark_color_mode") == "1";
+    bool is_dark = wxGetApp().dark_mode();
 #else
     bool is_dark = false;
 #endif

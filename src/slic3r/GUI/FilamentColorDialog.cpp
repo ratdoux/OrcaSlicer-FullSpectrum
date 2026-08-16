@@ -403,7 +403,7 @@ private:
     {
         wxAutoBufferedPaintDC dc(this);
         const wxSize size = GetClientSize();
-        dc.SetBackground(wxBrush(StateColor::darkModeColorFor(wxColour("#F0F0F0"))));
+        dc.SetBackground(wxBrush(StateColor::darkModeColorFor(wxColour("#EEEEEE"))));
         dc.Clear();
 
         dc.SetFont(DialogFont(wxFONTWEIGHT_MEDIUM));
@@ -631,7 +631,7 @@ void FilamentColorDialog::BuildUi()
 
     cardSizer->AddSpacer(FromDIP(16));
     wxPanel* divider = new wxPanel(card, wxID_ANY);
-    divider->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#F0F0F0")));
+    divider->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#EEEEEE")));
     divider->SetMinSize(wxSize(dialogWidth, FromDIP(1)));
     BindDragWindow(divider);
     cardSizer->Add(divider, 0, wxEXPAND);
