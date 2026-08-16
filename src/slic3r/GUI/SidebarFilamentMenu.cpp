@@ -680,14 +680,11 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // nested sizer enables following shrink order: divider->title->buttons
     wxBoxSizer* physical_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
-    auto make_title_chip = [this, material_bg, material_title_chip_bg, material_title_fg](wxWindow* parent, wxStaticText*& title_label,
-                                                                                          wxStaticText*&  counter_label,
-                                                                                          const wxString& title) {
-        StaticBox* chip = new StaticBox(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    auto make_title_chip = [this, material_bg, material_title_fg](wxWindow* parent, wxStaticText*& title_label,
+                                                                  wxStaticText*&  counter_label,
+                                                                  const wxString& title) -> wxPanel* {
+        wxPanel* chip = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
         chip->SetBackgroundColour(material_bg);
-        chip->SetBackgroundColor(material_title_chip_bg);
-        chip->SetBorderWidth(0);
-        chip->SetCornerRadius(FromDIP(4));
 
         wxBoxSizer* chip_sizer = new wxBoxSizer(wxHORIZONTAL);
         chip->SetSizer(chip_sizer);
@@ -708,9 +705,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     };
 
     // Physical title
-    wxWindow* physical_title_chip = make_title_chip(m_physical_title_panel, m_lbl_physical_title, m_lbl_physical_counter, _L("Filament"));
+    m_physical_title_chip = make_title_chip(m_physical_title_panel, m_lbl_physical_title, m_lbl_physical_counter, _L("Filament"));
 
-    physical_title_and_divider_sizer->Add(physical_title_chip, 0, wxALIGN_CENTER);
+    physical_title_and_divider_sizer->Add(m_physical_title_chip, 0, wxALIGN_CENTER);
     physical_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Physical title divider
@@ -863,9 +860,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     wxBoxSizer* mixed_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
     // Mixed title
-    wxWindow* mixed_title_chip = make_title_chip(m_mixed_title_panel, m_lbl_mixed_title, m_lbl_mixed_counter, _L("Mixed Filament"));
+    m_mixed_title_chip = make_title_chip(m_mixed_title_panel, m_lbl_mixed_title, m_lbl_mixed_counter, _L("Mixed Filament"));
 
-    mixed_title_and_divider_sizer->Add(mixed_title_chip, 0, wxALIGN_CENTER);
+    mixed_title_and_divider_sizer->Add(m_mixed_title_chip, 0, wxALIGN_CENTER);
     mixed_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Mixed title divider
@@ -1163,11 +1160,38 @@ void SidebarFilamentMenu::msw_rescale()
     for (auto* card : m_physical_cards) {
         card->m_filament_combo_box->msw_rescale();
     }
+
+    for (auto* card : m_mixed_cards) {
+        card->msw_rescale();
+    }
+
+    for (auto* card : m_image_map_cards) {
+        card->msw_rescale();
+    }
 }
 
 void SidebarFilamentMenu::sys_color_changed()
 {
-    SetBackgroundColour(StateColor::darkModeColorFor(*wxWHITE));
+    const wxColour material_bg       = StateColor::darkModeColorFor(*wxWHITE);
+    const wxColour material_divider  = StateColor::darkModeColorFor(wxColour("#CECECE"));
+    const wxColour material_title_fg = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
+
+    SetBackgroundColour(material_bg);
+
+    m_physical_title_panel->SetBackgroundColour(material_bg);
+    m_mixed_title_panel->SetBackgroundColour(material_bg);
+
+    m_physical_title_chip->SetBackgroundColour(material_bg);
+    m_mixed_title_chip->SetBackgroundColour(material_bg);
+
+    m_physical_divider->SetBackgroundColour(material_divider);
+    m_mixed_divider->SetBackgroundColour(material_divider);
+
+    m_lbl_physical_title->SetForegroundColour(material_title_fg);
+    m_lbl_physical_counter->SetForegroundColour(material_title_fg);
+    m_lbl_mixed_title->SetForegroundColour(material_title_fg);
+    m_lbl_mixed_counter->SetForegroundColour(material_title_fg);
+
     m_btn_icon->msw_rescale();
     m_btn_physical_add->msw_rescale();
     m_btn_physical_del->msw_rescale();
@@ -1180,6 +1204,16 @@ void SidebarFilamentMenu::sys_color_changed()
     for (auto* card : m_physical_cards) {
         card->m_filament_combo_box->sys_color_changed();
     }
+
+    for (auto* card : m_mixed_cards) {
+        card->sys_color_changed();
+    }
+
+    for (auto* card : m_image_map_cards) {
+        card->sys_color_changed();
+    }
+
+    Refresh();
 }
 
 void SidebarFilamentMenu::toggle_collapse(bool only_open = false)

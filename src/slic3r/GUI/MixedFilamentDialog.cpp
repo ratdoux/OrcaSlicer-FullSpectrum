@@ -13,6 +13,7 @@
 
 
 #include <wx/wx.h>
+#include <wx/display.h>
 #include <wx/wrapsizer.h>
 #include <wx/dcgraph.h>
 #include <wx/dcbuffer.h>
@@ -51,7 +52,7 @@ MixedFilamentDialog::MixedFilamentDialog(
         mixed_dialog_title(dialog_action, mixed_idx), 
         wxDefaultPosition, 
         wxDefaultSize, 
-        wxDEFAULT_DIALOG_STYLE
+        wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER
     )
     , m_action(dialog_action)
     , m_physical_filaments(physical_filaments)
@@ -60,9 +61,20 @@ MixedFilamentDialog::MixedFilamentDialog(
     m_min_weight_ratio = 0.15;
 
     m_width_fixed       = this->wxWindow::FromDIP(400);
-    m_height_start      = this->wxWindow::FromDIP(800);
     m_height_min        = this->wxWindow::FromDIP(400);
     m_clr_swatch_size   = this->wxWindow::FromDIP(20);
+
+    int client_h = 0;
+    if (parent != nullptr) {
+        int disp_idx = wxDisplay::GetFromWindow(parent);
+        client_h = wxDisplay(disp_idx != wxNOT_FOUND ? (unsigned)disp_idx : 0u).GetClientArea().GetHeight();
+    } else {
+        int disp_idx = wxDisplay::GetFromWindow(this);
+        client_h = wxDisplay(disp_idx != wxNOT_FOUND ? (unsigned)disp_idx : 0u).GetClientArea().GetHeight();
+    }
+
+    const int max_usable_h = client_h > 0 ? (client_h - this->wxWindow::FromDIP(60)) : this->wxWindow::FromDIP(800);
+    m_height_start = std::min(this->wxWindow::FromDIP(800), std::max(m_height_min, max_usable_h));
 
     SetBackgroundColour(MFDTheme::dialog_background());
 
@@ -246,15 +258,16 @@ MixedFilamentDialog::MixedFilamentDialog(
 
 void MixedFilamentDialog::build_ui(wxWindow* parent)
 {
+    SetSizeHints(wxSize(m_width_fixed, m_height_min), wxSize(m_width_fixed, -1));
     SetMinSize(wxSize(m_width_fixed, m_height_min));
-    SetMaxSize(wxSize(m_width_fixed, wxDefaultCoord));
+    SetMaxSize(wxSize(m_width_fixed, -1));
     Bind(wxEVT_SIZING, &MixedFilamentDialog::on_sizing, this);
     SetDoubleBuffered(true);
        
     m_main_sizer = new wxBoxSizer(wxVERTICAL);
 
     m_title_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
-    m_title_panel->SetBackgroundColour(GetBackgroundColour());
+    m_title_panel->SetBackgroundColour(MFDTheme::dialog_background());
     m_title_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_title_panel->SetSizer(m_title_sizer);
     m_title_panel->SetMinSize(wxSize(-1, FromDIP(30)));
@@ -263,7 +276,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     // "Mix" Tab
     m_mix_tab_btn = new wxPanel(m_title_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_mix_tab_btn->SetMinSize(wxSize(FromDIP(40), FromDIP(30)));
-    m_mix_tab_btn->SetBackgroundColour(GetBackgroundColour());
+    m_mix_tab_btn->SetBackgroundColour(MFDTheme::dialog_background());
 
     m_mix_tab_btn->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
         paintTabBtn(m_mix_tab_btn, true, false, FromDIP(6), _L("Mix"), "", m_current_tab == Tab::Mix, m_mix_tab_hovered); 
@@ -283,7 +296,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     // "Pattern" Tab
     m_pattern_tab_btn = new wxPanel(m_title_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_pattern_tab_btn->SetMinSize(wxSize(FromDIP(40), FromDIP(30)));
-    m_pattern_tab_btn->SetBackgroundColour(GetBackgroundColour());
+    m_pattern_tab_btn->SetBackgroundColour(MFDTheme::dialog_background());
 
     m_pattern_tab_btn->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
         paintTabBtn(m_pattern_tab_btn, false, false, FromDIP(6), _L("Pattern"), "", m_current_tab == Tab::Pattern, m_pattern_tab_hovered); 
@@ -303,7 +316,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     // "Gradient" Tab
     m_gradient_tab_btn = new wxPanel(m_title_panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     m_gradient_tab_btn->SetMinSize(wxSize(FromDIP(40), FromDIP(30)));
-    m_gradient_tab_btn->SetBackgroundColour(GetBackgroundColour());
+    m_gradient_tab_btn->SetBackgroundColour(MFDTheme::dialog_background());
 
     m_gradient_tab_btn->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
         paintTabBtn(m_gradient_tab_btn, false, true, FromDIP(6), _L("Gradient"), "", m_current_tab == Tab::Gradient, m_gradient_tab_hovered); 
@@ -328,14 +341,13 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     
     // "Method" radio buttons for "Mix" Tab
     m_mix_method_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-    m_mix_method_panel->SetBackgroundColour(GetBackgroundColour());
+    m_mix_method_panel->SetBackgroundColour(MFDTheme::dialog_background());
     m_mix_method_sizer = new wxBoxSizer(wxVERTICAL);
     m_mix_method_panel->SetSizer(m_mix_method_sizer);
     build_mix_method_ui(m_mix_method_panel, m_mix_method_sizer);
 
-    m_main_sizer->Add(m_title_panel, 0, wxEXPAND | wxALL, FromDIP(8));
-    m_main_sizer->Add(m_mix_method_panel, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(8));
-    m_main_sizer->AddSpacer(FromDIP(4));
+    m_main_sizer->Add(m_title_panel, 0, wxEXPAND | wxTOP | wxLEFT | wxRIGHT, FromDIP(8));
+    m_main_sizer->Add(m_mix_method_panel, 0, wxEXPAND | wxALL, FromDIP(8));
 
     wxPanel* title_divider = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
     title_divider->SetBackgroundColour(MFDTheme::divider());
@@ -420,7 +432,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     m_main_sizer->Add(m_content_panel, 1, wxEXPAND);
 
     m_footer_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
-    m_footer_panel->SetBackgroundColour(GetBackgroundColour());
+    m_footer_panel->SetBackgroundColour(MFDTheme::dialog_background());
     m_footer_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_footer_panel->SetSizer(m_footer_sizer);
         
@@ -550,10 +562,7 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
     Layout();
     m_content_panel->FitInside();
     SetSize(m_width_fixed, m_height_start);
-    CentreOnParent();
-    wxPoint pos = GetPosition();
-    pos.x += m_width_fixed;
-    SetPosition(pos);
+    CenterOnParent();
 
     for (int idx : m_selected_filaments) {
         m_material_accordion->add_combobox_row(idx);
@@ -1451,11 +1460,17 @@ std::vector<double> MixedFilamentDialog::get_default_weights(int filament_count)
 void MixedFilamentDialog::on_dpi_changed(const wxRect& suggested_rect)
 {
     m_width_fixed     = FromDIP(400);
-    m_height_start    = FromDIP(800);
     m_height_min      = FromDIP(400);
     m_clr_swatch_size = FromDIP(20);
 
+    int disp_idx = wxDisplay::GetFromWindow(this);
+    int client_h = wxDisplay(disp_idx != wxNOT_FOUND ? (unsigned)disp_idx : 0u).GetClientArea().GetHeight();
+    const int max_usable_h = client_h > 0 ? (client_h - FromDIP(60)) : FromDIP(800);
+    m_height_start = std::min(FromDIP(800), std::max(m_height_min, max_usable_h));
+
+    SetSizeHints(wxSize(m_width_fixed, m_height_min), wxSize(m_width_fixed, -1));
     SetMinSize(wxSize(m_width_fixed, m_height_min));
+    SetMaxSize(wxSize(m_width_fixed, -1));
     Refresh();
 }
 

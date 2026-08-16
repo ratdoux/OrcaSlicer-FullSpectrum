@@ -166,6 +166,22 @@ void FilamentCardImageMap::paint_spectrum(wxPaintEvent&)
     dc.DrawText(label, text_position);
 }
 
+void FilamentCardImageMap::msw_rescale()
+{
+    if (m_delete_btn != nullptr)
+        m_delete_btn->msw_rescale();
+
+    if (m_spectrum_panel != nullptr)
+        m_spectrum_panel->Refresh();
+
+    Refresh();
+}
+
+void FilamentCardImageMap::sys_color_changed()
+{
+    msw_rescale();
+}
+
 void FilamentCardMixed::build_ui()
 {
     const int    swatch_size         = FromDIP(20);
@@ -309,6 +325,25 @@ void FilamentCardMixed::build_ui()
     m_main_sizer->Add(m_clr_swatch_panel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
     m_main_sizer->Add(m_box_panel, 1, wxEXPAND | wxALL, FromDIP(2));
     m_main_sizer->Add(m_filament_edit_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+}
+
+void FilamentCardMixed::msw_rescale()
+{
+    if (m_filament_edit_btn != nullptr)
+        m_filament_edit_btn->msw_rescale();
+
+    if (m_clr_swatch_panel != nullptr)
+        m_clr_swatch_panel->Refresh();
+
+    if (m_box_panel != nullptr)
+        m_box_panel->Refresh();
+
+    Refresh();
+}
+
+void FilamentCardMixed::sys_color_changed()
+{
+    msw_rescale();
 }
 
 wxString FilamentCardMixed::display_id_text() const

@@ -170,6 +170,7 @@ private:
     Button*         m_btn_flushing{nullptr};
 
     // Physical Title panel elements
+    wxPanel*        m_physical_title_chip{nullptr};
     wxStaticText*   m_lbl_physical_title{nullptr};
     wxStaticText*   m_lbl_physical_counter{nullptr};
     wxPanel*        m_physical_divider{nullptr};
@@ -178,6 +179,7 @@ private:
     ScalableButton* m_btn_ams{nullptr};
 
     // Mixed Title panel elements
+    wxPanel*        m_mixed_title_chip{nullptr};
     wxStaticText*   m_lbl_mixed_title{nullptr};
     wxStaticText*   m_lbl_mixed_counter{nullptr};
     wxPanel*        m_mixed_divider{nullptr};

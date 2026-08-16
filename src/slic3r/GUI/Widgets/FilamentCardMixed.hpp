@@ -34,6 +34,8 @@ public:
     }
 
     void update_state(MixedFilamentDefinition* definition, bool refresh);
+    void msw_rescale();
+    void sys_color_changed();
 
     static void paint_clr_swatch(
         wxDC& context, const wxSize& size, const wxColor& color, const wxString& index_text, bool is_dark, int padding = 0);
@@ -117,6 +119,8 @@ public:
     void set_on_delete_callback(std::function<void()> callback) { m_on_delete = std::move(callback); }
     void set_on_select_callback(std::function<void()> callback);
     void set_selected(bool selected);
+    void msw_rescale();
+    void sys_color_changed();
 
 private:
     wxString              m_object_name;
