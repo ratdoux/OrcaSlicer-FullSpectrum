@@ -31,6 +31,14 @@
 
 namespace Slic3r::GUI {
 
+static wxString mixed_dialog_title(MixedFilamentDialog::Action dialog_action, int mixed_idx)
+{
+    if (dialog_action == MixedFilamentDialog::Action::Add || mixed_idx < 0)
+        return _L("Add Mixed Filament");
+
+    return wxString::Format(_L("Edit Mixed Filament %s"), Slic3r::mixed_filament_index_to_letter(size_t(mixed_idx)));
+}
+
 MixedFilamentDialog::MixedFilamentDialog(
     wxWindow*                   parent,
     MixedFilamentDialog::Action dialog_action,
@@ -40,7 +48,7 @@ MixedFilamentDialog::MixedFilamentDialog(
 ) : DPIDialog(
         parent, 
         wxID_ANY, 
-        dialog_action == Action::Add ? _L("Add Mixed Filament") : _L("Edit Mixed Filament"), 
+        mixed_dialog_title(dialog_action, mixed_idx), 
         wxDefaultPosition, 
         wxDefaultSize, 
         wxDEFAULT_DIALOG_STYLE

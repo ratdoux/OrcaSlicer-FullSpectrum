@@ -558,8 +558,11 @@ std::vector<wxBitmap*> get_extruder_color_icons(bool thin_icon/* = false*/)
     int index = 0;
     for (const std::string &color : colors)
     {
-        auto label = std::to_string(++index);
-        const size_t color_idx = size_t(index) - 1;
+        const size_t color_idx = size_t(index);
+        ++index;
+        const std::string label = (color_idx < num_physical)
+                                      ? std::to_string(index)
+                                      : Slic3r::mixed_filament_index_to_letter(color_idx - num_physical);
 
         if (color_idx < num_physical) {
             const std::string multiColors = multiColorOption != nullptr && multiColorOption->values.size() > color_idx ?
@@ -688,11 +691,16 @@ void apply_extruder_selector(Slic3r::GUI::BitmapComboBox** ctrl,
         return;
     }
 
-    // For ObjectList we use short extruder name (just a number)
+    const size_t num_physical = Slic3r::GUI::wxGetApp().plater() != nullptr
+                                    ? Slic3r::GUI::wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false).size()
+                                    : static_cast<size_t>(std::max(Slic3r::GUI::wxGetApp().filaments_cnt(), 0));
+
+    // For ObjectList we use short extruder name (just a number or mixed letter)
     const bool use_full_item_name = dynamic_cast<Slic3r::GUI::ObjectList*>(parent) == nullptr;
 
     int i = 0;
-    wxString str = _(L("Extruder"));
+    wxString str_extruder = _(L("Extruder"));
+    wxString str_mixed    = _(L("Mixed Filament"));
     for (wxBitmap* bmp : icons) {
         if (i == 0) {
             if (!first_item.empty())
@@ -700,9 +708,20 @@ void apply_extruder_selector(Slic3r::GUI::BitmapComboBox** ctrl,
             ++i;
         }
 
-        (*ctrl)->Append(use_full_item_name
-                        ? Slic3r::GUI::from_u8((boost::format("%1% %2%") % str % i).str())
-                        : wxString::Format("%d", i), *bmp);
+        const size_t current_idx = size_t(i);
+        wxString item_label;
+        if (current_idx <= num_physical) {
+            item_label = use_full_item_name
+                             ? Slic3r::GUI::from_u8((boost::format("%1% %2%") % str_extruder % i).str())
+                             : wxString::Format("%d", i);
+        } else {
+            const std::string letter = Slic3r::mixed_filament_index_to_letter(current_idx - num_physical - 1);
+            item_label = use_full_item_name
+                             ? Slic3r::GUI::from_u8((boost::format("%1% %2%") % str_mixed % letter).str())
+                             : wxString(letter);
+        }
+
+        (*ctrl)->Append(item_label, *bmp);
         ++i;
     }
     (*ctrl)->SetSelection(0);

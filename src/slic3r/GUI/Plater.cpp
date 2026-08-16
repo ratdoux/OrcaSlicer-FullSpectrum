@@ -5924,8 +5924,8 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
         swatch->SetMinSize(wxSize(FromDIP(12), FromDIP(12)));
         header_sizer->Add(swatch, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, compact_gap_x);
 
-        const int virtual_filament_id = int(num_physical + display_mixed_idx + 1);
-        auto *name_label = new wxStaticText(header_panel, wxID_ANY, wxString::Format("Mixed Filament %d", virtual_filament_id));
+        const std::string mixed_letter = Slic3r::mixed_filament_index_to_letter(display_mixed_idx);
+        auto *name_label = new wxStaticText(header_panel, wxID_ANY, wxString::Format("Mixed Filament %s", mixed_letter));
         name_label->SetForegroundColour(mixed_text_fg);
         header_sizer->Add(name_label, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, compact_gap_x);
 
@@ -6418,8 +6418,8 @@ void Sidebar::change_filament(size_t from_id, size_t to_id)
                                    != dependent_mixed_indices.end();
                 
                 if (is_dependent) {
-                    const int virtual_id = static_cast<int>(num_physical) + visible_idx + 1;
-                    msg += wxString::Format(_L("• Mixed Filament %d\n"), virtual_id);
+                    const std::string letter = Slic3r::mixed_filament_index_to_letter(visible_idx);
+                    msg += wxString::Format(_L("• Mixed Filament %s\n"), letter);
                 }
                 
                 visible_idx++;

@@ -376,7 +376,34 @@ void ObjectDataViewModelNode::SetPlateIdx(const int& idx)
     m_plate_idx = idx;
 }
 
-void ObjectDataViewModelNode::UpdateExtruderAndColorIcon(wxString extruder /*= ""*/)
+static int parse_extruder_string_to_id(const wxString &extruder_str)
+{
+    if (extruder_str.IsEmpty() || extruder_str == "default" || extruder_str == _("default") || extruder_str == "0")
+        return 0;
+
+    std::string s = extruder_str.ToStdString();
+    bool all_digits = true;
+    for (char c : s) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            all_digits = false;
+            break;
+        }
+    }
+    if (all_digits)
+        return std::atoi(s.c_str());
+
+    auto mixed_idx = Slic3r::mixed_filament_letter_to_index(s);
+    if (mixed_idx) {
+        const size_t num_physical = Slic3r::GUI::wxGetApp().preset_bundle != nullptr
+                                        ? Slic3r::GUI::wxGetApp().preset_bundle->filament_presets.size()
+                                        : static_cast<size_t>(std::max(Slic3r::GUI::wxGetApp().filaments_cnt(), 0));
+        return int(num_physical + 1 + *mixed_idx);
+    }
+
+    return 0;
+}
+
+void ObjectDataViewModelNode::UpdateExtruderAndColorIcon(wxString extruder)
 {
     if (m_type == itVolume && m_volume_type != ModelVolumeType::MODEL_PART && m_volume_type != ModelVolumeType::PARAMETER_MODIFIER)
         return;
@@ -386,11 +413,11 @@ void ObjectDataViewModelNode::UpdateExtruderAndColorIcon(wxString extruder /*= "
         m_extruder = extruder; // update extruder
 
     // update color icon
-    size_t extruder_idx = atoi(extruder.c_str());
-    if (extruder_idx == 0) {
+    int extruder_id = parse_extruder_string_to_id(extruder);
+    if (extruder_id == 0) {
         if (m_type & itObject);
         else if (m_type & itVolume && m_volume_type == ModelVolumeType::MODEL_PART) {
-            extruder_idx = atoi(m_parent->GetExtruder().c_str());
+            extruder_id = parse_extruder_string_to_id(m_parent->GetExtruder());
         }
         // BBS
         else if (m_type & itVolume && m_volume_type == ModelVolumeType::PARAMETER_MODIFIER) {
@@ -407,12 +434,12 @@ void ObjectDataViewModelNode::UpdateExtruderAndColorIcon(wxString extruder /*= "
         }
     }
 
-    if (extruder_idx == 0) {
+    if (extruder_id == 0) {
         m_extruder_bmp = *get_default_extruder_color_icon();
         return;
     }
 
-    if (extruder_idx > 0) --extruder_idx;
+    size_t extruder_idx = size_t(extruder_id - 1);
     // Create the bitmap with color bars.
     std::vector<wxBitmap*> bmps = get_extruder_color_icons(false);// use wide icons
     if (bmps.empty()) {
@@ -607,8 +634,10 @@ wxDataViewItem ObjectDataViewModel::AddObject(ModelObject *model_object, std::st
     }
 
     // create object node
-    //const wxString extruder_str = extruder == 0 ? _(L("default")) : wxString::Format("%d", extruder);
-    const wxString extruder_str = wxString::Format("%d", extruder);
+    const size_t num_physical = Slic3r::GUI::wxGetApp().preset_bundle != nullptr
+                                    ? Slic3r::GUI::wxGetApp().preset_bundle->filament_presets.size()
+                                    : static_cast<size_t>(std::max(Slic3r::GUI::wxGetApp().filaments_cnt(), 0));
+    const wxString extruder_str = extruder == 0 ? _(L("default")) : from_u8(Slic3r::filament_display_label(extruder, num_physical));
     auto obj_node = new ObjectDataViewModelNode(name, extruder_str, plate_idx, model_object);
     // Add warning icon if detected auto-repaire
     UpdateBitmapForNode(obj_node, warning_bitmap, has_lock);
@@ -675,7 +704,10 @@ wxDataViewItem ObjectDataViewModel::AddVolumeChild( const wxDataViewItem &parent
             extruder_str = root->m_extruder;
     }
     else {
-        extruder_str = wxString::Format("%d", extruder);
+        const size_t num_physical = Slic3r::GUI::wxGetApp().preset_bundle != nullptr
+                                        ? Slic3r::GUI::wxGetApp().preset_bundle->filament_presets.size()
+                                        : static_cast<size_t>(std::max(Slic3r::GUI::wxGetApp().filaments_cnt(), 0));
+        extruder_str = from_u8(Slic3r::filament_display_label(extruder, num_physical));
     }
 
     const auto node = new ObjectDataViewModelNode(root, name, volume_type, is_text_volume, is_svg_volume, extruder_str, root->m_volumes_cnt);
@@ -894,7 +926,10 @@ wxDataViewItem ObjectDataViewModel::AddLayersChild(const wxDataViewItem &parent_
     if (!parent_node) return wxDataViewItem(0);
 
     // BBS
-    wxString extruder_str = extruder == 0 ? _(L("default")) : wxString::Format("%d", extruder);
+    const size_t num_physical = Slic3r::GUI::wxGetApp().preset_bundle != nullptr
+                                    ? Slic3r::GUI::wxGetApp().preset_bundle->filament_presets.size()
+                                    : static_cast<size_t>(std::max(Slic3r::GUI::wxGetApp().filaments_cnt(), 0));
+    wxString extruder_str = extruder == 0 ? _(L("default")) : from_u8(Slic3r::filament_display_label(extruder, num_physical));
 
     // get LayerRoot node
     ObjectDataViewModelNode *layer_root_node;
@@ -1737,7 +1772,7 @@ int ObjectDataViewModel::GetExtruderNumber(const wxDataViewItem& item) const
 	if (!node)      // happens if item.IsOk()==false
 		return 0;
 
-	return atoi(node->m_extruder.c_str());
+	return parse_extruder_string_to_id(node->m_extruder);
 }
 
 wxString ObjectDataViewModel::GetColumnType(unsigned int col) const

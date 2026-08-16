@@ -157,7 +157,7 @@ void MixedFilamentBatchDialog::generate_items()
     for (size_t idx = 0; idx < existing_definitions.size(); ++idx) {
         if (!existing_definitions[idx].visibility.tombstoned &&
             !existing_definitions[idx].behavior.surface_bias.perimeter_modulation) {
-            existing_keys.push_back({make_mix_key(existing_definitions[idx]), idx});
+            existing_keys.push_back({make_mix_key(existing_definitions[idx]), existing_keys.size()});
         }
     }
 
@@ -190,6 +190,7 @@ void MixedFilamentBatchDialog::generate_items()
         if (exist_it != existing_keys.end()) {
             item.is_existing = true;
             item.is_deleted = false;
+            item.display_id = wxString(Slic3r::mixed_filament_index_to_letter(exist_it->second));
         }
 
         m_mix_items.push_back(item);
@@ -504,7 +505,7 @@ void BatchSwatchTile::on_paint(wxPaintEvent&)
     dc.Clear();
 
     wxColor color = m_item->color;
-    wxString text = "";
+    wxString text = (m_item->is_existing && !m_item->is_deleted) ? m_item->display_id : "";
     FilamentCardMixed::paint_clr_swatch(dc, s, color, text, wxGetApp().dark_mode(), padding);
 
     // Antialiased overlays
@@ -512,9 +513,6 @@ void BatchSwatchTile::on_paint(wxPaintEvent&)
     if (m_item->is_existing) {
         if (m_item->is_deleted) {
             dc.DrawLine(s.x * 0.3, s.y * 0.3, s.x * 0.7, s.y * 0.7);
-        } else {
-            dc.DrawLine(s.x * 0.3, s.y * 0.5, s.x * 0.45, s.y * 0.7);
-            dc.DrawLine(s.x * 0.45, s.y * 0.7, s.x * 0.75, s.y * 0.3);
         }
     } else {
         if (m_item->is_added) {

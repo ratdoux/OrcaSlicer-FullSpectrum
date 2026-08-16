@@ -105,7 +105,9 @@ MixedFilamentBadge::MixedFilamentBadge(wxWindow* parent, wxWindowID id, int virt
                                        bool show_number, int badge_size)
     : wxPanel(parent, id, wxDefaultPosition, wxSize(badge_size, badge_size), wxBORDER_NONE)
     , m_show_number(show_number)
-    , m_label(wxString::Format("%d", virtual_id))
+    , m_label(display_context.num_physical > 0 && virtual_id > int(display_context.num_physical)
+                  ? wxString(Slic3r::mixed_filament_index_to_letter(size_t(virtual_id - int(display_context.num_physical) - 1)))
+                  : wxString::Format("%d", virtual_id))
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetSize(parent->FromDIP(wxSize(badge_size, badge_size)));

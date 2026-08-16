@@ -1553,9 +1553,15 @@ void ObjectGridTable::SetValue( int row, int col, const wxString& value )
                 enum_value = i;
                 break;
             }
-            else if ((col == col_filaments)&&(value.substr(0,2) == grid_col->choices[i].substr(0,2))){
-                enum_value = i;
-                break;
+            else if (col == col_filaments) {
+                auto get_prefix = [](const wxString &str) -> wxString {
+                    int pos = str.Find(':');
+                    return pos != wxNOT_FOUND ? str.Left(pos) : str;
+                };
+                if (get_prefix(value) == get_prefix(grid_col->choices[i])) {
+                    enum_value = i;
+                    break;
+                }
             }
         }
         if (col == col_brim_type) {
@@ -1786,6 +1792,10 @@ void ObjectGridTable::release_object_configs()
 //convert the filament str to short and readable
 wxString ObjectGridTable::convert_filament_string(int index, wxString& filament_str)
 {
+    const size_t physical_count = wxGetApp().preset_bundle != nullptr ? wxGetApp().preset_bundle->filament_presets.size() : 0;
+    if (size_t(index) >= physical_count)
+        return filament_str;
+
     wxString result_str;
     if (filament_str.find("PLA") !=  wxNOT_FOUND ) {
         //PLA
@@ -1806,7 +1816,6 @@ wxString ObjectGridTable::convert_filament_string(int index, wxString& filament_
     else
         result_str = filament_str;
 
-    //result_str = "";
     return result_str;
 }
 
@@ -2833,23 +2842,26 @@ int ObjectTablePanel::init_filaments_and_colors()
         size_t mixed_offset = 0;
         for (const MixedFilamentDefinition &definition :
              wxGetApp().preset_bundle->mixed_filaments.mixed_filament_definitions(physical_count)) {
-            if (definition.visibility.tombstoned)
+            if (definition.visibility.tombstoned || definition.behavior.surface_bias.perimeter_modulation)
                 continue;
             if (size_t(i) != physical_count + mixed_offset) {
                 ++mixed_offset;
                 continue;
             }
 
+            const std::string letter = Slic3r::mixed_filament_index_to_letter(mixed_offset);
             const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
-            m_filaments_name[i] = wxString::Format("%d: Mixed Filament %d (F%u + F%u)",
-                                                   i + 1, i + 1,
+            m_filaments_name[i] = wxString::Format("%s: Mixed Filament %s (F%u + F%u)",
+                                                   letter, letter,
                                                    unsigned(pair.component_a.id),
                                                    unsigned(pair.component_b.id));
             break;
         }
 
-        if (m_filaments_name[i].empty())
-            m_filaments_name[i] = wxString::Format("%d: Filament %d", i + 1, i + 1);
+        if (m_filaments_name[i].empty()) {
+            const std::string letter = Slic3r::mixed_filament_index_to_letter(size_t(i - physical_count));
+            m_filaments_name[i] = wxString::Format("%s: Mixed Filament %s", letter, letter);
+        }
     }
 
     return 0;

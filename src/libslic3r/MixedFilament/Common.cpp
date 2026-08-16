@@ -299,3 +299,43 @@ double mixed_filament_reference_nozzle_mm(unsigned int component_a, unsigned int
 }
 
 }} // namespace Slic3r::MixedFilamentInternal
+
+namespace Slic3r {
+
+std::string mixed_filament_index_to_letter(size_t mixed_index_0based)
+{
+    std::string result;
+    size_t n = mixed_index_0based + 1;
+    while (n > 0) {
+        size_t rem = (n - 1) % 26;
+        result.push_back(static_cast<char>('A' + rem));
+        n = (n - 1) / 26;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+std::optional<size_t> mixed_filament_letter_to_index(const std::string &letter_str)
+{
+    if (letter_str.empty())
+        return std::nullopt;
+    size_t index = 0;
+    for (char c : letter_str) {
+        char upper = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (upper < 'A' || upper > 'Z')
+            return std::nullopt;
+        index = index * 26 + (upper - 'A' + 1);
+    }
+    return index > 0 ? std::optional<size_t>(index - 1) : std::nullopt;
+}
+
+std::string filament_display_label(unsigned int filament_id_1based, size_t num_physical)
+{
+    if (filament_id_1based == 0)
+        return "default";
+    if (filament_id_1based <= num_physical)
+        return std::to_string(filament_id_1based);
+    return mixed_filament_index_to_letter(size_t(filament_id_1based - num_physical - 1));
+}
+
+} // namespace Slic3r

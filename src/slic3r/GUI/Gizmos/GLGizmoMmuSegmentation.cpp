@@ -527,6 +527,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
 
     float start_pos_x = ImGui::GetCursorPos().x;
     size_t n_extruder_colors = std::min(GLGizmoMmuSegmentation::EXTRUDERS_LIMIT, m_display_filament_ids.size());
+    const size_t num_physical = m_mixed_display_context.num_physical;
     for (size_t extruder_idx = 0; extruder_idx < n_extruder_colors; ++extruder_idx) {
         const unsigned int actual_filament_id = m_display_filament_ids[extruder_idx];
         if (actual_filament_id == 0 || actual_filament_id > m_extruders_colors.size())
@@ -534,7 +535,9 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         const ColorRGBA &extruder_color = m_extruders_colors[actual_filament_id - 1];
         ImVec4           color_vec      = ImGuiWrapper::to_ImVec4(extruder_color);
         std::string color_label = std::string("##extruder color ") + std::to_string(extruder_idx);
-        std::string item_text = std::to_string(extruder_idx + 1);
+        std::string item_text = (actual_filament_id <= num_physical)
+                                    ? std::to_string(actual_filament_id)
+                                    : Slic3r::mixed_filament_index_to_letter(actual_filament_id - num_physical - 1);
         const ImVec2 label_size = ImGui::CalcTextSize(item_text.c_str(), NULL, true);
 
         const ImVec2 button_size(max_filament_label_size.x + m_imgui->scaled(0.5f), 0.f);
@@ -620,10 +623,14 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
 
             // Tooltip
             if (ImGui::IsItemHovered()) {
-                if (extruder_idx < 9)
-                    m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
-                else
-                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(extruder_idx + 1)), max_tooltip_width);
+                if (actual_filament_id <= num_physical) {
+                    if (extruder_idx < 9)
+                        m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+                    else
+                        m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
+                } else {
+                    m_imgui->tooltip(wxString::Format(_L("Mixed Filament %s"), item_text), max_tooltip_width);
+                }
             }
 
             // Number text centered on button
@@ -661,10 +668,14 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         if (color_picked) { m_selected_extruder_idx = extruder_idx; }
 
         if (ImGui::IsItemHovered()) {
-            if (extruder_idx < 9)
-                m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
-            else
-                m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(extruder_idx + 1)), max_tooltip_width);
+            if (actual_filament_id <= num_physical) {
+                if (extruder_idx < 9)
+                    m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+                else
+                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
+            } else {
+                m_imgui->tooltip(wxString::Format(_L("Mixed Filament %s"), item_text), max_tooltip_width);
+            }
         }
 
         // draw filament id
@@ -1321,7 +1332,10 @@ void GLGizmoMmuSegmentation::render_filament_remap_ui(float window_width, float 
         #endif
 
         // overlay destination number with proper contrast calculation
-        std::string dst_txt = std::to_string(m_extruder_remap[src] + 1);
+        const size_t num_physical = m_mixed_display_context.num_physical;
+        std::string dst_txt = (dst_filament_id <= num_physical)
+                                  ? std::to_string(dst_filament_id)
+                                  : Slic3r::mixed_filament_index_to_letter(dst_filament_id - num_physical - 1);
         float gray = 0.299f * dst_col.r() + 0.587f * dst_col.g() + 0.114f * dst_col.b();
         ImVec2 txt_sz = ImGui::CalcTextSize(dst_txt.c_str());
         ImVec2 pos = ImGui::GetItemRectMin();
@@ -1393,7 +1407,9 @@ void GLGizmoMmuSegmentation::render_filament_remap_ui(float window_width, float 
                 #endif
                 
                 // overlay destination number on popup buttons
-                std::string dst_num_txt = std::to_string(dst + 1);
+                std::string dst_num_txt = (popup_filament_id <= num_physical)
+                                              ? std::to_string(popup_filament_id)
+                                              : Slic3r::mixed_filament_index_to_letter(popup_filament_id - num_physical - 1);
                 float dst_gray = 0.299f * dst_col_popup.r() + 0.587f * dst_col_popup.g() + 0.114f * dst_col_popup.b();
                 ImVec2 dst_txt_sz = ImGui::CalcTextSize(dst_num_txt.c_str());
                 ImVec2 dst_pos = ImGui::GetItemRectMin();

@@ -1380,12 +1380,20 @@ void IMSlider::render_add_menu()
                 begin_menu(_u8L("Change Filament").c_str(), false);
             }
             else if (begin_menu(_u8L("Change Filament").c_str())) {
+                const size_t num_physical = wxGetApp().preset_bundle != nullptr
+                                                ? wxGetApp().preset_bundle->filament_presets.size()
+                                                : size_t(extruder_num);
                 for (int i = 0; i < extruder_num; i++) {
                     ColorRGBA rgba     = decode_color_to_float_array(m_extruder_colors[i]);
                     ImU32                icon_clr = ImGuiWrapper::to_ImU32(rgba);
                     if (rgba.a() == 0)
                         icon_clr = 0;
-                    if (menu_item_with_icon((_u8L("Filament ") + std::to_string(i + 1)).c_str(), "", ImVec2(14, 14) * m_scale, icon_clr, false, true, &hovered)) add_code_as_tick(ToolChange, i + 1);
+                    std::string item_name;
+                    if (size_t(i) < num_physical)
+                        item_name = _u8L("Filament ") + std::to_string(i + 1);
+                    else
+                        item_name = _u8L("Mixed Filament ") + Slic3r::mixed_filament_index_to_letter(size_t(i) - num_physical);
+                    if (menu_item_with_icon(item_name.c_str(), "", ImVec2(14, 14) * m_scale, icon_clr, false, true, &hovered)) add_code_as_tick(ToolChange, i + 1);
                     if (hovered) { show_tooltip(_u8L("Change filament at the beginning of this layer.")); }
                 }
                 end_menu();
@@ -1430,10 +1438,18 @@ void IMSlider::render_edit_menu(const TickCode& tick)
                     begin_menu(_u8L("Change Filament").c_str(), false);
                 }
                 else if (begin_menu(_u8L("Change Filament").c_str())) {
+                    const size_t num_physical = wxGetApp().preset_bundle != nullptr
+                                                    ? wxGetApp().preset_bundle->filament_presets.size()
+                                                    : size_t(extruder_num);
                     for (int i = 0; i < extruder_num; i++) {
                         ColorRGBA rgba = decode_color_to_float_array(m_extruder_colors[i]);
                         ImU32     icon_clr = ImGuiWrapper::to_ImU32(rgba);
-                        if (menu_item_with_icon((_u8L("Filament ") + std::to_string(i + 1)).c_str(), "", ImVec2(14, 14) * m_scale, icon_clr)) add_code_as_tick(ToolChange, i + 1);
+                        std::string item_name;
+                        if (size_t(i) < num_physical)
+                            item_name = _u8L("Filament ") + std::to_string(i + 1);
+                        else
+                            item_name = _u8L("Mixed Filament ") + Slic3r::mixed_filament_index_to_letter(size_t(i) - num_physical);
+                        if (menu_item_with_icon(item_name.c_str(), "", ImVec2(14, 14) * m_scale, icon_clr)) add_code_as_tick(ToolChange, i + 1);
                     }
                     end_menu();
                 }

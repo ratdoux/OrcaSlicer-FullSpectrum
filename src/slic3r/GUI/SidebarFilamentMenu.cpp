@@ -360,7 +360,11 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
             build_adaptive_cycle_attainable_colors(component_ids, representative, display_context);
         if (attainable_colors.empty())
             attainable_colors = wx_spectrum_colors(representative);
-        auto*                   card = new FilamentCardImageMap(m_mixed_panel, wxString::Format(_L("Mixed filament %u"), filament_id),
+        const size_t num_phys = m_physical_filaments.size();
+        const std::string letter = (filament_id > num_phys)
+                                       ? Slic3r::mixed_filament_index_to_letter(filament_id - num_phys - 1)
+                                       : std::to_string(filament_id);
+        auto*                   card = new FilamentCardImageMap(m_mixed_panel, wxString::Format(_L("Mixed filament %s"), letter),
                                                                  std::move(attainable_colors), false,
                                                                  _L("KM/K-S-predicted attainable colors. Click to highlight the object regions assigned to this adaptive localized cycle"),
                                                                  std::move(component_filaments));

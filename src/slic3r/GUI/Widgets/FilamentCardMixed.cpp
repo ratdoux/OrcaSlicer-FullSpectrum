@@ -313,7 +313,23 @@ void FilamentCardMixed::build_ui()
 
 wxString FilamentCardMixed::display_id_text() const
 {
-    return m_definition ? wxString(std::to_string(m_definition->identity.stable_id)) : wxString();
+    if (!m_definition)
+        return wxString();
+
+    const auto* pb = wxGetApp().preset_bundle;
+    if (pb != nullptr) {
+        const auto &mfs = pb->mixed_filaments.mixed_filaments();
+        size_t visible_idx = 0;
+        for (const auto &mf : mfs) {
+            if (mf.deleted || !mf.enabled) continue;
+            if (mf.stable_id == m_definition->identity.stable_id) {
+                return wxString(Slic3r::mixed_filament_index_to_letter(visible_idx));
+            }
+            ++visible_idx;
+        }
+    }
+
+    return wxString(Slic3r::mixed_filament_index_to_letter(0));
 }
 
 wxSize FilamentCardMixed::color_swatch_size_for_text(const wxString& text) const

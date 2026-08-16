@@ -2589,10 +2589,14 @@ void ObjColorPanel::rebuild_adaptive_cycle_spectrum_table()
                                              unsigned(m_colours.size() + ci + 1);
         const size_t region_count = ci < m_adaptive_cycle_display_region_counts.size() ?
                                         m_adaptive_cycle_display_region_counts[ci] : 0;
+        const size_t num_phys = m_colours.size();
+        const std::string letter = (filament_id > num_phys)
+                                       ? Slic3r::mixed_filament_index_to_letter(filament_id - num_phys - 1)
+                                       : std::to_string(filament_id);
         auto* card = new FilamentCardImageMap(
             m_adaptive_spectrum_window,
-            wxString::Format(_L("Mixed filament %u \u2014 %llu regions"),
-                             filament_id, static_cast<unsigned long long>(region_count)),
+            wxString::Format(_L("Mixed filament %s \u2014 %llu regions"),
+                             letter, static_cast<unsigned long long>(region_count)),
             m_adaptive_cycle_spectrum_colours[ci], false,
             wxString::Format(
                 _L("%llu adaptive color regions use this cycle."),

@@ -33,6 +33,7 @@ struct BatchMixItem
     std::vector<int> percentages;       // weights (e.g. 50, 50)
     wxColor color;
     wxString tooltip;
+    wxString display_id;
     bool is_recommended = false;
     bool is_existing = false;
     bool is_deleted = false;

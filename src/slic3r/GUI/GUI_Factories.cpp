@@ -79,7 +79,9 @@ static wxString filament_menu_item_name(const int filament_id_1based, const int 
         return wxString::Format(_L("Filament %d"), filament_id_1based);
     }
 
-    return wxString::Format(_L("Mixed Filament %d"), display_filament_id_1based);
+    const size_t mixed_idx = size_t(filament_id_1based - physical - 1);
+    const std::string letter = mixed_filament_index_to_letter(mixed_idx);
+    return wxString::Format(_L("Mixed Filament %s"), letter);
 }
 
 static bool is_improper_category(const std::string& category, const int filaments_cnt, const bool is_object_settings = true)
@@ -1587,8 +1589,9 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
             continue;
         }
         
-        const int virtual_id = static_cast<int>(mixed_virtual_id) + 1;
-        wxString item_name = wxString::Format(_L("Mixed Filament %d"), virtual_id);
+        const size_t mixed_idx = running_idx - 1;
+        const std::string letter = mixed_filament_index_to_letter(mixed_idx);
+        wxString item_name = wxString::Format(_L("Mixed Filament %s"), letter);
         
         // Create a colored bitmap for the mixed filament — gradient filaments get a gradient icon
         MixedFilamentDisplayContext menu_ctx;
@@ -1599,7 +1602,7 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
         }
         wxBitmap* mixed_bmp = create_mixed_filament_menu_bitmap(
             mfs[j], menu_ctx, icon_width, icon_height,
-            wxString::Format("%d", virtual_id));
+            wxString(letter));
 
         size_t captured_target = mixed_virtual_id;
         append_menu_item(
