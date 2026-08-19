@@ -19,8 +19,10 @@
 #include "Widgets/StaticBox.hpp"
 #include "Widgets/Label.hpp"
 #include "MixedFilamentBadge.hpp"
+#include "libslic3r/Config.hpp"
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 #ifndef __linux__
 // msw_menuitem_bitmaps is used for MSW and OSX
@@ -716,9 +718,25 @@ void apply_extruder_selector(Slic3r::GUI::BitmapComboBox** ctrl,
                              : wxString::Format("%d", i);
         } else {
             const std::string letter = Slic3r::mixed_filament_index_to_letter(current_idx - num_physical - 1);
-            item_label = use_full_item_name
-                             ? Slic3r::GUI::from_u8((boost::format("%1% %2%") % str_mixed % letter).str())
-                             : wxString(letter);
+            if (use_full_item_name) {
+                const size_t mixed_idx = current_idx - num_physical - 1;
+                const auto* pb = Slic3r::GUI::wxGetApp().preset_bundle;
+                std::string desc;
+                if (pb != nullptr) {
+                    const auto& defs = pb->mixed_filaments.mixed_filament_definitions(num_physical);
+                    if (mixed_idx < defs.size()) {
+                        std::vector<std::string> physical_colors;
+                        if (const auto* opt = pb->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour"))
+                            physical_colors = opt->values;
+                        const Slic3r::MixedFilamentDisplayContext ctx = Slic3r::GUI::build_mixed_filament_display_context(physical_colors);
+                        desc = Slic3r::ColorNames::descriptive_name(defs[mixed_idx], ctx);
+                    }
+                }
+                item_label = !desc.empty() ? Slic3r::GUI::from_u8(desc)
+                                           : Slic3r::GUI::from_u8((boost::format("%1% %2%") % str_mixed % letter).str());
+            } else {
+                item_label = wxString(letter);
+            }
         }
 
         (*ctrl)->Append(item_label, *bmp);

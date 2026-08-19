@@ -1618,6 +1618,47 @@ static std::vector<std::string> selected_filament_full_spectrum_material_ids(Pre
     return material_ids;
 }
 
+static std::vector<std::string> selected_filament_material_types(PresetBundle* preset_bundle, size_t count)
+{
+    std::vector<std::string> material_types(count);
+    if (preset_bundle == nullptr)
+        return material_types;
+
+    const Preset* edited_filament_preset = &preset_bundle->filaments.get_edited_preset();
+    const std::string edited_filament_name = edited_filament_preset != nullptr ?
+        Preset::remove_suffix_modified(edited_filament_preset->name) :
+        std::string();
+
+    for (size_t index = 0; index < count && index < preset_bundle->filament_presets.size(); ++index) {
+        const std::string selected_filament_name = Preset::remove_suffix_modified(preset_bundle->filament_presets[index]);
+        const Preset* filament_preset =
+            (!edited_filament_name.empty() && selected_filament_name == edited_filament_name) ?
+            edited_filament_preset :
+            preset_bundle->filaments.find_preset(selected_filament_name, true);
+
+        if (filament_preset != nullptr) {
+            std::string dummy;
+            std::string type = const_cast<Preset*>(filament_preset)->get_filament_type(dummy);
+            if (!type.empty())
+                material_types[index] = type;
+            else if (filament_preset->config.has("filament_type"))
+                material_types[index] = filament_preset->config.opt_string("filament_type", 0);
+        }
+    }
+
+    const ConfigOptionStrings* project_opt =
+        preset_bundle->project_config.option<ConfigOptionStrings>("filament_type");
+    if (project_opt != nullptr && !project_opt->values.empty()) {
+        const size_t project_count = project_opt->values.size();
+        for (size_t index = 0; index < count && index < project_count; ++index) {
+            if (material_types[index].empty() && !project_opt->values[index].empty())
+                material_types[index] = project_opt->values[index];
+        }
+    }
+
+    return material_types;
+}
+
 MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vector<std::string>& physical_colors)
 {
     MixedFilamentDisplayContext context;
@@ -1626,6 +1667,7 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
     context.nozzle_diameters.assign(context.num_physical, 0.4);
     context.physical_tds.assign(context.num_physical, 0.0);
     context.physical_material_ids.assign(context.num_physical, std::string());
+    context.physical_material_types.assign(context.num_physical, std::string());
 
     auto* preset_bundle = wxGetApp().preset_bundle;
     if (preset_bundle == nullptr)
@@ -1641,6 +1683,7 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
     }
     context.physical_tds = selected_filament_transmission_distances(preset_bundle, context.num_physical);
     context.physical_material_ids = selected_filament_full_spectrum_material_ids(preset_bundle, context.num_physical);
+    context.physical_material_types = selected_filament_material_types(preset_bundle, context.num_physical);
 
     auto get_mixed_bool = [preset_bundle, print_cfg](const std::string& key, bool fallback) {
         if (const ConfigOptionBool* opt = preset_bundle->project_config.option<ConfigOptionBool>(key))

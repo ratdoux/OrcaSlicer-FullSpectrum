@@ -30,9 +30,8 @@ FilamentCardMixed::FilamentCardMixed(wxWindow*                                  
     : ::wxPanel(parent, wxID_ANY), m_definition{definition}, m_physical_filaments{physical_filaments}
 {
     SetBackgroundColour(parent ? parent->GetBackgroundColour() : StateColor::darkModeColorFor(*wxWHITE));
-    update_state(definition, false);
-
     build_ui();
+    update_state(definition, false);
 }
 
 FilamentCardImageMap::FilamentCardImageMap(wxWindow*             parent,
@@ -722,19 +721,23 @@ void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool r
         m_physical_filaments_percentages.clear();
     }
 
-    m_definition = definition;
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(physical_colors);
 
     if (is_gradient_definition(definition)) {
-        std::vector<std::string> physical_colors;
-        physical_colors.reserve(m_physical_filaments.size());
-        for (const auto& filament : m_physical_filaments)
-            physical_colors.emplace_back(filament.first);
-        const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(*definition, build_mixed_filament_display_context(
-                                                                                                            physical_colors));
+        const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(*definition, display_context);
         m_gradient_preview_colors      = preview.sampled_colors;
         m_gradient_component_positions = preview.component_positions;
         m_gradient_component_ids       = preview.component_ids;
     }
+
+    m_tooltip = wxString::FromUTF8(ColorNames::tooltip_text(*definition, display_context, false));
+    SetToolTip(m_tooltip);
+    m_clr_swatch_panel->SetToolTip(_L("Edit Color - ") + m_tooltip);
+    m_box_panel->SetToolTip(_L("Edit - ") + m_tooltip);
 
     update_color_swatch_size();
 

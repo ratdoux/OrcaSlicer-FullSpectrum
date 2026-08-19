@@ -5785,19 +5785,13 @@ void Sidebar::update_mixed_filament_panel(bool sync_manager)
     for (const std::string &hex : physical_colors)
         palette.emplace_back(parse_mixed_color(hex));
 
-    auto mixed_summary_text = [](const MixedFilamentDefinition &definition) {
-        const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
-        if (definition.source.kind != MixedFilamentSourceKind::Custom)
-            return wxString::Format("(Filament %u + Filament %u)",
-                                    unsigned(pair.component_a.id),
-                                    unsigned(pair.component_b.id));
-        if (definition.recipe.manual_pattern)
-            return _L("(Pattern)");
-        if (definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend && definition.recipe.blend.components.size() >= 3)
-            return _L("(Color)");
-        return wxString::Format("(F%u + F%u)",
-                                unsigned(pair.component_a.id),
-                                unsigned(pair.component_b.id));
+    MixedFilamentDisplayContext plater_display_context = build_mixed_filament_display_context(physical_colors);
+    auto mixed_summary_text = [plater_display_context](const MixedFilamentDefinition &definition) {
+        ColorNames::DescriptionOptions opts;
+        opts.include_details = true;
+        opts.include_hex     = false;
+        std::string desc = ColorNames::format_description(definition, plater_display_context.physical_material_types, plater_display_context.physical_colors, opts);
+        return !desc.empty() ? from_u8(desc) : wxString();
     };
 
     auto apply_mixed_entry_changes = [this, preset_bundle, print_cfg, num_physical, physical_colors](size_t mixed_id,
@@ -6419,7 +6413,15 @@ void Sidebar::change_filament(size_t from_id, size_t to_id)
                 
                 if (is_dependent) {
                     const std::string letter = Slic3r::mixed_filament_index_to_letter(visible_idx);
-                    msg += wxString::Format(_L("• Mixed Filament %s\n"), letter);
+                    std::vector<std::string> physical_colors;
+                    if (const auto* opt = pb.project_config.option<ConfigOptionStrings>("filament_colour"))
+                        physical_colors = opt->values;
+                    const MixedFilamentDisplayContext warn_ctx = build_mixed_filament_display_context(physical_colors);
+                    const std::string desc = ColorNames::format_description(mfs[j], warn_ctx.physical_material_types, warn_ctx.physical_colors);
+                    if (!desc.empty())
+                        msg += wxString::Format(_L("• %s (%s)\n"), letter, from_u8(desc));
+                    else
+                        msg += wxString::Format(_L("• Mixed Filament %s\n"), letter);
                 }
                 
                 visible_idx++;

@@ -8,6 +8,7 @@
 #include "I18N.hpp"
 #include "GUI_App.hpp"
 #include "MFDTheme.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 namespace Slic3r::GUI {
 
@@ -72,12 +73,15 @@ void MFDPreviewAccordion::update_preview_mix(
             entry.scale = std::clamp(component_scales[size_t(entry.filament_index)], 0.1, 2.0);
     }
 
+    const wxString color_name = from_u8(ColorNames::closest_css_color_name(mixed_color.Red(), mixed_color.Green(), mixed_color.Blue()));
     if (m_color_panel) {
         m_color_panel->SetBackgroundColour(mixed_color);
+        m_color_panel->SetToolTip(color_name);
         m_color_panel->Refresh();
     }
     if (m_title_swatch) {
         m_title_swatch->SetBackgroundColour(mixed_color);
+        m_title_swatch->SetToolTip(color_name);
         m_title_swatch->Refresh();
     }
     if (m_layers_panel)
@@ -95,12 +99,15 @@ void MFDPreviewAccordion::update_preview_pattern(
     m_layer_stack  = compute_pattern_layer_stack(pattern_indices, 20);
     m_colors       = colors;
 
+    const wxString color_name = from_u8(ColorNames::closest_css_color_name(mixed_color.Red(), mixed_color.Green(), mixed_color.Blue()));
     if (m_color_panel) {
         m_color_panel->SetBackgroundColour(mixed_color);
+        m_color_panel->SetToolTip(color_name);
         m_color_panel->Refresh();
     }
     if (m_title_swatch) {
         m_title_swatch->SetBackgroundColour(mixed_color);
+        m_title_swatch->SetToolTip(color_name);
         m_title_swatch->Refresh();
     }
     if (m_layers_panel)
@@ -119,10 +126,14 @@ void MFDPreviewAccordion::update_preview_gradient(
     m_gradient_positions = positions;
     m_gradient_predicted_colors = predicted_colors;
 
-    if (m_color_panel)
+    if (m_color_panel) {
+        m_color_panel->UnsetToolTip();
         m_color_panel->Refresh();
-    if (m_title_swatch)
+    }
+    if (m_title_swatch) {
+        m_title_swatch->UnsetToolTip();
         m_title_swatch->Refresh();
+    }
     if (m_layers_panel)
         m_layers_panel->Refresh();
     if (m_title_layers)

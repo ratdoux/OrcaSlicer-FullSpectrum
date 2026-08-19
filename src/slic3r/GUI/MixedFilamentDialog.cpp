@@ -32,10 +32,27 @@
 
 namespace Slic3r::GUI {
 
-static wxString mixed_dialog_title(MixedFilamentDialog::Action dialog_action, int mixed_idx)
+static wxString mixed_dialog_title(MixedFilamentDialog::Action dialog_action,
+                                  int mixed_idx,
+                                  const std::vector<std::pair<std::string, std::string>>& physical_filaments)
 {
     if (dialog_action == MixedFilamentDialog::Action::Add || mixed_idx < 0)
         return _L("Add Mixed Filament");
+
+    if (auto* pb = wxGetApp().preset_bundle) {
+        const size_t num_physical = physical_filaments.size();
+        const auto& defs = pb->mixed_filaments.mixed_filament_definitions(num_physical);
+        if (size_t(mixed_idx) < defs.size()) {
+            std::vector<std::string> physical_colors;
+            physical_colors.reserve(physical_filaments.size());
+            for (const auto& p : physical_filaments)
+                physical_colors.push_back(p.first);
+            const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+            const std::string desc = ColorNames::descriptive_name(defs[mixed_idx], ctx);
+            if (!desc.empty())
+                return wxString::Format(_L("Edit %s"), from_u8(desc));
+        }
+    }
 
     return wxString::Format(_L("Edit Mixed Filament %s"), Slic3r::mixed_filament_index_to_letter(size_t(mixed_idx)));
 }
@@ -49,7 +66,7 @@ MixedFilamentDialog::MixedFilamentDialog(
 ) : DPIDialog(
         parent, 
         wxID_ANY, 
-        mixed_dialog_title(dialog_action, mixed_idx), 
+        mixed_dialog_title(dialog_action, mixed_idx, physical_filaments), 
         wxDefaultPosition, 
         wxDefaultSize, 
         wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER

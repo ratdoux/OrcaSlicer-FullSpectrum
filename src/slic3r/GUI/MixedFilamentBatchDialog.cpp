@@ -331,15 +331,23 @@ wxColor MixedFilamentBatchDialog::compute_mixed_color(const std::vector<int>& ph
 
 wxString MixedFilamentBatchDialog::format_tooltip(const std::vector<int>& physical_indices, const std::vector<int>& percentages, const wxColor& mixed_color) const
 {
-    wxString tooltip;
-    for (size_t i = 0; i < physical_indices.size(); ++i) {
-        if (i > 0)
-            tooltip += " + ";
-        tooltip += wxString::Format("%d%% Filament [%d]", percentages[i], physical_indices[i] + 1);
-    }
-    tooltip += wxString::Format(" = #%02X%02X%02X",
-        mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
-    return tooltip;
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& f : m_physical_filaments)
+        physical_colors.emplace_back(f.first);
+    const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+
+    char hex_buf[16];
+    std::snprintf(hex_buf, sizeof(hex_buf), "#%02X%02X%02X", mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
+
+    ColorNames::DescriptionOptions opts;
+    opts.include_details = true;
+    opts.include_hex     = false;
+
+    std::string tip = ColorNames::format_description(physical_indices, percentages, std::string(hex_buf),
+                                                    ctx.physical_material_types, ctx.physical_colors,
+                                                    false, opts);
+    return from_u8(tip);
 }
 
 void MixedFilamentBatchDialog::apply_batch_changes()

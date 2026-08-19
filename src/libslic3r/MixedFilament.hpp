@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include "MixedFilament/ColorNames.hpp"
 
 namespace Slic3r {
 
@@ -327,6 +328,7 @@ struct MixedFilamentDisplayContext
     bool                         component_bias_enabled { false };
     std::vector<double>          physical_tds;
     std::vector<std::string>     physical_material_ids;
+    std::vector<std::string>     physical_material_types;
 };
 
 struct MixedFilamentColorInput

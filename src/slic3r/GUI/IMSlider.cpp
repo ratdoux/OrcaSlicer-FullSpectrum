@@ -1,7 +1,9 @@
 #include "IMSlider.hpp"
 #include "libslic3r/GCode.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "GUI_App.hpp"
 #include "NotificationManager.hpp"
+#include "MixedColorMatchHelpers.hpp"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
@@ -1391,8 +1393,23 @@ void IMSlider::render_add_menu()
                     std::string item_name;
                     if (size_t(i) < num_physical)
                         item_name = _u8L("Filament ") + std::to_string(i + 1);
-                    else
-                        item_name = _u8L("Mixed Filament ") + Slic3r::mixed_filament_index_to_letter(size_t(i) - num_physical);
+                    else {
+                        const size_t mixed_idx = size_t(i) - num_physical;
+                        const std::string letter = Slic3r::mixed_filament_index_to_letter(mixed_idx);
+                        const auto* pb = wxGetApp().preset_bundle;
+                        std::string desc;
+                        if (pb != nullptr) {
+                            const auto& defs = pb->mixed_filaments.mixed_filament_definitions(num_physical);
+                            if (mixed_idx < defs.size()) {
+                                std::vector<std::string> physical_colors;
+                                if (const auto* opt = pb->project_config.option<ConfigOptionStrings>("filament_colour"))
+                                    physical_colors = opt->values;
+                                const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+                                desc = ColorNames::descriptive_name(defs[mixed_idx], ctx);
+                            }
+                        }
+                        item_name = !desc.empty() ? desc : (_u8L("Mixed Filament ") + letter);
+                    }
                     if (menu_item_with_icon(item_name.c_str(), "", ImVec2(14, 14) * m_scale, icon_clr, false, true, &hovered)) add_code_as_tick(ToolChange, i + 1);
                     if (hovered) { show_tooltip(_u8L("Change filament at the beginning of this layer.")); }
                 }
@@ -1445,10 +1462,26 @@ void IMSlider::render_edit_menu(const TickCode& tick)
                         ColorRGBA rgba = decode_color_to_float_array(m_extruder_colors[i]);
                         ImU32     icon_clr = ImGuiWrapper::to_ImU32(rgba);
                         std::string item_name;
+                        std::string item_tip;
                         if (size_t(i) < num_physical)
                             item_name = _u8L("Filament ") + std::to_string(i + 1);
-                        else
-                            item_name = _u8L("Mixed Filament ") + Slic3r::mixed_filament_index_to_letter(size_t(i) - num_physical);
+                        else {
+                            const size_t mixed_idx = size_t(i) - num_physical;
+                            const std::string letter = Slic3r::mixed_filament_index_to_letter(mixed_idx);
+                            const auto* pb = wxGetApp().preset_bundle;
+                            std::string desc;
+                            if (pb != nullptr) {
+                                const auto& defs = pb->mixed_filaments.mixed_filament_definitions(num_physical);
+                                if (mixed_idx < defs.size()) {
+                                    std::vector<std::string> physical_colors;
+                                    if (const auto* opt = pb->project_config.option<ConfigOptionStrings>("filament_colour"))
+                                        physical_colors = opt->values;
+                                    const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+                                    desc = ColorNames::descriptive_name(defs[mixed_idx], ctx);
+                                }
+                            }
+                            item_name = !desc.empty() ? desc : (_u8L("Mixed Filament ") + letter);
+                        }
                         if (menu_item_with_icon(item_name.c_str(), "", ImVec2(14, 14) * m_scale, icon_clr)) add_code_as_tick(ToolChange, i + 1);
                     }
                     end_menu();

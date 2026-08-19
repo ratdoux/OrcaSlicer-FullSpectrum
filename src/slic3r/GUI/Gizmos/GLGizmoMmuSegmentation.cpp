@@ -623,14 +623,12 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
 
             // Tooltip
             if (ImGui::IsItemHovered()) {
-                if (actual_filament_id <= num_physical) {
-                    if (extruder_idx < 9)
-                        m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
-                    else
-                        m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
-                } else {
+                if (extruder_idx < 9)
+                    m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+                else if (actual_filament_id <= num_physical)
+                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
+                else
                     m_imgui->tooltip(wxString::Format(_L("Mixed Filament %s"), item_text), max_tooltip_width);
-                }
             }
 
             // Number text centered on button
@@ -668,14 +666,12 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         if (color_picked) { m_selected_extruder_idx = extruder_idx; }
 
         if (ImGui::IsItemHovered()) {
-            if (actual_filament_id <= num_physical) {
-                if (extruder_idx < 9)
-                    m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
-                else
-                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
-            } else {
+            if (extruder_idx < 9)
+                m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+            else if (actual_filament_id <= num_physical)
+                m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
+            else
                 m_imgui->tooltip(wxString::Format(_L("Mixed Filament %s"), item_text), max_tooltip_width);
-            }
         }
 
         // draw filament id

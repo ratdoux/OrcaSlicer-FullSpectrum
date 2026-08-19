@@ -25,6 +25,7 @@
 #include "slic3r/Utils/FixModelByWin10.hpp"
 #include "ParamsPanel.hpp"
 #include "MixedFilamentBadge.hpp"
+#include "MixedColorMatchHelpers.hpp"
 #include "MsgDialog.hpp"
 #include "wx/utils.h"
 
@@ -43,13 +44,19 @@ static int physical_filaments_count()
     return std::max(wxGetApp().filaments_cnt(), 0);
 }
 
-static int filaments_count()
+static int total_filaments_count()
 {
     if (wxGetApp().preset_bundle == nullptr)
-        return 0;
+        return physical_filaments_count();
+
     const int physical = physical_filaments_count();
     const auto &mixed_mgr = wxGetApp().preset_bundle->mixed_filaments;
     return static_cast<int>(mixed_mgr.total_filaments(size_t(physical)));
+}
+
+static int filaments_count()
+{
+    return total_filaments_count();
 }
 
 static std::vector<unsigned int> ui_ordered_filament_ids()
@@ -73,15 +80,57 @@ static wxString filament_menu_item_name(const int filament_id_1based, const int 
         const auto  &filament_presets = wxGetApp().preset_bundle->filament_presets;
         if (preset_idx < filament_presets.size()) {
             auto preset = wxGetApp().preset_bundle->filaments.find_preset(filament_presets[preset_idx]);
-            if (preset != nullptr)
-                return from_u8(preset->label(false));
+            if (preset != nullptr) {
+                wxString name = from_u8(preset->label(false));
+                name.Replace("&", "&&");
+                return name;
+            }
         }
         return wxString::Format(_L("Filament %d"), filament_id_1based);
     }
 
     const size_t mixed_idx = size_t(filament_id_1based - physical - 1);
     const std::string letter = mixed_filament_index_to_letter(mixed_idx);
+
+    const auto* pb = wxGetApp().preset_bundle;
+    if (pb != nullptr) {
+        const auto& definitions = pb->mixed_filaments.mixed_filament_definitions(size_t(physical));
+        if (mixed_idx < definitions.size()) {
+            std::vector<std::string> physical_colors;
+            if (const auto* opt = pb->project_config.option<ConfigOptionStrings>("filament_colour"))
+                physical_colors = opt->values;
+            const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+            const std::string desc = ColorNames::descriptive_name(definitions[mixed_idx], ctx);
+            if (!desc.empty()) {
+                wxString name = from_u8(desc);
+                name.Replace("&", "&&");
+                return name;
+            }
+        }
+    }
     return wxString::Format(_L("Mixed Filament %s"), letter);
+}
+
+static wxString filament_menu_item_extra_info(const int filament_id_1based)
+{
+    if (filament_id_1based <= 0 || wxGetApp().preset_bundle == nullptr)
+        return wxEmptyString;
+
+    const int physical = physical_filaments_count();
+    if (filament_id_1based <= physical)
+        return wxEmptyString;
+
+    const size_t mixed_idx = size_t(filament_id_1based - physical - 1);
+    const auto* pb = wxGetApp().preset_bundle;
+    if (pb != nullptr) {
+        const auto& definitions = pb->mixed_filaments.mixed_filament_definitions(size_t(physical));
+        if (mixed_idx < definitions.size()) {
+            const std::string extra = ColorNames::extra_details(definitions[mixed_idx], true);
+            if (!extra.empty())
+                return from_u8(extra);
+        }
+    }
+    return wxEmptyString;
 }
 
 static bool is_improper_category(const std::string& category, const int filaments_cnt, const bool is_object_settings = true)
@@ -955,6 +1004,11 @@ void MenuFactory::append_menu_item_change_extruder(wxMenu* menu)
             item_name << " (" + _L("current") + ")";
         }
 
+        const wxString extra_info = filament_menu_item_extra_info(actual_filament_id);
+        if (!extra_info.empty()) {
+            item_name << "\t" << extra_info;
+        }
+
         if (icon_idx >= 0 && icon_idx < icons.size()) {
             append_menu_item(
                 extruder_selection_menu, wxID_ANY, item_name, "",
@@ -1591,15 +1645,22 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
         
         const size_t mixed_idx = running_idx - 1;
         const std::string letter = mixed_filament_index_to_letter(mixed_idx);
-        wxString item_name = wxString::Format(_L("Mixed Filament %s"), letter);
-        
+
         // Create a colored bitmap for the mixed filament — gradient filaments get a gradient icon
-        MixedFilamentDisplayContext menu_ctx;
-        {
-            auto* co2 = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
-            menu_ctx.physical_colors = co2 ? co2->values : std::vector<std::string>{};
-            menu_ctx.num_physical = num_physical;
+        std::vector<std::string> physical_colors;
+        if (auto* co2 = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour"))
+            physical_colors = co2->values;
+        const MixedFilamentDisplayContext menu_ctx = build_mixed_filament_display_context(physical_colors);
+
+        const std::string desc = ColorNames::format_description(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
+        wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
+        item_name.Replace("&", "&&");
+
+        const std::string extra = ColorNames::extra_details(mfs[j], num_physical, true);
+        if (!extra.empty()) {
+            item_name << "\t" << from_u8(extra);
         }
+        
         wxBitmap* mixed_bmp = create_mixed_filament_menu_bitmap(
             mfs[j], menu_ctx, icon_width, icon_height,
             wxString(letter));
@@ -2100,11 +2161,17 @@ void MenuFactory::append_menu_item_change_filament(wxMenu* menu)
             item_name << " (" + _L("current") + ")";
         }
 
+        const wxString extra_info = filament_menu_item_extra_info(actual_filament_id);
+        if (!extra_info.empty()) {
+            item_name << "\t" << extra_info;
+        }
+
         append_menu_item(extruder_selection_menu, wxID_ANY, item_name, "",
             [actual_filament_id](wxCommandEvent&) { obj_list()->set_extruder_for_selected_items(actual_filament_id); },
             actual_filament_id == 0 || size_t(actual_filament_id - 1) >= icons.size() ? wxNullBitmap : *icons[size_t(actual_filament_id - 1)], menu,
             [is_active_extruder]() { return !is_active_extruder; }, m_parent);
     }
+
     menu->Append(wxID_ANY, name, extruder_selection_menu, _L("Change Filament"));
 }
 

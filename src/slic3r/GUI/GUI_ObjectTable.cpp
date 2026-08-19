@@ -17,6 +17,7 @@
 #include "BitmapCache.hpp"
 #include "GUI_ObjectTable.hpp"
 #include "GUI_ObjectList.hpp"
+#include "MixedColorMatchHelpers.hpp"
 
 //use wxGridWindow to compute position
 //#include "wx/generic/private/grid.h"
@@ -2850,11 +2851,13 @@ int ObjectTablePanel::init_filaments_and_colors()
             }
 
             const std::string letter = Slic3r::mixed_filament_index_to_letter(mixed_offset);
-            const MixedFilamentPrimaryPairView pair = definition.recipe.blend.primary_pair_or();
-            m_filaments_name[i] = wxString::Format("%s: Mixed Filament %s (F%u + F%u)",
-                                                   letter, letter,
-                                                   unsigned(pair.component_a.id),
-                                                   unsigned(pair.component_b.id));
+            std::vector<std::string> physical_colors;
+            if (const auto* opt = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour"))
+                physical_colors = opt->values;
+            const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+            const std::string desc = ColorNames::descriptive_name(definition, ctx);
+            m_filaments_name[i] = !desc.empty() ? wxString::Format("%s: %s", letter, from_u8(desc))
+                                                : wxString::Format("%s: Mixed Filament %s", letter, letter);
             break;
         }
 
