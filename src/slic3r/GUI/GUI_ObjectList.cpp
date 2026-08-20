@@ -1,5 +1,6 @@
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include "GUI_ObjectList.hpp"
 #include "GUI_Factories.hpp"
 //#include "GUI_ObjectLayers.hpp"
@@ -958,6 +959,69 @@ void ObjectList::update_filament_values_for_items_when_delete_filament(const siz
             }
         }
     }
+}
+
+void ObjectList::transfer_filament_values_for_items(const size_t from_id, const size_t to_id)
+{
+    m_prevent_update_filament_in_config = true;
+    const int to_1based = static_cast<int>(to_id + 1);
+    const size_t num_physical = Slic3r::GUI::wxGetApp().preset_bundle != nullptr
+                                    ? Slic3r::GUI::wxGetApp().preset_bundle->filament_presets.size()
+                                    : static_cast<size_t>(std::max(Slic3r::GUI::wxGetApp().filaments_cnt(), 0));
+    const wxString to_extruder_str = from_u8(Slic3r::filament_display_label(to_1based, num_physical));
+
+    if (m_objects) {
+        for (size_t i = 0; i < m_objects->size(); ++i) {
+            wxDataViewItem item = m_objects_model->GetItemById(i);
+            if (!item)
+                continue;
+
+            auto object = (*m_objects)[i];
+            if (object->config.has("extruder") && object->config.extruder() == to_1based) {
+                m_objects_model->SetExtruder(to_extruder_str, item);
+            }
+
+            for (size_t id = 0; id < object->volumes.size(); id++) {
+                item = m_objects_model->GetItemByVolumeId(i, id);
+                if (!item)
+                    continue;
+
+                if (object->volumes[id]->config.has("extruder") && object->volumes[id]->config.extruder() == to_1based) {
+                    m_objects_model->SetExtruder(to_extruder_str, item);
+                } else if (!object->volumes[id]->config.has("extruder") || object->volumes[id]->config.extruder() == 0) {
+                    if (object->config.has("extruder") && object->config.extruder() == to_1based) {
+                        m_objects_model->SetExtruder(to_extruder_str, item);
+                    }
+                }
+            }
+
+            item = m_objects_model->GetItemById(i);
+            ObjectDataViewModelNode* object_node = static_cast<ObjectDataViewModelNode*>(item.GetID());
+            if (!object_node || object_node->GetChildCount() == 0)
+                continue;
+
+            for (size_t k = 0; k < object_node->GetChildCount(); k++) {
+                ObjectDataViewModelNode* layer_root_node = object_node->GetNthChild(k);
+                if (layer_root_node->GetType() != ItemType::itLayerRoot)
+                    continue;
+                for (size_t j = 0; j < layer_root_node->GetChildCount(); j++) {
+                    ObjectDataViewModelNode* layer_node = layer_root_node->GetNthChild(j);
+                    auto layer_item = wxDataViewItem((void*) layer_root_node->GetNthChild(j));
+                    if (!layer_item)
+                        continue;
+                    auto l_iter = object->layer_config_ranges.find(layer_node->GetLayerRange());
+                    if (l_iter != object->layer_config_ranges.end()) {
+                        if (l_iter->second.has("extruder") && l_iter->second.option("extruder")->getInt() == to_1based) {
+                            m_objects_model->SetExtruder(to_extruder_str, layer_item);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    update_filament_colors();
+    m_prevent_update_filament_in_config = false;
 }
 
 

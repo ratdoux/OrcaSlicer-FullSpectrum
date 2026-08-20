@@ -1563,27 +1563,20 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
 {
     wxMenu* menu = &m_filament_action_menu;
 
-    if (init) {
-        append_menu_item(
-            menu, wxID_ANY, _L("Edit"), "", [](wxCommandEvent&) { plater()->sidebar().edit_filament(); }, "", nullptr,
-            []() { return true; }, m_parent);
+    while (menu->GetMenuItemCount() > 0) {
+        menu->Destroy(menu->GetMenuItems()[0]);
     }
 
-    if (init) {
-        append_menu_item(
-            menu, wxID_ANY, _L("Delete"), _L("Delete this filament"), [](wxCommandEvent&) { plater()->sidebar().delete_filament(-2); }, "",
-            nullptr, []() { return plater()->sidebar().filament_menu()->m_physical_count() > 1; }, m_parent);
-    }
+    append_menu_item(
+        menu, wxID_ANY, _L("Edit"), "", [](wxCommandEvent&) { plater()->sidebar().edit_filament(); }, "", nullptr,
+        []() { return true; }, m_parent);
 
     if (wxGetApp().preset_bundle == nullptr)
         return;
 
-    const int item_id = menu->FindItem(_L("Merge with"));
-    if (item_id != wxNOT_FOUND)
-        menu->Destroy(item_id);
-
-    wxMenu *                      sub_menu         = new wxMenu();
-    std::vector<wxBitmap *>       icons            = get_extruder_color_icons(true);
+    wxMenu *                      transfer_sub_menu = new wxMenu();
+    wxMenu *                      sub_menu          = new wxMenu();
+    std::vector<wxBitmap *>       icons             = get_extruder_color_icons(true);
     const std::vector<std::string> &filament_presets = wxGetApp().preset_bundle->filament_presets;
     int                            filaments_cnt    = std::max(wxGetApp().filaments_cnt(), 0);
     filaments_cnt = std::min(filaments_cnt, static_cast<int>(icons.size()));
@@ -1597,11 +1590,15 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
         wxString item_name = preset ? from_u8(preset->label(false)) : wxString::Format(_L("Filament %d"), i + 1);
 
         append_menu_item(
+            transfer_sub_menu, wxID_ANY, item_name, "", [i](wxCommandEvent&) { plater()->sidebar().transfer_filament(-2, i); }, *icons[i], menu,
+            []() { return true; }, m_parent);
+
+        append_menu_item(
             sub_menu, wxID_ANY, item_name, "", [i](wxCommandEvent&) { plater()->sidebar().change_filament(-2, i); }, *icons[i], menu,
             []() { return true; }, m_parent);
     }
 
-    // Add mixed filaments as merge targets
+    // Add mixed filaments as targets
     auto& mixed_mgr = wxGetApp().preset_bundle->mixed_filaments;
     const auto& mfs = mixed_mgr.mixed_filaments();
     const size_t num_physical = filament_presets.size();
@@ -1624,6 +1621,7 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
     }
     
     size_t visible_idx = 0;
+    size_t transfer_visible_idx = 0;
     size_t running_idx = 0;  // counts all non-deleted entries for virtual ID calculation
     for (size_t j = 0; j < mfs.size(); ++j) {
         if (mfs[j].deleted || !mfs[j].enabled) continue;
@@ -1637,16 +1635,10 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
             continue;
         }
 
-        // Skip mixed filaments that depend on the source physical filament
-        // This prevents merging a physical filament into a mixed filament that uses it as a component
-        if (std::find(dependent_mixed_indices.begin(), dependent_mixed_indices.end(), j) != dependent_mixed_indices.end()) {
-            continue;
-        }
-        
         const size_t mixed_idx = running_idx - 1;
         const std::string letter = mixed_filament_index_to_letter(mixed_idx);
 
-        // Create a colored bitmap for the mixed filament — gradient filaments get a gradient icon
+        // Create a colored bitmap for the mixed filament
         std::vector<std::string> physical_colors;
         if (auto* co2 = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour"))
             physical_colors = co2->values;
@@ -1666,14 +1658,35 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
             wxString(letter));
 
         size_t captured_target = mixed_virtual_id;
+
+        // Transfer to: allows all mixed filaments
         append_menu_item(
-            sub_menu, wxID_ANY, item_name, "", [captured_target](wxCommandEvent&) {
-                plater()->sidebar().change_filament(-2, captured_target);
+            transfer_sub_menu, wxID_ANY, item_name, "", [captured_target](wxCommandEvent&) {
+                plater()->sidebar().transfer_filament(-2, captured_target);
             }, *mixed_bmp, menu,
             []() { return true; }, m_parent);
-        
-        visible_idx++;
+        transfer_visible_idx++;
+
+        // Merge with: skips mixed filaments that depend on the source physical filament
+        if (std::find(dependent_mixed_indices.begin(), dependent_mixed_indices.end(), j) == dependent_mixed_indices.end()) {
+            append_menu_item(
+                sub_menu, wxID_ANY, item_name, "", [captured_target](wxCommandEvent&) {
+                    plater()->sidebar().change_filament(-2, captured_target);
+                }, *mixed_bmp, menu,
+                []() { return true; }, m_parent);
+            visible_idx++;
+        }
     }
+
+    bool source_in_use = (source_physical_1based > 0) ? plater()->sidebar().is_filament_in_use(source_physical_1based) : true;
+
+    // Show transfer menu if there are any targets available and source is in use
+    size_t total_transfer_targets = filaments_cnt + transfer_visible_idx;
+    append_submenu(
+        menu, transfer_sub_menu, wxID_ANY, _L("Transfer to"), "", "", [total_transfer_targets, active_filament_menu_id, source_in_use]() { 
+            if (!source_in_use) return false;
+            return total_transfer_targets > 1 || (total_transfer_targets == 1 && active_filament_menu_id < 0); 
+        }, m_parent);
 
     // Show merge menu if there are any targets available
     size_t total_targets = filaments_cnt + visible_idx;
@@ -1681,6 +1694,11 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
         menu, sub_menu, wxID_ANY, _L("Merge with"), "", "", [total_targets, active_filament_menu_id]() { 
             return total_targets > 1 || (total_targets == 1 && active_filament_menu_id < 0); 
         }, m_parent);
+
+    // Delete item (after Merge with)
+    append_menu_item(
+        menu, wxID_ANY, _L("Delete"), _L("Delete this filament"), [](wxCommandEvent&) { plater()->sidebar().delete_filament(-2); }, "",
+        nullptr, []() { return plater()->sidebar().filament_menu()->m_physical_count() > 1; }, m_parent);
 }
 
 //BBS: add part plate related logic
