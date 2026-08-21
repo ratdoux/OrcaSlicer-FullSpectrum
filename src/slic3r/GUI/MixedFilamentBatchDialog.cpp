@@ -341,12 +341,10 @@ wxString MixedFilamentBatchDialog::format_tooltip(const std::vector<int>& physic
     std::snprintf(hex_buf, sizeof(hex_buf), "#%02X%02X%02X", mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
 
     ColorNames::DescriptionOptions opts;
-    opts.include_details = true;
-    opts.include_hex     = false;
+    opts.include_components = true;
 
-    std::string tip = ColorNames::format_description(physical_indices, percentages, std::string(hex_buf),
-                                                    ctx.physical_material_types, ctx.physical_colors,
-                                                    false, opts);
+    std::string tip = ColorNames::mixed_filament_name(physical_indices, percentages, std::string(hex_buf),
+                                                    ctx.physical_material_types, ctx.physical_colors, opts);
     return from_u8(tip);
 }
 

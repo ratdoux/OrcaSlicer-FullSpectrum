@@ -6484,7 +6484,8 @@ void Sidebar::change_filament(size_t from_id, size_t to_id)
                     if (const auto* opt = pb.project_config.option<ConfigOptionStrings>("filament_colour"))
                         physical_colors = opt->values;
                     const MixedFilamentDisplayContext warn_ctx = build_mixed_filament_display_context(physical_colors);
-                    const std::string desc = ColorNames::format_description(mfs[j], warn_ctx.physical_material_types, warn_ctx.physical_colors);
+                    const std::string                 desc     = ColorNames::mixed_filament_name(mfs[j], warn_ctx.physical_material_types,
+                                                                                                 warn_ctx.physical_colors);
                     if (!desc.empty())
                         msg += wxString::Format(_L("• %s (%s)\n"), letter, from_u8(desc));
                     else
@@ -6617,7 +6618,7 @@ void Sidebar::delete_mixed_filament(size_t mixed_index)
 
             const size_t m_idx = running_idx - 1;
             const std::string letter = mixed_filament_index_to_letter(m_idx);
-            const std::string desc = ColorNames::format_description(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
+            const std::string desc   = ColorNames::mixed_filament_name(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
             wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
             item_name.Replace("&", "&&");
 
@@ -6793,7 +6794,7 @@ void Sidebar::delete_filament(size_t filament_id, int replace_filament_id)
 
                 const size_t m_idx = r_idx - 1;
                 const std::string letter = mixed_filament_index_to_letter(m_idx);
-                const std::string desc = ColorNames::format_description(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
+                const std::string desc = ColorNames::mixed_filament_name(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
                 wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
                 item_name.Replace("&", "&&");
 

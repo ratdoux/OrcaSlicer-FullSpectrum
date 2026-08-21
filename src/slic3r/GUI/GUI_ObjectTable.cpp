@@ -2855,7 +2855,8 @@ int ObjectTablePanel::init_filaments_and_colors()
             if (const auto* opt = wxGetApp().preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour"))
                 physical_colors = opt->values;
             const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
-            const std::string desc = ColorNames::descriptive_name(definition, ctx);
+            const std::string desc = ColorNames::mixed_filament_name(definition, ctx.physical_material_types, ctx.physical_colors);
+            
             m_filaments_name[i] = !desc.empty() ? wxString::Format("%s: %s", letter, from_u8(desc))
                                                 : wxString::Format("%s: Mixed Filament %s", letter, letter);
             break;

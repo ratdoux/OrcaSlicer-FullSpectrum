@@ -729,7 +729,7 @@ void apply_extruder_selector(Slic3r::GUI::BitmapComboBox** ctrl,
                         if (const auto* opt = pb->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour"))
                             physical_colors = opt->values;
                         const Slic3r::MixedFilamentDisplayContext ctx = Slic3r::GUI::build_mixed_filament_display_context(physical_colors);
-                        desc = Slic3r::ColorNames::descriptive_name(defs[mixed_idx], ctx);
+                        desc = Slic3r::ColorNames::mixed_filament_name(defs[mixed_idx], ctx.physical_material_types, ctx.physical_colors);
                     }
                 }
                 item_label = !desc.empty() ? Slic3r::GUI::from_u8(desc)

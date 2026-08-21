@@ -619,11 +619,14 @@ void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& scr
 
             const size_t mixed_idx = running_idx - 1;
             const std::string letter = mixed_filament_index_to_letter(mixed_idx);
-            const std::string desc = ColorNames::format_description(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
+            ColorNames::DescriptionOptions options;
+            const std::string desc = ColorNames::mixed_filament_name(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors,
+                                                                     options);
             wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
             item_name.Replace("&", "&&");
 
-            const std::string extra = ColorNames::extra_details(mfs[j], num_physical, true);
+            const MixedFilamentDefinition def   = mixed_filament_definition_from_legacy_row(mfs[j], menu_ctx.physical_colors.size());
+            const std::string             extra = ColorNames::mf_components(def);
             if (!extra.empty()) {
                 item_name << "\t" << from_u8(extra);
             }

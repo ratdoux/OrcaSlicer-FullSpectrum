@@ -1405,7 +1405,8 @@ void IMSlider::render_add_menu()
                                 if (const auto* opt = pb->project_config.option<ConfigOptionStrings>("filament_colour"))
                                     physical_colors = opt->values;
                                 const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
-                                desc = ColorNames::descriptive_name(defs[mixed_idx], ctx);
+                                const std::string                 desc = ColorNames::mixed_filament_name(defs[mixed_idx],
+                                                                                                         ctx.physical_material_types, ctx.physical_colors);
                             }
                         }
                         item_name = !desc.empty() ? desc : (_u8L("Mixed Filament ") + letter);
@@ -1477,7 +1478,7 @@ void IMSlider::render_edit_menu(const TickCode& tick)
                                     if (const auto* opt = pb->project_config.option<ConfigOptionStrings>("filament_colour"))
                                         physical_colors = opt->values;
                                     const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
-                                    desc = ColorNames::descriptive_name(defs[mixed_idx], ctx);
+                                    const std::string                 desc = ColorNames::mixed_filament_name(defs[mixed_idx], ctx.physical_material_types, ctx.physical_colors);
                                 }
                             }
                             item_name = !desc.empty() ? desc : (_u8L("Mixed Filament ") + letter);

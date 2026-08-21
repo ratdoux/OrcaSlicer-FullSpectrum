@@ -231,12 +231,10 @@ wxString MFDRecommendationsAccordion::format_tooltip(
     std::snprintf(hex_buf, sizeof(hex_buf), "#%02X%02X%02X", mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
 
     ColorNames::DescriptionOptions opts;
-    opts.include_details = true;
-    opts.include_hex     = false;
+    opts.include_components = true;
 
-    std::string tip = ColorNames::format_description(phys_indices, pct_ints, std::string(hex_buf),
-                                                    ctx.physical_material_types, ctx.physical_colors,
-                                                    false, opts);
+    std::string tip = ColorNames::mixed_filament_name(phys_indices, pct_ints, std::string(hex_buf), ctx.physical_material_types,
+                                                      ctx.physical_colors, opts);
     return from_u8(tip);
 }
 
@@ -346,12 +344,9 @@ wxString MFDRecommendationsAccordion::format_gradient_tooltip(const std::vector<
     const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
 
     ColorNames::DescriptionOptions opts;
-    opts.include_details = true;
-    opts.include_hex     = false;
+    opts.include_components = true;
 
-    std::string tip = ColorNames::format_description(phys_indices, {}, "",
-                                                    ctx.physical_material_types, ctx.physical_colors,
-                                                    true, opts);
+    std::string tip = ColorNames::mixed_filament_name(phys_indices, {}, "", ctx.physical_material_types, ctx.physical_colors, opts);
     return from_u8(tip);
 }
 

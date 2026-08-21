@@ -343,32 +343,6 @@ std::string format_hex_lower(const RGB& rgb)
     return std::string(buf);
 }
 
-std::string build_materials_string(const std::vector<unsigned int>&   component_ids,
-                                  const std::vector<std::string>&    physical_materials)
-{
-    std::vector<std::string> unique_mats;
-    for (unsigned int id : component_ids) {
-        if (id >= 1 && id <= physical_materials.size()) {
-            const std::string& m = physical_materials[id - 1];
-            if (!m.empty()) {
-                if (std::find(unique_mats.begin(), unique_mats.end(), m) == unique_mats.end())
-                    unique_mats.push_back(m);
-            }
-        }
-    }
-
-    if (unique_mats.empty())
-        return "";
-
-    std::string result;
-    for (size_t i = 0; i < unique_mats.size(); ++i) {
-        if (i > 0)
-            result += " & ";
-        result += unique_mats[i];
-    }
-    return result;
-}
-
 } // anonymous namespace
 
 std::string closest_css_color_name(uint8_t r, uint8_t g, uint8_t b)
@@ -399,91 +373,62 @@ std::string closest_css_color_name(const std::string& hex_color)
     return closest_css_color_name(uint8_t(rgb.r), uint8_t(rgb.g), uint8_t(rgb.b));
 }
 
-std::string format_description(const MixedFilamentDefinition&        definition,
+
+std::string mixed_filament_name(const MixedFilamentDefinition&        definition,
                               const std::vector<std::string>&       physical_materials,
                               const std::vector<std::string>&       physical_colors,
                               const DescriptionOptions&             options,
                               const std::string&                    letter)
 {
-    const bool is_gradient = definition.behavior.gradient.enabled &&
-                             definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend &&
-                             definition.recipe.blend.components.size() >= 2;
-    const bool is_pattern  = !is_gradient && (definition.recipe.manual_pattern.has_value() ||
-                                              definition.recipe.kind == MixedFilamentRecipeKind::ManualPattern);
-
-    std::string color_name_part;
-    std::string kind_part;
-    std::string details_part;
-    std::string hex_part;
+    std::string name;
+ 
     std::vector<unsigned int> component_ids;
+    for (const auto& comp : definition.recipe.blend.components)
+        component_ids.push_back(comp.filament.id);
 
-    if (is_gradient) {
-        kind_part = "Gradient";
-        for (const auto& comp : definition.recipe.blend.components)
-            component_ids.push_back(comp.filament.id);
-
-        if (component_ids.size() >= 2) {
-            const unsigned int id_first = component_ids.front();
-            const unsigned int id_last  = component_ids.back();
-
-            const std::string color_first = (id_first >= 1 && id_first <= physical_colors.size())
-                                                ? physical_colors[id_first - 1] : "#000000";
-            const std::string color_last  = (id_last >= 1 && id_last <= physical_colors.size())
-                                                ? physical_colors[id_last - 1] : "#000000";
-
-            color_name_part = closest_css_color_name(color_first) + " -> " + closest_css_color_name(color_last);
-        } else {
-            color_name_part = closest_css_color_name(definition.presentation.display_color);
-        }
-    } else if (is_pattern) {
-        kind_part = "Pattern";
-        color_name_part = closest_css_color_name(definition.presentation.display_color);
-    } else {
-        // Weighted Blend / Ratio Mix
-        kind_part = "Mix";
-        color_name_part = closest_css_color_name(definition.presentation.display_color);
-    }
-
-    details_part = extra_details(definition, options.include_details, options.include_hex);
-
-    const std::string materials_part = build_materials_string(component_ids, physical_materials);
-
-    std::string base;
     if (options.include_letter && !letter.empty())
-        base += letter + ": ";
+        name += letter + ": ";
 
-    base += color_name_part;
-    if (!materials_part.empty())
-        base += " " + materials_part;
-    base += " " + kind_part;
-    base += "  " + details_part;
+    if (options.include_color)
+        name += mf_color(definition, physical_colors);
 
-    return base;
+    if (options.include_material) 
+        name += " " + mf_material(component_ids, physical_materials);
+
+    if (options.include_kind) 
+        name += " " + mf_kind(definition);
+
+    if (options.include_components)
+        name += " " + mf_components(definition);
+
+    if (options.include_hex)
+        name += " " + mf_hex(definition.presentation.display_color);
+
+    return name;
 }
 
-std::string format_description(const MixedFilamentLegacyRow&         row,
+std::string mixed_filament_name(const MixedFilamentLegacyRow&         row,
                               const std::vector<std::string>&       physical_materials,
                               const std::vector<std::string>&       physical_colors,
                               const DescriptionOptions&             options,
                               const std::string&                    letter)
 {
     const MixedFilamentDefinition def = mixed_filament_definition_from_legacy_row(row, physical_colors.size());
-    return format_description(def, physical_materials, physical_colors, options, letter);
+    return mixed_filament_name(def, physical_materials, physical_colors, options, letter);
 }
 
-std::string format_description(const std::vector<int>&               physical_indices_0based,
+std::string mixed_filament_name(const std::vector<int>&               physical_indices_0based,
                               const std::vector<int>&               percentages,
                               const std::string&                    display_color_hex,
                               const std::vector<std::string>&       physical_materials,
                               const std::vector<std::string>&       physical_colors,
-                              bool                                  is_gradient,
                               const DescriptionOptions&             options,
                               const std::string&                    letter)
 {
     MixedFilamentDefinition def;
     def.presentation.display_color = display_color_hex;
     def.recipe.kind                = MixedFilamentRecipeKind::WeightedBlend;
-    def.behavior.gradient.enabled  = is_gradient;
+    def.behavior.gradient.enabled  = is_gradient(def);
 
     for (size_t i = 0; i < physical_indices_0based.size(); ++i) {
         const int idx = physical_indices_0based[i];
@@ -495,87 +440,158 @@ std::string format_description(const std::vector<int>&               physical_in
         }
     }
 
-    return format_description(def, physical_materials, physical_colors, options, letter);
+    return mixed_filament_name(def, physical_materials, physical_colors, options, letter);
 }
 
-std::string descriptive_name(const MixedFilamentDefinition& definition,
-                            const MixedFilamentDisplayContext& context,
-                            const std::string& letter)
+bool is_gradient(const MixedFilamentDefinition& definition) 
 {
-    DescriptionOptions opts;
-    opts.include_details = false;
-    opts.include_hex     = false;
-    opts.include_letter  = !letter.empty();
-    return format_description(definition, context.physical_material_types, context.physical_colors, opts, letter);
+    if (definition.behavior.gradient.enabled && 
+        definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend &&
+        definition.recipe.blend.components.size() >= 2) {
+        return true;
+    }
+    return false;
 }
 
-std::string tooltip_text(const MixedFilamentDefinition& definition,
-                        const MixedFilamentDisplayContext& context,
-                        bool include_hex,
-                        const std::string& letter)
+bool is_pattern(const MixedFilamentDefinition& definition) 
 {
-    DescriptionOptions opts;
-    opts.include_details = true;
-    opts.include_hex     = include_hex;
-    opts.include_letter  = !letter.empty();
-    return format_description(definition, context.physical_material_types, context.physical_colors, opts, letter);
+    if (!is_gradient(definition) && 
+        (definition.recipe.manual_pattern.has_value() ||
+         definition.recipe.kind == MixedFilamentRecipeKind::ManualPattern)) {
+        return true;
+    }
+    return false;
 }
 
-std::string extra_details(const MixedFilamentDefinition& definition,
-                         bool include_details,
-                         bool include_hex)
+
+std::string mf_color(const MixedFilamentDefinition& definition, const std::vector<std::string>& physical_colors)
 {
-    std::string details;
-    const bool is_gradient = definition.behavior.gradient.enabled &&
-                             definition.recipe.blend.components.size() >= 2;
-    const bool is_pattern  = !is_gradient && (definition.recipe.manual_pattern.has_value() ||
-                                              definition.recipe.kind == MixedFilamentRecipeKind::ManualPattern);
-    if (include_details) {
-        if (is_gradient) {
-            std::vector<unsigned int> component_ids;
-            for (const auto& comp : definition.recipe.blend.components)
-                component_ids.push_back(comp.filament.id);
+    if (is_gradient(definition)) {
+        std::vector<unsigned int> component_ids;
 
-            if (component_ids.size() >= 2) {
-                details += "[" + std::to_string(component_ids.front()) + "]->[" + std::to_string(component_ids.back()) + "]";
-            }
-        } else if (is_pattern) {
-            if (definition.recipe.manual_pattern && !definition.recipe.manual_pattern->groups.empty()) {
-                for (size_t i = 0; i < definition.recipe.manual_pattern->groups[0].size(); ++i) {
-                    if (i > 0)
-                        details += "-";
+        for (const auto& comp : definition.recipe.blend.components)
+            component_ids.push_back(comp.filament.id);
 
-                    details += "[" + std::to_string(definition.recipe.manual_pattern->groups[0][i].id) + "]";
-                }
-            }
+        if (component_ids.size() >= 2) {
+            const unsigned int id_first = component_ids.front();
+            const unsigned int id_last  = component_ids.back();
+
+            const std::string color_first = (id_first >= 1 && id_first <= physical_colors.size()) ? physical_colors[id_first - 1] :
+                                                                                                    "#000000";
+            const std::string color_last  = (id_last >= 1 && id_last <= physical_colors.size()) ? physical_colors[id_last - 1] : "#000000";
+
+            return closest_css_color_name(color_first) + " -> " + closest_css_color_name(color_last);
         } else {
-            // Weighted Blend / Ratio Mix
-            for (size_t i = 0; i < definition.recipe.blend.components.size(); ++i) {
-                if (i > 0)
-                    details += " ";
+            return closest_css_color_name(definition.presentation.display_color);
+        }
+    } else {
+        return closest_css_color_name(definition.presentation.display_color);
+    }
+    return "";
+}
 
-                const auto& comp = definition.recipe.blend.components[i];
-                details += "[" + std::to_string(comp.filament.id) + "] " + std::to_string(comp.percent) + "%";
+std::string mf_material(const std::vector<unsigned int>& component_ids, const std::vector<std::string>& physical_materials)
+{
+    std::vector<std::string> unique_mats;
+    for (unsigned int id : component_ids) {
+        if (id >= 1 && id <= physical_materials.size()) {
+            const std::string& m = physical_materials[id - 1];
+            if (!m.empty()) {
+                if (std::find(unique_mats.begin(), unique_mats.end(), m) == unique_mats.end())
+                    unique_mats.push_back(m);
             }
         }
     }
 
-    if (include_hex && !definition.presentation.display_color.empty()) {
-        if (!details.empty())
-            details += " ";
-        details += "(" + format_hex_lower(definition.presentation.display_color) + ")";
-    }
+    if (unique_mats.empty())
+        return "";
 
-    return details;
+    std::string material = "";
+    for (size_t i = 0; i < unique_mats.size(); ++i) {
+        if (i > 0)
+            material += " & ";
+        material += unique_mats[i];
+    }
+    return material;
 }
 
-std::string extra_details(const MixedFilamentLegacyRow& row,
-                         size_t num_physical_filaments, 
-                         bool include_details,
-                         bool include_hex)
+std::string mf_kind(const MixedFilamentDefinition& definition)
 {
-    const MixedFilamentDefinition def = mixed_filament_definition_from_legacy_row(row, num_physical_filaments);
-    return extra_details(def, include_details, include_hex);
+    if (is_gradient(definition)) {
+        return "Gradient";
+    } else if (is_pattern(definition)) {
+        return "Pattern";
+    } else {
+        return "Mix";
+    }
+    return "";
+}
+
+std::string mf_components(const MixedFilamentDefinition& definition) 
+{
+    if (is_gradient(definition)) {
+        return mf_components_gradient(definition.recipe.blend.components);
+
+    } else if (is_pattern(definition)) {
+        if (definition.recipe.manual_pattern) {
+            return mf_components_pattern(*definition.recipe.manual_pattern);
+        }
+
+    } else {
+        return mf_components_mix(definition.recipe.blend.components);
+
+    }
+    return "";
+}
+
+std::string mf_components_mix(const std::vector<MixedFilamentWeightedComponent>& weightedComponents)
+{
+    std::string components = "";
+    for (size_t i = 0; i < weightedComponents.size(); ++i) {
+        if (i > 0)
+            components += " ";
+
+        const auto& comp = weightedComponents[i];
+        components += "[" + std::to_string(comp.filament.id) + "] " + std::to_string(comp.percent) + "%";
+    }
+    return components;
+}
+
+std::string mf_components_pattern(const MixedFilamentManualPattern& manualPattern)
+{
+    std::string components = "";
+    if (!manualPattern.groups.empty()) {
+        for (size_t i = 0; i < manualPattern.groups[0].size(); ++i) {
+            if (i > 0)
+                components += "-";
+
+            components += "[" + std::to_string(manualPattern.groups[0][i].id) + "]";
+        }
+    }
+    return components;
+}
+
+std::string mf_components_gradient(const std::vector<MixedFilamentWeightedComponent>& gradientComponents)
+{
+    std::string components = "";
+
+    std::vector<unsigned int> component_ids;
+    for (const auto& comp : gradientComponents)
+        component_ids.push_back(comp.filament.id);
+
+    if (component_ids.size() >= 2) {
+        components += "[" + std::to_string(component_ids.front()) + "]->[" + std::to_string(component_ids.back()) + "]";
+    }
+
+    return components;
+}
+
+std::string mf_hex(const std::string& hex) 
+{ 
+    if (hex.empty())
+        return "";
+
+    return "(" + format_hex_lower(hex) + ")";
 }
 
 } // namespace ColorNames

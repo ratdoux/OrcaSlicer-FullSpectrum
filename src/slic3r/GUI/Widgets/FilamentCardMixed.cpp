@@ -734,7 +734,11 @@ void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool r
         m_gradient_component_ids       = preview.component_ids;
     }
 
-    m_tooltip = wxString::FromUTF8(ColorNames::tooltip_text(*definition, display_context, false));
+    ColorNames::DescriptionOptions options;
+    options.include_components = true;
+    options.include_hex        = true;
+    m_tooltip                  = wxString::FromUTF8(
+        ColorNames::mixed_filament_name(*definition, display_context.physical_material_types, display_context.physical_colors, options));
     SetToolTip(m_tooltip);
     m_clr_swatch_panel->SetToolTip(_L("Edit Color - ") + m_tooltip);
     m_box_panel->SetToolTip(_L("Edit - ") + m_tooltip);

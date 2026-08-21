@@ -48,7 +48,7 @@ static wxString mixed_dialog_title(MixedFilamentDialog::Action dialog_action,
             for (const auto& p : physical_filaments)
                 physical_colors.push_back(p.first);
             const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
-            const std::string desc = ColorNames::descriptive_name(defs[mixed_idx], ctx);
+            const std::string desc = ColorNames::mixed_filament_name(defs[mixed_idx], ctx.physical_material_types, ctx.physical_colors);
             if (!desc.empty())
                 return wxString::Format(_L("Edit %s"), from_u8(desc));
         }

@@ -100,7 +100,7 @@ static wxString filament_menu_item_name(const int filament_id_1based, const int 
             if (const auto* opt = pb->project_config.option<ConfigOptionStrings>("filament_colour"))
                 physical_colors = opt->values;
             const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
-            const std::string desc = ColorNames::descriptive_name(definitions[mixed_idx], ctx);
+            const std::string desc = ColorNames::mixed_filament_name(definitions[mixed_idx], ctx.physical_material_types, ctx.physical_colors);
             if (!desc.empty()) {
                 wxString name = from_u8(desc);
                 name.Replace("&", "&&");
@@ -125,7 +125,7 @@ static wxString filament_menu_item_extra_info(const int filament_id_1based)
     if (pb != nullptr) {
         const auto& definitions = pb->mixed_filaments.mixed_filament_definitions(size_t(physical));
         if (mixed_idx < definitions.size()) {
-            const std::string extra = ColorNames::extra_details(definitions[mixed_idx], true);
+            const std::string extra = ColorNames::mf_components(definitions[mixed_idx]);
             if (!extra.empty())
                 return from_u8(extra);
         }
@@ -1644,11 +1644,12 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
             physical_colors = co2->values;
         const MixedFilamentDisplayContext menu_ctx = build_mixed_filament_display_context(physical_colors);
 
-        const std::string desc = ColorNames::format_description(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
+        const std::string desc      = ColorNames::mixed_filament_name(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors);
         wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
         item_name.Replace("&", "&&");
 
-        const std::string extra = ColorNames::extra_details(mfs[j], num_physical, true);
+        MixedFilamentDefinition& definition = mixed_filament_definition_from_legacy_row(mfs[j], menu_ctx.physical_colors.size());
+        const std::string extra = ColorNames::mf_components(definition);
         if (!extra.empty()) {
             item_name << "\t" << from_u8(extra);
         }
