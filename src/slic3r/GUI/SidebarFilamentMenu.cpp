@@ -248,7 +248,6 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
     const int previous_count = int(m_mixed_cards.size() + m_image_map_cards.size());
     m_mixed_filaments        = mixed_filaments;
 
-    m_image_map_sizer->Clear(true);
     m_mixed_sizer->Clear(true);
     m_image_map_cards.clear();
     m_image_map_adaptive_filament_ids.clear();
@@ -324,7 +323,8 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
 
         const wxString object_name = object->name.empty() ? wxString::Format(_L("Object %d"), int(object_index + 1)) :
                                                             wxString::FromUTF8(object->name);
-        auto*          card        = new FilamentCardImageMap(m_mixed_panel, object_name, image_map_spectrum_colors(*object));
+        auto* card = new FilamentCardMixed(m_mixed_panel, nullptr, m_physical_filaments, FilamentCardMixed::CardType::APM);
+        card->set_gradient_preview_colors(image_map_spectrum_colors(*object));
         card->set_on_delete_callback([this, object_index]() {
             begin_mixed_card_callback();
             if (m_on_delete_image_map)
@@ -333,7 +333,7 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
         });
         m_image_map_cards.push_back(card);
         m_image_map_adaptive_filament_ids.push_back(0);
-        m_image_map_sizer->Add(card, 0, wxEXPAND);
+        m_mixed_sizer->Add(card, 0, wxEXPAND);
     }
 
     std::vector<std::string> physical_colors;
@@ -344,16 +344,15 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
 
     for (auto& [filament_id, source_colors] : adaptive_cycle_colors) {
         const std::vector<RGBA> representative = ImageMap::representative_source_colors(source_colors, 64, 512);
-        std::vector<FilamentCardImageMap::ComponentFilament> component_filaments;
-        std::vector<unsigned int>                            component_ids;
+        std::vector<unsigned int> component_ids;
+        MixedFilamentDefinition* def_ptr = nullptr;
         const auto definition_it = definition_by_filament_id.find(filament_id);
         if (definition_it != definition_by_filament_id.end()) {
-            for (const MixedFilamentWeightedComponent& component : definition_it->second->recipe.blend.components) {
+            def_ptr = const_cast<MixedFilamentDefinition*>(definition_it->second);
+            for (const MixedFilamentWeightedComponent& component : def_ptr->recipe.blend.components) {
                 const unsigned int component_id = component.filament.id;
                 if (component.percent <= 0 || component_id < 1 || component_id > m_physical_filaments.size())
                     continue;
-                const wxColour component_color(m_physical_filaments[component_id - 1].first);
-                component_filaments.emplace_back(component_id, component_color.IsOk() ? component_color : *wxBLACK);
                 component_ids.emplace_back(component_id);
             }
         }
@@ -361,21 +360,17 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
             build_adaptive_cycle_attainable_colors(component_ids, representative, display_context);
         if (attainable_colors.empty())
             attainable_colors = wx_spectrum_colors(representative);
-        const size_t num_phys = m_physical_filaments.size();
-        const std::string letter = (filament_id > num_phys)
-                                       ? Slic3r::mixed_filament_index_to_letter(filament_id - num_phys - 1)
-                                       : std::to_string(filament_id);
-        auto*                   card = new FilamentCardImageMap(m_mixed_panel, wxString::Format(_L("Mixed filament %s"), letter),
-                                                                 std::move(attainable_colors), false,
-                                                                 _L("KM/K-S-predicted attainable colors. Click to highlight the object regions assigned to this adaptive localized cycle"),
-                                                                 std::move(component_filaments));
+
+        auto* card = new FilamentCardMixed(m_mixed_panel, def_ptr, m_physical_filaments, FilamentCardMixed::CardType::APM);
+        if (!attainable_colors.empty())
+            card->set_gradient_preview_colors(std::move(attainable_colors));
         card->set_selected(m_selected_adaptive_filament_id == filament_id);
         card->set_on_select_callback([this, filament_id]() {
             set_adaptive_cycle_highlight(m_selected_adaptive_filament_id == filament_id ? 0u : filament_id);
         });
         m_image_map_cards.push_back(card);
         m_image_map_adaptive_filament_ids.push_back(filament_id);
-        m_image_map_sizer->Add(card, 0, wxEXPAND);
+        m_mixed_sizer->Add(card, 0, wxEXPAND);
     }
 
     if (m_selected_adaptive_filament_id != 0 && adaptive_cycle_colors.count(m_selected_adaptive_filament_id) == 0)
@@ -399,12 +394,12 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
         m_mixed_sizer->Add(card, 0, wxEXPAND);
     }
 
-    if (m_mixed_cards.size() <= 1)
+    const int new_count = int(m_mixed_cards.size() + m_image_map_cards.size());
+
+    if (new_count <= 1)
         m_mixed_sizer->SetCols(1);
     else
         m_mixed_sizer->SetCols(2);
-
-    const int new_count = int(m_mixed_cards.size() + m_image_map_cards.size());
 
     // Counter logic
     if (m_lbl_mixed_counter) {
@@ -1075,8 +1070,6 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     m_mixed_sizer = new wxGridSizer(1, FromDIP(2), FromDIP(SidebarProps::ContentMargin() * 2));
 
     wxBoxSizer* mixed_intermediate_sizer = new wxBoxSizer(wxVERTICAL);
-    m_image_map_sizer                    = new wxBoxSizer(wxVERTICAL);
-    mixed_intermediate_sizer->Add(m_image_map_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::ContentMargin()));
     mixed_intermediate_sizer->Add(m_mixed_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(SidebarProps::ContentMargin()));
     m_mixed_panel->SetSizer(mixed_intermediate_sizer);
 

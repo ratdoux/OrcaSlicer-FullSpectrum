@@ -35,7 +35,7 @@ wxColour interpolate_color(const std::vector<wxColour>& colors, double pos)
 
 bool is_simple_gradient(const MixedFilament& mf)
 {
-    return (mf.gradient_enabled || !mf.gradient_component_ids.empty()) &&
+    return mf.gradient_enabled &&
            mf.component_a != 0 &&
            mf.component_b != 0 &&
            mf.component_a != mf.component_b;

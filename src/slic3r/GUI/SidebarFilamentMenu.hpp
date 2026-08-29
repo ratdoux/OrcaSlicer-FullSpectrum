@@ -88,7 +88,7 @@ private:
     std::vector<FilamentCardPhysical*>   m_physical_cards;
     std::vector<FilamentCardMixed*>      m_mixed_cards;
     std::vector<size_t>                  m_mixed_definition_indices;
-    std::vector<FilamentCardImageMap*>   m_image_map_cards;
+    std::vector<FilamentCardMixed*>      m_image_map_cards;
     std::vector<unsigned int>            m_image_map_adaptive_filament_ids;
     unsigned int                         m_selected_adaptive_filament_id{0};
     size_t                               m_image_map_entries_signature{0};
@@ -160,7 +160,6 @@ private:
     wxBoxSizer*         m_physical_title_sizer{nullptr};
     wxGridSizer*        m_physical_sizer{nullptr};
     wxBoxSizer*         m_mixed_title_sizer{nullptr};
-    wxBoxSizer*         m_image_map_sizer{nullptr};
     wxGridSizer*        m_mixed_sizer{nullptr};
 
     // Title bar elements

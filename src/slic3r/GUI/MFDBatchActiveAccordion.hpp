@@ -10,6 +10,7 @@
 namespace Slic3r::GUI {
 
 struct BatchMixItem;
+class BatchCheckBox;
 
 class MFDBatchActiveAccordion : public Accordion
 {
@@ -27,6 +28,7 @@ private:
 
     wxWrapSizer* m_wrap_sizer{ nullptr };
     std::vector<wxPanel*> m_tiles;
+    BatchCheckBox* m_batch_check_box{ nullptr };
 
     void build_ui();
 };

@@ -15,13 +15,27 @@ namespace Slic3r::GUI {
 class MFDBatchActiveAccordion;
 class MFDBatchRecommendedAccordion;
 
+enum class BatchItemKind
+{
+    Blend,
+    Gradient,
+    Pattern,
+    APM
+};
+
 struct BatchMixKey
 {
+    BatchItemKind kind{ BatchItemKind::Blend };
     // 1-based physical_id, percent
     std::vector<std::pair<int, int>> components;
+    uint64_t stable_id{ 0 };
 
     bool operator==(const BatchMixKey& other) const
     {
+        if (kind != other.kind)
+            return false;
+        if (stable_id != 0 && other.stable_id != 0)
+            return stable_id == other.stable_id;
         return components == other.components;
     }
 };
@@ -29,15 +43,20 @@ struct BatchMixKey
 struct BatchMixItem
 {
     BatchMixKey key;
+    uint64_t stable_id{ 0 };
     std::vector<int> physical_indices; // 0-based
     std::vector<int> percentages;       // weights (e.g. 50, 50)
     wxColor color;
+    std::vector<wxColor> gradient_colors;
     wxString tooltip;
     wxString display_id;
-    bool is_recommended = false;
-    bool is_existing = false;
-    bool is_deleted = false;
-    bool is_added = false;
+    bool is_recommended{ false };
+    bool is_existing{ false };
+    bool is_deleted{ false };
+    bool is_added{ false };
+    bool is_apm{ false };
+    bool is_gradient{ false };
+    bool is_pattern{ false };
 };
 
 class BatchSwatchTile : public wxPanel

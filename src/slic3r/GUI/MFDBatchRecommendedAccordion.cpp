@@ -43,7 +43,7 @@ void CollapsibleSubSection::build_ui(const wxString& title)
 
     // Title
     m_lbl_title = new wxStaticText(m_header, wxID_ANY, title);
-    m_lbl_title->SetFont(::Label::Body_13.Bold());
+    m_lbl_title->SetFont(::Label::Body_13);
     MFDTheme::apply_text(m_lbl_title, MFDTheme::muted_text(), m_header->GetBackgroundColour());
 
     // Info Count
@@ -231,7 +231,7 @@ void MFDBatchRecommendedAccordion::build_ui()
 
     // Explainer Label
     m_explainer_lbl = new wxStaticText(body, wxID_ANY, _L("Toggle filaments to enable or disable them for the recommended mixes"));
-    m_explainer_lbl->SetFont(::Label::Body_13.Bold());
+    m_explainer_lbl->SetFont(::Label::Body_13);
     MFDTheme::apply_text(m_explainer_lbl, MFDTheme::secondary_text(), body->GetBackgroundColour());
     m_explainer_lbl->SetMinSize(wxSize(FromDIP(400), -1));
 

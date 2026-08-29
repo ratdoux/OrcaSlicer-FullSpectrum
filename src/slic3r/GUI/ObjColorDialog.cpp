@@ -48,6 +48,110 @@ const int COLOR_LABEL_WIDTH = 140;
 #undef  ICON_SIZE
 #define ICON_SIZE                 wxSize(FromDIP(16), FromDIP(16))
 #define MIN_OBJCOLOR_DIALOG_WIDTH FromDIP(560)
+
+using APMComponentFilament = std::pair<unsigned int, wxColour>;
+
+static wxPanel* buildAPMRow(wxWindow* parent,
+                            const wxString& label,
+                            const std::vector<wxColour>& spectrum_colors,
+                            const wxString& tooltip,
+                            const std::vector<APMComponentFilament>& component_filaments = {},
+                            size_t max_swatch_slots = 0)
+{
+    auto* row_panel = new wxPanel(parent, wxID_ANY);
+    row_panel->SetBackgroundColour(parent ? parent->GetBackgroundColour() : StateColor::darkModeColorFor(*wxWHITE));
+    auto* sizer = new wxBoxSizer(wxHORIZONTAL);
+
+    if (max_swatch_slots > 0) {
+        const int swatch_size = parent->FromDIP(24);
+        const int swatch_margin = parent->FromDIP(3);
+        const int fixed_slot_width = int(max_swatch_slots) * (swatch_size + swatch_margin);
+
+        auto* swatch_container = new wxPanel(row_panel, wxID_ANY, wxDefaultPosition, wxSize(fixed_slot_width, swatch_size));
+        swatch_container->SetMinSize(wxSize(fixed_slot_width, swatch_size));
+        swatch_container->SetMaxSize(wxSize(fixed_slot_width, swatch_size));
+        swatch_container->SetBackgroundColour(row_panel->GetBackgroundColour());
+
+        auto* swatch_sizer = new wxBoxSizer(wxHORIZONTAL);
+        for (const APMComponentFilament& component : component_filaments) {
+            auto* swatch = new wxPanel(swatch_container, wxID_ANY, wxDefaultPosition, wxSize(swatch_size, swatch_size));
+            swatch->SetMinSize(wxSize(swatch_size, swatch_size));
+            swatch->SetBackgroundStyle(wxBG_STYLE_PAINT);
+            swatch->SetToolTip(wxString::Format(_L("Physical filament %u"), component.first));
+            swatch->Bind(wxEVT_PAINT, [swatch, component](wxPaintEvent&) {
+                wxPaintDC dc(swatch);
+                dc.SetBackground(wxBrush(swatch->GetParent()->GetBackgroundColour()));
+                dc.Clear();
+                FilamentCardMixed::paint_clr_swatch(dc, swatch->GetClientSize(), component.second,
+                                                    wxString::Format("%u", component.first), wxGetApp().dark_mode(), 1);
+            });
+            swatch_sizer->Add(swatch, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, swatch_margin);
+        }
+        swatch_sizer->AddStretchSpacer();
+        swatch_container->SetSizer(swatch_sizer);
+        sizer->Add(swatch_container, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, parent->FromDIP(2));
+    }
+
+    auto* spectrum_panel = new wxPanel(row_panel, wxID_ANY, wxDefaultPosition, wxSize(-1, parent->FromDIP(30)));
+    spectrum_panel->SetMinSize(wxSize(-1, parent->FromDIP(30)));
+    spectrum_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    if (!tooltip.empty())
+        spectrum_panel->SetToolTip(tooltip);
+
+    spectrum_panel->Bind(wxEVT_PAINT, [spectrum_panel, spectrum_colors, label](wxPaintEvent&) {
+        wxPaintDC dc(spectrum_panel);
+        const wxSize size = spectrum_panel->GetClientSize();
+        if (size.x <= 0 || size.y <= 0)
+            return;
+
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.SetBrush(wxBrush(spectrum_panel->GetParent()->GetBackgroundColour()));
+        dc.DrawRectangle(0, 0, size.x, size.y);
+
+        const std::vector<wxColour> fallback{StateColor::darkModeColorFor(wxColour("#808080"))};
+        const std::vector<wxColour>& spectrum = spectrum_colors.empty() ? fallback : spectrum_colors;
+        std::unique_ptr<wxGraphicsContext> graphics(wxGraphicsContext::CreateFromUnknownDC(dc));
+        if (graphics) {
+            const double width = std::max(1.0, double(size.x - 2));
+            if (spectrum.size() == 1) {
+                graphics->SetBrush(wxBrush(spectrum.front()));
+                graphics->SetPen(*wxTRANSPARENT_PEN);
+                graphics->DrawRectangle(1.0, 1.0, width, std::max(1, size.y - 2));
+            } else {
+                for (size_t index = 0; index + 1 < spectrum.size(); ++index) {
+                    const double x0 = 1.0 + width * double(index) / double(spectrum.size() - 1);
+                    const double x1 = 1.0 + width * double(index + 1) / double(spectrum.size() - 1);
+                    graphics->SetBrush(graphics->CreateLinearGradientBrush(x0, 1.0, x1, 1.0, spectrum[index], spectrum[index + 1]));
+                    graphics->SetPen(*wxTRANSPARENT_PEN);
+                    graphics->DrawRectangle(x0, 1.0, x1 - x0 + 0.5, std::max(1, size.y - 2));
+                }
+            }
+        }
+
+        dc.SetPen(wxPen(StateColor::darkModeColorFor(wxColour("#CECECE")), 1));
+        dc.SetBrush(*wxTRANSPARENT_BRUSH);
+        dc.DrawRectangle(0, 0, size.x, size.y);
+
+        wxString display_label = label.empty() ? _L("Image map") : label;
+        dc.SetFont(::Label::Body_14.Bold());
+        const int available_width = std::max(0, size.x - spectrum_panel->FromDIP(16));
+        while (display_label.length() > 1 && dc.GetTextExtent(display_label + wxString::FromUTF8("\xE2\x80\xA6")).x > available_width)
+            display_label.RemoveLast();
+        if (display_label != label && !display_label.empty())
+            display_label += wxString::FromUTF8("\xE2\x80\xA6");
+
+        const wxSize text_size = dc.GetTextExtent(display_label);
+        const wxPoint text_pos((size.x - text_size.x) / 2, (size.y - text_size.y) / 2);
+        dc.SetTextForeground(wxColour(0, 0, 0, 180));
+        dc.DrawText(display_label, text_pos.x + 1, text_pos.y + 1);
+        dc.SetTextForeground(*wxWHITE);
+        dc.DrawText(display_label, text_pos);
+    });
+
+    sizer->Add(spectrum_panel, 1, wxEXPAND | wxALL, parent->FromDIP(2));
+    row_panel->SetSizer(sizer);
+    return row_panel;
+}
 #define FIX_SCROLL_HEIGTH         FromDIP(320)
 #define BTN_SIZE                  wxSize(FromDIP(58), FromDIP(24))
 #define BTN_GAP                   FromDIP(20)
@@ -549,8 +653,8 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
         case ObjColorImportSource::VertexColors: spectrum_label = _L("Vertex colors"); break;
         case ObjColorImportSource::FaceColors: spectrum_label = _L("Material colors"); break;
         }
-        auto* spectrum_card = new FilamentCardImageMap(
-            m_simple_pm_mapping_panel, spectrum_label, m_source_spectrum_colours, false);
+        auto* spectrum_card = buildAPMRow(
+            m_simple_pm_mapping_panel, spectrum_label, m_source_spectrum_colours, wxString(), {}, 0);
         spectrum_card->SetMinSize(wxSize(FromDIP(PANEL_WIDTH - 20), FromDIP(34)));
         m_image_map_spectrum_sizer->Add(spectrum_card, 1, wxEXPAND);
         simple_pm_mapping_sizer->Add(m_image_map_spectrum_sizer, 0, wxEXPAND | wxBOTTOM, FromDIP(10));
@@ -2576,8 +2680,14 @@ void ObjColorPanel::rebuild_adaptive_cycle_spectrum_table()
 
     update_adaptive_cycle_spectra();
 
+    size_t max_components = 0;
+    for (const auto& comp_ids : m_adaptive_cycle_display_component_filament_ids) {
+        max_components = std::max(max_components, comp_ids.size());
+    }
+    max_components = std::max(max_components, size_t(1));
+
     for (size_t ci = 0; ci < m_adaptive_cycle_spectrum_colours.size(); ++ci) {
-        std::vector<FilamentCardImageMap::ComponentFilament> component_filaments;
+        std::vector<APMComponentFilament> component_filaments;
         if (ci < m_adaptive_cycle_display_component_filament_ids.size()) {
             for (unsigned int fid : m_adaptive_cycle_display_component_filament_ids[ci]) {
                 if (fid >= 1 && fid <= m_colours.size())
@@ -2593,15 +2703,16 @@ void ObjColorPanel::rebuild_adaptive_cycle_spectrum_table()
         const std::string letter = (filament_id > num_phys)
                                        ? Slic3r::mixed_filament_index_to_letter(filament_id - num_phys - 1)
                                        : std::to_string(filament_id);
-        auto* card = new FilamentCardImageMap(
+        auto* card = buildAPMRow(
             m_adaptive_spectrum_window,
             wxString::Format(_L("Mixed filament %s \u2014 %llu regions"),
                              letter, static_cast<unsigned long long>(region_count)),
-            m_adaptive_cycle_spectrum_colours[ci], false,
+            m_adaptive_cycle_spectrum_colours[ci],
             wxString::Format(
                 _L("%llu adaptive color regions use this cycle."),
                 static_cast<unsigned long long>(region_count)),
-            std::move(component_filaments));
+            component_filaments,
+            max_components);
         card->SetMinSize(wxSize(FromDIP(PANEL_WIDTH - 20), FromDIP(34)));
         spectrum_sizer->Add(card, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(5));
     }
