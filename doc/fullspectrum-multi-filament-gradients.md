@@ -18,7 +18,7 @@ Example:
 Red → Yellow → White
 ```
 
-The early part of the gradient blends red and yellow. The later part blends yellow and white. Near the middle stop, the slicer can preserve or overlap the yellow contribution so the two pair transitions join cleanly.
+The early part of the gradient blends red and yellow. The later part blends yellow and white. A centered solid-yellow window separates those two pair transitions at the middle stop.
 
 ## Components, weights, and stops
 
@@ -69,14 +69,9 @@ The gradient therefore uses physical-Z progression to choose the pair, while its
 
 ### Middle-stop behavior
 
-At an interior component such as yellow in `red → yellow → white`, a completely abrupt switch from the red/yellow pair to the yellow/white pair may create a visible discontinuity.
+At an interior component such as yellow in `red → yellow → white`, the slicer reserves a solid middle-component band centered on that component's stop. The red/yellow transition reaches solid yellow at the lower window edge, and the yellow/white transition starts at solid yellow at the upper edge.
 
-The gradient join logic supports two behaviors:
-
-- a solid middle-component band around the join; or
-- controlled cross-pair overlap around the join.
-
-The setting `dithering_local_z_gradient_overlap_window` controls this join region. The overlap cadence is distributed across nearby layers instead of forcing every layer to contain an additional pair.
+The setting `dithering_local_z_gradient_middle_filament_window` specifies the window width as a percentage of the complete gradient domain. The requested width is capped at the adjacent transition stops, which preserves both transition regions and prevents neighboring middle-filament windows from overlapping.
 
 ## Relationship to simplified Local-Z
 
@@ -135,11 +130,12 @@ The automated tests cover:
 - automatic Local-Z routing for gradients;
 - component and weight normalization;
 - stop-position round trips;
+- centered middle-filament Local-Z windows and their adjacent pair transitions;
 - canonical FullSpectrum serialization;
 - legacy compatibility serialization;
 - stable-reference reconstruction.
 
-A release candidate should also be checked with a sliced three-or-more-component model because the current suite does not contain a dedicated end-to-end visual or G-code regression test for the complete multi-stop gradient.
+A release candidate should also be checked visually with a sliced three-or-more-component model because appearance still depends on the selected materials and calibration.
 
 ## Implementation references
 
