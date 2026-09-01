@@ -3,6 +3,7 @@
 #include "Widgets/Label.hpp"
 #include "MixedColorMatchHelpers.hpp"
 #include "BitmapCache.hpp"
+#include "libslic3r/FilamentColorLibrary.hpp"
 #include "libslic3r/MixedFilament.hpp"
 
 #include <wx/image.h>
@@ -33,17 +34,9 @@ wxColour interpolate_color(const std::vector<wxColour>& colors, double pos)
     return wxColour(r, g, b);
 }
 
-bool is_simple_gradient(const MixedFilament& mf)
-{
-    return mf.gradient_enabled &&
-           mf.component_a != 0 &&
-           mf.component_b != 0 &&
-           mf.component_a != mf.component_b;
-}
-
 std::vector<wxColour> mixed_filament_gradient_colors(const MixedFilament& mf, const MixedFilamentDisplayContext& ctx)
 {
-    if (!is_simple_gradient(mf))
+    if (!Slic3r::is_simple_gradient(mf))
         return {};
     const size_t num_physical = ctx.num_physical == 0 ? ctx.physical_colors.size() : ctx.num_physical;
     MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(mf, num_physical);
@@ -298,7 +291,7 @@ wxBitmap* get_color_block_bitmap_cached(const ColorBlockParams& params)
     return cache.insert(key, bmp);
 }
 
-wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, bool is_gradient,
+wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, FilamentColorMode mode,
                                         int width, int height, const wxString& label,
                                         const wxColour& lightBorderColor,
                                         const CornerRadius& radius,
@@ -324,8 +317,12 @@ wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, boo
             drawColors.emplace_back(color.IsOk() ? color : wxColour("#26A69A"));
     }
 
-    const bool useGradient = is_gradient && drawColors.size() > 1;
-    std::string key = useGradient ? "official-grad:" : "official-seg:";
+    FilamentColorMode renderMode = FilamentColorMode::Segment;
+    if (drawColors.size() > 1 && mode == FilamentColorMode::Gradient)
+        renderMode = FilamentColorMode::Gradient;
+
+    const bool useGradient = renderMode == FilamentColorMode::Gradient;
+    std::string key = useGradient ? "official-grad-bt:" : "official-seg:";
     key += "h" + std::to_string(height) + ":w" + std::to_string(width) + ":" + label.ToStdString();
     if (useGradient)
         key += vertical_gradient ? ":vertical" : ":horizontal";
@@ -367,7 +364,24 @@ wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, boo
         dc.SetBrush(wxBrush(drawColors.front()));
         dc.DrawRectangle(0, 0, width, height);
     }
-    else if (useGradient)
+    // Reserved horizontal-gradient renderer. Re-enable when official filament data defines that direction.
+    // else if (useHorizontalGradient)
+    // {
+    //     dc.SetBrush(wxBrush(drawColors.front()));
+    //     dc.DrawRectangle(0, 0, width, height);
+    //     const int segmentCount = static_cast<int>(drawColors.size()) - 1;
+    //     int left = 0;
+    //     for (int index = 0; index < segmentCount; ++index)
+    //     {
+    //         const int right = index == segmentCount - 1 ? width : width * (index + 1) / segmentCount;
+    //         const int segmentWidth = right - left;
+    //         if (segmentWidth > 0)
+    //             dc.GradientFillLinear(wxRect(left, 0, segmentWidth, height), drawColors[static_cast<size_t>(index)],
+    //                                   drawColors[static_cast<size_t>(index + 1)], wxEAST);
+    //         left = right;
+    //     }
+    // }
+    else if (renderMode == FilamentColorMode::Gradient)
     {
         dc.SetBrush(wxBrush(drawColors.front()));
         dc.DrawRectangle(0, 0, width, height);
@@ -474,6 +488,17 @@ wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, boo
     }
 
     return cache.insert(key, bmp);
+}
+
+wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, bool is_gradient,
+                                        int width, int height, const wxString& label,
+                                        const wxColour& lightBorderColor,
+                                        const CornerRadius& radius,
+                                        bool vertical_gradient)
+{
+    return get_color_block_bitmap_cached(colors,
+                                         is_gradient ? FilamentColorMode::Gradient : FilamentColorMode::Segment,
+                                         width, height, label, lightBorderColor, radius, vertical_gradient);
 }
 
 // ---------------------------------------------------------------------------

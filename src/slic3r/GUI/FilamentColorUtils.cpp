@@ -57,9 +57,12 @@ wxBitmap* GetFilamentColorIconFromNormalized(const std::vector<std::string>& nor
     for (const std::string& color : normalizedColors)
         wxColors.emplace_back(WxColorFromHex(color));
 
-    const bool isGradient = normalizedColors.size() > 1 && mode == FilamentColorMode::Gradient;
-    return get_color_block_bitmap_cached(wxColors, isGradient, iconWidth, iconHeight, wxString::FromUTF8(label.c_str()),
-                                         lightBorderColor);
+    FilamentColorMode renderMode = FilamentColorMode::Segment;
+    if (normalizedColors.size() > 1 && mode == FilamentColorMode::Gradient)
+        renderMode = FilamentColorMode::Gradient;
+
+    return get_color_block_bitmap_cached(wxColors, renderMode, iconWidth, iconHeight,
+                                         wxString::FromUTF8(label.c_str()), lightBorderColor);
 }
 
 } // namespace

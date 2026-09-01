@@ -4,7 +4,7 @@
   "instantiation": "true",
   "name": "Snapmaker PETG @Dual",
   "setting_id": "2452014271",
-  "inherits": "Snapmaker PETG @Dual base",
+  "inherits": "fdm_filament_petg_category",
   "compatible_printers": [
     "Snapmaker A250 Dual (0.4 nozzle)",
     "Snapmaker A250 Dual (0.6 nozzle)",
@@ -24,5 +24,168 @@
     "Snapmaker A350 Dual QSKit (0.6 nozzle)",
     "Snapmaker Artisan (0.4 nozzle)",
     "Snapmaker Artisan (0.6 nozzle)"
-  ]
+  ],
+  "close_fan_the_first_x_layers": [
+    "2"
+  ],
+  "complete_print_exhaust_fan_speed": [
+    "80"
+  ],
+  "during_print_exhaust_fan_speed": [
+    "60"
+  ],
+  "enable_pressure_advance": [
+    "1"
+  ],
+  "eng_plate_temp": [
+    "0"
+  ],
+  "eng_plate_temp_initial_layer": [
+    "0"
+  ],
+  "fan_max_speed": [
+    "20"
+  ],
+  "fan_min_speed": [
+    "0"
+  ],
+  "filament_cooling_final_speed": [
+    "60"
+  ],
+  "filament_cooling_initial_speed": [
+    "35"
+  ],
+  "filament_cooling_moves": [
+    "2"
+  ],
+  "filament_cost": [
+    "100"
+  ],
+  "filament_density": [
+    "1.25"
+  ],
+  "filament_end_gcode": [
+    ""
+  ],
+  "filament_flow_ratio": [
+    "0.95"
+  ],
+  "filament_flow_support": [
+    "standard"
+  ],
+  "filament_loading_speed": [
+    "35"
+  ],
+  "filament_loading_speed_start": [
+    "35"
+  ],
+  "filament_long_retractions_when_cut": [
+    "nil"
+  ],
+  "filament_max_volumetric_speed": [
+    "10"
+  ],
+  "filament_minimal_purge_on_wipe_tower": [
+    "0"
+  ],
+  "filament_multitool_ramming": [
+    "0"
+  ],
+  "filament_multitool_ramming_flow": [
+    "10"
+  ],
+  "filament_multitool_ramming_volume": [
+    "0"
+  ],
+  "filament_retract_length_toolchange": [
+    "nil"
+  ],
+  "filament_retraction_distances_when_cut": [
+    "nil"
+  ],
+  "filament_retraction_length": [
+    "1.8"
+  ],
+  "filament_retraction_minimum_travel": [
+    "0"
+  ],
+  "filament_retraction_speed": [
+    "35"
+  ],
+  "filament_settings_id": [
+    "Snapmaker_PETG "
+  ],
+  "filament_start_gcode": [
+    ""
+  ],
+  "filament_unloading_speed": [
+    "35"
+  ],
+  "filament_unloading_speed_start": [
+    "35"
+  ],
+  "filament_vendor": [
+    "Snapmaker"
+  ],
+  "filament_z_hop_types": [
+    "Spiral Lift"
+  ],
+  "hot_plate_temp": [
+    "75"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "80"
+  ],
+  "nozzle_temperature": [
+    "230"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "250"
+  ],
+  "nozzle_temperature_range_low": [
+    "240"
+  ],
+  "overhang_fan_speed": [
+    "25"
+  ],
+  "overhang_fan_threshold": [
+    "25%"
+  ],
+  "pellet_flow_coefficient": [
+    "0.4157"
+  ],
+  "pressure_advance": [
+    "0.03"
+  ],
+  "slow_down_layer_time": [
+    "8"
+  ],
+  "slow_down_min_speed": [
+    "20"
+  ],
+  "supertack_plate_temp": [
+    "35"
+  ],
+  "supertack_plate_temp_initial_layer": [
+    "35"
+  ],
+  "temperature_vitrification": [
+    "178"
+  ],
+  "textured_plate_temp": [
+    "0"
+  ],
+  "textured_plate_temp_initial_layer": [
+    "0"
+  ],
+  "bed_type": [
+    "Hot Plate"
+  ],
+  "filament_load_time": [
+    "2"
+  ],
+  "filament_unload_time": [
+    "2"
+  ],
+  "is_custom_defined": "0"
 }

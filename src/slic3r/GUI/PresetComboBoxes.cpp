@@ -1049,6 +1049,13 @@ void PlaterPresetComboBox::ChangeExtruderColor()
         return;
 
     const std::string filamentPresetName = CurrentFilamentPresetName();
+    const Preset* currentPreset = m_collection != nullptr ? m_collection->find_preset(filamentPresetName, false, true) : nullptr;
+    if (currentPreset == nullptr || !currentPreset->is_compatible)
+    {
+        SelectLegacyFilamentColor();
+        return;
+    }
+
     const std::string filamentBaseName = FilamentBaseName(filamentPresetName);
     if (!IsSnapmakerFilamentName(filamentBaseName))
     {

@@ -3,6 +3,7 @@
 #include "Tab.hpp"
 #include "PresetHints.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/PresetFlowVariant.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Model.hpp"
@@ -11,6 +12,7 @@
 
 #include "Search.hpp"
 #include "OG_CustomCtrl.hpp"
+#include "Widgets/SegmentedToggle.hpp"
 
 #include <wx/app.h>
 #include <wx/button.h>
@@ -893,15 +895,199 @@ void Tab::decorate()
         m_active_page->refresh();
 }
 
+void Tab::register_flow_variant_view(ConfigFlowDomain domain,
+                                     const std::vector<PageShp>& pages,
+                                     std::function<const std::vector<std::string>&()> options,
+                                     std::function<bool(const std::string&)> is_option)
+{
+    // A previously-registered view's selector lives in the shared page header (the
+    // filament and printer tabs share one ParamsPanel); destroy it before replacing
+    // the view so re-registration (e.g. TabPrinter's kinematics-page rebuild) does
+    // not leave orphaned selectors stacked in the header.
+    if (m_flow_variant_view && m_flow_variant_view->selector) {
+        if (auto* header_sizer = m_parent->get_page_header_sizer())
+            header_sizer->Detach(m_flow_variant_view->selector);
+        m_flow_variant_view->selector->Destroy();
+    }
+    m_flow_variant_view = std::make_unique<FlowVariantView>();
+    m_flow_variant_view->domain = domain;
+    m_flow_variant_view->pages = pages;
+    m_flow_variant_view->options = std::move(options);
+    m_flow_variant_view->is_option = std::move(is_option);
+
+    refresh_flow_variant_view();
+}
+
+size_t Tab::flow_variant_view_index() const
+{
+    if (!m_flow_variant_view || m_flow_variant_view->modes.empty())
+        return 0;
+
+    const auto mode = std::find(m_flow_variant_view->modes.begin(),
+                                m_flow_variant_view->modes.end(),
+                                m_flow_variant_view->selected_mode);
+    return mode == m_flow_variant_view->modes.end()
+        ? 0
+        : size_t(std::distance(m_flow_variant_view->modes.begin(), mode));
+}
+
+void Tab::refresh_flow_variant_view()
+{
+    if (!m_flow_variant_view || !m_config)
+        return;
+
+    std::vector<std::string> modes;
+    const auto* support = m_config->option<ConfigOptionStrings>(flow_support_key(m_flow_variant_view->domain));
+    if (support != nullptr)
+        modes = support->values;
+    if (modes.empty())
+        modes.emplace_back(FLOW_MODE_STANDARD);
+
+    if (std::find(modes.begin(), modes.end(), m_flow_variant_view->selected_mode) == modes.end())
+    {
+        const auto standard = std::find(modes.begin(), modes.end(), FLOW_MODE_STANDARD);
+        m_flow_variant_view->selected_mode = (standard == modes.end()) ? modes.front() : *standard;
+    }
+
+    if (m_flow_variant_view->selector == nullptr || modes != m_flow_variant_view->modes)
+    {
+        if (m_flow_variant_view->selector != nullptr)
+        {
+            m_parent->get_page_header_sizer()->Detach(m_flow_variant_view->selector);
+            m_flow_variant_view->selector->Destroy();
+        }
+
+        m_flow_variant_view->modes = modes;
+        // The brackets are part of the localized label (ASCII "[High flow]" by
+        // default, CJK "【高流量】" in Chinese), so the glyph choice lives in the
+        // translation catalog rather than being switched on the UI language here.
+        std::vector<wxString> labels;
+        labels.reserve(modes.size());
+        for (const std::string& mode : modes)
+        {
+            if (mode == FLOW_MODE_STANDARD)
+                labels.emplace_back(_L("[Standard flow]"));
+            else if (mode == FLOW_MODE_HIGH_FLOW)
+                labels.emplace_back(_L("[High flow]"));
+            else
+            {
+                std::string label = mode;
+                std::replace(label.begin(), label.end(), '_', ' ');
+                labels.emplace_back(wxString("[") + from_u8(label) + "]");
+            }
+        }
+
+        // Plain style = borderless teal/grey text (Figma), hosted in the frozen page header.
+        m_flow_variant_view->selector = new SegmentedToggle(m_parent->get_page_header(),
+                                                            labels,
+                                                            int(flow_variant_view_index()),
+                                                            SegmentedToggle::Style::Plain);
+        m_parent->get_page_header_sizer()->Add(m_flow_variant_view->selector,
+                                               0,
+                                               wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT | wxTOP | wxBOTTOM,
+                                               FromDIP(10));
+        m_flow_variant_view->selector->bindSelectionCallback([this](int index) {
+            if (!m_flow_variant_view || index < 0 || size_t(index) >= m_flow_variant_view->modes.size())
+                return;
+
+            m_flow_variant_view->selected_mode = m_flow_variant_view->modes[size_t(index)];
+            refresh_flow_variant_view();
+            Tab::reload_config();
+            update_changed_ui();
+            toggle_options();
+            update_visibility();
+            m_parent->Layout();
+        });
+        m_parent->get_page_header()->Layout();
+    }
+    else
+    {
+        m_flow_variant_view->selector->setSelected(int(flow_variant_view_index()));
+    }
+
+    update_flow_variant_view_visibility();
+
+    const int flow_index = int(flow_variant_view_index());
+    for (const PageShp& page : m_flow_variant_view->pages)
+    {
+        for (const ConfigOptionsGroupShp& group : page->m_optgroups)
+        {
+            for (const auto& option : group->opt_map())
+            {
+                const std::string& key = option.second.first;
+                if (m_flow_variant_view->is_option(key))
+                    group->set_option_index(key, flow_index);
+            }
+        }
+    }
+}
+
+void Tab::update_flow_variant_view_visibility()
+{
+    // The dialog page header is shared by the filament and printer tabs. Only the
+    // currently-active tab manages it; a background tab's refresh (e.g. a preset
+    // reload) must not stomp the active tab's header or show a stale selector.
+    if (m_parent->get_current_tab() != this) {
+        if (m_flow_variant_view && m_flow_variant_view->selector)
+            m_flow_variant_view->selector->Hide();
+        return;
+    }
+
+    const bool active_page_supports_flow_variants = m_flow_variant_view &&
+        std::any_of(m_flow_variant_view->pages.begin(), m_flow_variant_view->pages.end(),
+                    [this](const PageShp& page) { return m_active_page == page.get(); });
+    const bool show = active_page_supports_flow_variants && m_flow_variant_view->selector
+                      && m_flow_variant_view->modes.size() > 1;
+
+    if (m_flow_variant_view && m_flow_variant_view->selector) {
+        // Reveal only this tab's selector; hide any sibling selector left visible by
+        // the other tab that shares this header.
+        if (show) {
+            for (wxWindow* sibling : m_parent->get_page_header()->GetChildren())
+                if (sibling != m_flow_variant_view->selector)
+                    sibling->Hide();
+        }
+        m_flow_variant_view->selector->Show(show);
+    }
+    m_parent->show_page_header(show);
+}
+
 // Update UI according to changes
 void Tab::update_changed_ui()
 {
     if (m_postpone_update_ui)
         return;
 
-    const bool deep_compare = (m_type == Slic3r::Preset::TYPE_PRINTER || m_type == Slic3r::Preset::TYPE_SLA_MATERIAL);
+    const bool deep_compare = (m_type == Slic3r::Preset::TYPE_PRINTER ||
+                               m_type == Slic3r::Preset::TYPE_SLA_MATERIAL);
     auto dirty_options = m_presets->current_dirty_options(deep_compare);
     auto nonsys_options = m_presets->current_different_from_parent_options(deep_compare);
+
+    if (m_flow_variant_view && !deep_compare)
+    {
+        auto merge_flow_variant_options = [this](std::vector<std::string>& options,
+                                                  std::vector<std::string> deep_options) {
+            options.erase(std::remove_if(options.begin(), options.end(), [this](const std::string& key) {
+                return m_flow_variant_view->is_option(key);
+            }), options.end());
+            for (const std::string& key : deep_options)
+            {
+                const size_t index_separator = key.find('#');
+                const std::string base_key = key.substr(0, index_separator);
+                if (m_flow_variant_view->is_option(base_key))
+                    options.emplace_back(key);
+            }
+        };
+
+        merge_flow_variant_options(
+            dirty_options,
+            m_presets->current_flow_variant_dirty_options(m_flow_variant_view->domain,
+                                                          m_flow_variant_view->options()));
+        merge_flow_variant_options(
+            nonsys_options,
+            m_presets->current_flow_variant_different_from_parent_options(m_flow_variant_view->domain,
+                                                                          m_flow_variant_view->options()));
+    }
     if (m_type == Preset::TYPE_PRINTER && static_cast<TabPrinter*>(this)->m_printer_technology == ptFFF) {
         TabPrinter* tab = static_cast<TabPrinter*>(this);
         if (tab->m_initial_extruders_count != tab->m_extruders_count)
@@ -913,8 +1099,19 @@ void Tab::update_changed_ui()
     for (auto& it : m_options_list)
         it.second = m_opt_status_value;
 
-    for (auto opt_key : dirty_options)	m_options_list[opt_key] &= ~osInitValue;
-    for (auto opt_key : nonsys_options)	m_options_list[opt_key] &= ~osSystemValue;
+    for (auto opt_key : dirty_options) m_options_list[opt_key] &= ~osInitValue;
+    for (auto opt_key : nonsys_options) m_options_list[opt_key] &= ~osSystemValue;
+
+    if (m_flow_variant_view)
+    {
+        const size_t current_index = flow_variant_view_index();
+        for (const std::string& key : m_flow_variant_view->options())
+        {
+            const auto current = m_options_list.find(key + "#" + std::to_string(current_index));
+            if (current != m_options_list.end())
+                m_options_list[key] = current->second;
+        }
+    }
 
     update_custom_dirty();
 
@@ -935,6 +1132,19 @@ void Tab::init_options_list()
 
     for (const std::string& opt_key : m_config->keys())
         m_options_list.emplace(opt_key, m_opt_status_value);
+
+    if (!m_flow_variant_view)
+        return;
+
+    const size_t flow_count = m_flow_variant_view->modes.empty() ? 1 : m_flow_variant_view->modes.size();
+    for (const std::string& key : m_flow_variant_view->options())
+    {
+        if (!m_config->has(key))
+            continue;
+
+        for (size_t index = 0; index < flow_count; ++index)
+            m_options_list.emplace(key + "#" + std::to_string(index), m_opt_status_value);
+    }
 }
 
 template<class T>
@@ -1080,6 +1290,30 @@ void Tab::update_changed_tree_ui()
                 for (const auto &kvp : group->opt_map()) {
                     const std::string& opt_key = kvp.first;
                     get_sys_and_mod_flags(opt_key, sys_page, modified_page);
+                }
+            }
+
+            if (m_flow_variant_view &&
+                std::find(m_flow_variant_view->pages.begin(), m_flow_variant_view->pages.end(), page) != m_flow_variant_view->pages.end())
+            {
+                for (const ConfigOptionsGroupShp& group : page->m_optgroups)
+                {
+                    for (const auto& option_in_group : group->opt_map())
+                    {
+                        const std::string& key = option_in_group.second.first;
+                        if (!m_flow_variant_view->is_option(key))
+                            continue;
+
+                        const std::string prefix = key + "#";
+                        for (const auto& option : m_options_list)
+                        {
+                            if (option.first.compare(0, prefix.size(), prefix) != 0)
+                                continue;
+
+                            sys_page &= (option.second & osSystemValue) != 0;
+                            modified_page |= (option.second & osInitValue) == 0;
+                        }
+                    }
                 }
             }
 
@@ -1565,6 +1799,18 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
         if (new_conf.has("dithering_local_z_infill"))
             set_project_bool("dithering_local_z_infill", new_conf.opt_bool("dithering_local_z_infill"));
 
+        // Advisory: enabling Subdivide Mix Layer with a layer height at or below 0.1 mm
+        // risks subdividing below the printer's supported range. Uses the same
+        // RichMessageDialog control as the other batch-match prompts (e.g. "No model
+        // detected") so the warning reads as the same dialog family.
+        if (local_z_enabled && m_config->has("layer_height") &&
+            m_config->opt_float("layer_height") <= 0.1 + EPSILON) {
+            RichMessageDialog dlg(wxGetApp().plater(),
+                _L("The current layer height is 0.1 mm or below. Enabling Subdivide Mixing Layers may cause the subdivided layer height to fall outside the printer's supported range. This could affect print quality."),
+                _L("Configuration Conflict"), wxOK);
+            dlg.ShowModal();
+        }
+
         if (auto* plater = wxGetApp().plater())
             plater->notify_vhl_dithering_conflict(local_z_enabled);
     }
@@ -1875,6 +2121,19 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
             }
             wxGetApp().plater()->update();
         }
+
+        // Advisory: Subdivide Mix Layer enabled while layer height is in range but
+        // at or below 0.1 mm — the subdivided height may fall outside the supported range.
+        // Uses the same RichMessageDialog control as the other batch-match/Subdivide prompts
+        // so the warning reads as the same dialog family.
+        if (!exceed_minimum_flag && !exceed_maximum_flag &&
+            m_config->has("dithering_local_z_mode") && m_config->opt_bool("dithering_local_z_mode") &&
+            lh <= 0.1 + EPSILON) {
+            RichMessageDialog dlg(wxGetApp().plater(),
+                _L("Subdivide Mixing Layers is enabled. At a layer height of 0.1 mm or below, the subdivided layer height may fall outside the printer's supported range. This could affect print quality."),
+                _L("Configuration Conflict"), wxOK);
+            dlg.ShowModal();
+        }
     }
 
 
@@ -2114,7 +2373,16 @@ void Tab::apply_searcher()
 
 void Tab::cache_config_diff(const std::vector<std::string>& selected_options, const DynamicPrintConfig* config/* = nullptr*/)
 {
-    m_cache_config.apply_only(config ? *config : m_presets->get_edited_preset().config, selected_options);
+    const DynamicPrintConfig &source = config ? *config : m_presets->get_edited_preset().config;
+    std::vector<std::string> cache_options;
+    cache_options.reserve(selected_options.size());
+    for (const std::string &opt_key : selected_options) {
+        const size_t hash = opt_key.rfind('#');
+        cache_options.emplace_back(hash != std::string::npos ? opt_key.substr(0, hash) : opt_key);
+        if (std::find(m_cache_config_keys.begin(), m_cache_config_keys.end(), opt_key) == m_cache_config_keys.end())
+            m_cache_config_keys.emplace_back(opt_key);
+    }
+    m_cache_config.apply_only(source, cache_options);
 }
 
 void Tab::apply_config_from_cache()
@@ -2126,9 +2394,10 @@ void Tab::apply_config_from_cache()
         was_applied = static_cast<TabPrinter*>(this)->apply_extruder_cnt_from_cache();
 
     if (!m_cache_config.empty()) {
-        // Apply to edited preset (官方版本的简单实现)
-        m_presets->get_edited_preset().config.apply(m_cache_config);
+        // Preserve unselected elements of indexed vector options in the target preset.
+        m_presets->get_edited_preset().config.apply_only(m_cache_config, m_cache_config_keys);
         m_cache_config.clear();
+        m_cache_config_keys.clear();
         was_applied = true;
     }
 
@@ -2507,6 +2776,14 @@ void TabPrint::build()
         optgroup->append_single_option_line("ensure_vertical_shell_thickness", "strength_settings_advanced#ensure-vertical-shell-thickness");
 
     page = add_options_page(L("Speed"), "custom-gcode_speed"); // ORCA: icon only visible on placeholders
+        if (m_type == Preset::TYPE_PRINT)
+        {
+            register_flow_variant_view(
+                ConfigFlowDomain::Process,
+                page,
+                []() -> const std::vector<std::string>& { return process_flow_variant_options(); },
+                [](const std::string& key) { return is_process_flow_variant_option(key); });
+        }
         optgroup = page->new_optgroup(L("Initial layer speed"), L"param_speed_first", 15);
     optgroup->append_single_option_line("initial_layer_speed", "speed_settings_initial_layer_speed#initial-layer");
         optgroup->append_single_option_line("initial_layer_infill_speed", "speed_settings_initial_layer_speed#initial-layer-infill");
@@ -2861,6 +3138,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
 // Reload current config (aka presets->edited_preset->config) into the UI fields.
 void TabPrint::reload_config()
 {
+    refresh_flow_variant_view();
     this->compatible_widget_reload(m_compatible_printers);
     Tab::reload_config();
     sync_mixed_color_prediction_controls();
@@ -2912,7 +3190,7 @@ void TabPrint::toggle_options()
         m_config_manipulation.set_is_BBL_Printer(is_BBL_printer);
     }
 
-    m_config_manipulation.toggle_print_fff_options(m_config, m_type < Preset::TYPE_COUNT);
+    m_config_manipulation.toggle_print_fff_options(m_config, m_type < Preset::TYPE_COUNT, flow_variant_view_index());
 
     Field *field = m_active_page->get_field("support_style");
     auto   support_type = m_config->opt_enum<SupportType>("support_type");
@@ -2933,6 +3211,11 @@ void TabPrint::toggle_options()
             cb->Append(_(def->enum_labels[i]));
         }
         cb->SetValue(n);
+        // The stale label (e.g. a tree style left over after support_type changed while support
+        // is disabled) may not exist in the rebuilt list; GetValue()/SetValue() then leaves the
+        // selection invalid, and Choice::get_value would index enum_values out of bounds.
+        if (cb->GetSelection() == wxNOT_FOUND && cb->GetCount() > 0)
+            cb->SetSelection(0);
     }
 
     // Keep plate bed-type list in sync with currently selected printer.
@@ -3722,24 +4005,27 @@ void TabFilament::set_custom_gcode(const t_config_option_key& opt_key, const std
     load_config(new_conf);
 }
 
-void TabFilament::add_filament_overrides_page()
+PageShp TabFilament::add_filament_overrides_page()
 {
     //BBS
     PageShp page = add_options_page(L("Setting Overrides"), "custom-gcode_setting_override"); // ORCA: icon only visible on placeholders
     ConfigOptionsGroupShp optgroup = page->new_optgroup(L("Retraction"), L"param_retraction");
 
-    auto append_single_option_line = [optgroup, this](const std::string& opt_key, int opt_index)
+    auto append_single_option_line = [optgroup, this](const std::string& opt_key)
     {
         Line line {"",""};
         //BBS
         line = optgroup->create_single_option_line(optgroup->get_option(opt_key));
 
-        line.near_label_widget = [this, optgroup_wk = ConfigOptionsGroupWkp(optgroup), opt_key, opt_index](wxWindow* parent) {
+        line.near_label_widget = [this, optgroup_wk = ConfigOptionsGroupWkp(optgroup), opt_key](wxWindow* parent) {
             auto check_box = new ::CheckBox(parent); // ORCA modernize checkboxes
-            check_box->Bind(wxEVT_TOGGLEBUTTON, [this, optgroup_wk, opt_key, opt_index](wxCommandEvent& evt) {
+            check_box->Bind(wxEVT_TOGGLEBUTTON, [this, optgroup_wk, opt_key](wxCommandEvent& evt) {
                 const bool is_checked = evt.IsChecked();
+                const int option_index = is_filament_flow_variant_option(opt_key)
+                    ? int(flow_variant_view_index())
+                    : 0;
                 if (auto optgroup_sh = optgroup_wk.lock(); optgroup_sh) {
-                    if (Field *field = optgroup_sh->get_fieldc(opt_key, opt_index); field != nullptr) {
+                    if (Field *field = optgroup_sh->get_fieldc(opt_key, option_index); field != nullptr) {
                         field->toggle(is_checked);
 
                         if (is_checked) {
@@ -3749,9 +4035,19 @@ void TabFilament::add_filament_overrides_page()
                         else {
                             const std::string printer_opt_key = opt_key.substr(strlen("filament_"));
                             const auto printer_config = m_preset_bundle->printers.get_edited_preset().config;
-                            const boost::any printer_config_value = optgroup_sh->get_config_value(printer_config, printer_opt_key, opt_index);
+                            const boost::any printer_config_value = optgroup_sh->get_config_value(printer_config, printer_opt_key, 0);
                             field->update_na_value(printer_config_value);
-                            field->set_na_value();
+                            const ConfigOptionDef *option_def = m_config->def()->get(opt_key);
+                            if (option_def != nullptr &&
+                                (option_def->type == coFloats || option_def->type == coPercents)) {
+                                const double nil_value = ConfigOptionFloatsNullable::nil_value();
+                                Slic3r::GUI::change_opt_value(*m_config, opt_key, nil_value, option_index);
+                                field->set_value(printer_config_value, false);
+                                on_value_change(opt_key, nil_value);
+                                update_dirty();
+                            } else {
+                                field->set_na_value();
+                            }
                         }
                     }
                 }
@@ -3763,8 +4059,6 @@ void TabFilament::add_filament_overrides_page()
 
         optgroup->append_line(line);
     };
-
-    const int extruder_idx = 0; // #ys_FIXME
 
     for (const std::string opt_key : {  "filament_retraction_length",
                                         "filament_z_hop",
@@ -3788,7 +4082,9 @@ void TabFilament::add_filament_overrides_page()
                                         //SoftFever
                                         // "filament_seam_gap"
                                      })
-        append_single_option_line(opt_key, extruder_idx);
+        append_single_option_line(opt_key);
+
+    return page;
 }
 
 void TabFilament::update_filament_overrides_page(const DynamicPrintConfig* printers_config)
@@ -3830,20 +4126,26 @@ void TabFilament::update_filament_overrides_page(const DynamicPrintConfig* print
                                             // "filament_seam_gap"
                                         };
 
+    const int flow_index = int(flow_variant_view_index());
     const int extruder_idx = 0; // #ys_FIXME
+    const int retract_length_index = is_filament_flow_variant_option("filament_retraction_length") ? flow_index : extruder_idx;
 
-    const bool have_retract_length = m_config->option("filament_retraction_length")->is_nil() ||
-                                     m_config->opt_float("filament_retraction_length", extruder_idx) > 0;
+    const ConfigOptionVectorBase* retract_length =
+        dynamic_cast<const ConfigOptionVectorBase*>(m_config->option("filament_retraction_length"));
+    const bool have_retract_length = retract_length == nullptr || retract_length->is_nil(retract_length_index) ||
+                                     m_config->opt_float("filament_retraction_length", retract_length_index) > 0;
 
     for (const std::string& opt_key : opt_keys)
     {
+        const int option_index = is_filament_flow_variant_option(opt_key) ? flow_index : extruder_idx;
         bool is_checked = opt_key=="filament_retraction_length" ? true : have_retract_length;
         m_overrides_options[opt_key]->Enable(is_checked);
 
-        is_checked &= !m_config->option(opt_key)->is_nil();
+        const ConfigOptionVectorBase* option = dynamic_cast<const ConfigOptionVectorBase*>(m_config->option(opt_key));
+        is_checked &= option != nullptr && !option->is_nil(option_index);
         m_overrides_options[opt_key]->SetValue(is_checked);
 
-        Field* field = optgroup->get_fieldc(opt_key, extruder_idx);
+        Field* field = optgroup->get_fieldc(opt_key, option_index);
         if (field == nullptr) continue;
 
         if (opt_key == "filament_long_retractions_when_cut") {
@@ -3856,7 +4158,10 @@ void TabFilament::update_filament_overrides_page(const DynamicPrintConfig* print
             int machine_enabled_level = printers_config->option<ConfigOptionInt>(
                 "enable_long_retraction_when_cut")->value;
             bool machine_enabled = machine_enabled_level == LongRectrationLevel::EnableFilament;
-            bool filament_enabled = m_config->option<ConfigOptionBools>("filament_long_retractions_when_cut")->values[extruder_idx] == 1;
+            const int long_retraction_index = is_filament_flow_variant_option("filament_long_retractions_when_cut")
+                ? flow_index
+                : extruder_idx;
+            bool filament_enabled = m_config->option<ConfigOptionBools>("filament_long_retractions_when_cut")->values[long_retraction_index] == 1;
             toggle_line(opt_key, filament_enabled && machine_enabled);
             field->toggle(is_checked && filament_enabled && machine_enabled);
         } else {
@@ -3878,6 +4183,7 @@ void TabFilament::build()
     load_initial_data();
 
     auto page = add_options_page(L("Filament"), "custom-gcode_filament"); // ORCA: icon only visible on placeholders
+    const PageShp filament_page = page;
         //BBS
         auto optgroup = page->new_optgroup(L("Basic information"), L"param_information");
         optgroup->append_single_option_line("filament_type"); // ORCA use same width with other elements
@@ -3925,15 +4231,16 @@ void TabFilament::build()
         optgroup->append_single_option_line("pressure_advance", "pressure-advance-calib");
 
         // Orca: adaptive pressure advance and calibration model
-        optgroup->append_single_option_line("adaptive_pressure_advance", "adaptive-pressure-advance-calib");
-        optgroup->append_single_option_line("adaptive_pressure_advance_overhangs", "adaptive-pressure-advance-calib");
-        optgroup->append_single_option_line("adaptive_pressure_advance_bridges", "adaptive-pressure-advance-calib");
-
-        Option option = optgroup->get_option("adaptive_pressure_advance_model");
-        option.opt.full_width = true;
-        option.opt.is_code = true;
-        option.opt.height = 15;
-        optgroup->append_single_option_line(option);
+        // Snapmaker: hidden from UI per product requirement; config and slicing logic are kept
+        // optgroup->append_single_option_line("adaptive_pressure_advance", "adaptive-pressure-advance-calib");
+        // optgroup->append_single_option_line("adaptive_pressure_advance_overhangs", "adaptive-pressure-advance-calib");
+        // optgroup->append_single_option_line("adaptive_pressure_advance_bridges", "adaptive-pressure-advance-calib");
+        //
+        // Option option = optgroup->get_option("adaptive_pressure_advance_model");
+        // option.opt.full_width = true;
+        // option.opt.is_code = true;
+        // option.opt.height = 15;
+        // optgroup->append_single_option_line(option);
         //
 
         optgroup = page->new_optgroup(L("Print chamber temperature"), L"param_chamber_temp");
@@ -3950,44 +4257,54 @@ void TabFilament::build()
         optgroup->append_line(line);
 
         optgroup = page->new_optgroup(L("Bed temperature"), L"param_bed_temp");
-        line = { L("Cool Plate (SuperTack)"),
-                 L("Bed temperature when the Cool Plate SuperTack is installed. A value of 0 means the filament does not support printing on the Cool Plate SuperTack.") };
+        // Initial label/tooltip are picked based on the printer selected at build time;
+        // toggle_options() re-applies them whenever the user switches printers, so the
+        // row stays in sync with the bed-type combobox (U1 = Cool Steel Plate, others =
+        // Cool Plate (SuperTack)). Both names map to the same btSuperTack enumerator.
+        bool        is_u1_at_build = false;
+        const auto *printer_model_opt_build = m_preset_bundle->printers.get_edited_preset().config.option<ConfigOptionString>("printer_model");
+        if (printer_model_opt_build) {
+            const std::string &pm = printer_model_opt_build->value;
+            is_u1_at_build = boost::icontains(pm, "Snapmaker") && boost::icontains(pm, "U1");
+        }
+        line = { is_u1_at_build ? L("Cool Steel Plate") : L("Cool Plate (SuperTack)"),
+                 L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.") };
         line.append_option(optgroup->get_option("supertack_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("supertack_plate_temp"));
         optgroup->append_line(line);
 
         line = { L("Cool Plate"),
-                 L("Bed temperature when the Cool Plate is installed. A value of 0 means the filament does not support printing on the Cool Plate.") };
+                 L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.") };
         line.append_option(optgroup->get_option("cool_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("cool_plate_temp"));
         optgroup->append_line(line);
 
         line = { L("Textured Cool Plate"),
-                 L("Bed temperature when the Textured Cool Plate is installed. A value of 0 means the filament does not support printing on the Textured Cool Plate.") };
+                 L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.") };
         line.append_option(optgroup->get_option("textured_cool_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("textured_cool_plate_temp"));
         optgroup->append_line(line);
 
         line = { L("Engineering Plate"),
-                 L("Bed temperature when the Engineering Plate is installed. A value of 0 means the filament does not support printing on the Engineering Plate.") };
+                 L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.") };
         line.append_option(optgroup->get_option("eng_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("eng_plate_temp"));
         optgroup->append_line(line);
 
         line = { L("Smooth PEI Plate / High Temp Plate"),
-                 L("Bed temperature when the Smooth PEI Plate/High Temperature Plate is installed. A value of 0 means the filament does not support printing on the Smooth PEI Plate/High Temp Plate.") };
+                 L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.") };
         line.append_option(optgroup->get_option("hot_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("hot_plate_temp"));
         optgroup->append_line(line);
 
         line = { L("Textured PEI Plate"),
-                 L("Bed temperature when the Textured PEI Plate is installed. A value of 0 means the filament does not support printing on the Textured PEI Plate.") };
+                 L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.") };
         line.append_option(optgroup->get_option("textured_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("textured_plate_temp"));
         optgroup->append_line(line);
 
-        line = {L("Graphic Effect Plate"), 
-                L("Bed temperature when the Graphic Effect Plate is installed. A value of 0 means the filament does not support printing on the Graphic Effect Plate.")};
+        line = {L("Graphic Effect Plate"),
+                L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.")};
         line.append_option(optgroup->get_option("graphic_effect_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("graphic_effect_plate_temp"));
         optgroup->append_line(line);
@@ -4034,6 +4351,7 @@ void TabFilament::build()
         //optgroup->append_line(line);
 
     page = add_options_page(L("Cooling"), "custom-gcode_cooling_fan"); // ORCA: icon only visible on placeholders
+    const PageShp cooling_page = page;
 
         //line = { "", "" };
         //line.full_width = 1;
@@ -4084,7 +4402,7 @@ void TabFilament::build()
         line.append_option(optgroup->get_option("complete_print_exhaust_fan_speed"));
         optgroup->append_line(line);
         //BBS
-        add_filament_overrides_page();
+        const PageShp overrides_page = add_filament_overrides_page();
         const int gcode_field_height = 15; // 150
         const int notes_field_height = 25; // 250
 
@@ -4096,7 +4414,7 @@ void TabFilament::build()
             validate_custom_gcode_cb(this, optgroup_title, opt_key, value);
         };
         optgroup->edit_custom_gcode = edit_custom_gcode_fn;
-        option = optgroup->get_option("filament_start_gcode");
+        Option option = optgroup->get_option("filament_start_gcode");
         option.opt.full_width = true;
         option.opt.is_code = true;
         option.opt.height = gcode_field_height;// 150;
@@ -4114,6 +4432,7 @@ void TabFilament::build()
         optgroup->append_single_option_line(option);
 
     page = add_options_page(L("Multimaterial"), "custom-gcode_multi_material"); // ORCA: icon only visible on placeholders
+    const PageShp multimaterial_page = page;
         optgroup = page->new_optgroup(L("Wipe tower parameters"), "param_tower");
         optgroup->append_single_option_line("filament_minimal_purge_on_wipe_tower");
 
@@ -4180,11 +4499,18 @@ void TabFilament::build()
         optgroup->append_single_option_line(option);
 
         //build_preset_description_line(optgroup.get());
+
+    register_flow_variant_view(
+        ConfigFlowDomain::Filament,
+        {filament_page, cooling_page, overrides_page, multimaterial_page},
+        []() -> const std::vector<std::string>& { return filament_flow_variant_options(); },
+        [](const std::string& key) { return is_filament_flow_variant_option(key); });
 }
 
 // Reload current config (aka presets->edited_preset->config) into the UI fields.
 void TabFilament::reload_config()
 {
+    refresh_flow_variant_view();
     this->compatible_widget_reload(m_compatible_printers);
     this->compatible_widget_reload(m_compatible_prints);
     Tab::reload_config();
@@ -4239,7 +4565,8 @@ void TabFilament::toggle_options()
     }
     if (m_active_page->title() == L("Filament"))
     {
-        bool pa = m_config->opt_bool("enable_pressure_advance", 0);
+        const size_t flow_index = flow_variant_view_index();
+        bool pa = m_config->option<ConfigOptionBools>("enable_pressure_advance")->get_at(flow_index);
         toggle_option("pressure_advance", pa);
 
         // BBS: 控制床温选项的显示
@@ -4256,8 +4583,16 @@ void TabFilament::toggle_options()
                 ? _L("Smooth PEI Plate")
                 : _L("Smooth PEI Plate / High Temp Plate");
         }
+        // Supertack slot: U1 renames btSuperTack to "Cool Steel Plate"; keep the filament
+        // temperature row in sync with the bed-type combobox so the names match.
+        if (Line* supertack_line = get_line("supertack_plate_temp_initial_layer")) {
+            supertack_line->label = is_snapmaker_u1
+                ? _L("Cool Steel Plate")
+                : _L("Cool Plate (SuperTack)");
+            supertack_line->label_tooltip = _L("Bed temperature when this plate is installed. A value of 0 means the filament does not support printing on this plate.");
+        }
         if (is_snapmaker_u1 && !support_multi_bed_types) {
-            // U1 default show 3 plates
+            // U1 default show 3 plates; Cool Steel Plate only appears with support_multi_bed_types
             toggle_line("supertack_plate_temp_initial_layer", false);
             toggle_line("supertack_plate_temp", false);
             toggle_line("cool_plate_temp_initial_layer", false);
@@ -4311,12 +4646,13 @@ void TabFilament::toggle_options()
         // Orca: adaptive pressure advance and calibration model
         // If PA is not enabled, disable adaptive pressure advance and hide the model section
         // If adaptive PA is not enabled, hide the adaptive PA model section
-        toggle_option("adaptive_pressure_advance", pa);
-        toggle_option("adaptive_pressure_advance_overhangs", pa);
-        bool has_adaptive_pa = m_config->opt_bool("adaptive_pressure_advance", 0);
-        toggle_line("adaptive_pressure_advance_overhangs", has_adaptive_pa && pa);
-        toggle_line("adaptive_pressure_advance_model", has_adaptive_pa && pa);
-        toggle_line("adaptive_pressure_advance_bridges", has_adaptive_pa && pa);
+        // Snapmaker: hidden from UI per product requirement; toggle logic disabled along with the UI lines
+        // toggle_option("adaptive_pressure_advance", pa);
+        // toggle_option("adaptive_pressure_advance_overhangs", pa);
+        // bool has_adaptive_pa = m_config->opt_bool("adaptive_pressure_advance", 0);
+        // toggle_line("adaptive_pressure_advance_overhangs", has_adaptive_pa && pa);
+        // toggle_line("adaptive_pressure_advance_model", has_adaptive_pa && pa);
+        // toggle_line("adaptive_pressure_advance_bridges", has_adaptive_pa && pa);
 
         bool is_pellet_printer = cfg.opt_bool("pellet_modded_printer");
         toggle_line("pellet_flow_coefficient", is_pellet_printer);
@@ -4335,7 +4671,8 @@ void TabFilament::toggle_options()
                         "filament_cooling_initial_speed", "filament_cooling_final_speed"})
             toggle_option(el, !is_BBL_printer);
 
-        bool multitool_ramming = m_config->opt_bool("filament_multitool_ramming", 0);
+        bool multitool_ramming = m_config->option<ConfigOptionBools>("filament_multitool_ramming")
+                                     ->get_at(flow_variant_view_index());
         toggle_option("filament_multitool_ramming_volume", multitool_ramming);
         toggle_option("filament_multitool_ramming_flow", multitool_ramming);
     }
@@ -4854,8 +5191,16 @@ void TabPrinter::build_unregular_pages(bool from_initial_build/* = false*/)
         auto page = build_kinematics_page();
         if (from_initial_build && !is_marlin_flavor)
             page->clear();
-        else
+        else {
             m_pages.insert(m_pages.begin() + n_before_extruders, page);
+
+            if (!machine_flow_variant_options().empty())
+                register_flow_variant_view(
+                    ConfigFlowDomain::Printer,
+                    page,
+                    []() -> const std::vector<std::string>& { return machine_flow_variant_options(); },
+                    [](const std::string& key) { return is_machine_flow_variant_option(key); });
+        }
     }
 
 if (is_marlin_flavor)
@@ -5191,6 +5536,7 @@ void TabPrinter::update_pages()
 
 void TabPrinter::reload_config()
 {
+    refresh_flow_variant_view();
     Tab::reload_config();
 
     // "extruders_count" doesn't update from the update_config(),
@@ -5874,8 +6220,16 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
                         old_filament_colors[i] = "#26A69A";
                     if (old_filament_multi_colors[i].empty())
                         old_filament_multi_colors[i] = old_filament_colors[i];
-                    old_filament_colour_modes[i] = old_filament_colour_modes[i] == 1 ? 1 : 0;
+                    const FilamentColorMode mode = FilamentColorModeFromConfig(old_filament_colour_modes[i]);
+                    old_filament_colour_modes[i] = FilamentColorModeToConfig(mode);
                 }
+
+                std::vector<double> old_flush_volumes_matrix;
+                std::vector<double> old_flush_volumes_vector;
+                if (const ConfigOptionFloats* flush_matrix = project_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
+                    old_flush_volumes_matrix = flush_matrix->values;
+                if (const ConfigOptionFloats* flush_vector = project_config.option<ConfigOptionFloats>("flush_volumes_vector"))
+                    old_flush_volumes_vector = flush_vector->values;
 
                 m_preset_bundle->update_selections(*wxGetApp().app_config);
 
@@ -5885,10 +6239,15 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
                 project_config.option<ConfigOptionStrings>("filament_multi_colors", true)->values = old_filament_multi_colors;
                 project_config.option<ConfigOptionInts>("filament_colour_mode", true)->values = old_filament_colour_modes;
 
+                if (ConfigOptionFloats* flush_matrix = project_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
+                    flush_matrix->values = old_flush_volumes_matrix;
+                if (ConfigOptionFloats* flush_vector = project_config.option<ConfigOptionFloats>("flush_volumes_vector"))
+                    flush_vector->values = old_flush_volumes_vector;
+
                 std::vector<std::string> filament_colour_mode_strings;
                 filament_colour_mode_strings.reserve(old_filament_colour_modes.size());
                 for (int mode : old_filament_colour_modes)
-                    filament_colour_mode_strings.emplace_back(mode == 1 ? "1" : "0");
+                    filament_colour_mode_strings.emplace_back(std::to_string(mode));
                 const std::string filament_colors = boost::algorithm::join(old_filament_colors, ",");
                 const std::string filament_multi_colors = boost::algorithm::join(old_filament_multi_colors, ",");
                 const std::string filament_colour_modes = boost::algorithm::join(filament_colour_mode_strings, ",");
@@ -5937,6 +6296,21 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
 
         // Trigger the on_presets_changed event to apply cached config for dependent tabs
         on_presets_changed();
+
+        // Refresh the sidebar nozzle UI after a preset switch. Non-sidebar entries (Machine
+        // Settings combo, preset deletion, UnsavedChangesDialog transfer, physical printer
+        // linkage) only reach Tab::select_preset. FFF only: SLA has no nozzle_diameter.
+        if (m_type == Preset::TYPE_PRINTER && m_presets->get_edited_preset().printer_technology() == ptFFF) {
+            // Guard: plater_ dangles during recreate_GUI teardown (it is never re-nulled on MainFrame destruction).
+            if (Plater* plater = wxGetApp().plater()) {
+                // Weak ref: a destroyed Sidebar (shutdown or GUI recreation) yields null.
+                wxWeakRef<Sidebar> weak_sidebar = &plater->sidebar();
+                wxTheApp->CallAfter([weak_sidebar]() {
+                    if (Sidebar* sidebar = weak_sidebar.get())
+                        sidebar->update_nozzle_settings();
+                });
+            }
+        }
     }
 
     if (technology_changed)
@@ -6016,6 +6390,7 @@ void Tab::clear_pages()
 {
     // invalidated highlighter, if any exists
     m_highlighter.invalidate();
+    m_parent->show_page_header(false);
     // clear pages from the controlls
     for (auto p : m_pages)
         p->clear();
@@ -6087,6 +6462,7 @@ void Tab::activate_selected_page(std::function<void()> throw_if_canceled)
     if (m_active_page && !(m_active_page->title() == "Dependencies"))
         toggle_options();
     m_active_page->update_visibility(m_mode, true); // for taggle line
+    update_flow_variant_view_visibility();
 }
 
 //BBS: GUI refactor
@@ -6203,8 +6579,8 @@ bool Tab::tree_sel_change_delayed(wxCommandEvent& event)
         m_active_page = page;
         // BBS: not changed
         // update_undo_buttons();
-        this->OnActivate();
         m_parent->set_active_tab(this);
+        this->OnActivate();
 
         m_page_view->Thaw();
         return false;

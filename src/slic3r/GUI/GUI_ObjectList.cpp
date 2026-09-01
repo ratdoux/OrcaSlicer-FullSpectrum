@@ -866,8 +866,15 @@ void ObjectList::update_filament_values_for_items_when_delete_filament(const siz
         auto     object = (*m_objects)[i];
         wxString extruder;
         if (!object->config.has("extruder")) {
-            extruder = std::to_string(1);
-            object->config.set_key_value("extruder", new ConfigOptionInt(1));
+            // Keep this object set to "default": do NOT materialize a
+            // non-zero extruder here.  Materializing (e.g. 1) would pin the
+            // object — and every inheriting ("default") child volume — to a
+            // specific filament after a filament is deleted, silently
+            // changing the real print material.  Leaving the config unset
+            // keeps the object default; a "default" child volume shows the
+            // default icon (see UpdateExtruderAndColorIcon), not the
+            // parent's color.
+            extruder = "0";
         } else if (size_t(object->config.extruder()) == filament_id + 1) {
             extruder = std::to_string(replace_filament_id);
             object->config.set_key_value("extruder", new ConfigOptionInt(replace_filament_id));
@@ -915,6 +922,7 @@ void ObjectList::update_filament_values_for_items_when_delete_filament(const siz
                 continue;
             } else if (size_t(object->volumes[id]->config.extruder()) == filament_id + 1) {
                 object->volumes[id]->config.set_key_value("extruder", new ConfigOptionInt(replace_filament_id));
+                extruder = std::to_string(replace_filament_id);
             } else {
                 int new_extruder = object->volumes[id]->config.extruder() > filament_id ? object->volumes[id]->config.extruder() - 1 :
                                                                                           object->volumes[id]->config.extruder();
@@ -2529,9 +2537,7 @@ void ObjectList::load_mesh_object(const TriangleMesh &mesh, const wxString &name
 
     new_object->ensure_on_bed();
 
-    //BBS init assmeble transformation
-    Geometry::Transformation t = new_object->instances[0]->get_transformation();
-    new_object->instances[0]->set_assemble_transformation(t);
+    model.InitializeAssemblyPositions({new_object});
 
     object_idxs.push_back(model.objects.size() - 1);
 #ifdef _DEBUG

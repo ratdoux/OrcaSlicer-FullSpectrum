@@ -693,6 +693,7 @@ public:
 
     //get a plate pointer by index
     PartPlate* get_plate(int index);
+    const PartPlate* get_plate(int index) const;
 
     void get_height_limits(float& height_to_lid, float& height_to_rod)
     {

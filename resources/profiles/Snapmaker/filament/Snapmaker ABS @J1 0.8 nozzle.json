@@ -13,5 +13,35 @@
   ],
   "slow_down_min_speed": [
     "10"
+  ],
+  "fan_max_speed": [
+    "22"
+  ],
+  "fan_min_speed": [
+    "22"
+  ],
+  "filament_flow_ratio": [
+    "0.95"
+  ],
+  "filament_flow_support": [
+    "standard"
+  ],
+  "filament_multitool_ramming_flow": [
+    "10"
+  ],
+  "hot_plate_temp": [
+    "110"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "105"
+  ],
+  "overhang_fan_speed": [
+    "22"
+  ],
+  "pellet_flow_coefficient": [
+    "0.4157"
+  ],
+  "pressure_advance": [
+    "0.02"
   ]
 }

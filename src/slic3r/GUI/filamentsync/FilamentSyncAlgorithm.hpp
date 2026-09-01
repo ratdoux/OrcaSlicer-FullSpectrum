@@ -8,7 +8,12 @@
 
 namespace Slic3r {
 
-// Closest-color matching using CIE76 Delta E in CIE Lab (D65).
+// Filament auto-match: type first, then color within the same type.
+// For each design filament:
+//   (1) Prefer machine filaments with the same filament type, picking the
+//       perceptually closest color via CIEDE2000 Delta E.
+//   (2) If no same-type filament exists on the machine, fall back to the
+//       closest color among all non-NONE machine filaments.
 // Returns design_index -> machine_index mapping; -1 means unmatched.
 std::vector<int> compute_color_match(
     const std::vector<GUI::FilamentData>& design_data,
@@ -19,9 +24,9 @@ std::vector<int> compute_direct_override(
     size_t design_count,
     const std::vector<GUI::FilamentData>& machine_data);
 
-// CIE76 perceptual color distance between two sRGB colors.
+// CIEDE2000 perceptual color distance between two sRGB colors.
 // Lower value = perceptually closer.
-float delta_e_cie76(uint8_t r1, uint8_t g1, uint8_t b1,
-                    uint8_t r2, uint8_t g2, uint8_t b2);
+float delta_e_ciede2000(uint8_t r1, uint8_t g1, uint8_t b1,
+                         uint8_t r2, uint8_t g2, uint8_t b2);
 
 } // namespace Slic3r

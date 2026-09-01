@@ -4,6 +4,8 @@
 #include "MsgDialog.hpp"
 #include "CalibrationWizardPage.hpp"
 #include "../../libslic3r/calib.hpp"
+#include "libslic3r/Preset.hpp"
+#include "libslic3r/PresetFlowVariant.hpp"
 #include "Tabbook.hpp"
 #include "CaliHistoryDialog.hpp"
 
@@ -17,6 +19,14 @@ wxDEFINE_EVENT(EVT_CALIBRATION_JOB_FINISHED, wxCommandEvent);
 static const wxString NA_STR = _L("N/A");
 static const float MIN_PA_K_VALUE_STEP = 0.001;
 static const int MAX_PA_HISTORY_RESULTS_NUMS = 16;
+
+static FilamentVolumeType calibration_volume_type(const Preset *printer_preset, int extruder_id)
+{
+    if (printer_preset == nullptr)
+        return fvtStandard;
+    return get_nozzle_volume_type(printer_preset->config, std::max(0, extruder_id));
+}
+
 std::map<int, Preset*> get_cached_selected_filament(MachineObject* obj) {
     std::map<int, Preset*> selected_filament_map;
     if (!obj) return selected_filament_map;
@@ -531,14 +541,15 @@ void PressureAdvanceWizard::on_device_connected(MachineObject* obj)
     }
 }
 
-static bool get_preset_info(const DynamicConfig& config, const BedType plate_type, int& nozzle_temp, int& bed_temp, float& max_volumetric_speed)
+static bool get_preset_info(const DynamicConfig& config, const BedType plate_type, FilamentVolumeType volume_type,
+                            int& nozzle_temp, int& bed_temp, float& max_volumetric_speed)
 {
     const ConfigOptionInts* nozzle_temp_opt = config.option<ConfigOptionInts>("nozzle_temperature");
     const ConfigOptionInts* opt_bed_temp_ints = config.option<ConfigOptionInts>(get_bed_temp_key(plate_type));
     const ConfigOptionFloats* speed_opt = config.option<ConfigOptionFloats>("filament_max_volumetric_speed");
     if (nozzle_temp_opt && speed_opt && opt_bed_temp_ints) {
         nozzle_temp = nozzle_temp_opt->get_at(0);
-        max_volumetric_speed = speed_opt->get_at(0);
+        max_volumetric_speed = get_preset_value_at(config, *speed_opt, ConfigFlowDomain::Filament, volume_type);
         bed_temp = opt_bed_temp_ints->get_at(0);
         if (bed_temp >= 0 && nozzle_temp >= 0 && max_volumetric_speed >= 0) {
             return true;
@@ -606,7 +617,9 @@ void PressureAdvanceWizard::on_cali_start()
             int   bed_temp             = -1;
             float max_volumetric_speed = -1;
 
-            if (!get_preset_info(item.second->config, plate_type, nozzle_temp, bed_temp, max_volumetric_speed)) {
+            if (!get_preset_info(item.second->config, plate_type,
+                                 calibration_volume_type(preset_page->get_printer_preset(curr_obj, nozzle_dia), 0),
+                                 nozzle_temp, bed_temp, max_volumetric_speed)) {
                 BOOST_LOG_TRIVIAL(error) << "CaliPreset: get preset info error";
                 continue;
             }
@@ -639,7 +652,9 @@ void PressureAdvanceWizard::on_cali_start()
             int   nozzle_temp          = -1;
             int   bed_temp             = -1;
             float max_volumetric_speed = -1;
-            if (!get_preset_info(selected_filaments.begin()->second->config, plate_type, nozzle_temp, bed_temp, max_volumetric_speed)) {
+            if (!get_preset_info(selected_filaments.begin()->second->config, plate_type,
+                                 calibration_volume_type(preset_page->get_printer_preset(curr_obj, nozzle_dia), 0),
+                                 nozzle_temp, bed_temp, max_volumetric_speed)) {
                 BOOST_LOG_TRIVIAL(error) << "CaliPreset: get preset info error";
                 return;
             }
@@ -808,7 +823,9 @@ void PressureAdvanceWizard::on_cali_save()
                 int   nozzle_temp          = -1;
                 int   bed_temp             = -1;
                 float max_volumetric_speed = -1;
-                if (!get_preset_info(selected_filaments.begin()->second->config, plate_type, nozzle_temp, bed_temp, max_volumetric_speed)) {
+                if (!get_preset_info(selected_filaments.begin()->second->config, plate_type,
+                                 calibration_volume_type(preset_page->get_printer_preset(curr_obj, nozzle_dia), 0),
+                                 nozzle_temp, bed_temp, max_volumetric_speed)) {
                     BOOST_LOG_TRIVIAL(error) << "CaliPreset: get preset info error";
                     return;
                 }
@@ -1008,7 +1025,9 @@ void FlowRateWizard::on_cali_start(CaliPresetStage stage, float cali_value, Flow
             int bed_temp = -1;
             float max_volumetric_speed = -1;
 
-            if (!get_preset_info(item.second->config, plate_type, nozzle_temp, bed_temp, max_volumetric_speed)) {
+            if (!get_preset_info(item.second->config, plate_type,
+                                 calibration_volume_type(preset_page->get_printer_preset(curr_obj, nozzle_dia), 0),
+                                 nozzle_temp, bed_temp, max_volumetric_speed)) {
                 BOOST_LOG_TRIVIAL(error) << "CaliPreset: get preset info error";
             }
 
@@ -1490,7 +1509,30 @@ void MaxVolumetricSpeedWizard::on_cali_save()
         return;
 
     std::map<std::string, ConfigOption *> key_value_map;
-    key_value_map.insert(std::make_pair("filament_max_volumetric_speed", new ConfigOptionFloats{ value }));
+    ConfigOptionFloats max_speeds{value};
+    if (!selected_filaments.empty()) {
+        const DynamicPrintConfig &filament_config = selected_filaments.begin()->second->config;
+        if (const auto *existing = filament_config.option<ConfigOptionFloats>("filament_max_volumetric_speed");
+            existing != nullptr && !existing->values.empty())
+            max_speeds = *existing;
+        const double fallback = max_speeds.values.front();
+        const size_t old_size = max_speeds.values.size();
+        size_t variant_count = old_size;
+        if (const auto *flow_support = filament_config.option<ConfigOptionStrings>("filament_flow_support");
+            flow_support != nullptr && !flow_support->values.empty())
+            variant_count = std::max(variant_count, flow_support->values.size());
+        max_speeds.resize(variant_count);
+        for (size_t idx = old_size; idx < variant_count; ++idx)
+            max_speeds.values[idx] = fallback;
+
+        float nozzle_dia = -1.f;
+        BedType plate_type = BedType::btDefault;
+        preset_page->get_preset_info(nozzle_dia, plate_type);
+        const Preset *printer_preset = preset_page->get_printer_preset(curr_obj, nozzle_dia);
+        const FilamentVolumeType volume_type = calibration_volume_type(printer_preset, 0);
+        max_speeds.values[get_preset_flow_variant_idx(filament_config, ConfigFlowDomain::Filament, volume_type)] = value;
+    }
+    key_value_map.insert(std::make_pair("filament_max_volumetric_speed", max_speeds.clone()));
 
     wxString message;
     if (!save_preset(old_preset_name, new_preset_name, key_value_map, message)) {

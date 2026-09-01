@@ -299,6 +299,7 @@ void Button::render(wxDC& dc)
     }
     auto text = GetLabel();
     if (!text.IsEmpty()) {
+        dc.SetFont(GetFont());
         if (pt.x + textSize.width > size.x)
             text = wxControl::Ellipsize(text, dc, wxELLIPSIZE_END, size.x - pt.x);
         pt.y += (rcContent.height - textSize.height) / 2;
@@ -318,6 +319,7 @@ void Button::render(wxDC& dc)
 void Button::messureSize()
 {
     wxClientDC dc(this);
+    dc.SetFont(GetFont());
     dc.GetTextExtent(GetLabel(), &textSize.width, &textSize.height, &textSize.x, &textSize.y);
     wxSize szContent = textSize.GetSize();
     if (this->active_icon.bmp().IsOk()) {

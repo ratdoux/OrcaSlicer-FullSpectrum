@@ -153,7 +153,7 @@ double Extruder::filament_cost() const
 
 double Extruder::filament_flow_ratio() const
 {
-    return m_config->filament_flow_ratio.get_at(m_id);
+    return get_value_at(*m_config, m_config->filament_flow_ratio, ConfigFlowDomain::Filament, m_id);
 }
 
 // Return a "retract_before_wipe" percentage as a factor clamped to <0, 1>
@@ -164,7 +164,7 @@ double Extruder::retract_before_wipe() const
 
 double Extruder::retraction_length() const
 {
-    return m_config->retraction_length.get_at(m_id);
+    return get_value_at(*m_config, m_config->retraction_length, ConfigFlowDomain::Filament, m_id);
 }
 
 double Extruder::retract_lift() const
@@ -174,7 +174,7 @@ double Extruder::retract_lift() const
 
 int Extruder::retract_speed() const
 {
-    return int(floor(m_config->retraction_speed.get_at(m_id)+0.5));
+    return int(floor(get_value_at(*m_config, m_config->retraction_speed, ConfigFlowDomain::Filament, m_id)+0.5));
 }
 
 bool Extruder::use_firmware_retraction() const
@@ -184,7 +184,7 @@ bool Extruder::use_firmware_retraction() const
 
 int Extruder::deretract_speed() const
 {
-    int speed = int(floor(m_config->deretraction_speed.get_at(m_id)+0.5));
+    int speed = int(floor(get_value_at(*m_config, m_config->deretraction_speed, ConfigFlowDomain::Filament, m_id)+0.5));
     return (speed > 0) ? speed : this->retract_speed();
 }
 

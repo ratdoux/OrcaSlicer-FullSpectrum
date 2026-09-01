@@ -31,6 +31,7 @@
 #include "slic3r/Utils/PresetUpdater.hpp"
 
 #include <nlohmann/json.hpp>
+#include <atomic>
 
 namespace Slic3r { namespace GUI {
 
@@ -77,7 +78,7 @@ public:
     int SaveProfileData();
     int LoadProfileFamily(std::string strVendor, std::string strFilePath);
     int SaveProfile();
-    int GetFilamentInfo( std::string VendorDirectory,json & pFilaList, std::string filepath, std::string &sVendor, std::string &sType);
+    int GetFilamentInfo( std::string VendorDirectory, const json & pFilaList, std::string filepath, std::string &sVendor, std::string &sType);
 
 
     bool apply_config(AppConfig *app_config, PresetBundle *preset_bundle, const PresetUpdater *updater, bool& apply_keeped_changes);
@@ -110,7 +111,7 @@ private:
 
     //First Load
     bool bFirstComplete{false};
-    bool m_destroy{false};
+    std::atomic<bool> m_destroy{false};
     boost::thread* m_load_task{ nullptr };
 
     // User Config

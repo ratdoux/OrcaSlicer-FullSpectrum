@@ -208,11 +208,10 @@ private:
         int circleD    = circleR * 2;
 
         std::vector<wxColour> circleColors = getAllColors(data.m_color);
-        bool circleIsGradient = data.m_color.NormalizedMode() == FilamentColorMode::Gradient;
+        const FilamentColorMode circleMode = data.m_color.NormalizedMode();
         const wxColour circleBorder = isNone ? wxColour(0xCC, 0xCC, 0xCC) : g_circleStroke;
-        wxBitmap* circleBmp = get_color_block_bitmap_cached(circleColors, circleIsGradient,
-            circleD, circleD, wxEmptyString, circleBorder,
-            CornerRadius::Uniform(circleR));
+        wxBitmap* circleBmp = get_color_block_bitmap_cached(circleColors, circleMode, circleD, circleD, wxEmptyString,
+                                                            circleBorder, CornerRadius::Uniform(circleR));
         if (circleBmp && circleBmp->IsOk())
             dc.DrawBitmap(*circleBmp, circleCxPx - circleR, circleCyPx - circleR);
 

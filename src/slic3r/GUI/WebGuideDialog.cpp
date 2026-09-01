@@ -34,6 +34,10 @@
 #include <libslic3r/Utils.hpp>
 #include "CreatePresetsDialog.hpp"
 #include <mutex>
+#include <vector>
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include "ProfileLoadUtil.hpp"
 #include "sentry_wrapper/SentryWrapper.hpp"
 
 using namespace nlohmann;
@@ -419,11 +423,13 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
             wxString strJS = wxString::Format("HandleStudio(%s)", m_Res.dump(-1, ' ', true));
 
             // BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;request_userguide_profile:" << strJS.c_str();
-            wxGetApp().CallAfter([this,strJS] { RunScript(strJS); });
+            // dialog-level CallAfter: discarded on destruction, cannot run on a dangling `this`
+            CallAfter([this,strJS] { RunScript(strJS); });
         }
         else if (strCmd == "request_custom_filaments") {
             wxString strJS = update_custom_filaments();
-            wxGetApp().CallAfter([this, strJS] { RunScript(strJS); });
+            // dialog-level CallAfter: discarded on destruction, cannot run on a dangling `this`
+            CallAfter([this, strJS] { RunScript(strJS); });
         }
         else if (strCmd == "create_custom_filament") {
             this->EndModal(wxID_OK);
@@ -944,15 +950,16 @@ bool GuideFrame::run()
         return false;
 }
 
-int GuideFrame::GetFilamentInfo( std::string VendorDirectory, json & pFilaList, std::string filepath, std::string &sVendor, std::string &sType)
+// NOTE: runs concurrently from TBB workers in LoadProfileFamily. pFilaList is
+// only read (const access), never modified - keep it that way.
+int GuideFrame::GetFilamentInfo( std::string VendorDirectory, const json & pFilaList, std::string filepath, std::string &sVendor, std::string &sType)
 {
     //GetStardardFilePath(filepath);
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " GetFilamentInfo:VendorDirectory - " << VendorDirectory << ", Filepath - "<<filepath;
+    BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << " GetFilamentInfo:VendorDirectory - " << VendorDirectory << ", Filepath - "<<filepath;
 
     try {
         std::string contents;
         LoadFile(filepath, contents);
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": Json Contents: " << contents;
         json jLocal = json::parse(contents);
 
         if (sVendor == "") {
@@ -981,14 +988,18 @@ int GuideFrame::GetFilamentInfo( std::string VendorDirectory, json & pFilaList, 
                     return -1;
                 }
 
-                std::string FPath = pFilaList[FName]["sub_path"];
+                const json &inherited = pFilaList.at(FName); // contains()-checked above, cannot throw
+                if (!inherited.contains("sub_path") || !inherited["sub_path"].is_string()) {
+                    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "inherits filament " << FName << " has no sub_path";
+                    return -1;
+                }
+                std::string FPath = inherited["sub_path"];
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Before Format Inherits Path: VendorDirectory - " << VendorDirectory << ", sub_path - " << FPath;
-                wxString strNewFile = wxString::Format("%s%c%s", wxString(VendorDirectory.c_str(), wxConvUTF8), boost::filesystem::path::preferred_separator, FPath);
-                boost::filesystem::path inherits_path(w2s(strNewFile));
+                // Avoid w2s()/mb_str(): ANSI code page breaks Unicode paths on Windows.
+                boost::filesystem::path inherits_path = (boost::filesystem::path(VendorDirectory) / FPath).make_preferred();
                 if (!boost::filesystem::exists(inherits_path))
                     inherits_path = (boost::filesystem::path(m_OrcaFilaLibPath) / boost::filesystem::path(FPath)).make_preferred();
 
-                //boost::filesystem::path nf(strNewFile.c_str());
                 if (boost::filesystem::exists(inherits_path))
                     return GetFilamentInfo(VendorDirectory,pFilaList, inherits_path.string(), sVendor, sType);
                 else {
@@ -1110,19 +1121,16 @@ int GuideFrame::LoadProfileData()
         }
 
         //sync to web
-        std::string strAll = m_ProfileJson.dump(-1, ' ', false, json::error_handler_t::ignore);  // Already locked at function start
-
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ", finished, json contents: " << std::endl << strAll;
         json m_Res           = json::object();
         m_Res["command"]     = "userguide_profile_load_finish";
         m_Res["sequence_id"] = "10001";
         wxString strJS       = wxString::Format("HandleStudio(%s)", m_Res.dump(-1, ' ', true));
         if (!m_destroy)
-            wxGetApp().CallAfter([this, strJS] { RunScript(strJS); });
+            CallAfter([this, strJS] { RunScript(strJS); });
 
         //sync to appconfig
         if (!m_destroy)
-            wxGetApp().CallAfter([this] { SaveProfileData(); });
+            CallAfter([this] { SaveProfileData(); });
 
     } catch (std::exception& e) {
         // wxLogMessage("GUIDE: load_profile_error  %s ", e.what());
@@ -1216,7 +1224,10 @@ void StringReplace(string &strBase, string strSrc, string strDes)
     }
 }
 
-
+// Precondition: the caller (LoadProfileData) holds m_ProfileJson_mutex for the
+// whole load. The TBB workers below read the shared m_ProfileJson via const
+// references without locking; that is only race-free because every other
+// accessor of the global locks the same mutex and this thread owns it here.
 int GuideFrame::LoadProfileFamily(std::string strVendor, std::string strFilePath)
 {
     // wxString strFolder = strFilePath.BeforeLast(boost::filesystem::path::preferred_separator);
@@ -1225,12 +1236,13 @@ int GuideFrame::LoadProfileFamily(std::string strVendor, std::string strFilePath
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(",  vendor path %1%.") % vendor_dir.string();
     try {
         // wxLogMessage("GUIDE: json_path1  %s", w2s(strFilePath));
-
-        std::string contents;
-        LoadFile(strFilePath, contents);
-        // wxLogMessage("GUIDE: json_path1 content: %s", contents);
-        json jLocal = json::parse(contents);
-        // wxLogMessage("GUIDE: json_path1 Loaded");
+        std::string vendor_contents;
+        LoadFile(strFilePath, vendor_contents);
+        json jLocal = json::parse(vendor_contents, nullptr, false);
+        if (jLocal.is_discarded() || !jLocal.is_object()) {
+            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": vendor index " << strFilePath << " malformed, skipped";
+            return -1;
+        }
 
         // BBS:models
         json pmodels = jLocal["machine_model_list"];
@@ -1238,74 +1250,107 @@ int GuideFrame::LoadProfileFamily(std::string strVendor, std::string strFilePath
 
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(",  got %1% machine models") % nsize;
 
-        for (int n = 0; n < nsize; n++) {
-            json OneModel = pmodels.at(n);
+        {
+            const json &pmodels_ro = pmodels;
+            load_section(nsize, m_destroy, [&](int n, json &slot) {
+                json OneModel = pmodels_ro.at(n);
+                if (!OneModel.is_object() || !OneModel["name"].is_string() || !OneModel["sub_path"].is_string()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: machine model " << n << " of vendor " << strVendor << " malformed, skipped";
+                    return;
+                }
 
-            OneModel["model"] = OneModel["name"];
-            OneModel.erase("name");
+                OneModel["model"] = OneModel["name"];
+                OneModel.erase("name");
 
-            std::string s1 = OneModel["model"];
-            std::string s2 = OneModel["sub_path"];
+                std::string s1 = OneModel["model"];
+                std::string s2 = OneModel["sub_path"];
 
-            boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
-            if (!boost::filesystem::exists(sub_path)) continue;
+                boost::system::error_code ec;
+                boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
+                if (!boost::filesystem::exists(sub_path, ec) || ec) return;
 
-            std::string             sub_file = sub_path.string();
+                std::string sub_file = sub_path.string();
+                std::string contents;
+                LoadFile(sub_file, contents);
+                json pm = json::parse(contents, nullptr, false);
+                if (pm.is_discarded() || !pm.is_object() || !pm["nozzle_diameter"].is_string()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: model file " << sub_file << " malformed, skipped";
+                    return;
+                }
 
-            // wxLogMessage("GUIDE: json_path2  %s", w2s(ModelFilePath));
-            LoadFile(sub_file, contents);
-            // wxLogMessage("GUIDE: json_path2 content: %s", contents);
-            json pm = json::parse(contents);
-            // wxLogMessage("GUIDE: json_path2  loaded");
+                OneModel["name"]      = pm["name"];
+                OneModel["vendor"]    = strVendor;
+                std::string NozzleOpt = pm["nozzle_diameter"];
+                StringReplace(NozzleOpt, " ", "");
+                OneModel["nozzle_diameter"] = NozzleOpt;
+                OneModel["materials"]       = pm["default_materials"];
 
-            OneModel["name"]      = pm["name"];
-            OneModel["vendor"]    = strVendor;
-            std::string NozzleOpt = pm["nozzle_diameter"];
-            StringReplace(NozzleOpt, " ", "");
-            OneModel["nozzle_diameter"] = NozzleOpt;
-            OneModel["materials"]       = pm["default_materials"];
+                std::string             cover_file = s1 + "_cover.png";
+                boost::filesystem::path cover_path = boost::filesystem::absolute(boost::filesystem::path(resources_dir()) / "/profiles/" / strVendor / cover_file).make_preferred();
+                if (!boost::filesystem::exists(cover_path, ec) || ec) {
+                    cover_path =
+                        (boost::filesystem::absolute(boost::filesystem::path(resources_dir()) / "/web/image/printer/") /
+                         cover_file)
+                            .make_preferred();
+                }
+                OneModel["cover"] = cover_path.string();
 
-            // wxString strCoverPath = wxString::Format("%s\\%s\\%s_cover.png", strFolder, strVendor, std::string(s1.mb_str()));
-            std::string             cover_file = s1 + "_cover.png";
-            boost::filesystem::path cover_path = boost::filesystem::absolute(boost::filesystem::path(resources_dir()) / "/profiles/" / strVendor / cover_file).make_preferred();
-            if (!boost::filesystem::exists(cover_path)) {
-                cover_path =
-                    (boost::filesystem::absolute(boost::filesystem::path(resources_dir()) / "/web/image/printer/") /
-                     cover_file)
-                        .make_preferred();
-            }
-            OneModel["cover"]                  = cover_path.string();
+                OneModel["nozzle_selected"] = "";
 
-            OneModel["nozzle_selected"] = "";
-
-            m_ProfileJson["model"].push_back(OneModel);
+                slot = std::move(OneModel);
+            }, [this](json &item) { m_ProfileJson["model"].push_back(std::move(item)); });
+            if (m_destroy) return 0;
         }
 
         // BBS:Machine
         json pmachine = jLocal["machine_list"];
         nsize         = pmachine.size();
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(",  got %1% machines") % nsize;
-        for (int n = 0; n < nsize; n++) {
-            json OneMachine = pmachine.at(n);
+        {
+            const json &pmachine_ro = pmachine;
+            load_section(nsize, m_destroy, [&](int n, json &slot) {
+                json OneMachine = pmachine_ro.at(n);
 
-            std::string s1 = OneMachine["name"];
-            std::string s2 = OneMachine["sub_path"];
+                // Validate here: the serial merge below reads slot["name"]
+                // unguarded, so a malformed entry must drop only itself.
+                if (!OneMachine.is_object() || !OneMachine["name"].is_string() || !OneMachine["sub_path"].is_string()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: machine " << n << " of vendor " << strVendor << " malformed, skipped";
+                    return;
+                }
 
-            // wxString ModelFilePath = wxString::Format("%s\\%s\\%s", strFolder, strVendor, s2);
-            boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
-            if (!boost::filesystem::exists(sub_path)) continue;
+                std::string s2 = OneMachine["sub_path"];
 
-            std::string             sub_file = sub_path.string();
-            LoadFile(sub_file, contents);
-            json pm = json::parse(contents);
+                boost::system::error_code ec;
+                boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
+                if (!boost::filesystem::exists(sub_path, ec) || ec) return;
 
-            std::string strInstant = pm["instantiation"];
-            if (strInstant.compare("true") == 0) {
-                OneMachine["model"] = pm["printer_model"];
-                OneMachine["nozzle"] = pm["nozzle_diameter"][0];
+                std::string sub_file = sub_path.string();
+                std::string contents;
+                LoadFile(sub_file, contents);
+                json pm = json::parse(contents, nullptr, false);
+                if (pm.is_discarded() || !pm.is_object()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: machine file " << sub_file << " malformed, skipped";
+                    return;
+                }
 
-                m_ProfileJson["machine"][s1]=OneMachine;
-            }
+                // json == const char* never throws: a missing or non-string
+                // "instantiation" simply compares unequal.
+                if (pm["instantiation"] == "true") {
+                    const json &nd = pm["nozzle_diameter"];
+                    if (!nd.is_array() && !nd.is_null()) {
+                        BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: machine file " << sub_file << " has malformed nozzle_diameter, skipped";
+                        return;
+                    }
+                    OneMachine["model"]  = pm["printer_model"];
+                    OneMachine["nozzle"] = (nd.is_array() && !nd.empty()) ? nd[0] : json();
+
+                    slot = std::move(OneMachine);
+                }
+            }, [this](json &item) {
+                std::string s1 = item["name"];
+                m_ProfileJson["machine"][s1] = std::move(item);
+            });
+            if (m_destroy) return 0;
         }
 
         // BBS:Filament
@@ -1315,78 +1360,92 @@ int GuideFrame::LoadProfileFamily(std::string strVendor, std::string strFilePath
 
         for (int n = 0; n < nsize; n++) {
             json OneFF = pFilament.at(n);
+            if (!OneFF.is_object() || !OneFF["name"].is_string()) continue;
 
-            std::string s1    = OneFF["name"];
-            std::string s2    = OneFF["sub_path"];
+            std::string s1 = OneFF["name"];
 
             tFilaList[s1] = OneFF;
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "Vendor: " << strVendor <<", tFilaList Add: " << s1;
         }
 
-        int nFalse  = 0;
-        int nModel  = 0;
-        int nFinish = 0;
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(",  got %1% filaments") % nsize;
-        for (int n = 0; n < nsize; n++) {
-            json OneFF = pFilament.at(n);
-
-            std::string s1 = OneFF["name"];
-            std::string s2 = OneFF["sub_path"];
-
-            if (!m_ProfileJson["filament"].contains(s1)) {
-                // wxString ModelFilePath = wxString::Format("%s\\%s\\%s", strFolder, strVendor, s2);
-                boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
-                if (!boost::filesystem::exists(sub_path)) continue;
-
-                std::string             sub_file = sub_path.string();
-                LoadFile(sub_file, contents);
-                if (contents == "") {
-                    continue;
+        {
+            const json &pFilament_ro        = pFilament;
+            const json &tFilaList_ro        = tFilaList;
+            const json &machines_ro         = m_ProfileJson["machine"];
+            const json &loaded_filaments_ro = m_ProfileJson["filament"];
+            load_section(nsize, m_destroy, [&](int n, json &slot) {
+                json OneFF = pFilament_ro.at(n);
+                if (!OneFF.is_object() || !OneFF["name"].is_string() || !OneFF["sub_path"].is_string()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: filament " << n << " of vendor " << strVendor << " malformed, skipped";
+                    return;
                 }
-                json pm = json::parse(contents);
 
-                std::string strInstant = pm["instantiation"];
-                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "Load Filament:" << s1 << ",Path:" << sub_file << ",instantiation?" << strInstant;
+                std::string s1 = OneFF["name"];
+                std::string s2 = OneFF["sub_path"];
 
-                if (strInstant == "true") {
-                    std::string sV;
-                    std::string sT;
+                if (loaded_filaments_ro.contains(s1)) return;
 
-                    int nRet = GetFilamentInfo(vendor_dir.string(),tFilaList, sub_file, sV, sT);
-                    if (nRet != 0) {
-                        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "Load Filament:" << s1 << ",GetFilamentInfo Failed, Vendor:" << sV << ",Type:"<< sT;
-                        continue;
+                boost::system::error_code ec;
+                boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
+                if (!boost::filesystem::exists(sub_path, ec) || ec) return;
+
+                std::string sub_file = sub_path.string();
+                std::string contents;
+                LoadFile(sub_file, contents);
+                if (contents == "") return;
+                json pm = json::parse(contents, nullptr, false);
+                if (pm.is_discarded() || !pm.is_object()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: filament file " << sub_file << " malformed, skipped";
+                    return;
+                }
+
+                bool instant = (pm["instantiation"] == "true");
+                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "Load Filament:" << s1 << ",Path:" << sub_file << ",instantiation?" << (instant ? "true" : "false");
+
+                if (!instant) return;
+
+                std::string sV;
+                std::string sT;
+
+                int nRet = GetFilamentInfo(vendor_dir.string(), tFilaList_ro, sub_file, sV, sT);
+                if (nRet != 0) {
+                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "Load Filament:" << s1 << ",GetFilamentInfo Failed, Vendor:" << sV << ",Type:"<< sT;
+                    return;
+                }
+
+                OneFF["vendor"] = sV;
+                OneFF["type"]   = sT;
+
+                OneFF["models"]   = "";
+
+                const json &pPrinters = pm["compatible_printers"];
+                std::string ModelList = "";
+                if (pPrinters.is_array()) {
+                    for (const json &printer : pPrinters) {
+                        if (!printer.is_string()) continue;
+                        std::string sP = printer;
+                        if (!machines_ro.contains(sP)) continue;
+                        const json &m = machines_ro.at(sP);
+                        if (!m.contains("model") || !m["model"].is_string() || !m.contains("nozzle") || !m["nozzle"].is_string()) continue;
+                        std::string mModel  = m["model"];
+                        std::string mNozzle = m["nozzle"];
+
+                        ModelList += "[" + mModel + "++" + mNozzle + "]";
                     }
+                }
 
-                    OneFF["vendor"] = sV;
-                    OneFF["type"]   = sT;
+                OneFF["models"]    = ModelList;
+                OneFF["selected"] = 0;
 
-                    OneFF["models"]   = "";
-
-                    json pPrinters = pm["compatible_printers"];
-                    int nPrinter   = pPrinters.size();
-                    std::string ModelList = "";
-                    for (int i = 0; i < nPrinter; i++)
-                    {
-                        std::string sP = pPrinters.at(i);
-                        if (m_ProfileJson["machine"].contains(sP))
-                        {
-                            std::string mModel = m_ProfileJson["machine"][sP]["model"];
-                            std::string mNozzle = m_ProfileJson["machine"][sP]["nozzle"];
-                            std::string NewModel = mModel + "++" + mNozzle;
-
-                            ModelList = (boost::format("%1%[%2%]") % ModelList % NewModel).str();
-                        }
-                    }
-
-                    OneFF["models"]    = ModelList;
-                    OneFF["selected"] = 0;
-
-                    m_ProfileJson["filament"][s1] = OneFF;
-                } else
-                    continue;
-
-            }
+                slot = std::move(OneFF);
+            }, [this](json &item) {
+                std::string s1 = item["name"];
+                // first occurrence wins, matching the old serial semantics
+                if (!m_ProfileJson["filament"].contains(s1))
+                    m_ProfileJson["filament"][s1] = std::move(item);
+            });
+            if (m_destroy) return 0;
         }
         if(strVendor == PresetBundle::ORCA_FILAMENT_LIBRARY)
             m_OrcaFilaList = tFilaList;
@@ -1395,20 +1454,32 @@ int GuideFrame::LoadProfileFamily(std::string strVendor, std::string strFilePath
         json pProcess = jLocal["process_list"];
         nsize         = pProcess.size();
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(",  got %1% processes") % nsize;
-        for (int n = 0; n < nsize; n++) {
-            json OneProcess = pProcess.at(n);
+        {
+            const json &pProcess_ro = pProcess;
+            load_section(nsize, m_destroy, [&](int n, json &slot) {
+                json OneProcess = pProcess_ro.at(n);
+                if (!OneProcess.is_object() || !OneProcess["sub_path"].is_string()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: process " << n << " of vendor " << strVendor << " malformed, skipped";
+                    return;
+                }
 
-            std::string s2 = OneProcess["sub_path"];
-            // wxString ModelFilePath = wxString::Format("%s\\%s\\%s", strFolder, strVendor, s2);
-            boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
-            if (!boost::filesystem::exists(sub_path)) continue;
+                std::string s2 = OneProcess["sub_path"];
+                boost::system::error_code ec;
+                boost::filesystem::path sub_path = boost::filesystem::absolute(vendor_dir / s2).make_preferred();
+                if (!boost::filesystem::exists(sub_path, ec) || ec) return;
 
-            std::string             sub_file = sub_path.string();
-            LoadFile(sub_file, contents);
-            json pm = json::parse(contents);
+                std::string sub_file = sub_path.string();
+                std::string contents;
+                LoadFile(sub_file, contents);
+                json pm = json::parse(contents, nullptr, false);
+                if (pm.is_discarded() || !pm.is_object()) {
+                    BOOST_LOG_TRIVIAL(warning) << "LoadProfileFamily: process file " << sub_file << " malformed, skipped";
+                    return;
+                }
 
-            std::string bInstall = pm["instantiation"];
-            if (bInstall == "true") { m_ProfileJson["process"].push_back(OneProcess); }
+                if (pm["instantiation"] == "true") slot = std::move(OneProcess);
+            }, [this](json &item) { m_ProfileJson["process"].push_back(std::move(item)); });
+            if (m_destroy) return 0;
         }
 
     } catch (nlohmann::detail::parse_error &err) {

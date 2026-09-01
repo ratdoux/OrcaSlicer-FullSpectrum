@@ -2,6 +2,7 @@
 #define slic3r_GLCanvas3D_hpp_
 
 #include <stddef.h>
+#include <array>
 #include <memory>
 #include <chrono>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include "GLToolbar.hpp"
 #include "Event.hpp"
 #include "Selection.hpp"
+#include "ThumbnailView.hpp"     // ThumbnailView enum (kept lightweight, separate from this header)
 #include "Gizmos/GLGizmosManager.hpp"
 #include "GUI_ObjectLayers.hpp"
 #include "GLSelectionRectangle.hpp"
@@ -508,6 +510,44 @@ public:
     int GetHoverId();
 
 private:
+    /** @brief Rendering paths available for the selected-object highlight. */
+    enum class ESelectionHighlightMode : unsigned char
+    {
+        Disabled,
+        UnifiedFramebuffer,
+        StencilFallback
+    };
+
+    /** @brief GPU resources shared by the selection Mask, Edge, Glow and Composite passes. */
+    struct SelectionHighlightResources
+    {
+        unsigned int fullResolutionMaskFramebuffer{ 0 };
+        unsigned int fullResolutionMaskTexture{ 0 };
+        unsigned int maskFramebuffer{ 0 };
+        unsigned int maskTexture{ 0 };
+        unsigned int edgeBlurPingPongFramebuffer{ 0 };
+        unsigned int edgeBlurPingPongTexture{ 0 };
+        unsigned int edgeFramebuffer{ 0 };
+        unsigned int edgeTexture{ 0 };
+        unsigned int glowBlurPingPongFramebuffer{ 0 };
+        unsigned int glowBlurPingPongTexture{ 0 };
+        unsigned int glowFramebuffer{ 0 };
+        unsigned int glowTexture{ 0 };
+        unsigned int fullResolutionWidth{ 0 };
+        unsigned int fullResolutionHeight{ 0 };
+        unsigned int width{ 0 };
+        unsigned int height{ 0 };
+    };
+
+    /** @brief Data-driven symmetric samples for one Gaussian blur pass. */
+    struct GaussianSampleKernel
+    {
+        float centerWeight{ 1.0f };
+        std::array<float, 4> sampleOffsets{};
+        std::array<float, 4> sampleWeights{};
+        int symmetricSampleCount{ 0 };
+    };
+
     bool m_is_dark = false;
     wxGLCanvas* m_canvas;
     wxGLContext* m_context;
@@ -571,6 +611,8 @@ private:
     bool m_moving_enabled;
     bool m_dynamic_background_enabled;
     bool m_multisample_allowed;
+    bool m_selectionFramebufferAvailable{ false };
+    bool m_stencilFallbackAvailable{ false };
     bool m_moving;
     bool m_tab_down;
     bool m_camera_movement;
@@ -606,6 +648,8 @@ private:
     Tooltip m_tooltip;
     bool m_tooltip_enabled{ true };
     Slope m_slope;
+
+    SelectionHighlightResources m_selectionHighlightResources;
 
     OrientSettings m_orient_settings_fff, m_orient_settings_sla;
 
@@ -856,6 +900,7 @@ public:
     void zoom_to_gcode();
     //BBS -1 for current plate
     void zoom_to_plate(int plate_idx = -1);
+    void ZoomToFit();
     void select_view(const std::string& direction);
     //BBS: add part plate related logic
     void select_plate();
@@ -904,17 +949,38 @@ public:
                                  bool                      use_top_view = false,
                                  bool                      for_picking  = false,
                                  bool                      ban_light    = false);
+    void render_thumbnail(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
+                                 const GLVolumeCollection &volumes,
+                                 std::vector<ColorRGBA>&   extruder_colors,
+                                 Camera::EType             camera_type,
+                                 bool                      use_top_view = false,
+                                 bool                      for_picking  = false,
+                                 bool                      ban_light    = false);
+    // New named-viewpoint overload (pure addition; existing overloads above are unchanged).
+    // The 8th param is ThumbnailView (scoped enum) vs the bool use_top_view of the overloads
+    // above — overload resolution picks this one only when a ThumbnailView is passed, so the
+    // ~21 existing call sites that pass bool/omit are unaffected.
+    // Note: this overload forces use_top_view=false internally, so ThumbnailView::Top routes
+    // through the named-view algorithm in render_thumbnail_internal, NOT the legacy
+    // use_top_view=true branch. See ThumbnailView.hpp for the framing implications.
+    void render_thumbnail(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
+                                 const GLVolumeCollection &volumes,
+                                 std::vector<ColorRGBA>&   extruder_colors,
+                                 Camera::EType             camera_type,
+                                 ThumbnailView             view,
+                                 bool                      for_picking  = false,
+                                 bool                      ban_light    = false);
     static void render_thumbnail_internal(ThumbnailData& thumbnail_data, const ThumbnailsParams& thumbnail_params, PartPlateList& partplate_list, ModelObjectPtrs& model_objects,
         const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors,
-        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false);
+        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false, ThumbnailView view = ThumbnailView::Iso);
     // render thumbnail using an off-screen framebuffer
     static void render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
         PartPlateList& partplate_list, ModelObjectPtrs& model_objects, const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors,
-        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false);
+        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false, ThumbnailView view = ThumbnailView::Iso);
     // render thumbnail using an off-screen framebuffer when GLEW_EXT_framebuffer_object is supported
     static void render_thumbnail_framebuffer_ext(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
         PartPlateList& partplate_list, ModelObjectPtrs& model_objects, const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors,
-        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false);
+        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false, ThumbnailView view = ThumbnailView::Iso);
 
     //BBS use gcoder viewer render calibration thumbnails
     void render_calibration_thumbnail(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params);
@@ -943,8 +1009,8 @@ public:
     std::vector<CustomGCode::Item>& get_custom_gcode_per_print_z() { return m_gcode_viewer.get_custom_gcode_per_print_z(); }
     size_t get_gcode_extruders_count() { return m_gcode_viewer.get_extruders_count(); }
 
-    std::vector<int> load_object(const ModelObject& model_object, int obj_idx, std::vector<int> instance_idxs);
-    std::vector<int> load_object(const Model& model, int obj_idx);
+    std::vector<int> load_object(const ModelObject& model_object, int obj_idx, std::vector<int> instance_idxs, bool lodEnabled = true);
+    std::vector<int> load_object(const Model& model, int obj_idx, bool lodEnabled = true);
 
     void mirror_selection(Axis axis);
 
@@ -956,7 +1022,7 @@ public:
     void set_shells_on_previewing(bool is_preview) { m_gcode_viewer.set_shells_on_preview(is_preview); }
 
     //BBS: add only gcode mode
-    void load_gcode_preview(const GCodeProcessorResult& gcode_result, const std::vector<std::string>& str_tool_colors, bool only_gcode);
+    void load_gcode_preview(const GCodeProcessorResult& gcode_result, const std::vector<std::string>& str_tool_colors, bool only_gcode, bool skip_toolpaths = false);
     void refresh_gcode_preview_render_paths();
     void set_gcode_view_preview_type(GCodeViewer::EViewType type) { return m_gcode_viewer.set_view_type(type); }
     GCodeViewer::EViewType get_gcode_view_preview_type() const { return m_gcode_viewer.get_view_type(); }
@@ -1147,6 +1213,55 @@ public:
 private:
     bool _is_shown_on_screen() const;
 
+    /** @brief Selects and prepares the selection highlight path for the current frame. */
+    ESelectionHighlightMode ResolveSelectionHighlightMode();
+
+    /**
+     * @brief Creates or resizes the selection highlight framebuffer resources.
+     * @param canvasSize Physical framebuffer dimensions in pixels.
+     * @return true when the Mask, Edge and Glow framebuffers are ready.
+     */
+    bool EnsureSelectionHighlightResources(const Size& canvasSize);
+
+    /** @brief Renders selected volumes at full resolution and downscales the selection Mask. */
+    bool RenderSelectionHighlightMask();
+
+    /**
+     * @brief Builds a normalized Gaussian kernel expressed in source-texture texels.
+     * @param blurRadius Blur radius in target-framebuffer pixels.
+     * @param sourceExtent Source texture width or height along the blur direction.
+     * @param targetExtent Target framebuffer width or height along the blur direction.
+     * @param outputKernel Generated kernel used by RenderSelectionGaussianPass().
+     * @return true when a valid normalized kernel was generated.
+     */
+    static bool BuildGaussianSampleKernel(float blurRadius, unsigned int sourceExtent,
+                                          unsigned int targetExtent, GaussianSampleKernel& outputKernel);
+
+    /**
+     * @brief Renders one alpha-channel Gaussian blur pass using the currently bound Gaussian shader.
+     * @param targetFramebuffer Framebuffer that receives the blurred texture.
+     * @param sourceTexture Texture whose alpha channel is blurred.
+     * @param renderSize Physical dimensions of the target framebuffer.
+     * @param sampleStepUv Normalized UV distance of one source-texture texel along the blur direction.
+     * @param kernel Normalized symmetric Gaussian samples generated for this pass.
+     * @return true when the pass was rendered successfully.
+     */
+    bool RenderSelectionGaussianPass(unsigned int targetFramebuffer, unsigned int sourceTexture,
+                                     const Size& renderSize, const Vec2f& sampleStepUv,
+                                     const GaussianSampleKernel& kernel);
+
+    /** @brief Generates the main selection edge and its outer Glow from the selection Mask. */
+    bool RenderSelectionOutlineTextures();
+
+    /** @brief Composites the linearly upsampled selection Fill and Outline over the main scene. */
+    void CompositeSelectionHighlight();
+
+    /** @brief Renders an occlusion-independent selection Outline through the default framebuffer stencil. */
+    void RenderSelectionStencilFallback();
+
+    /** @brief Releases all selection highlight framebuffer resources. */
+    void ReleaseSelectionHighlightResources();
+
     void _switch_toolbars_icon_filename();
     bool _init_toolbars();
     bool _init_main_toolbar();
@@ -1216,6 +1331,13 @@ private:
     bool _render_orient_menu(float left, float right, float bottom, float top);
     bool _render_arrange_menu(float left, float right, float bottom, float top);
     void _render_3d_navigator();
+    /**
+     * @brief Renders the fit-camera button next to the 3D navigator.
+     * @param left Left position in ImGui screen coordinates.
+     * @param top Top position in ImGui screen coordinates.
+     * @param buttonSize Width and height of the square button.
+     */
+    void RenderFitCameraButton(float left, float top, float buttonSize);
     // render thumbnail using the default framebuffer
     void render_thumbnail_legacy(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params, PartPlateList& partplate_list, ModelObjectPtrs& model_objects, const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors, GLShaderProgram* shader, Camera::EType camera_type);
 

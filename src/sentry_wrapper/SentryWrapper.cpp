@@ -314,9 +314,10 @@ void initSentryEx()
             if (!machineID.empty())
                 sentry_set_tag("machine_id", machineID.c_str());
 
-            std::string pcName = common::get_pc_name();
-            if (!pcName.empty())
-                sentry_set_tag("pc_name", pcName.c_str());
+            // PC name is personal data; intentionally disabled for privacy.
+            // std::string pcName = common::get_pc_name();
+            // if (!pcName.empty())
+            //     sentry_set_tag("pc_name", pcName.c_str());
         } else {            
             set_sentry_flags(false);            
         }
@@ -372,11 +373,12 @@ void sentryReportLogEx(SENTRY_LOG_LEVEL   logLevel,
         sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(flutterVersion.c_str()), NULL);
         sentry_value_set_by_key(tags, "flutter_version", attr);
     }
-    std::string pcName = common::get_pc_name();
-    if (!pcName.empty()) {
-        sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(pcName.c_str()), NULL);
-        sentry_value_set_by_key(tags, "pc_name", attr);
-    }
+    // PC name is personal data; intentionally disabled for privacy.
+    // std::string pcName = common::get_pc_name();
+    // if (!pcName.empty()) {
+    //     sentry_value_t attr = sentry_value_new_attribute(sentry_value_new_string(pcName.c_str()), NULL);
+    //     sentry_value_set_by_key(tags, "pc_name", attr);
+    // }
     static std::string machineID = "";
     if (machineID.empty())
         machineID = common::getMachineId();

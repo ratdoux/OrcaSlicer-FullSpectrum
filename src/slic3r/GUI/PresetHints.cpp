@@ -97,17 +97,18 @@ std::string PresetHints::maximum_volumetric_flow_description(const PresetBundle 
     // Print config values
     double layer_height                     = print_config.opt_float("layer_height");
     double initial_layer_print_height               = print_config.opt_float("initial_layer_print_height");
-    double support_speed           = print_config.opt_float("support_speed");
-    double support_interface_speed = print_config.get_abs_value("support_interface_speed");
-    double bridge_speed                     = print_config.opt_float("bridge_speed");
+    double support_speed           = print_config.opt_float("support_speed", 0);
+    double support_interface_speed = print_config.opt_float("support_interface_speed", 0);
+    double bridge_speed                     = print_config.opt_float("bridge_speed", 0);
     double bridge_flow                = print_config.opt_float("bridge_flow");
-    double inner_wall_speed                  = print_config.opt_float("inner_wall_speed");
-    double outer_wall_speed         = print_config.get_abs_value("outer_wall_speed", inner_wall_speed);
-    // double gap_infill_speed                   = print_config.opt_bool("filter_out_gap_fill") ? print_config.opt_float("gap_infill_speed") : 0.;
-    double sparse_infill_speed                     = print_config.opt_float("sparse_infill_speed");
-    double small_perimeter_speed            = print_config.get_abs_value("small_perimeter_speed", inner_wall_speed);
-    double internal_solid_infill_speed               = print_config.opt_float("internal_solid_infill_speed");
-    double top_surface_speed           = print_config.opt_float("top_surface_speed");
+    double inner_wall_speed                  = print_config.opt_float("inner_wall_speed", 0);
+    double outer_wall_speed         = print_config.opt_float("outer_wall_speed", 0);
+    // double gap_infill_speed                   = print_config.opt_bool("filter_out_gap_fill") ? print_config.opt_float("gap_infill_speed", 0) : 0.;
+    double sparse_infill_speed                     = print_config.opt_float("sparse_infill_speed", 0);
+    const FloatOrPercent small_perimeter_speed_option = print_config.option<ConfigOptionFloatsOrPercents>("small_perimeter_speed")->get_at(0);
+    double small_perimeter_speed = small_perimeter_speed_option.get_abs_value(inner_wall_speed);
+    double internal_solid_infill_speed               = print_config.opt_float("internal_solid_infill_speed", 0);
+    double top_surface_speed           = print_config.opt_float("top_surface_speed", 0);
     // Maximum print speed when auto-speed is enabled by setting any of the above speed values to zero.
     double max_print_speed                  = print_config.opt_float("max_print_speed");
     // Maximum volumetric speed allowed for the print profile.
@@ -121,7 +122,7 @@ std::string PresetHints::maximum_volumetric_flow_description(const PresetBundle 
     const auto &internal_solid_infill_line_width        = *print_config.option<ConfigOptionFloatOrPercent>("internal_solid_infill_line_width");
     const auto& support_line_width    = *print_config.option<ConfigOptionFloatOrPercent>("support_line_width");
     const auto &top_surface_line_width          = *print_config.option<ConfigOptionFloatOrPercent>("top_surface_line_width");
-    const auto &initial_layer_speed                   = *print_config.option<ConfigOptionFloatOrPercent>("initial_layer_speed");
+    const double initial_layer_speed = print_config.opt_float("initial_layer_speed", 0);
 
     // Index of an extruder assigned to a feature. If set to 0, an active extruder will be used for a multi-material print.
     // If different from idx_extruder, it will not be taken into account for this hint.
@@ -149,10 +150,9 @@ std::string PresetHints::maximum_volumetric_flow_description(const PresetBundle 
         const float                       lh  = float(first_layer ? initial_layer_print_height : layer_height);
         double                            max_flow = 0.;
         std::string                       max_flow_extrusion_type;
-        auto                              limit_by_first_layer_speed = [&initial_layer_speed, first_layer](double speed_normal, double speed_max) {
-            if (first_layer && initial_layer_speed.value > 0)
-                // Apply the first layer limit.
-                speed_normal = initial_layer_speed.get_abs_value(speed_normal);
+        auto                              limit_by_first_layer_speed = [initial_layer_speed, first_layer](double speed_normal, double speed_max) {
+            if (first_layer && initial_layer_speed > 0)
+                speed_normal = initial_layer_speed;
             return (speed_normal > 0.) ? speed_normal : speed_max;
         };
         auto test_flow =

@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/TriangleMeshSlicer.hpp"
@@ -304,7 +304,7 @@ SCENARIO( "TriangleMeshSlicer: Cut behavior.") {
 #ifdef TEST_PERFORMANCE
 TEST_CASE("Regression test for issue #4486 - files take forever to slice") {
     TriangleMesh mesh;
-    DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
+    DynamicPrintConfig config = Slic3r::Test::default_print_config();
     mesh.ReadSTLFile(std::string(testfile_dir) + "test_trianglemesh/4486/100_000.stl");
 
     config.set("layer_height", 500);
@@ -331,7 +331,7 @@ TEST_CASE("Regression test for issue #4486 - files take forever to slice") {
 #ifdef BUILD_PROFILE
 TEST_CASE("Profile test for issue #4486 - files take forever to slice") {
     TriangleMesh mesh;
-    DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
+    DynamicPrintConfig config = Slic3r::Test::default_print_config();
     mesh.ReadSTLFile(std::string(testfile_dir) + "test_trianglemesh/4486/10_000.stl");
 
     config.set("layer_height", 500);

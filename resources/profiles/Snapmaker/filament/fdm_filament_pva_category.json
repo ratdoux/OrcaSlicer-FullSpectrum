@@ -1,0 +1,7 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "fdm_filament_pva_category",
+    "inherits": "fdm_filament_common"
+}

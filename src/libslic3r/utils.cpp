@@ -1492,6 +1492,66 @@ size_t total_physical_memory()
 #endif
 }
 
+// Returns the more constraining of physical-RAM-available and commit-available.
+// Physical RAM exhaustion  -> page-fault thrashing (unresponsive hang).
+// Commit exhaustion        -> malloc failure (OOM crash).
+// Taking the min catches both failure modes with a single threshold.
+size_t get_available_physical_memory()
+{
+#ifdef _WIN32
+    // Physical RAM available (predicts page-fault thrashing).
+    size_t phys_avail = 0;
+    {
+        MEMORYSTATUSEX memInfo;
+        memInfo.dwLength = sizeof(memInfo);
+        if (GlobalMemoryStatusEx(&memInfo))
+            phys_avail = static_cast<size_t>(memInfo.ullAvailPhys);
+    }
+    // System commit available (predicts OOM crash).
+    size_t commit_avail = 0;
+    {
+        PERFORMANCE_INFORMATION perfInfo;
+        perfInfo.cb = sizeof(perfInfo);
+        if (GetPerformanceInfo(&perfInfo, sizeof(perfInfo)) && perfInfo.PageSize > 0) {
+            if (perfInfo.CommitLimit > perfInfo.CommitTotal)
+                commit_avail = static_cast<size_t>(perfInfo.CommitLimit - perfInfo.CommitTotal)
+                             * static_cast<size_t>(perfInfo.PageSize);
+        }
+    }
+    // Return whichever is more constraining.
+    if (phys_avail == 0) return commit_avail;
+    if (commit_avail == 0) return phys_avail;
+    return phys_avail < commit_avail ? phys_avail : commit_avail;
+#elif defined(__linux__)
+	// Prefer /proc/meminfo MemAvailable (accounts for reclaimable cache).
+	std::ifstream f("/proc/meminfo");
+	if (f) {
+		std::string line;
+		while (std::getline(f, line)) {
+			if (line.rfind("MemAvailable:", 0) == 0) {
+				size_t kb = 0;
+				if (sscanf(line.c_str() + 13, "%zu", &kb) == 1)
+					return kb * 1024;
+			}
+		}
+	}
+	// Fallback: _SC_AVPHYS_PAGES
+	long avail_pages = sysconf(_SC_AVPHYS_PAGES);
+	long page_size   = sysconf(_SC_PAGE_SIZE);
+	return (avail_pages > 0 && page_size > 0) ? static_cast<size_t>(avail_pages) * static_cast<size_t>(page_size) : 0;
+#elif defined(__APPLE__)
+	// Memory guard detection on macOS is intentionally disabled by product
+	// decision: the vm_statistics64-based "available" estimate counts free
+	// pages only and ignores reclaimable cache (inactive/purgeable), so it
+	// sits far below the guard threshold on any normally-used system and
+	// raised false low-memory warnings even for small models. Returning 0
+	// makes check_memory_guard() skip the sample entirely (avail == 0).
+	return 0;
+#else
+	return 0;
+#endif
+}
+
 bool makedir(const std::string path) {
 	// if dir doesn't exist, make it
 #ifdef WIN32

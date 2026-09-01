@@ -4,7 +4,7 @@
   "instantiation": "true",
   "name": "Snapmaker Breakaway Support",
   "setting_id": "4146000000",
-  "inherits": "Snapmaker Breakaway Support @base",
+  "inherits": "fdm_filament_support_breakaway_category",
   "compatible_printers": [
     "Snapmaker A250 Dual (0.4 nozzle)",
     "Snapmaker A250 Dual (0.6 nozzle)",
@@ -33,5 +33,6 @@
     "Snapmaker Artisan (0.4 nozzle)",
     "Snapmaker Artisan (0.6 nozzle)",
     "Snapmaker Artisan (0.8 nozzle)"
-  ]
+  ],
+  "filament_type": ["Breakaway Support"]
 }

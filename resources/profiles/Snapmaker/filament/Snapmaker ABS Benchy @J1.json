@@ -4,7 +4,7 @@
   "instantiation": "true",
   "name": "Snapmaker ABS Benchy @J1",
   "setting_id": "356879727",
-  "inherits": "Snapmaker ABS @J1 base",
+  "inherits": "fdm_filament_abs_category",
   "compatible_printers": [
     "Snapmaker J1 (0.4 nozzle)"
   ],
@@ -82,5 +82,87 @@
   ],
   "slow_down_layer_time": [
     "0"
-  ]
+  ],
+  "complete_print_exhaust_fan_speed": [
+    "80"
+  ],
+  "during_print_exhaust_fan_speed": [
+    "60"
+  ],
+  "enable_pressure_advance": [
+    "1"
+  ],
+  "eng_plate_temp": [
+    "0"
+  ],
+  "eng_plate_temp_initial_layer": [
+    "0"
+  ],
+  "filament_cost": [
+    "100"
+  ],
+  "filament_end_gcode": [
+    ""
+  ],
+  "filament_flow_ratio": [
+    "0.95"
+  ],
+  "filament_flow_support": [
+    "standard"
+  ],
+  "filament_is_high_temperature": [
+    "0"
+  ],
+  "filament_minimal_purge_on_wipe_tower": [
+    "0"
+  ],
+  "filament_multitool_ramming": [
+    "0"
+  ],
+  "filament_multitool_ramming_flow": [
+    "10"
+  ],
+  "filament_multitool_ramming_volume": [
+    "0"
+  ],
+  "filament_notes": [
+    "eSUN ABS+\nSunlu ABS+\n"
+  ],
+  "filament_retract_length_toolchange": [
+    "nil"
+  ],
+  "filament_settings_id": [
+    "Snapmaker_ABS"
+  ],
+  "filament_start_gcode": [
+    ""
+  ],
+  "filament_vendor": [
+    "Snapmaker"
+  ],
+  "hot_plate_temp": [
+    "110"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "105"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "265"
+  ],
+  "pellet_flow_coefficient": [
+    "0.4157"
+  ],
+  "pressure_advance": [
+    "0.02"
+  ],
+  "textured_plate_temp": [
+    "0"
+  ],
+  "textured_plate_temp_initial_layer": [
+    "0"
+  ],
+  "bed_type": [
+    "Hot Plate"
+  ],
+  "is_custom_defined": "0"
 }

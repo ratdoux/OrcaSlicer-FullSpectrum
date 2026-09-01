@@ -1086,7 +1086,19 @@ wxBoxSizer *StatusBasePanel::create_monitoring_page()
 }
 
 void StatusBasePanel::on_webview_navigating(wxWebViewEvent& evt) {
-    wxGetApp().CallAfter([this] {
+    // Queue on this panel, not the app: wx drops pending calls when their
+    // handler is destroyed, so a queued call cannot run on a dead panel
+    // during shutdown.
+    CallAfter([this] {
+        // remove_controls() runs a synchronous webview script; on the Edge
+        // backend that pumps the event loop (wxYield). If the MainFrame is
+        // already shutting down, the nested idle pass deletes the pending
+        // frame right here — with its children (this webview included, still
+        // on the call stack) being freed underneath us. The script only
+        // tidies the live camera page, so skip it once closing started.
+        MainFrame *frame = wxGetApp().mainframe;
+        if (frame == nullptr || frame->is_shutting_down())
+            return;
         remove_controls();
     });
 }

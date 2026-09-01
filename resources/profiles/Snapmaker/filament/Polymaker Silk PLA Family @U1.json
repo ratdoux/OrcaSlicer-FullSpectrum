@@ -1,7 +1,10 @@
 {
     "type": "filament",
+    "from": "system",
     "instantiation": "true",
+    "name": "Polymaker Silk PLA Family @U1",
     "setting_id": "POLY_SILK_PLA_U1_001",
+    "inherits": "Polymaker Silk PLA Family @U1 base",
     "compatible_printers": [
         "Snapmaker U1 (0.4 nozzle)"
     ],
@@ -14,9 +17,6 @@
     "filament_vendor": [
         "Polymaker"
     ],
-    "from": "system",
-    "inherits": "Polymaker PLA @U1 base",
-    "name": "Polymaker Silk PLA Family @U1",
     "nozzle_temperature": [
         "230"
     ],
@@ -31,5 +31,158 @@
     ],
     "textured_plate_temp_initial_layer": [
         "65"
+    ],
+    "additional_cooling_fan_speed": [
+        "70"
+    ],
+    "complete_print_exhaust_fan_speed": [
+        "70"
+    ],
+    "cool_plate_temp": [
+        "35"
+    ],
+    "cool_plate_temp_initial_layer": [
+        "35"
+    ],
+    "dont_slow_down_outer_wall": [
+        "0"
+    ],
+    "during_print_exhaust_fan_speed": [
+        "70"
+    ],
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "eng_plate_temp": [
+        "0"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "0"
+    ],
+    "fan_max_speed": [
+        "100"
+    ],
+    "fan_min_speed": [
+        "100"
+    ],
+    "filament_cooling_final_speed": [
+        "3.4"
+    ],
+    "filament_cooling_initial_speed": [
+        "2.2"
+    ],
+    "filament_cooling_moves": [
+        "4"
+    ],
+    "filament_cost": [
+        "20"
+    ],
+    "filament_end_gcode": [
+        "; filament end gcode\n"
+    ],
+    "filament_flow_ratio": [
+        "0.98"
+    ],
+    "filament_flow_support": [
+        "standard"
+    ],
+    "filament_loading_speed": [
+        "28"
+    ],
+    "filament_loading_speed_start": [
+        "3"
+    ],
+    "filament_max_volumetric_speed": [
+        "12"
+    ],
+    "filament_minimal_purge_on_wipe_tower": [
+        "15"
+    ],
+    "filament_multitool_ramming": [
+        "0"
+    ],
+    "filament_multitool_ramming_flow": [
+        "10"
+    ],
+    "filament_multitool_ramming_volume": [
+        "10"
+    ],
+    "filament_retract_length_toolchange": [
+        "nil"
+    ],
+    "filament_retraction_length": [
+        "nil"
+    ],
+    "filament_retraction_speed": [
+        "nil"
+    ],
+    "filament_start_gcode": [
+        "; Filament gcode\n"
+    ],
+    "filament_unloading_speed": [
+        "90"
+    ],
+    "filament_unloading_speed_start": [
+        "100"
+    ],
+    "filament_wipe": [
+        "nil"
+    ],
+    "filament_z_hop_types": [
+        "nil"
+    ],
+    "graphic_effect_plate_temp": [
+        "0"
+    ],
+    "graphic_effect_plate_temp_initial_layer": [
+        "0"
+    ],
+    "hot_plate_temp": [
+        "55"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "55"
+    ],
+    "overhang_fan_threshold": [
+        "50%"
+    ],
+    "pellet_flow_coefficient": [
+        "0.4157"
+    ],
+    "pressure_advance": [
+        "0.02"
+    ],
+    "required_nozzle_HRC": [
+        "3"
+    ],
+    "slow_down_layer_time": [
+        "4"
+    ],
+    "slow_down_min_speed": [
+        "10"
+    ],
+    "supertack_plate_temp": [
+        "45"
+    ],
+    "supertack_plate_temp_initial_layer": [
+        "45"
+    ],
+    "temperature_vitrification": [
+        "45"
+    ],
+    "chamber_temperatures": [
+        "0"
+    ],
+    "filament_scarf_seam_type": [
+        "none"
+    ],
+    "filament_scarf_height": [
+        "10%"
+    ],
+    "filament_scarf_gap": [
+        "15%"
+    ],
+    "filament_scarf_length": [
+        "10"
     ]
 }

@@ -9,6 +9,10 @@
 
 #include "libslic3r/MixedFilament.hpp"
 
+namespace Slic3r {
+enum class FilamentColorMode;
+}
+
 namespace Slic3r { namespace GUI {
 
 struct CornerRadius
@@ -46,14 +50,17 @@ std::vector<wxColour> mixed_filament_gradient_colors(const MixedFilament& mf, co
 // Key format:  "solid:#RRGGBB:hH:wW:label"  or  "grad:#RRGGBB:#RRGGBBBT:hH:wW:label"
 wxBitmap* get_color_block_bitmap_cached(const ColorBlockParams& params);
 
-// Cached bitmap for official filament colour blocks. Multiple colours are drawn left to right.
+// Cached bitmap for official filament colour blocks.
+wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, FilamentColorMode mode,
+                                        int width, int height, const wxString& label,
+                                        const wxColour& lightBorderColor,
+                                        const CornerRadius& radius = {},
+                                        bool vertical_gradient = false);
 wxBitmap* get_color_block_bitmap_cached(const std::vector<wxColour>& colors, bool is_gradient,
                                         int width, int height, const wxString& label,
                                         const wxColour& lightBorderColor,
                                         const CornerRadius& radius = {},
                                         bool vertical_gradient = false);
-bool is_simple_gradient(const MixedFilament& mf);
-
 class MixedFilamentBadge : public wxPanel
 {
 public:

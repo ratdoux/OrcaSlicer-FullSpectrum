@@ -4,6 +4,8 @@
 #include <cmath>
 #include <limits>
 
+#include "slic3r/Utils/ColorSpaceConvert.hpp"
+
 namespace {
 
 // ---- sRGB transfer function (IEC 61966-2-1) ----
@@ -79,17 +81,13 @@ namespace Slic3r {
 
 // ---- public API ------------------------------------------------------------
 
-float delta_e_cie76(uint8_t r1, uint8_t g1, uint8_t b1,
-                    uint8_t r2, uint8_t g2, uint8_t b2)
+float delta_e_ciede2000(uint8_t r1, uint8_t g1, uint8_t b1,
+                         uint8_t r2, uint8_t g2, uint8_t b2)
 {
     float L1, a1, b1v, L2, a2, b2v;
     rgb_to_lab(r1, g1, b1, L1, a1, b1v);
     rgb_to_lab(r2, g2, b2, L2, a2, b2v);
-
-    float dL = L1 - L2;
-    float da = a1 - a2;
-    float db = b1v - b2v;
-    return std::sqrt(dL * dL + da * da + db * db);
+    return DeltaE00(L1, a1, b1v, L2, a2, b2v);
 }
 
 std::vector<int> compute_color_match(
@@ -111,27 +109,48 @@ std::vector<int> compute_color_match(
                    machineLab[j].L, machineLab[j].a, machineLab[j].b);
     }
 
-    // For each design filament, find the perceptually closest machine filament
+    // For each design filament:
+    //   (1) Try to match same-type machine filaments by closest color, then
+    //   (2) Fall back to all non-NONE machine filaments by closest color.
     for (size_t i = 0; i < designCount; ++i) {
         float designL, designA, designB;
         wxColour dc = GUI::getMainColor(design_data[i].m_color);
         rgb_to_lab(dc.Red(), dc.Green(), dc.Blue(),
                    designL, designA, designB);
 
+        const std::string& designType = design_data[i].m_type;
+
         float bestDist = std::numeric_limits<float>::max();
         int   bestIdx  = -1;
+
+        // Pass 1: same filament type
         for (size_t j = 0; j < machineCount; ++j) {
             if (is_none_filament(machine_data[j]))
                 continue;
-            float dL   = designL - machineLab[j].L;
-            float dA   = designA - machineLab[j].a;
-            float dB   = designB - machineLab[j].b;
-            float dist = dL * dL + dA * dA + dB * dB; // squared Euclidean (avoids sqrt)
+            if (machine_data[j].m_type != designType)
+                continue;
+            float dist = DeltaE00(designL, designA, designB,
+                                  machineLab[j].L, machineLab[j].a, machineLab[j].b);
             if (dist < bestDist) {
                 bestDist = dist;
                 bestIdx  = static_cast<int>(j);
             }
         }
+
+        // Pass 2 (fallback): any non-NONE machine filament
+        if (bestIdx < 0) {
+            for (size_t j = 0; j < machineCount; ++j) {
+                if (is_none_filament(machine_data[j]))
+                    continue;
+                float dist = DeltaE00(designL, designA, designB,
+                                      machineLab[j].L, machineLab[j].a, machineLab[j].b);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx  = static_cast<int>(j);
+                }
+            }
+        }
+
         result[i] = bestIdx;
     }
 

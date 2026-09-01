@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <test_utils.hpp>
 
 #include <libslic3r/TriangleMesh.hpp>
@@ -22,7 +22,7 @@ TEST_CASE("Building a tree over a box, ray caster and closest query", "[AABBIndi
 		hit);
 
     REQUIRE(intersected);
-    REQUIRE(hit.t == Approx(5.));
+    REQUIRE_THAT(hit.t, WithinRel(5., 0.001));
 
     std::vector<igl::Hit> hits;
 	bool intersected2 = AABBTreeIndirect::intersect_ray_all_hits(
@@ -33,8 +33,8 @@ TEST_CASE("Building a tree over a box, ray caster and closest query", "[AABBIndi
 		hits);
     REQUIRE(intersected2);
     REQUIRE(hits.size() == 2);
-    REQUIRE(hits.front().t == Approx(5.));
-    REQUIRE(hits.back().t == Approx(6.));
+    REQUIRE_THAT(hits.front().t, WithinRel(5., 0.001));
+    REQUIRE_THAT(hits.back().t, WithinRel(6., 0.001));
 
     size_t hit_idx;
     Vec3d  closest_point;
@@ -43,18 +43,18 @@ TEST_CASE("Building a tree over a box, ray caster and closest query", "[AABBIndi
 		tree,
         Vec3d(0.3, 0.5, -5.),
 		hit_idx, closest_point);
-    REQUIRE(squared_distance == Approx(5. * 5.));
-    REQUIRE(closest_point.x() == Approx(0.3));
-    REQUIRE(closest_point.y() == Approx(0.5));
-    REQUIRE(closest_point.z() == Approx(0.));
+    REQUIRE_THAT(squared_distance, WithinRel(5. * 5., 0.001));
+    REQUIRE_THAT(closest_point.x(), WithinRel(0.3, 0.001));
+    REQUIRE_THAT(closest_point.y(), WithinRel(0.5, 0.001));
+    REQUIRE_THAT(closest_point.z(), WithinRel(0., 0.001));
 
     squared_distance = AABBTreeIndirect::squared_distance_to_indexed_triangle_set(
 		tmesh.its.vertices, tmesh.its.indices,
 		tree,
         Vec3d(0.3, 0.5, 5.),
 		hit_idx, closest_point);
-    REQUIRE(squared_distance == Approx(4. * 4.));
-    REQUIRE(closest_point.x() == Approx(0.3));
-    REQUIRE(closest_point.y() == Approx(0.5));
-    REQUIRE(closest_point.z() == Approx(1.));
+    REQUIRE_THAT(squared_distance, WithinRel(4. * 4., 0.001));
+    REQUIRE_THAT(closest_point.x(), WithinRel(0.3, 0.001));
+    REQUIRE_THAT(closest_point.y(), WithinRel(0.5, 0.001));
+    REQUIRE_THAT(closest_point.z(), WithinRel(1., 0.001));
 }

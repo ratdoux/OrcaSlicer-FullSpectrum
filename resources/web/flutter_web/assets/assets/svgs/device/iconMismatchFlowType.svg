@@ -1,0 +1,30 @@
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Frame 2147224989">
+<g id="Frame" clip-path="url(#clip0_5391_4200)">
+<g id="Group 2147224738">
+<g id="Group 2147224736">
+<circle id="Ellipse 178" cx="14" cy="14.0039" r="13.125" stroke="#FF3B30" stroke-width="1.75"/>
+</g>
+<g id="Group 2147224737">
+<rect id="Rectangle 34625674" x="7.17533" y="12.9966" width="13.65" height="4.9" rx="0.991667" stroke="#FF3B30" stroke-width="1.51667"/>
+<g id="Rectangle 34625676">
+<mask id="path-3-inside-1_5391_4200" fill="white">
+<rect x="9.625" y="12.2383" width="8.75" height="6.41667" rx="1.16667"/>
+</mask>
+<rect x="9.625" y="12.2383" width="8.75" height="6.41667" rx="1.16667" stroke="#FF3B30" stroke-width="3.03333" mask="url(#path-3-inside-1_5391_4200)"/>
+</g>
+<rect id="Rectangle 34625675" x="11.2583" y="4.57474" width="5.48333" height="8.4" rx="0.991667" stroke="#FF3B30" stroke-width="1.51667"/>
+<path id="Polygon 15" d="M13.1914 21.6904C13.5867 22.248 14.4144 22.2481 14.8096 21.6904L17.4922 17.9033H10.5088L13.1914 21.6904Z" stroke="#FF3B30" stroke-width="1.51667"/>
+</g>
+<path id="Vector 764" d="M18.9252 6.13281L9.07812 8.7716" stroke="#FF3B30" stroke-width="1.51667" stroke-linecap="round"/>
+<path id="Vector 765" d="M18.9252 8.77344L9.07812 11.4122" stroke="#FF3B30" stroke-width="1.51667" stroke-linecap="round"/>
+</g>
+<path id="Vector 769" d="M2.91699 2.91797L25.0837 25.0846" stroke="#FF3B30" stroke-width="1.75" stroke-linecap="round"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_5391_4200">
+<rect width="28" height="28" fill="white"/>
+</clipPath>
+</defs>
+</svg>

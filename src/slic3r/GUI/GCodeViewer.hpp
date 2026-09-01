@@ -737,6 +737,7 @@ private:
     const GCodeProcessorResult* m_gcode_result;
     //BBS: add only gcode mode
     bool m_only_gcode_in_preview {false};
+    bool m_loading{ false };
     std::vector<size_t> m_ssid_to_moveid_map;
 
     std::vector<TBuffer> m_buffers{ static_cast<size_t>(EMoveType::Extrude) };
@@ -801,8 +802,11 @@ public:
 
     // extract rendering data from the given parameters
     //BBS: add only gcode mode
-    void load(const GCodeProcessorResult& gcode_result, const Print& print, const BuildVolume& build_volume,
-            const std::vector<BoundingBoxf3>& exclude_bounding_box, ConfigOptionMode mode, bool only_gcode = false);
+   void load(const GCodeProcessorResult& gcode_result, const Print& print, const BuildVolume& build_volume,
+           const std::vector<BoundingBoxf3>& exclude_bounding_box, ConfigOptionMode mode, bool only_gcode = false,
+           bool skip_toolpaths = false);
+    // skip_toolpaths: when true, always take Z-scan path (no GPU vertex buffers)
+    //                  used by the memory-warning dialog when user chooses to continue without preview
     // recalculate ranges in dependence of what is visible and sets tool/print colors
     void refresh(const GCodeProcessorResult& gcode_result, const std::vector<std::string>& str_tool_colors);
     void refresh_render_paths();
@@ -889,12 +893,13 @@ public:
     void pop_combo_style();
 
 private:
+    void extract_layer_metadata(const GCodeProcessorResult& gcode_result);
     void load_toolpaths(const GCodeProcessorResult& gcode_result, const BuildVolume& build_volume, const std::vector<BoundingBoxf3>& exclude_bounding_box);
     //BBS: always load shell at preview
     //void load_shells(const Print& print);
     void refresh_render_paths(bool keep_sequential_current_first, bool keep_sequential_current_last) const;
     void render_toolpaths();
-    void render_shells(int canvas_width, int canvas_height);
+    void render_shells();
 
     //BBS: GUI refactor: add canvas size
     void render_legend(float &legend_height, int canvas_width, int canvas_height, int right_margin);

@@ -1,0 +1,7 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "PolyLite PLA @Dual base",
+    "inherits": "fdm_filament_pla_category"
+}

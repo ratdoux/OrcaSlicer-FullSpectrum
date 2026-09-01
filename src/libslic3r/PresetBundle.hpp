@@ -35,6 +35,7 @@ struct ConnectMachineInfo
     std::string filament_info {""};
     std::string filament_type {""};
     std::string nozzle_info {""};
+    std::string nozzle_volume_type {""};
     std::string color_info{""};
     std::vector<std::string> multiColors;
     Slic3r::FilamentColorMode colorMode { Slic3r::FilamentColorMode::Segment };
@@ -134,6 +135,9 @@ public:
     unsigned int sync_ams_list(unsigned int & unknowns);
     //BBS: check whether this is the only edited filament
     bool is_the_only_edited_filament(unsigned int filament_index);
+
+    std::vector<FilamentVolumeType> get_filament_volume_types() const;
+    void                            set_filament_volume_types(const std::vector<FilamentVolumeType> &types);
 
     // Orca: update selected filament and print
     void           update_selections(AppConfig &config);
@@ -275,7 +279,14 @@ public:
     // changes when the physical filament count itself did not change.
     void                        update_mixed_filament_id_remap(const std::vector<MixedFilamentDefinition> &old_mixed,
                                                                size_t old_num_filaments,
-                                                               size_t new_num_filaments);
+                                                               size_t new_num_filaments,
+                                                               size_t deleted_mixed_idx = size_t(-1),
+                                                               const std::vector<unsigned int> &kept_physical_ids = {});
+    void                        update_mixed_filament_id_remap(const std::vector<MixedFilament> &old_mixed,
+                                                               size_t old_num_filaments,
+                                                               size_t new_num_filaments,
+                                                               size_t deleted_mixed_idx = size_t(-1),
+                                                               const std::vector<unsigned int> &kept_physical_ids = {});
     // Mapping generated during the latest filament count change.
     // Index is old 1-based filament ID, value is new 1-based filament ID (0 = removed).
     const std::vector<unsigned int>& last_filament_id_remap() const { return m_last_filament_id_remap; }
@@ -343,7 +354,9 @@ private:
                                                         size_t old_num_filaments,
                                                         size_t new_num_filaments,
                                                         bool deleting_filament,
-                                                        unsigned int deleted_1based);
+                                                        unsigned int deleted_1based,
+                                                        size_t deleted_mixed_idx = size_t(-1),
+                                                        const std::vector<unsigned int> &kept_physical_ids = {});
     // Update renamed_from and alias maps of system profiles.
     void 						update_system_maps();
 

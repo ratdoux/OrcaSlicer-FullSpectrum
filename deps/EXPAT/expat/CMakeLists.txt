@@ -73,6 +73,10 @@ add_library(expat
 
 target_include_directories(expat PRIVATE ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
+# Enable 64-bit size/index types (XML_Size, XML_Index) to support
+# parsing of very large XML files (>2GB) without internal overflow.
+target_compile_definitions(expat PUBLIC XML_LARGE_SIZE)
+
 include(GNUInstallDirs)
 
 install( 

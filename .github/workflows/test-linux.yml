@@ -1,0 +1,212 @@
+name: Linux Tests
+
+# Disabled by default: only manual trigger (Actions tab -> Run workflow).
+# Re-enable push/pull_request triggers once the test pipeline is stable and
+# green on main, and keep the release/* branches off the required-checks path.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test_linux:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          lfs: 'true'
+
+      - name: Restore deps tarball
+        id: cache_deps
+        uses: actions/cache@v4
+        with:
+          # Cache a SINGLE zstd tarball instead of the multi-million-file
+          # destdir tree. Archiving the raw tree (OCCT/OpenCV/boost headers)
+          # never completed in actions/cache, so deps rebuilt on every run.
+          # A single tarball restores/saves reliably. The key is repo-scoped,
+          # so all three test workflows share it (the first to build serves
+          # the others); build_linux.sh is in the key so a build-script change
+          # busts the cache.
+          path: ${{ github.workspace }}/deps-destdir.tar.zst
+          key: ${{ matrix.os }}-deps-tarball-${{ hashFiles('deps/CMakeLists.txt', 'deps/*.cmake', 'deps/*/*.cmake', 'deps/*/*.patch', 'build_linux.sh') }}
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~3.28.0"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake git g++ build-essential libgl1-mesa-dev m4 \
+            libwayland-dev libxkbcommon-dev wayland-protocols extra-cmake-modules pkgconf \
+            libglu1-mesa-dev libcairo2-dev libgtk-3-dev libsoup2.4-dev libwebkit2gtk-4.1-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-bad wget sudo autoconf curl libunwind-dev texinfo libblosc-dev ccache
+
+      - name: Install dependencies from build_linux.sh
+        shell: bash
+        run: sudo ./build_linux.sh -ur
+
+      - name: Fix permissions
+        shell: bash
+        run: sudo chown $USER -R ./
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          echo "Before cleanup:" && df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules 2>/dev/null || true
+          echo "After cleanup:" && df -h /
+
+      - name: Extract deps tarball (cache hit)
+        if: steps.cache_deps.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          mkdir -p deps/build
+          tar --zstd -x -f deps-destdir.tar.zst -C deps/build
+          rm -f deps-destdir.tar.zst
+
+      - name: Build dependencies (cache miss)
+        if: steps.cache_deps.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p deps/build
+          mkdir -p deps/build/destdir
+          ./build_linux.sh -dr
+          sudo chown $USER -R ./
+          # Pack the freshly built destdir into a single tarball for reliable caching.
+          tar --zstd -c -f deps-destdir.tar.zst -C deps/build destdir
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ matrix.os }}-release
+          append-timestamp: false
+
+      - name: Configure CMake
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/deps/build/destdir/usr/local" -DSLIC3R_STATIC=ON -DOPENVDB_USE_STATIC_LIBS=ON -DSLIC3R_GUI=OFF -DBUILD_TESTS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
+
+      - name: Build tests
+        id: build-tests
+        shell: bash
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/deps/build/destdir/usr/local/lib:$LD_LIBRARY_PATH
+        run: |
+          cmake --build build --target tests --parallel 1
+          test -f build/tests/libslic3r/libslic3r_tests \
+            || test -f build/tests/fff_print/fff_print_tests \
+            || test -f build/tests/libnest2d/libnest2d_tests \
+            || { echo "ERROR: No test binaries found in build/tests/"; exit 1; }
+
+      - name: Detect changed modules
+        id: changed
+        uses: tj-actions/changed-files@v46
+        with:
+          files_yaml: |
+            core:
+              - src/libslic3r/**
+            gui:
+              - src/slic3r/**
+            cmake:
+              - '**/CMakeLists.txt'
+              - cmake/**
+            test_infra:
+              - tests/*.hpp
+              - tests/*.cpp
+              - tests/data/**
+            test_libslic3r:
+              - tests/libslic3r/**
+            test_fff_print:
+              - tests/fff_print/**
+            test_sla_print:
+              - tests/sla_print/**
+            test_slic3rutils:
+              - tests/slic3rutils/**
+            test_libnest2d:
+              - tests/libnest2d/**
+            ci_config:
+              - .github/workflows/**
+
+      - name: Determine test filter
+        id: filter
+        shell: bash
+        run: |
+          if [ "${{ steps.changed.outputs.core_any_changed }}" = 'true' ] || \
+             [ "${{ steps.changed.outputs.cmake_any_changed }}" = 'true' ] || \
+             [ "${{ steps.changed.outputs.test_infra_any_changed }}" = 'true' ] || \
+             [ "${{ steps.changed.outputs.ci_config_any_changed }}" = 'true' ]; then
+            echo "filter=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.changed.outputs.gui_any_changed }}" = 'true' ]; then
+            echo "filter=slic3rutils" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.changed.outputs.test_libslic3r_any_changed }}" = 'true' ]; then
+            echo "filter=libslic3r" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.changed.outputs.test_fff_print_any_changed }}" = 'true' ]; then
+            echo "filter=fff_print" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.changed.outputs.test_sla_print_any_changed }}" = 'true' ]; then
+            echo "filter=sla_print" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.changed.outputs.test_slic3rutils_any_changed }}" = 'true' ]; then
+            echo "filter=slic3rutils" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.changed.outputs.test_libnest2d_any_changed }}" = 'true' ]; then
+            echo "filter=libnest2d" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "filter=__SKIP__" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        if: success() && steps.filter.outputs.filter != '__SKIP__'
+        shell: bash
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/deps/build/destdir/usr/local/lib:$LD_LIBRARY_PATH
+        run: |
+          if [ -n "${{ steps.filter.outputs.filter }}" ]; then
+            echo "Running filtered tests: -R ${{ steps.filter.outputs.filter }}"
+            ctest --test-dir build --output-on-failure --output-junit "${{ github.workspace }}/build/test-results.xml" --timeout 3600 -R "${{ steps.filter.outputs.filter }}" -E '\[trace\]'
+          else
+            echo "Running all tests"
+            ctest --test-dir build --output-on-failure --output-junit "${{ github.workspace }}/build/test-results.xml" --timeout 3600 -E '\[trace\]'
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-results-${{ matrix.os }}
+          path: build/test-results.xml
+          if-no-files-found: warn
+
+      - name: Generate HTML report
+        if: always()
+        shell: bash
+        run: node scripts/junit-to-html.js build/test-results.xml -t "OrcaSlicer Linux Tests" -o build/test-report.html
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-report-${{ matrix.os }}
+          path: build/test-report.html
+          if-no-files-found: warn

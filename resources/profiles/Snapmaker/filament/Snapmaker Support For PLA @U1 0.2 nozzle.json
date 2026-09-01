@@ -1,0 +1,77 @@
+{
+  "type": "filament",
+  "from": "system",
+  "instantiation": "true",
+  "name": "Snapmaker Support For PLA @U1 0.2 nozzle",
+  "setting_id": "41460000000",
+  "inherits": "Snapmaker Support For PLA @U1 base",
+  "compatible_printers": [
+    "Snapmaker U1 (0.2 nozzle)"
+  ],
+  "enable_pressure_advance": [
+    "0"
+  ],
+  "fan_max_speed": [
+    "30"
+  ],
+  "fan_min_speed": [
+    "20"
+  ],
+  "filament_cost": [
+    "69.98"
+  ],
+  "filament_density": [
+    "1.3"
+  ],
+  "filament_flow_ratio": [
+    "1"
+  ],
+  "filament_max_volumetric_speed": [
+    "0.5"
+  ],
+  "filament_retraction_length": [
+    "nil"
+  ],
+  "nozzle_temperature": [
+    "240"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "240"
+  ],
+  "pressure_advance": [
+    "0.2"
+  ],
+  "filament_retract_length_toolchange": [
+    "10"
+  ],
+  "filament_minimal_purge_on_wipe_tower": [
+    "15"
+  ],
+  "filament_multitool_ramming_flow": [
+    "5"
+  ],
+  "filament_flow_support": [
+    "standard"
+  ],
+  "filament_retraction_minimum_travel": [
+    "nil"
+  ],
+  "filament_wipe_distance": [
+    "nil"
+  ],
+  "pellet_flow_coefficient": [
+    "0.4157"
+  ],
+  "supertack_plate_temp": [
+    "40"
+  ],
+  "supertack_plate_temp_initial_layer": [
+    "40"
+  ],
+  "graphic_effect_plate_temp": [
+    "70"
+  ],
+  "graphic_effect_plate_temp_initial_layer": [
+    "70"
+  ]
+}

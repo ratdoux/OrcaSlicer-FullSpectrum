@@ -866,6 +866,8 @@ void HttpServer::ResponseFile::write_response(std::stringstream& ssOut)
         content_type = "text/css";
     else if (ends_with(file_path, ".js"))
         content_type = "text/javascript";
+    else if (ends_with(file_path, ".wasm"))
+        content_type = "application/wasm";
     else if (ends_with(file_path, ".png"))
         content_type = "image/png";
     else if (ends_with(file_path, ".jpg"))
@@ -876,6 +878,8 @@ void HttpServer::ResponseFile::write_response(std::stringstream& ssOut)
         content_type = "image/svg+xml";
     else if (ends_with(file_path, ".ttf"))
         content_type = "application/x-font-ttf";
+    else if (ends_with(file_path, ".otf"))
+        content_type = "font/otf";
     else if (ends_with(file_path, ".json"))
         content_type = "application/json";
     else if (ends_with(file_path, ".webp"))

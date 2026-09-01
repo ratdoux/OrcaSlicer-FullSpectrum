@@ -1,0 +1,7 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "Generic PETG-GF @U1 base",
+    "inherits": "fdm_filament_petg_gf_category"
+}

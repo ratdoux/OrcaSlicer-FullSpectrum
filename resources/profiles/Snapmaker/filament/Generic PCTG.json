@@ -1,21 +1,15 @@
 {
     "type": "filament",
-    "name": "Generic PCTG",
-    "inherits": "Generic PCTG @base",
     "from": "system",
-    "setting_id": "GFSG97_001",
     "instantiation": "true",
+    "name": "Generic PCTG",
+    "setting_id": "GFSG97_001",
+    "inherits": "Generic PCTG @U1 base",
     "compatible_printers": [
         "Snapmaker U1 (0.4 nozzle)"
     ],
-    "enable_pressure_advance": [
-        "0"
-    ],
     "filament_end_gcode": [
         ""
-    ],
-    "filament_minimal_purge_on_wipe_tower": [
-        "15"
     ],
     "filament_multitool_ramming": [
         "1"
@@ -41,9 +35,6 @@
     "filament_retract_length_toolchange": [
         "10"
     ],
-    "filament_retract_restart_extra_toolchange": [
-        "nil"
-    ],
     "textured_plate_temp": [
         "100"
     ],
@@ -56,5 +47,7 @@
     "eng_plate_temp_initial_layer": [
         "100"
     ],
-    "filament_is_high_temperature": ["1"]
+    "filament_is_high_temperature": [
+        "1"
+    ]
 }

@@ -16,9 +16,6 @@
     "Snapmaker A350 Dual QSKit (0.2 nozzle)",
     "Snapmaker Artisan (0.2 nozzle)"
   ],
-  "filament_end_gcode": [
-    ""
-  ],
   "hot_plate_temp": [
     "90"
   ],
@@ -66,5 +63,17 @@
   ],
   "pressure_advance": [
     "0.015"
+  ],
+  "filament_flow_support": [
+    "standard"
+  ],
+  "filament_multitool_ramming_flow": [
+    "10"
+  ],
+  "pellet_flow_coefficient": [
+    "0.4157"
+  ],
+  "slow_down_min_speed": [
+    "20"
   ]
 }

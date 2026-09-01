@@ -89,6 +89,13 @@ extern void disable_multi_threading();
 // Returns the size of physical memory (RAM) in bytes.
 extern size_t total_physical_memory();
 
+// Returns the minimum of (a) available physical RAM and (b) available system
+// commit, whichever is more constraining.  Physical RAM exhaustion triggers
+// page-fault thrashing (unresponsive hang); commit exhaustion triggers OOM
+// crash (malloc returns null).  Taking the min catches both failure modes.
+// Used by the runtime memory guard in PrintBase.hpp.
+extern size_t get_available_physical_memory();
+
 // Set a path with GUI resource files.
 void set_var_dir(const std::string &path);
 // Return a full path to the GUI resource files.

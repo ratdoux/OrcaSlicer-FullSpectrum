@@ -445,6 +445,11 @@ public:
     const BoundingBoxf3&    bounding_box_approx() const;
     // Returns an exact bounding box of the transformed instances. The result it is being cached.
     const BoundingBoxf3&    bounding_box_exact() const;
+    /**
+     * @brief Calculates the bounding box of all instances in assembly-view coordinates.
+     * @return The merged assembly-view bounding box.
+     */
+    BoundingBoxf3           CalculateAssemblyBoundingBox() const;
     // Return minimum / maximum of a printable object transformed into the world coordinate system.
     // All instances share the same min / max Z.
     double                  min_z() const;
@@ -1310,7 +1315,11 @@ public:
         m_assemble_transformation.set_matrix(transform);
     }
     Vec3d get_assemble_offset() const {return m_assemble_transformation.get_offset(); }
-    void set_assemble_offset(const Vec3d& offset) { m_assemble_transformation.set_offset(offset); }
+    void set_assemble_offset(const Vec3d& offset)
+    {
+        m_assemble_initialized = true;
+        m_assemble_transformation.set_offset(offset);
+    }
     void set_assemble_rotation(const Vec3d &rotation) { m_assemble_transformation.set_rotation(rotation); }
     void rotate_assemble(double angle, const Vec3d& axis) {
         m_assemble_transformation.set_rotation(m_assemble_transformation.get_rotation() + Geometry::extract_euler_angles(Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).toRotationMatrix()));
@@ -1653,6 +1662,12 @@ public:
     ModelObject* add_object(const char *name, const char *path, const TriangleMesh &mesh);
     ModelObject* add_object(const char *name, const char *path, TriangleMesh &&mesh);
     ModelObject* add_object(const ModelObject &other);
+    /**
+     * @brief Initializes newly created objects as one assembly-view layout batch.
+     * @param modelObjects Objects owned by this model, in their desired layout order.
+     *        Invalid objects and instances are skipped.
+     */
+    void InitializeAssemblyPositions(const ModelObjectPtrs& modelObjects);
     void         delete_object(size_t idx);
     bool         delete_object(ObjectID id);
     bool         delete_object(ModelObject* object);
@@ -1677,6 +1692,12 @@ public:
     BoundingBoxf3 bounding_box_approx() const;
     // Returns exact axis aligned bounding box of this model.
     BoundingBoxf3 bounding_box_exact() const;
+    /**
+     * @brief Calculates the assembly-view bounding box for this model.
+     * @param excludedObjects Objects to exclude from the result.
+     * @return The merged assembly-view bounding box.
+     */
+    BoundingBoxf3 CalculateAssemblyBoundingBox(const ModelObjectPtrs& excludedObjects = {}) const;
     // Return maximum height of all printable objects.
     double        max_z() const;
     // Set the print_volume_state of PrintObject::instances,

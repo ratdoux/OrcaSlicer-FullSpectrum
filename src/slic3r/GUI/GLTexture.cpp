@@ -661,6 +661,32 @@ void GLTexture::render_texture(unsigned int tex_id, float left, float right, flo
 
 void GLTexture::render_sub_texture(unsigned int tex_id, float left, float right, float bottom, float top, const GLTexture::Quad_UVs& uvs)
 {
+    GLModel& model = InitModelForRenderImage();
+
+    // position and scale from normalized unit quad
+    const float center_x = (left + right) * 0.5f;
+    const float center_y = (bottom + top) * 0.5f;
+    const float scale_x  = (right - left);
+    const float scale_y  = (top - bottom);
+
+    Transform3d model_matrix = Transform3d::Identity();
+    model_matrix.data()[3 * 4 + 0] = center_x;
+    model_matrix.data()[3 * 4 + 1] = center_y;
+    model_matrix.data()[0 * 4 + 0] = scale_x;
+    model_matrix.data()[1 * 4 + 1] = scale_y;
+
+    // UV transform — maps unit UVs to sprite atlas sub-region
+    const float center_u = (uvs.right_bottom.u + uvs.left_bottom.u) * 0.5f;
+    const float center_v = (uvs.right_top.v + uvs.right_bottom.v) * 0.5f;
+    const float scale_u  = (uvs.right_bottom.u - uvs.left_bottom.u);
+    const float scale_v  = (uvs.right_bottom.v - uvs.right_top.v);
+
+    Matrix3f uv_matrix = Matrix3f::Identity();
+    uv_matrix(0, 2) = center_u;
+    uv_matrix(1, 2) = center_v;
+    uv_matrix(0, 0) = scale_u;
+    uv_matrix(1, 1) = scale_v;
+
     glsafe(::glEnable(GL_BLEND));
     glsafe(::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 
@@ -669,29 +695,12 @@ void GLTexture::render_sub_texture(unsigned int tex_id, float left, float right,
 
     glsafe(::glBindTexture(GL_TEXTURE_2D, (GLuint)tex_id));
 
-    GLModel::Geometry init_data;
-    init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P2T2 };
-    init_data.reserve_vertices(4);
-    init_data.reserve_indices(6);
-
-    // vertices
-    init_data.add_vertex(Vec2f(left, bottom),  Vec2f(uvs.left_bottom.u, uvs.left_bottom.v));
-    init_data.add_vertex(Vec2f(right, bottom), Vec2f(uvs.right_bottom.u, uvs.right_bottom.v));
-    init_data.add_vertex(Vec2f(right, top),    Vec2f(uvs.right_top.u, uvs.right_top.v));
-    init_data.add_vertex(Vec2f(left, top),     Vec2f(uvs.left_top.u, uvs.left_top.v));
-
-    // indices
-    init_data.add_triangle(0, 1, 2);
-    init_data.add_triangle(2, 3, 0);
-
-    GLModel model;
-    model.init_from(std::move(init_data));
-
     GLShaderProgram* shader = wxGetApp().get_shader("flat_texture");
     if (shader != nullptr) {
         shader->start_using();
-        shader->set_uniform("view_model_matrix", Transform3d::Identity());
+        shader->set_uniform("view_model_matrix", model_matrix);
         shader->set_uniform("projection_matrix", Transform3d::Identity());
+        shader->set_uniform("u_uvTransformMatrix", uv_matrix);
         model.render();
         shader->stop_using();
     }
@@ -700,6 +709,34 @@ void GLTexture::render_sub_texture(unsigned int tex_id, float left, float right,
 
     glsafe(::glDisable(GL_TEXTURE_2D));
     glsafe(::glDisable(GL_BLEND));
+}
+
+GLModel& GLTexture::GetModelForRenderImage()
+{
+    static GLModel g_model_for_render_image;
+    return g_model_for_render_image;
+}
+
+GLModel& GLTexture::InitModelForRenderImage()
+{
+    auto& model = GetModelForRenderImage();
+    if (!model.is_initialized()) {
+        GLModel::Geometry init_data;
+        init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3 };
+        init_data.reserve_vertices(4);
+        init_data.reserve_indices(6);
+
+        init_data.add_vertex(Vec3f(-0.5f, -0.5f, 0.0f)/*, Vec2f(-0.5f, 0.5f)*/);
+        init_data.add_vertex(Vec3f( 0.5f, -0.5f, 0.0f)/*, Vec2f( 0.5f, 0.5f)*/);
+        init_data.add_vertex(Vec3f( 0.5f,  0.5f, 0.0f)/*, Vec2f( 0.5f, -0.5f)*/);
+        init_data.add_vertex(Vec3f(-0.5f,  0.5f, 0.0f)/*, Vec2f(-0.5f, -0.5f)*/);
+
+        init_data.add_triangle(0, 1, 2);
+        init_data.add_triangle(2, 3, 0);
+
+        model.init_from(std::move(init_data));
+    }
+    return model;
 }
 
 static bool to_squared_power_of_two(const std::string& filename, int max_size_px, int& w, int& h)

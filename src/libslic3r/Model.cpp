@@ -691,6 +691,104 @@ ModelObject* Model::add_object(const ModelObject &other)
     return new_object;
 }
 
+void Model::InitializeAssemblyPositions(const ModelObjectPtrs& modelObjects)
+{
+    constexpr double ASSEMBLY_OBJECT_GAP = 10.0;
+
+    if (modelObjects.empty())
+    {
+        return;
+    }
+
+    ModelObjectPtrs validatedObjects;
+    validatedObjects.reserve(modelObjects.size());
+    for (ModelObject* modelObject : modelObjects)
+    {
+        if (modelObject == nullptr || modelObject->instances.empty() ||
+            std::find(objects.begin(), objects.end(), modelObject) == objects.end() ||
+            std::find(validatedObjects.begin(), validatedObjects.end(), modelObject) != validatedObjects.end())
+        {
+            continue;
+        }
+
+        const BoundingBoxf3& rawBox = modelObject->raw_mesh_bounding_box();
+        if (!rawBox.defined)
+        {
+            continue;
+        }
+
+        validatedObjects.push_back(modelObject);
+    }
+
+    BoundingBoxf3 sceneBox = CalculateAssemblyBoundingBox(validatedObjects);
+    for (ModelObject* modelObject : validatedObjects)
+    {
+        const BoundingBoxf3& rawBox = modelObject->raw_mesh_bounding_box();
+        std::vector<BoundingBoxf3> instanceBoxes(modelObject->instances.size());
+
+        double objectWidth = 0.0;
+        bool hasValidInstance = false;
+        for (size_t instanceIndex = 0; instanceIndex < modelObject->instances.size(); ++instanceIndex)
+        {
+            ModelInstance* instance = modelObject->instances[instanceIndex];
+            if (instance == nullptr)
+            {
+                continue;
+            }
+
+            if (!instance->is_assemble_initialized())
+            {
+                instance->set_assemble_transformation(instance->get_transformation());
+            }
+
+            BoundingBoxf3& instanceBox = instanceBoxes[instanceIndex];
+            instanceBox = rawBox.transformed(instance->get_assemble_transformation().get_matrix_no_offset());
+            if (!instanceBox.defined)
+            {
+                continue;
+            }
+
+            objectWidth = std::max(objectWidth, instanceBox.size().x());
+            hasValidInstance = true;
+        }
+
+        if (!hasValidInstance)
+        {
+            continue;
+        }
+
+        const double objectCenterX = sceneBox.defined ? sceneBox.max.x() + ASSEMBLY_OBJECT_GAP + objectWidth * 0.5 : 0.0;
+        const double firstInstanceCenterY = sceneBox.defined ? sceneBox.center().y() : 0.0;
+        double previousInstanceMaxY = 0.0;
+        bool firstValidInstance = true;
+
+        for (size_t instanceIndex = 0; instanceIndex < modelObject->instances.size(); ++instanceIndex)
+        {
+            ModelInstance* instance = modelObject->instances[instanceIndex];
+            if (instance == nullptr)
+            {
+                continue;
+            }
+
+            const BoundingBoxf3& instanceBox = instanceBoxes[instanceIndex];
+            if (!instanceBox.defined)
+            {
+                continue;
+            }
+
+            const double instanceCenterY = firstValidInstance ? firstInstanceCenterY :
+                                           previousInstanceMaxY + ASSEMBLY_OBJECT_GAP + instanceBox.size().y() * 0.5;
+            const Vec3d assemblyOffset(objectCenterX - instanceBox.center().x(),
+                                       instanceCenterY - instanceBox.center().y(), -instanceBox.min.z());
+            instance->set_assemble_offset(assemblyOffset);
+            previousInstanceMaxY = instanceCenterY + instanceBox.size().y() * 0.5;
+            firstValidInstance = false;
+        }
+
+        sceneBox.merge(modelObject->CalculateAssemblyBoundingBox());
+    }
+}
+
 void Model::delete_object(size_t idx)
 {
     ModelObjectPtrs::iterator i = this->objects.begin() + idx;
@@ -848,6 +946,23 @@ BoundingBoxf3 Model::bounding_box_exact() const
     for (ModelObject *o : this->objects)
         bb.merge(o->bounding_box_exact());
     return bb;
+}
+
+BoundingBoxf3 Model::CalculateAssemblyBoundingBox(const ModelObjectPtrs& excludedObjects) const
+{
+    BoundingBoxf3 assemblyBox;
+    for (const ModelObject* modelObject : objects)
+    {
+        if (modelObject == nullptr ||
+            std::find(excludedObjects.begin(), excludedObjects.end(), modelObject) != excludedObjects.end())
+        {
+            continue;
+        }
+
+        assemblyBox.merge(modelObject->CalculateAssemblyBoundingBox());
+    }
+
+    return assemblyBox;
 }
 
 double Model::max_z() const
@@ -1625,6 +1740,26 @@ const BoundingBoxf3& ModelObject::bounding_box_exact() const
             m_bounding_box_exact.merge(this->instance_bounding_box(i));
     }
     return m_bounding_box_exact;
+}
+
+BoundingBoxf3 ModelObject::CalculateAssemblyBoundingBox() const
+{
+    BoundingBoxf3 assemblyBox;
+    const BoundingBoxf3 rawBox = raw_mesh_bounding_box();
+    if (!rawBox.defined)
+    {
+        return assemblyBox;
+    }
+
+    for (const ModelInstance* instance : instances)
+    {
+        if (instance != nullptr)
+        {
+            assemblyBox.merge(rawBox.transformed(instance->get_assemble_transformation().get_matrix()));
+        }
+    }
+
+    return assemblyBox;
 }
 
 double ModelObject::min_z() const
@@ -3161,31 +3296,31 @@ void Model::setPrintSpeedTable(const DynamicPrintConfig& config, const PrintConf
     //Slic3r::DynamicPrintConfig config = wxGetApp().preset_bundle->full_config();
     printSpeedMap.maxSpeed = 0;
     if (config.has("inner_wall_speed")) {
-        printSpeedMap.perimeterSpeed = config.opt_float("inner_wall_speed");
+        printSpeedMap.perimeterSpeed = config.opt_float("inner_wall_speed", 0);
         if (printSpeedMap.perimeterSpeed > printSpeedMap.maxSpeed)
             printSpeedMap.maxSpeed = printSpeedMap.perimeterSpeed;
     }
     if (config.has("outer_wall_speed")) {
-        printSpeedMap.externalPerimeterSpeed = config.opt_float("outer_wall_speed");
+        printSpeedMap.externalPerimeterSpeed = config.opt_float("outer_wall_speed", 0);
         printSpeedMap.maxSpeed = std::max(printSpeedMap.maxSpeed, printSpeedMap.externalPerimeterSpeed);
     }
     if (config.has("sparse_infill_speed")) {
-        printSpeedMap.infillSpeed = config.opt_float("sparse_infill_speed");
+        printSpeedMap.infillSpeed = config.opt_float("sparse_infill_speed", 0);
         if (printSpeedMap.infillSpeed > printSpeedMap.maxSpeed)
             printSpeedMap.maxSpeed = printSpeedMap.infillSpeed;
     }
     if (config.has("internal_solid_infill_speed")) {
-        printSpeedMap.solidInfillSpeed = config.opt_float("internal_solid_infill_speed");
+        printSpeedMap.solidInfillSpeed = config.opt_float("internal_solid_infill_speed", 0);
         if (printSpeedMap.solidInfillSpeed > printSpeedMap.maxSpeed)
             printSpeedMap.maxSpeed = printSpeedMap.solidInfillSpeed;
     }
     if (config.has("top_surface_speed")) {
-        printSpeedMap.topSolidInfillSpeed = config.opt_float("top_surface_speed");
+        printSpeedMap.topSolidInfillSpeed = config.opt_float("top_surface_speed", 0);
         if (printSpeedMap.topSolidInfillSpeed > printSpeedMap.maxSpeed)
             printSpeedMap.maxSpeed = printSpeedMap.topSolidInfillSpeed;
     }
     if (config.has("support_speed")) {
-        printSpeedMap.supportSpeed = config.opt_float("support_speed");
+        printSpeedMap.supportSpeed = config.opt_float("support_speed", 0);
 
         if (printSpeedMap.supportSpeed > printSpeedMap.maxSpeed)
             printSpeedMap.maxSpeed = printSpeedMap.supportSpeed;
@@ -3224,8 +3359,8 @@ void Model::setExtruderParams(const DynamicPrintConfig& config, int extruders_co
         if (config.has("filament_type")) {
             matName = config.opt_string("filament_type", i);
         }
-        if (config.has("nozzle_temperature")) {
-            endTemp = config.opt_int("nozzle_temperature", i);
+        if (const auto *temperature = config.option<ConfigOptionInts>("nozzle_temperature")) {
+            endTemp = get_value_at(config, *temperature, ConfigFlowDomain::Filament, i);
         }
 
         // FIXME: curr_bed_type is now a plate config rather than a global config.
@@ -3516,19 +3651,19 @@ double Model::findMaxSpeed(const ModelObject* object) {
     double smallPerimeterSpeedObj = Model::printSpeedMap.smallPerimeterSpeed;
     for (std::string objectKey : objectKeys) {
         if (objectKey == "inner_wall_speed"){
-            perimeterSpeedObj = object->config.opt_float(objectKey);
+            perimeterSpeedObj = object->config.get().opt_float(objectKey, 0);
             externalPerimeterSpeedObj = Model::printSpeedMap.externalPerimeterSpeed / Model::printSpeedMap.perimeterSpeed * perimeterSpeedObj;
         }
         if (objectKey == "sparse_infill_speed")
-            infillSpeedObj = object->config.opt_float(objectKey);
+            infillSpeedObj = object->config.get().opt_float(objectKey, 0);
         if (objectKey == "internal_solid_infill_speed")
-            solidInfillSpeedObj = object->config.opt_float(objectKey);
+            solidInfillSpeedObj = object->config.get().opt_float(objectKey, 0);
         if (objectKey == "top_surface_speed")
-            topSolidInfillSpeedObj = object->config.opt_float(objectKey);
+            topSolidInfillSpeedObj = object->config.get().opt_float(objectKey, 0);
         if (objectKey == "support_speed")
             supportSpeedObj = object->config.opt_float(objectKey);
         if (objectKey == "outer_wall_speed")
-            externalPerimeterSpeedObj = object->config.opt_float(objectKey);
+            externalPerimeterSpeedObj = object->config.get().opt_float(objectKey, 0);
         if (objectKey == "small_perimeter_speed")
             smallPerimeterSpeedObj = object->config.opt_float(objectKey);
     }

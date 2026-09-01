@@ -61,6 +61,7 @@ const t_field& OptionsGroup::build_field(const t_config_option_key& id, const Co
     default:
         switch (opt.type) {
             case coFloatOrPercent:
+            case coFloatsOrPercents:
             case coFloat:
             case coFloats:
 			case coPercent:
@@ -87,7 +88,9 @@ const t_field& OptionsGroup::build_field(const t_config_option_key& id, const Co
 				break;
             case coNone:   break;
             default:
-				throw Slic3r::LogicError("This control doesn't exist till now"); break;
+				wxLogError("Unsupported config option type %d for field '%s'; falling back to a text control.",
+                               static_cast<int>(opt.type), wxString::FromUTF8(id));
+                break;
         }
     }
     // Grab a reference to fields for convenience
@@ -235,8 +238,12 @@ Line* OptionsGroup::get_line(const std::string& opt_key)
     {
         if(l.is_separator())
             continue;
-        const std::vector<Option>& options = l.get_options();
-        if (!options.empty() && options.front().opt_id == opt_key)
+        // A full-width widget-only line (e.g. a custom banner/toggle row) has no
+        // options, so it can never match an opt_key; skip it to avoid dereferencing
+        // an empty option vector in get_first_option_key().
+        if (l.get_options().empty())
+            continue;
+        if (l.get_first_option_key() == opt_key)
             return &l;
     }
 
@@ -623,6 +630,21 @@ Option ConfigOptionsGroup::get_option(const std::string& opt_key, int opt_index 
 	return Option(*m_config->def()->get(opt_key), opt_id);
 }
 
+bool ConfigOptionsGroup::set_option_index(const std::string& opt_key, int opt_index)
+{
+    bool updated = false;
+    for (auto& option : m_opt_map)
+    {
+        if (option.second.first != opt_key)
+            continue;
+
+        option.second.second = opt_index;
+        updated = true;
+    }
+
+    return updated;
+}
+
 void ConfigOptionsGroup::on_change_OG(const t_config_option_key& opt_id, const boost::any& value)
 {
 	if (!m_opt_map.empty())
@@ -964,7 +986,8 @@ boost::any ConfigOptionsGroup::get_config_value(const DynamicPrintConfig& config
         {
         case coPercents:
         case coFloats: {
-            if (config.option(opt_key)->is_nil())
+            const auto *option = dynamic_cast<const ConfigOptionVectorBase *>(config.option(opt_key));
+            if (option != nullptr && option->is_nil(idx))
                 ret = _(L("N/A"));
             else {
                 double val = opt->type == coFloats ?
@@ -989,6 +1012,22 @@ boost::any ConfigOptionsGroup::get_config_value(const DynamicPrintConfig& config
     }
 
 	switch (opt->type) {
+	case coFloatsOrPercents: {
+        const ConfigOptionFloatsOrPercents *values = nullptr;
+        if (config.has(opt_key) && config.option(opt_key) != nullptr)
+            values = config.option<ConfigOptionFloatsOrPercents>(opt_key);
+        else if (opt->default_value)
+            values = dynamic_cast<const ConfigOptionFloatsOrPercents*>(opt->default_value.get());
+
+        if (values != nullptr && !values->values.empty()) {
+            const FloatOrPercent &value = values->values[std::min(idx, values->values.size() - 1)];
+            text_value = double_to_string(value.value);
+            if (value.percent)
+                text_value += "%";
+            ret = text_value;
+        }
+        break;
+    }
 	case coFloatOrPercent:{
         if (!config.has(opt_key) || config.option(opt_key) == nullptr) {
             const auto *defaults = opt->default_value ? dynamic_cast<const ConfigOptionFloatOrPercent*>(opt->default_value.get()) : nullptr;
@@ -1252,7 +1291,8 @@ boost::any ConfigOptionsGroup::get_config_value2(const DynamicPrintConfig& confi
         {
         case coPercents:
         case coFloats: {
-            if (config.option(opt_key)->is_nil())
+            const auto *option = dynamic_cast<const ConfigOptionVectorBase *>(config.option(opt_key));
+            if (option != nullptr && option->is_nil(idx))
                 ret = ConfigOptionFloatsNullable::nil_value();
             else {
                 double val = opt->type == coFloats ?
@@ -1274,6 +1314,22 @@ boost::any ConfigOptionsGroup::get_config_value2(const DynamicPrintConfig& confi
     }
 
     switch (opt->type) {
+    case coFloatsOrPercents: {
+        const ConfigOptionFloatsOrPercents *values = nullptr;
+        if (config.has(opt_key) && config.option(opt_key) != nullptr)
+            values = config.option<ConfigOptionFloatsOrPercents>(opt_key);
+        else if (opt->default_value)
+            values = dynamic_cast<const ConfigOptionFloatsOrPercents*>(opt->default_value.get());
+
+        if (values != nullptr && !values->values.empty()) {
+            const FloatOrPercent &value = values->values[std::min(idx, values->values.size() - 1)];
+            wxString text_value = double_to_string(value.value);
+            if (value.percent)
+                text_value += "%";
+            ret = into_u8(text_value);
+        }
+        break;
+    }
     case coFloatOrPercent:{
         if (!config.has(opt_key) || config.option(opt_key) == nullptr) {
             const auto *defaults = opt->default_value ? dynamic_cast<const ConfigOptionFloatOrPercent*>(opt->default_value.get()) : nullptr;

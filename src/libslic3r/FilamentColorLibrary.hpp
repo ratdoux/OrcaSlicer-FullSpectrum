@@ -10,8 +10,8 @@ namespace Slic3r
 
 enum class FilamentColorMode
 {
-    Segment = 0, //Single colors or side by side segments
-    Gradient = 1
+    Segment = 0, // Single colors or side-by-side segments.
+    Gradient = 1 // Gradient stops ordered from bottom to top.
 };
 
 std::string NormalizeFilamentHexColor(const std::string& color);
@@ -44,6 +44,7 @@ struct FilamentColorItem
 {
     std::unordered_map<std::string, std::string> colorNames;
     std::string sku;
+    double tdValue = 0.0;
     FilamentColor colorData;
 };
 

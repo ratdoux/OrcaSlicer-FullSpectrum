@@ -92,12 +92,14 @@ public:
     // debug mode
     ::CheckBox * m_developer_mode_ckeckbox   = {nullptr};
     ::CheckBox * m_internal_developer_mode_ckeckbox = {nullptr};
+
     ::CheckBox * m_dark_mode_ckeckbox        = {nullptr};
     ::TextInput *m_backup_interval_textinput = {nullptr};
     ::CheckBox * m_legacy_networking_ckeckbox     = {nullptr};
 
     wxString m_developer_mode_def;
     wxString m_internal_developer_mode_def;
+    wxString m_websocket_debug_def;
     wxString m_backup_interval_def;
     wxString m_iot_environment_def;
 

@@ -1581,6 +1581,14 @@ bool PresetUpdater::priv::install_bundles_rsrc(const std::vector<std::string>& b
                     updates.updates.emplace_back(std::move(rules_src), std::move(rules_dst), Version(), bundle, "", "", false, false, true);
                 }
             }
+            {
+                fs::path rules_src = rsrc_path / bundle / "filament" / "filament_allow_list.json";
+                fs::path rules_dst = vendor_path / bundle / "filament" / "filament_allow_list.json";
+                if (fs::exists(rules_src)) {
+                    fs::create_directories(rules_dst.parent_path());
+                    updates.updates.emplace_back(std::move(rules_src), std::move(rules_dst), Version(), bundle, "", "", false, false, true);
+                }
+            }
         }
 	}
 
@@ -1821,6 +1829,15 @@ Updates PresetUpdater::priv::get_config_updates(const Semver &old_slic3r_version
                             {
                                 fs::path rules_src = cache_profile_path / vendor_name / "filament" / "filament_compatibility.json";
                                 fs::path rules_dst = vendor_path / vendor_name / "filament" / "filament_compatibility.json";
+                                if (fs::exists(rules_src)) {
+                                    fs::create_directories(rules_dst.parent_path());
+                                    updates.updates.emplace_back(std::move(rules_src), std::move(rules_dst), version, vendor_name, "", "",
+                                                                 force_update, false, legal);
+                                }
+                            }
+                            {
+                                fs::path rules_src = cache_profile_path / vendor_name / "filament" / "filament_allow_list.json";
+                                fs::path rules_dst = vendor_path / vendor_name / "filament" / "filament_allow_list.json";
                                 if (fs::exists(rules_src)) {
                                     fs::create_directories(rules_dst.parent_path());
                                     updates.updates.emplace_back(std::move(rules_src), std::move(rules_dst), version, vendor_name, "", "",

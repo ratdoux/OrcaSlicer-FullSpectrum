@@ -4,7 +4,7 @@
   "instantiation": "true",
   "name": "Snapmaker PET @Dual",
   "setting_id": "4213200045",
-  "inherits": "Snapmaker PET @Dual base",
+  "inherits": "fdm_filament_pet_category",
   "compatible_printers": [
     "Snapmaker A250 Dual (0.4 nozzle)",
     "Snapmaker A250 Dual (0.6 nozzle)",
@@ -33,5 +33,50 @@
     "Snapmaker Artisan (0.4 nozzle)",
     "Snapmaker Artisan (0.6 nozzle)",
     "Snapmaker Artisan (0.8 nozzle)"
+  ],
+  "enable_pressure_advance": [
+    "1"
+  ],
+  "fan_max_speed": [
+    "50"
+  ],
+  "fan_min_speed": [
+    "26"
+  ],
+  "filament_cooling_final_speed": [
+    "60"
+  ],
+  "filament_cooling_initial_speed": [
+    "35"
+  ],
+  "filament_cooling_moves": [
+    "2"
+  ],
+  "filament_loading_speed": [
+    "35"
+  ],
+  "filament_loading_speed_start": [
+    "35"
+  ],
+  "filament_max_volumetric_speed": [
+    "6.8"
+  ],
+  "filament_unloading_speed": [
+    "35"
+  ],
+  "filament_unloading_speed_start": [
+    "35"
+  ],
+  "overhang_fan_speed": [
+    "40"
+  ],
+  "slow_down_min_speed": [
+    "35"
+  ],
+  "filament_load_time": [
+    "2"
+  ],
+  "filament_unload_time": [
+    "2"
   ]
 }

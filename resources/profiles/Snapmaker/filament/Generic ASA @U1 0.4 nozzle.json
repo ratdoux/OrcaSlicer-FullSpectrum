@@ -1,0 +1,11 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "true",
+    "name": "Generic ASA @U1 0.4 nozzle",
+    "setting_id": "GFSB98",
+    "inherits": "Generic ASA @U1 base",
+    "compatible_printers": [
+        "Snapmaker U1 (0.4 nozzle)"
+    ]
+}

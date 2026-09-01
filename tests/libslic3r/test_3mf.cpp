@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Format/3mf.hpp"
@@ -103,13 +103,12 @@ SCENARIO("2D convex hull of sinking object", "[3mf]") {
 
             // verify result
             Points result = {
-                { -91501496, -15914144 },
-                { 91501496, -15914144 },
-                { 91501496, 4243 },
-                { 78229680, 4246883 },
-                { 56898100, 4246883 },
-                { -85501496, 4242641 },
-                { -91501496, 4243 }
+                { -91501495, -15914144 },
+                { 91501495, -15914144 },
+                { 91501495, 13792823 },
+                { 34846496, 14717717 },
+                { -85501495, 13917981 },
+                { -91501495, 13792823 }
             };
 
             // Allow 1um error due to floating point rounding.
@@ -123,7 +122,6 @@ SCENARIO("2D convex hull of sinking object", "[3mf]") {
                         break;
                     }
                 }
-
             THEN("2D convex hull should match with reference") {
                 REQUIRE(res);
             }

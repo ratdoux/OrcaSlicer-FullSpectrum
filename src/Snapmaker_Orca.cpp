@@ -5028,7 +5028,7 @@ int CLI::run(int argc, char **argv)
                                     case STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE:
                                         validate_error = CLI_FILAMENT_NOT_MATCH_BED_TYPE;
                                         break;
-                                    case STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP:
+                                    case STRING_EXCEPT_FILAMENTS_MIXING_TEMP:
                                         validate_error = CLI_FILAMENTS_DIFFERENT_TEMP;
                                         break;
                                     case STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT:

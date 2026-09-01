@@ -4,16 +4,11 @@
   "instantiation": "true",
   "name": "Snapmaker Breakaway Support @J1",
   "filament_id": "4227461134",
-  "inherits": "Snapmaker Breakaway Support @base",
-  "filament_end_gcode": [
-    ""
-  ],
-  "slow_down_layer_time": [
-    "8"
-  ],
+  "inherits": "fdm_filament_support_breakaway_category",
   "compatible_printers": [
     "Snapmaker J1 (0.4 nozzle)",
     "Snapmaker J1 (0.6 nozzle)",
     "Snapmaker J1 (0.8 nozzle)"
-  ]
+  ],
+  "filament_type": ["Breakaway Support"]
 }

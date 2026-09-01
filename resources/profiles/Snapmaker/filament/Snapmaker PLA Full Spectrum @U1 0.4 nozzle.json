@@ -4,7 +4,7 @@
     "instantiation": "true",
     "name": "Snapmaker PLA Full Spectrum @U1 0.4 nozzle",
     "setting_id": "1195313935011",
-    "inherits": "Snapmaker PLA Basic @U1 base",
+    "inherits": "Snapmaker PLA Full Spectrum @U1 base",
     "compatible_printers": [
         "Snapmaker U1 (0.4 nozzle)"
     ],
@@ -287,5 +287,42 @@
     ],
     "graphic_effect_plate_temp_initial_layer": [
         "65"
+    ],
+    "default_filament_colour": [
+        ""
+    ],
+    "filament_flow_support": [
+        "standard"
+    ],
+    "filament_is_high_temperature": [
+        "0"
+    ],
+    "filament_retract_restart_extra_toolchange": [
+        "nil"
+    ],
+    "filament_settings_id": [
+        ""
+    ],
+    "filament_tower_ironing_area": [
+        "4"
+    ],
+    "internal_bridge_fan_speed": [
+        "-1"
+    ],
+    "ironing_fan_speed": [
+        "-1"
+    ],
+    "supertack_plate_temp": [
+        "35"
+    ],
+    "supertack_plate_temp_initial_layer": [
+        "35"
+    ],
+    "version": "0.0.0.0",
+    "filament_load_time": [
+        "2"
+    ],
+    "filament_unload_time": [
+        "2"
     ]
 }

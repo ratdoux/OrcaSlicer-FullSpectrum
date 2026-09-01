@@ -2,6 +2,7 @@
 #include "GUI_App.hpp"
 #include "MsgDialog.hpp"
 #include "libslic3r/Preset.hpp"
+#include "libslic3r/PresetFlowVariant.hpp"
 #include "I18N.hpp"
 #include <boost/log/trivial.hpp>
 #include <wx/dcgraph.h>
@@ -466,7 +467,8 @@ void ExtrusionCalibration::on_click_cali(wxCommandEvent& event)
                         const ConfigOptionFloats* speed_opt = it->config.option<ConfigOptionFloats>("filament_max_volumetric_speed");
                         if (nozzle_temp_opt && speed_opt) {
                             nozzle_temp = nozzle_temp_opt->get_at(0);
-                            max_volumetric_speed = speed_opt->get_at(0);
+                            const FilamentVolumeType volume_type = get_nozzle_volume_type(preset_bundle->printers.get_edited_preset().config, 0);
+                            max_volumetric_speed = get_preset_value_at(it->config, *speed_opt, ConfigFlowDomain::Filament, volume_type);
                             if (bed_temp >= 0 && nozzle_temp >= 0 && max_volumetric_speed >= 0) {
                                 int curr_tray_id = ams_id * 4 + tray_id;
                                 if (tray_id == VIRTUAL_TRAY_ID)
@@ -586,7 +588,10 @@ void ExtrusionCalibration::on_click_save(wxCommandEvent &event)
                     const ConfigOptionFloats* speed_opt = it->config.option<ConfigOptionFloats>("filament_max_volumetric_speed");
                     if (nozzle_temp_opt && speed_opt) {
                         nozzle_temp = nozzle_temp_opt->get_at(0);
-                        max_volumetric_speed = speed_opt->get_at(0);
+                        const FilamentVolumeType volume_type = get_nozzle_volume_type(
+                            preset_bundle->printers.get_edited_preset().config, 0);
+                        max_volumetric_speed = get_preset_value_at(
+                            it->config, *speed_opt, ConfigFlowDomain::Filament, volume_type);
                     }
                     setting_id = it->setting_id;
                     name = it->name;
@@ -815,7 +820,10 @@ void ExtrusionCalibration::update_filament_info()
                 if (opt_flow_speed) {
                     ConfigOptionFloats* opt_flow_floats = dynamic_cast<ConfigOptionFloats*>(opt_flow_speed);
                     if (opt_flow_floats) {
-                        wxString flow_val_text = wxString::Format("%0.2f", opt_flow_floats->get_at(0));
+                        const FilamentVolumeType volume_type = get_nozzle_volume_type(preset_bundle->printers.get_edited_preset().config, 0);
+                        const double max_speed = get_preset_value_at(filament_it->config, *opt_flow_floats,
+                                                                    ConfigFlowDomain::Filament, volume_type);
+                        wxString flow_val_text = wxString::Format("%0.2f", max_speed);
                         m_max_flow_ratio->GetTextCtrl()->SetValue(flow_val_text);
                     }
                 }

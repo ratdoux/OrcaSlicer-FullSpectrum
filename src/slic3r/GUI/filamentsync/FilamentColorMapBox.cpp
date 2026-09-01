@@ -179,14 +179,14 @@ void FilamentColorMapBox::onPaint(wxPaintEvent&)
     gdc.SetBrush(g_cardBg);
     gdc.DrawRoundedRectangle(0, 0, w, totalH, radius);
 
-    // ---- 2. Top bar (above filament colour bitmap, clipped to top half) ----
+    // ---- 2. Top bar with the complete filament color range ----
     {
         std::vector<wxColour> aboveColors = getAllColors(m_aboveFilament.m_color);
-        bool aboveIsGradient = m_aboveFilament.m_color.NormalizedMode() == FilamentColorMode::Gradient;
+        const FilamentColorMode aboveMode = m_aboveFilament.m_color.NormalizedMode();
         const int barR = radius;
         CornerRadius topCorners = {barR, barR, 0, 0};
-        wxBitmap* aboveBmp = get_color_block_bitmap_cached(aboveColors, aboveIsGradient,
-            w, totalH, wxEmptyString, wxColour(), topCorners);
+        wxBitmap* aboveBmp = get_color_block_bitmap_cached(aboveColors, aboveMode, w, splitY, wxEmptyString,
+                                                           wxColour(), topCorners);
         wxDCClipper clip(gdc, wxRect(0, 0, w, splitY));
         if (aboveBmp && aboveBmp->IsOk())
             gdc.DrawBitmap(*aboveBmp, 0, 0);
@@ -226,10 +226,9 @@ void FilamentColorMapBox::onPaint(wxPaintEvent&)
         const int cr      = circleD / 2;
 
         std::vector<wxColour> belowColors = getAllColors(m_belowFilament.m_color);
-        bool belowIsGradient = m_belowFilament.m_color.NormalizedMode() == FilamentColorMode::Gradient;
-        wxBitmap* belowBmp = get_color_block_bitmap_cached(belowColors, belowIsGradient,
-            circleD, circleD, wxEmptyString, borderColour,
-            CornerRadius::Uniform(cr));
+        const FilamentColorMode belowMode = m_belowFilament.m_color.NormalizedMode();
+        wxBitmap* belowBmp = get_color_block_bitmap_cached(belowColors, belowMode, circleD, circleD, wxEmptyString,
+                                                           borderColour, CornerRadius::Uniform(cr));
         if (belowBmp && belowBmp->IsOk())
             gdc.DrawBitmap(*belowBmp, cx - cr, cy - cr);
 

@@ -1,0 +1,95 @@
+{
+  "type": "filament",
+  "from": "system",
+  "instantiation": "true",
+  "name": "Snapmaker PEBA 90A @U1 0.4 nozzle",
+  "inherits": "Snapmaker PEBA 90A @U1 base",
+  "filament_id": "SNPPEBA001",
+  "compatible_printers": [
+    "Snapmaker U1 (0.4 nozzle)"
+  ],
+  "additional_cooling_fan_speed": [
+    "70"
+  ],
+  "complete_print_exhaust_fan_speed": [
+    "70"
+  ],
+  "during_print_exhaust_fan_speed": [
+    "70"
+  ],
+  "fan_cooling_layer_time": [
+    "100"
+  ],
+  "fan_min_speed": [
+    "100"
+  ],
+  "filament_cost": [
+    "39.9"
+  ],
+  "filament_density": [
+    "1.21"
+  ],
+  "filament_flow_ratio": [
+    "1.045"
+  ],
+  "filament_max_volumetric_speed": [
+    "5"
+  ],
+  "filament_multitool_ramming": [
+    "1"
+  ],
+  "filament_multitool_ramming_volume": [
+    "0.01"
+  ],
+  "filament_retract_length_toolchange": [
+    "4"
+  ],
+  "filament_retraction_length": [
+    "1"
+  ],
+  "filament_retraction_speed": [
+    "20"
+  ],
+  "hot_plate_temp": [
+    "100"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "100"
+  ],
+  "nozzle_temperature": [
+    "235"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "235"
+  ],
+  "nozzle_temperature_range_high": [
+    "250"
+  ],
+  "nozzle_temperature_range_low": [
+    "200"
+  ],
+  "pressure_advance": [
+    "0.4"
+  ],
+  "reduce_fan_stop_start_freq": [
+    "1"
+  ],
+  "slow_down_layer_time": [
+    "8"
+  ],
+  "supertack_plate_temp": [
+    "0"
+  ],
+  "supertack_plate_temp_initial_layer": [
+    "0"
+  ],
+  "temperature_vitrification": [
+    "110"
+  ],
+  "textured_plate_temp": [
+    "100"
+  ],
+  "textured_plate_temp_initial_layer": [
+    "100"
+  ]
+}

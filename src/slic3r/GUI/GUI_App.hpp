@@ -433,9 +433,6 @@ private:
     bool show_3d_navigator() const { return app_config->get_bool("show_3d_navigator"); }
     void toggle_show_3d_navigator() const { app_config->set_bool("show_3d_navigator", !show_3d_navigator()); }
 
-    bool show_outline() const { return app_config->get_bool("show_outline"); }
-    void toggle_show_outline() const { app_config->set_bool("show_outline", !show_outline()); }
-
     wxString get_inf_dialog_contect () {return m_info_dialog_content;};
 
     std::vector<std::string> split_str(std::string src, std::string separator);
@@ -542,6 +539,8 @@ private:
     bool            is_user_login();
 
     wxString get_international_url(const wxString& origin_url);
+    wxString flutter_web_base_url(const wxString& path);
+    wxString build_flutter_web_url(const wxString& path);
 
     // SM
     struct SMUserInfo
@@ -593,7 +592,16 @@ private:
     void            sm_request_login(bool show_user_info = false);
     void            sm_ShowUserLogin(bool show  =  true);
     void            sm_request_user_logout();
-  
+
+    // Silent login-token maintenance: the Snapmaker access token expires after
+    // ~24 h; a hidden login webview re-runs the cookie session and picks up a
+    // fresh token without user interaction.
+    void            sm_maybe_refresh_login_token();  // due-check + guards; main thread
+    void            sm_on_token_captured(std::size_t refresh_generation); // call on every token acquisition
+    void            sm_stop_silent_token_refresh();  // drop an in-flight silent refresh
+    bool            sm_is_token_refresh_current(std::size_t refresh_generation) const;
+    std::size_t     sm_token_refresh_generation() const { return m_silent_refresh_generation; }
+
     void            request_user_logout();
     int             request_user_unbind(std::string dev_id);
     std::string     handle_web_request(std::string cmd);
@@ -865,11 +873,28 @@ private:
     std::string             m_open_method;
     SMUserInfo m_login_userinfo;
 
+    // --- Silent login-token refresh bookkeeping (see sm_maybe_refresh_login_token) ---
+    static constexpr int SM_TOKEN_REFRESH_INTERVAL_H = 12;           // refresh cadence, well inside the 24 h token lifetime
+    static constexpr int SM_TOKEN_REFRESH_RETRY_MIN  = 30;           // min wait after a failed attempt
+    static constexpr int SM_TOKEN_REFRESH_TIMEOUT_S  = 120;          // give up on a single silent attempt
+    static constexpr int SM_TOKEN_CHECK_INTERVAL_MS  = 5 * 60 * 1000; // periodic due-check tick
+
+    std::chrono::system_clock::time_point m_token_last_refresh_success{};
+    std::chrono::system_clock::time_point m_token_last_refresh_attempt{};
+    std::size_t                           m_silent_refresh_generation     = 0;
+    bool     m_sm_silent_refresh_in_progress = false;
+    bool     m_sm_login_dialog_showing       = false;
+    std::unique_ptr<wxTimer>              m_token_check_timer;
+    std::unique_ptr<wxTimer>              m_silent_refresh_timeout_timer;
+    void     on_token_check_timer(wxTimerEvent &event);
+    void     on_silent_refresh_timeout(wxTimerEvent &event);
+
 public:
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_recent_file_subscribers;
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_user_login_subscribers;
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_device_card_subscribers;
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_page_state_subscribers;
+    std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_foreground_change_subscribers;
     std::unordered_map<void*, std::weak_ptr<SSWCP_Instance>> m_user_update_privacy_subscribers;
     struct CachePairCompare
     {
@@ -885,6 +910,8 @@ public:
     void user_login_notify(const json& res);
     void device_card_notify(const json& res);
     void page_state_notify_webview(wxWebView* webview, const std::string& state);
+    // Push foreground/background state change to all subscribed webview instances
+    void notify_foreground_change(const bool active);
     void cache_notify(const std::string& key, const json& res);
     void user_update_privacy_notify(const bool& res);
 

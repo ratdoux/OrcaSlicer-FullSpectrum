@@ -4,6 +4,8 @@
 #include "Widgets/Label.hpp"
 #include "MsgDialog.hpp"
 #include "libslic3r/Print.hpp"
+#include "libslic3r/Preset.hpp"
+#include "libslic3r/PresetFlowVariant.hpp"
 
 namespace Slic3r { namespace GUI {
 static int PA_LINE = 0;
@@ -937,7 +939,11 @@ void CalibrationPresetPage::on_recommend_input_value()
             if (m_custom_range_panel) {
                 const ConfigOptionFloats* speed_opt = selected_filament_preset->config.option<ConfigOptionFloats>("filament_max_volumetric_speed");
                 if (speed_opt) {
-                    double max_volumetric_speed = speed_opt->get_at(0);
+                    const Preset *printer_preset = get_printer_preset(curr_obj, get_nozzle_value());
+                    const FilamentVolumeType volume_type = printer_preset == nullptr ? fvtStandard :
+                        get_nozzle_volume_type(printer_preset->config, 0);
+                    double max_volumetric_speed = get_preset_value_at(selected_filament_preset->config, *speed_opt,
+                                                                      ConfigFlowDomain::Filament, volume_type);
                     wxArrayString values;
                     values.push_back(wxString::Format("%.2f", max_volumetric_speed - 5));
                     values.push_back(wxString::Format("%.2f", max_volumetric_speed + 5));

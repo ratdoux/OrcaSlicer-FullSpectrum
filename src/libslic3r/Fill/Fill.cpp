@@ -924,12 +924,14 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
 					layerm.flow(extrusion_role, (surface.thickness == -1) ? layer.height : surface.thickness);
 				// record speed params
                 if (!params.bridge) {
+                    const PrintConfig  &print_config = layer.object()->print()->config();
+                    const unsigned int  filament_id  = params.extruder > 0 ? params.extruder - 1 : 0;
                     if (params.extrusion_role == erInternalInfill)
-                        params.sparse_infill_speed = region_config.sparse_infill_speed;
+                        params.sparse_infill_speed = get_value_at(print_config, region_config.sparse_infill_speed, ConfigFlowDomain::Process, filament_id);
                     else if (params.extrusion_role == erTopSolidInfill) {
-                        params.top_surface_speed = region_config.top_surface_speed;
+                        params.top_surface_speed = get_value_at(print_config, region_config.top_surface_speed, ConfigFlowDomain::Process, filament_id);
                     } else if (params.extrusion_role == erSolidInfill)
-                        params.solid_infill_speed = region_config.internal_solid_infill_speed;
+                        params.solid_infill_speed = get_value_at(print_config, region_config.internal_solid_infill_speed, ConfigFlowDomain::Process, filament_id);
                 }
 				// Calculate flow spacing for infill pattern generation.
 		        if (surface.is_solid() || is_bridge) {
@@ -1544,7 +1546,7 @@ void Layer::make_ironing()
 				ironing_params.line_spacing = config.ironing_spacing;
                 ironing_params.inset 		= config.ironing_inset;
 				ironing_params.height 		= default_layer_height * 0.01 * config.ironing_flow;
-				ironing_params.speed 		= config.ironing_speed;
+				ironing_params.speed 		= config.ironing_speed.values.front();
                 ironing_params.angle        = (config.ironing_angle >= 0 ? config.ironing_angle : config.infill_direction) * M_PI / 180.;
 				ironing_params.pattern      = config.ironing_pattern;
 				ironing_params.layerm 		= layerm;

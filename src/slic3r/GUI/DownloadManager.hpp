@@ -30,6 +30,8 @@ struct DownloadCallbacks {
     std::function<void(size_t task_id, int percent, size_t downloaded, size_t total)> on_progress;
     std::function<void(size_t task_id, const std::string& file_path)> on_complete;
     std::function<void(size_t task_id, const std::string& error)> on_error;
+    // Called right before writing the downloaded body to disk.
+    std::function<bool()> on_should_write;
     
     DownloadCallbacks() = default;
     DownloadCallbacks(
@@ -57,24 +59,40 @@ struct DownloadTask {
     DownloadTaskState state;
     int percent;
     std::string error_message;
-    
+
+    bool need_decrypt;
+    std::string sn;
+    std::string decrypt_path;
+
     bool auto_finish_job;
     bool use_original_event_id;
-    
+
     // Constructor for WCP downloads
-    DownloadTask(size_t id, const std::string& url, const std::string& name, 
+    DownloadTask(size_t id, const std::string& url, const std::string& name,
                  const std::string& path, std::shared_ptr<SSWCP_Instance> instance,
-                 bool use_original_event = false)
+                 bool use_original_event = false, bool decrypt = true,
+                 const std::string& sn_param = "")
         : task_id(id), file_url(url), file_name(name), dest_path(path)
         , wcp_instance(instance), state(DownloadTaskState::Pending), percent(0)
+        , need_decrypt(decrypt), sn(sn_param)
         , auto_finish_job(false), use_original_event_id(use_original_event)
     {}
     
     // Constructor for internal downloads
-    DownloadTask(size_t id, const std::string& url, const std::string& name, 
+    DownloadTask(size_t id, const std::string& url, const std::string& name,
                  const std::string& path, DownloadCallbacks cb)
         : task_id(id), file_url(url), file_name(name), dest_path(path)
         , callbacks(std::move(cb)), state(DownloadTaskState::Pending), percent(0)
+        , need_decrypt(false), auto_finish_job(false), use_original_event_id(false)
+    {}
+
+    // Constructor for internal downloads with encryption support
+    DownloadTask(size_t id, const std::string& url, const std::string& name,
+                 const std::string& path, DownloadCallbacks cb,
+                 bool decrypt, const std::string& sn_param)
+        : task_id(id), file_url(url), file_name(name), dest_path(path)
+        , callbacks(std::move(cb)), state(DownloadTaskState::Pending), percent(0)
+        , need_decrypt(decrypt), sn(sn_param)
         , auto_finish_job(false), use_original_event_id(false)
     {}
     
@@ -95,10 +113,17 @@ public:
     // ============================================================================
     // WCP Download Interface (for Web-to-PC communication)
     // ============================================================================
-    size_t start_wcp_download(const std::string& file_url, 
+    size_t start_wcp_download(const std::string& file_url,
                               const std::string& file_name,
                               std::shared_ptr<SSWCP_Instance> wcp_instance,
                               bool use_original_event_id = false);
+
+    size_t start_wcp_download(const std::string& file_url,
+                              const std::string& file_name,
+                              std::shared_ptr<SSWCP_Instance> wcp_instance,
+                              bool use_original_event_id,
+                              bool need_decrypt,
+                              const std::string& sn);
     
     // ============================================================================
     // Internal Download Interface (for PC internal use)
@@ -111,7 +136,13 @@ public:
     size_t start_internal_download(const std::string& file_url,
                                     const std::string& file_name,
                                     DownloadCallbacks callbacks);
-    
+
+    size_t start_internal_download(const std::string& file_url,
+                                    const std::string& file_name,
+                                    DownloadCallbacks callbacks,
+                                    bool need_decrypt,
+                                    const std::string& sn);
+
     // ============================================================================
     // Common Interface (works for both WCP and internal downloads)
     // ============================================================================

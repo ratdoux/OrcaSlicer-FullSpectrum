@@ -442,6 +442,8 @@ wxBitmap create_scaled_bitmap(  const std::string& bmp_name_in,
                                 const vector<std::string>& array_new_color/* = vector<std::string>*/)//used for semi transparent material)
 {
     static Slic3r::GUI::BitmapCache cache;
+    if (win == nullptr)
+        win = (wxWindow*)Slic3r::GUI::wxGetApp().mainframe;
     if (bitmap2) {
         return create_scaled_bitmap2(bmp_name_in, cache, win, px_cnt, grayscale, resize, array_new_color);
     }

@@ -1,4 +1,5 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <memory>
 
@@ -7,10 +8,13 @@
 using namespace Slic3r;
 
 SCENARIO("lift() is not ignored after unlift() at normal values of Z", "[GCodeWriter]") {
-    GIVEN("A config from a file and a single extruder.") {
+    GIVEN("A config with z-hop and a single extruder.") {
         GCodeWriter writer;
+        writer.apply_print_config(static_cast<const PrintConfig &>(FullPrintConfig::defaults()));
         GCodeConfig &config = writer.config;
-        config.load(std::string(TEST_DATA_DIR) + "/fff_print_tests/test_gcodewriter/config_lift_unlift.ini", ForwardCompatibilitySubstitutionRule::Disable);
+        config.z_hop.values = { 1.5 };
+        config.retract_lift_above.values = { 0.0 };
+        config.retract_lift_below.values = { 0.0 };
 
         std::vector<unsigned int> extruder_ids {0};
         writer.set_extruders(extruder_ids);
@@ -20,13 +24,15 @@ SCENARIO("lift() is not ignored after unlift() at normal values of Z", "[GCodeWr
             double trouble_Z = 203;
             writer.travel_to_z(trouble_Z);
             AND_WHEN("GcodeWriter::Lift() is called") {
-                REQUIRE(writer.lift().size() > 0);
+                writer.lift();
+                REQUIRE(writer.travel_to_xyz(Vec3d(1, 0, trouble_Z)).size() > 0);
                 AND_WHEN("Z is moved post-lift to the same delta as the config Z lift") {
                     REQUIRE(writer.travel_to_z(trouble_Z + config.z_hop.values[0]).size() == 0);
                     AND_WHEN("GCodeWriter::Unlift() is called") {
                         REQUIRE(writer.unlift().size() == 0); // we're the same height so no additional move happens.
-                        THEN("GCodeWriter::Lift() emits gcode.") {
-                            REQUIRE(writer.lift().size() > 0);
+                        THEN("GCodeWriter::Lift() schedules a new lift.") {
+                            writer.lift();
+                            REQUIRE(writer.travel_to_xyz(Vec3d(2, 0, trouble_Z + config.z_hop.values[0])).size() > 0);
                         }
                     }
                 }
@@ -36,13 +42,15 @@ SCENARIO("lift() is not ignored after unlift() at normal values of Z", "[GCodeWr
             double trouble_Z = 500003;
             writer.travel_to_z(trouble_Z);
             AND_WHEN("GcodeWriter::Lift() is called") {
-                REQUIRE(writer.lift().size() > 0);
+                writer.lift();
+                REQUIRE(writer.travel_to_xyz(Vec3d(1, 0, trouble_Z)).size() > 0);
                 AND_WHEN("Z is moved post-lift to the same delta as the config Z lift") {
                     REQUIRE(writer.travel_to_z(trouble_Z + config.z_hop.values[0]).size() == 0);
                     AND_WHEN("GCodeWriter::Unlift() is called") {
                         REQUIRE(writer.unlift().size() == 0); // we're the same height so no additional move happens.
-                        THEN("GCodeWriter::Lift() emits gcode.") {
-                            REQUIRE(writer.lift().size() > 0);
+                        THEN("GCodeWriter::Lift() schedules a new lift.") {
+                            writer.lift();
+                            REQUIRE(writer.travel_to_xyz(Vec3d(2, 0, trouble_Z + config.z_hop.values[0])).size() > 0);
                         }
                     }
                 }
@@ -52,13 +60,15 @@ SCENARIO("lift() is not ignored after unlift() at normal values of Z", "[GCodeWr
             double trouble_Z = 10.3;
             writer.travel_to_z(trouble_Z);
             AND_WHEN("GcodeWriter::Lift() is called") {
-                REQUIRE(writer.lift().size() > 0);
+                writer.lift();
+                REQUIRE(writer.travel_to_xyz(Vec3d(1, 0, trouble_Z)).size() > 0);
                 AND_WHEN("Z is moved post-lift to the same delta as the config Z lift") {
                     REQUIRE(writer.travel_to_z(trouble_Z + config.z_hop.values[0]).size() == 0);
                     AND_WHEN("GCodeWriter::Unlift() is called") {
                         REQUIRE(writer.unlift().size() == 0); // we're the same height so no additional move happens.
-                        THEN("GCodeWriter::Lift() emits gcode.") {
-                            REQUIRE(writer.lift().size() > 0);
+                        THEN("GCodeWriter::Lift() schedules a new lift.") {
+                            writer.lift();
+                            REQUIRE(writer.travel_to_xyz(Vec3d(2, 0, trouble_Z + config.z_hop.values[0])).size() > 0);
                         }
                     }
                 }

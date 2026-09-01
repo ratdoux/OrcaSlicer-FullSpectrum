@@ -17499,6 +17499,27 @@ msgstr ""
 "您知道嗎？您可以使用更多的牆層數和更高的疏散填充密度來提高模型\n"
 "強度。"
 
+msgid "Memory Usage Warning"
+msgstr "記憶體用量警告"
+
+msgid "Available system memory is critically low during slicing. Continuing may cause the application to freeze or crash."
+msgstr "切片過程中系統可用記憶體嚴重不足，繼續可能導致軟體卡死或崩潰。"
+
+msgid "Do you want to continue slicing?"
+msgstr "是否繼續執行切片？"
+
+msgid "Select \"Yes\" to attempt slicing, but the software may lag or freeze."
+msgstr "選擇\"是\"可嘗試切片，但可能出現軟體卡頓或無回應的問題"
+
+msgid "Select \"No\" to terminate the slicing task immediately."
+msgstr "選擇\"否\"將立即停止切片任務"
+
+msgid "Yes, Continue"
+msgstr "是，繼續"
+
+msgid "No, Stop"
+msgstr "否，停止"
+
 #: resources/data/hints.ini: [hint:When do you need to print with the printer
 #: door opened]
 #, fuzzy

@@ -32,6 +32,10 @@ if(WIN32)
     target_compile_definitions(expat PRIVATE COMPILED_FROM_DSP XML_STATIC)
 endif()
 
+# Enable 64-bit size/index types (XML_Size, XML_Index) to support
+# parsing of very large XML files (>2GB) without internal overflow.
+target_compile_definitions(expat PUBLIC XML_LARGE_SIZE)
+
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     target_compile_options(expat PRIVATE -Wno-unused-parameter)
 endif()

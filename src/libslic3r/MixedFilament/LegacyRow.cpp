@@ -290,7 +290,7 @@ int normalize_legacy_distribution_mode(int distribution_mode, const std::string&
 void normalize_legacy_row(MixedFilamentLegacyRow& mf)
 {
     mf.distribution_mode = normalize_legacy_distribution_mode(mf.distribution_mode, mf.gradient_component_ids);
-    const size_t gradient_component_count = decode_gradient_component_ids(mf.gradient_component_ids, 9).size();
+    const size_t gradient_component_count = decode_gradient_component_ids(mf.gradient_component_ids, 0).size();
     const size_t expected_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
         (mf.gradient_enabled ? size_t(3) : size_t(0));
     mf.gradient_stop_positions = normalize_gradient_stop_positions(mf.gradient_stop_positions, expected_stops);

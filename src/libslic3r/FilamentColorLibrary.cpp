@@ -113,7 +113,7 @@ int JsonMode(const nlohmann::json& j)
     nlohmann::json::const_iterator it = j.find("mode");
     if (it == j.end() || !it->is_number_integer())
         return 0;
-    return it->get<int>() == 1 ? 1 : 0;
+    return it->get<int>();
 }
 
 bool JsonBool(const nlohmann::json& j, const char* key, bool defaultValue)
@@ -242,14 +242,18 @@ std::string GetFilamentMatchName(const std::string& name)
             matchName = matchName.substr(0, nozzlePos);
     }
 
+    const size_t atPos = matchName.find('@');
+    if (atPos != std::string::npos)
+        matchName = TrimCopy(matchName.substr(0, atPos));
+
     return TrimCopy(matchName);
 }
 
 FilamentColorMode FilamentColorModeFromConfig(int modeValue)
 {
-    if (modeValue == static_cast<int>(FilamentColorMode::Gradient))
-        return FilamentColorMode::Gradient;
-    return FilamentColorMode::Segment;
+    if (modeValue == static_cast<int>(FilamentColorMode::Segment))
+        return FilamentColorMode::Segment;
+    return FilamentColorMode::Gradient;
 }
 
 int FilamentColorModeToConfig(FilamentColorMode mode)
@@ -462,7 +466,10 @@ bool FilamentColorLibrary::LoadIndex()
             FilamentColorItem colorItem;
             colorItem.sku = JsonString(colorJson, "sku");
             colorItem.colorNames = JsonStringMap(colorJson, "color_name");
-            colorItem.colorData.mode = FilamentColorModeFromConfig(JsonMode(colorJson));
+            nlohmann::json::const_iterator tdIt = colorJson.find("TD");
+            if (tdIt != colorJson.end() && tdIt->is_number())
+                colorItem.tdValue = tdIt->get<double>();
+            const int modeValue = JsonMode(colorJson);
 
             bool hasInvalidColor = false;
             for (const std::string& rawColor : JsonStringArray(colorJson, "filament_color"))
@@ -478,6 +485,8 @@ bool FilamentColorLibrary::LoadIndex()
                 continue;
             }
 
+            colorItem.colorData.mode = FilamentColorModeFromConfig(modeValue);
+
             if (colorItem.sku.empty() || colorItem.colorData.colors.empty())
             {
                 BOOST_LOG_TRIVIAL(warning) << "Skip incomplete color item for official filament: "
@@ -485,10 +494,11 @@ bool FilamentColorLibrary::LoadIndex()
                 continue;
             }
 
-            if ((colorItem.colorData.mode == FilamentColorMode::Gradient && colorItem.colorData.colors.size() < 2) ||
-                (colorItem.colorData.mode == FilamentColorMode::Segment && colorItem.colorData.colors.size() > 2))
+            const bool isGradient = colorItem.colorData.IsGradient();
+            if ((isGradient && colorItem.colorData.colors.size() < 2) ||
+                (!isGradient && colorItem.colorData.colors.size() > 2))
             {
-                // Gradient requires at least 2 colors; segment supports at most 2 colors.
+                // Gradients require at least 2 colors; segments support at most 2 colors.
                 BOOST_LOG_TRIVIAL(warning) << "Skip color item with invalid color count: " << colorItem.sku;
                 continue;
             }

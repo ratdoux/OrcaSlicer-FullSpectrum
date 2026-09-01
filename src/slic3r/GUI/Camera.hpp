@@ -3,7 +3,7 @@
 
 #include "libslic3r/BoundingBox.hpp"
 #include "3DScene.hpp"
-#include <array>
+#include "../Utils/Frustum.hpp"
 
 namespace Slic3r {
 namespace GUI {
@@ -56,6 +56,7 @@ private:
     std::pair<double, double> m_frustrum_zs;
 
     BoundingBoxf3 m_scene_box;
+    Frustum       m_frustum;
 
 public:
     Camera() { set_default_orientation(); }
@@ -166,6 +167,17 @@ public:
 
     double max_zoom() const { return 250.0; }
     double min_zoom() const { return 0.2 * calc_zoom_to_bounding_box_factor(m_scene_box); }
+
+    /// <summary>
+    /// get the current frustrum planes. The planes are in world space and normalized (the normal vector has unit length).
+    /// </summary>
+    /// <returns></returns>
+    const Frustum& GetFrustum() const { return m_frustum; }
+
+    /// <summary>
+    /// extract the planes of the frustrum from the current projection and view matrix and update m_frustrum
+    /// </summary>
+    void UpdateFrustum();
 
 private:
     // returns tight values for nearZ and farZ plane around the given bounding box

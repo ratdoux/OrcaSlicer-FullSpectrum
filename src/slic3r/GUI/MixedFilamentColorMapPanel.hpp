@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <string>
+#include <array>
 #include <vector>
 
 namespace Slic3r { namespace GUI {

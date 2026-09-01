@@ -4,10 +4,7 @@
   "instantiation": "false",
   "name": "Snapmaker PET @Dual base",
   "filament_id": "2128577941",
-  "inherits": "fdm_filament_pet",
-  "filament_end_gcode": [
-    ""
-  ],
+  "inherits": "fdm_filament_pet_category",
   "overhang_fan_speed": [
     "40"
   ],
@@ -49,5 +46,9 @@
   ],
   "slow_down_min_speed": [
     "35"
+  ],
+  "compatible_printers": [],
+  "enable_pressure_advance": [
+    "1"
   ]
 }

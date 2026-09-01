@@ -53,14 +53,14 @@ class MqttClient : public mqtt::callback,
                   public std::enable_shared_from_this<MqttClient>
 {
 public:
-    // 基础构造函数 - 用于普通MQTT连接
+    // normal MQTT connect 
     MqttClient(const std::string& server_address,
                const std::string& client_id,
                const std::string& username = "",
                const std::string& password = "",
                bool               clean_session = false);
                
-    // SSL/TLS构造函数 - 使用证书内容
+    // SSL/TLS - and use CA connect
     MqttClient(const std::string& server_address, 
                const std::string& client_id,
                const std::string& ca_content,
@@ -92,7 +92,7 @@ public:
     void SetMessageCallback(std::function<void(const std::string& topic, const std::string& payload)> callback);
     void SetMessageCallback(std::function<void(const std::string& topic, const std::string& payload, void* this_)> callback);
 
-    // 添加设置连接失败回调的方法
+    //  add set connect callback
     void SetConnectionFailureCallback(std::function<void()> callback) {
         connection_failure_callback_ = callback;
     }
@@ -124,21 +124,21 @@ private:
     action_listener subListener_;    // Subscription listener
     int connect_retry_time_;         // Connection retry counter
     int subscribe_retry_time_;       // Subscription retry counter
-    std::function<void()> connection_failure_callback_;  // 连接失败的回调函数
+    std::function<void()> connection_failure_callback_; 
 
-    std::atomic<bool> is_reconnecting; // 是否正在调试重连
-    std::atomic<int> pending_reconnect_checks;  // 添加重连检查计数器
-    std::atomic<bool> ever_connected_;  // 是否曾经成功连接过
+    std::atomic<bool> is_reconnecting; 
+    std::atomic<int> pending_reconnect_checks;  
+    std::atomic<bool> ever_connected_;  
 
-    // 临时文件路径
+    // tmp path
     boost::filesystem::path temp_ca_path_;
     boost::filesystem::path temp_cert_path_;
     boost::filesystem::path temp_key_path_;
     
-    // 清理临时文件的方法
+    // clean tmp files
     void cleanup_temp_files();
 
-    // 添加新的私有方法来处理重新订阅
+    //add new fucntion to resubscribe
     void resubscribe_topics();
     void add_topic_to_resubscribe(const std::string& topic, int qos);
     void remove_topic_from_resubscribe(const std::string& topic);

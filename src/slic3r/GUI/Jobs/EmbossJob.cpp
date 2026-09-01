@@ -371,6 +371,7 @@ void CreateObjectJob::finalize(bool canceled, std::exception_ptr &eptr)
         Slic3r::Geometry::Transformation tr(m_transformation);
         new_object->instances.front()->set_transformation(tr);
         new_object->ensure_on_bed();
+        model.InitializeAssemblyPositions({new_object});
 
         // Actualize right panel and set inside of selection
         app.obj_list()->paste_objects_into_list({model.objects.size() - 1});

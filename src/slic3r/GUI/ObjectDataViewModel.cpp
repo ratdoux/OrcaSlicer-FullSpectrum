@@ -417,7 +417,13 @@ void ObjectDataViewModelNode::UpdateExtruderAndColorIcon(wxString extruder)
     if (extruder_id == 0) {
         if (m_type & itObject);
         else if (m_type & itVolume && m_volume_type == ModelVolumeType::MODEL_PART) {
-            extruder_id = parse_extruder_string_to_id(m_parent->GetExtruder());
+            // A part explicitly set to "default" (extruder 0) shows the default
+            // icon — do NOT inherit the parent object's color.  Volumes that
+            // truly inherit (no own extruder config) already had the object's
+            // value baked into m_extruder by update_filament_values_for_items,
+            // so they don't reach this branch.
+            m_extruder_bmp = *get_default_extruder_color_icon();
+            return;
         }
         // BBS
         else if (m_type & itVolume && m_volume_type == ModelVolumeType::PARAMETER_MODIFIER) {

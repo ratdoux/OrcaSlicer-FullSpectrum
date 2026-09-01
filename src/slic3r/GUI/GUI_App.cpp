@@ -1,4 +1,5 @@
 #include "libslic3r/Technologies.hpp"
+#include "libslic3r/AllowlistManager.hpp"
 #include "libslic3r/FilamentHotBedNozzleRules.hpp"
 #include "GUI_App.hpp"
 #include "GUI_Init.hpp"
@@ -119,6 +120,7 @@
 #include "Notebook.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/ProgressDialog.hpp"
+#include "Widgets/SideButton.hpp"
 
 //BBS: DailyTip and UserGuide Dialog
 #include "WebDownPluginDlg.hpp"
@@ -1151,7 +1153,7 @@ void GUI_App::post_init()
         }
     }
 
-    // Start preset sync after project opened, otherwise we could have preset change during project opening which could cause crash 
+    // Start preset sync after project opened, otherwise we could have preset change during project opening which could cause crash
     if (app_config->get("sync_user_preset") == "true") {
         // BBS loading user preset
         // Always async, not such startup step
@@ -1171,7 +1173,7 @@ void GUI_App::post_init()
     // Neither wxShowEvent nor wxWindowCreateEvent work reliably.
     if (this->preset_updater) { // G-Code Viewer does not initialize preset_updater.
         CallAfter([this] {
-            try {
+
             bool cw_showed = this->config_wizard_startup();
 
             SSWCP_MqttAgent_Instance::m_dialog = new WebPresetDialog(this);
@@ -1183,13 +1185,7 @@ void GUI_App::post_init()
             this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
             this->preset_updater->sync_web_async(true);
             this->check_new_version_sf(false, false);
-            } catch (const std::exception& e) {
-                BOOST_LOG_TRIVIAL(error) << "CallAfter config wizard exception: " << e.what();
-                flush_logs();
-            } catch (...) {
-                BOOST_LOG_TRIVIAL(error) << "CallAfter config wizard unknown exception";
-                flush_logs();
-            }
+
         });
     }
 
@@ -2016,7 +2012,7 @@ void GUI_App::init_networking_callbacks()
                     else {
                         obj->parse_json(msg, true);
                     }
-                    
+
 
                     if (!this->is_enable_multi_machine()) {
                         if ((sel == obj || sel == nullptr) && obj->is_ams_need_update) {
@@ -2086,6 +2082,15 @@ GUI_App::~GUI_App()
 {
     GUI_App::m_app_alive.store(false);
 
+    if (m_token_check_timer) {
+        m_token_check_timer->Stop();
+        m_token_check_timer.reset();
+    }
+    if (m_silent_refresh_timeout_timer) {
+        m_silent_refresh_timeout_timer->Stop();
+        m_silent_refresh_timeout_timer.reset();
+    }
+
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": enter");
     if (app_config != nullptr) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": destroy app_config");
@@ -2101,6 +2106,8 @@ GUI_App::~GUI_App()
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": destroy preset updater");
         delete preset_updater;
     }
+
+    AllowlistManager::uninit();
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": exit");
 
@@ -2456,6 +2463,7 @@ void GUI_App::on_start_subscribe_again(std::string dev_id)
 {
     auto start_subscribe_timer = new wxTimer(this, wxID_ANY);
     Bind(wxEVT_TIMER, [this, start_subscribe_timer, dev_id](auto& e) {
+        if (e.GetId() != start_subscribe_timer->GetId()) return;
         start_subscribe_timer->Stop();
         Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
         if (!dev) return;
@@ -2830,7 +2838,7 @@ bool GUI_App::on_init_inner()
                         skip_this_version = false;
                     }
                 }
-                if (!skip_this_version || evt.GetInt() != 0) {                    
+                if (!skip_this_version || evt.GetInt() != 0) {
                     wxString            extmsg = wxString::FromUTF8(version_info.description);
                     if(!m_updateDialog)
                         return;
@@ -2840,8 +2848,8 @@ bool GUI_App::on_init_inner()
                     }
                     m_updateDialog->Raise();
                     m_updateDialog->Show();
-                    m_updateDialog->setUrl(version_info.url);                 
-                                                           
+                    m_updateDialog->setUrl(version_info.url);
+
                 }
             }
             });
@@ -2857,7 +2865,7 @@ bool GUI_App::on_init_inner()
                     false,
                     wxCENTER | wxICON_INFORMATION);
                 dialog.SetExtendedMessage(description_text);
-                
+
                 int result = dialog.ShowModal();
                 switch (result)
                 {
@@ -2869,7 +2877,7 @@ bool GUI_App::on_init_inner()
                      wxGetApp().mainframe->Close(true);
                      break;
                  case wxID_CANCEL:
-                     wxGetApp().mainframe->Close(true); 
+                     wxGetApp().mainframe->Close(true);
                      break;
                  default:
                      wxGetApp().mainframe->Close(true);
@@ -3108,6 +3116,17 @@ bool GUI_App::on_init_inner()
                        "configuration file.\nPlease note, application settings will be lost, but printer profiles will not be affected."));
     }
 
+    do_notify_flutter_web_copy_failure();
+
+    // WebSocket debug server: only when Preferences → "Web Debug Mode" (websocket_debug) is on.
+    // When off, explicitly stop the debug server so port 8766 is not left listening.
+    const bool websocket_debug_pref = app_config->get_bool("websocket_debug");
+    if (websocket_debug_pref) {
+        BOOST_LOG_TRIVIAL(debug) << "Web Debug Mode enabled in preferences, starting WebSocket debug server (port 8766)";
+        Slic3r::GUI::SSWCP::enable_debug_mode(true);
+    } else {
+        Slic3r::GUI::SSWCP::enable_debug_mode(false);
+    }
     profiler.mark("on_init_inner return");
 
     return true;
@@ -3156,8 +3175,8 @@ void GUI_App::machine_find()
 
                                                     // wcp订阅
                                                     json data = this->app_config->get_devices();
-                                                     wxGetApp().device_card_notify(data);
-                                                    
+                                                    wxGetApp().device_card_notify(data);
+
                                                 });
                                             }
                                         }
@@ -3495,6 +3514,16 @@ static bool is_default(wxWindow* win)
 
 void GUI_App::UpdateDarkUI(wxWindow* window, bool highlited/* = false*/, bool just_font/* = false*/)
 {
+    // SideButton manages its own per-state colors via StateColor and adapts
+    // them to the theme at paint time (StateColor::colorForStates runs the
+    // dark palette). Its SetBackgroundColour/SetForegroundColour overrides
+    // replace the WHOLE state table with one color, so letting this walker
+    // touch it permanently flattens the enabled/disabled/hover colors —
+    // seen when toggling dark mode off: the slice/print buttons keep a
+    // washed-out single background until the app restarts.
+    if (dynamic_cast<SideButton*>(window))
+        return;
+
     if (wxButton *btn = dynamic_cast<wxButton*>(window)) {
         if (btn->GetWindowStyleFlag() & wxBU_AUTODRAW)
             return;
@@ -3937,10 +3966,10 @@ void GUI_App::recreate_GUI(const wxString &msg_name)
         std::string printer_model = printer_model_opt->value;
         is_snapmaker_u1           = boost::icontains(printer_model, "Snapmaker") && boost::icontains(printer_model, "U1");
     }
-    
+
     if (!preset_bundle->is_bbl_vendor()) {
         if (is_snapmaker_u1) {
-            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(get_page_http_port()) + "/web/flutter_web/index.html?path=2");
+            wxString url      = build_flutter_web_url("2");
             auto     real_url = wxGetApp().get_international_url(url);
             mainframe->load_printer_url(real_url);
         } else {
@@ -3951,7 +3980,7 @@ void GUI_App::recreate_GUI(const wxString &msg_name)
     }
 
     wxGetApp().device_card_notify(devices);
-    
+
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "recreate_GUI exit";
 }
 
@@ -4280,6 +4309,9 @@ void GUI_App::sm_request_login(bool show_user_info)
 
 void GUI_App::sm_ShowUserLogin(bool show)
 {
+    if (show)
+        sm_stop_silent_token_refresh();
+
     // BBS: User Login Dialog
     if (show) {
         try {
@@ -4289,8 +4321,11 @@ void GUI_App::sm_ShowUserLogin(bool show)
                 delete sm_login_dlg;
                 sm_login_dlg = new SMUserLogin();
             }
+            m_sm_login_dialog_showing = true;
             sm_login_dlg->ShowModal();
+            m_sm_login_dialog_showing = false;
         } catch (std::exception&) {
+            m_sm_login_dialog_showing = false;
             ;
         }
     } else {
@@ -4310,6 +4345,10 @@ void GUI_App::sm_ShowUserLogin(bool show)
 
 void GUI_App::sm_request_user_logout()
 {
+    sm_stop_silent_token_refresh();
+    if (m_token_check_timer)
+        m_token_check_timer->Stop();
+
     if (m_login_userinfo.is_user_login()) {
         m_login_userinfo.set_user_login(false);
     }
@@ -4326,6 +4365,94 @@ void GUI_App::sm_request_user_logout()
         http.form_add("token", m_login_userinfo.get_user_token()).perform();
     } catch (std::exception&) {
         ;
+    }
+}
+
+void GUI_App::sm_maybe_refresh_login_token()
+{
+    if (!m_login_userinfo.is_user_login())
+        return;
+    if (m_sm_login_dialog_showing || m_sm_silent_refresh_in_progress)
+        return;
+
+    auto now = std::chrono::system_clock::now();
+    if (now - m_token_last_refresh_success < std::chrono::hours(SM_TOKEN_REFRESH_INTERVAL_H))
+        return;
+    if (now - m_token_last_refresh_attempt < std::chrono::minutes(SM_TOKEN_REFRESH_RETRY_MIN))
+        return;
+
+    m_token_last_refresh_attempt   = now;
+    m_sm_silent_refresh_in_progress = true;
+    ++m_silent_refresh_generation;
+    BOOST_LOG_TRIVIAL(info) << "sm: start silent login-token refresh";
+
+    if (!m_silent_refresh_timeout_timer) {
+        m_silent_refresh_timeout_timer = std::make_unique<wxTimer>(this, wxID_ANY);
+        Bind(wxEVT_TIMER, &GUI_App::on_silent_refresh_timeout, this, m_silent_refresh_timeout_timer->GetId());
+    }
+    m_silent_refresh_timeout_timer->Start(std::chrono::seconds(SM_TOKEN_REFRESH_TIMEOUT_S).count() * 1000, wxTIMER_ONE_SHOT);
+
+    auto refresh_generation = m_silent_refresh_generation;
+    CallAfter([refresh_generation]() {
+        if (refresh_generation == wxGetApp().sm_token_refresh_generation())
+            wxGetApp().sm_ShowUserLogin(false);
+    });
+}
+
+void GUI_App::on_silent_refresh_timeout(wxTimerEvent &event)
+{
+    if (m_sm_silent_refresh_in_progress) {
+        m_sm_silent_refresh_in_progress = false;
+        BOOST_LOG_TRIVIAL(warning) << "sm: silent login-token refresh timed out, keep old token and retry later";
+    }
+}
+
+void GUI_App::sm_on_token_captured(std::size_t refresh_generation)
+{
+    if (refresh_generation != m_silent_refresh_generation) {
+        BOOST_LOG_TRIVIAL(warning) << "sm: ignore stale login-token capture";
+        return;
+    }
+
+    m_token_last_refresh_success = std::chrono::system_clock::now();
+    if (m_sm_silent_refresh_in_progress) {
+        m_sm_silent_refresh_in_progress = false;
+        if (m_silent_refresh_timeout_timer)
+            m_silent_refresh_timeout_timer->Stop();
+        BOOST_LOG_TRIVIAL(info) << "sm: silent login-token refresh succeeded";
+    }
+
+    if (!m_token_check_timer) {
+        m_token_check_timer = std::make_unique<wxTimer>(this, wxID_ANY);
+        Bind(wxEVT_TIMER, &GUI_App::on_token_check_timer, this, m_token_check_timer->GetId());
+    }
+    m_token_check_timer->Start(SM_TOKEN_CHECK_INTERVAL_MS);
+
+    if (!m_sm_login_dialog_showing && sm_login_dlg) {
+        delete sm_login_dlg;
+        sm_login_dlg = nullptr;
+    }
+}
+
+bool GUI_App::sm_is_token_refresh_current(std::size_t refresh_generation) const
+{ return refresh_generation == m_silent_refresh_generation; }
+
+void GUI_App::on_token_check_timer(wxTimerEvent &event)
+{
+    sm_maybe_refresh_login_token();
+}
+
+void GUI_App::sm_stop_silent_token_refresh()
+{
+    ++m_silent_refresh_generation;
+    m_sm_silent_refresh_in_progress = false;
+    if (m_silent_refresh_timeout_timer)
+        m_silent_refresh_timeout_timer->Stop();
+
+    // Drop the hidden login dialog so a late redirect cannot re-login the user.
+    if (!m_sm_login_dialog_showing && sm_login_dlg) {
+        delete sm_login_dlg;
+        sm_login_dlg = nullptr;
     }
 }
 
@@ -4613,17 +4740,17 @@ std::string GUI_App::handle_web_request(std::string cmd)
                 if (path.has_value()) {
                     wxLaunchDefaultBrowser(path.value());
                 }
-            } 
+            }
             else if (command_str.compare("homepage_makerlab_get") == 0) {
                 //if (mainframe->m_webview) { mainframe->m_webview->SendMakerlabList(); }
             }
-            else if (command_str.compare("makerworld_model_open") == 0) 
+            else if (command_str.compare("makerworld_model_open") == 0)
             {
                 if (root.get_child_optional("model") != boost::none) {
                     pt::ptree                    data_node = root.get_child("model");
                     boost::optional<std::string> path      = data_node.get_optional<std::string>("url");
-                    if (path.has_value()) 
-                    { 
+                    if (path.has_value())
+                    {
                         wxString realurl = from_u8(url_decode(path.value()));
                         wxGetApp().request_model_download(realurl);
                     }
@@ -4680,7 +4807,7 @@ void GUI_App::request_open_project(std::string project_id)
         CallAfter([this, project_id] { mainframe->open_recent_project(-1, wxString::FromUTF8(project_id)); });
 }
 
-void GUI_App::sm_request_remove_project(std::string project_id) 
+void GUI_App::sm_request_remove_project(std::string project_id)
 {
     mainframe->sm_remove_recent_project(wxString::FromUTF8(project_id));
 }
@@ -5072,7 +5199,7 @@ void GUI_App::check_web_version()
 }
 
 void GUI_App::check_preset_version()
-{    
+{
     if (preset_updater != nullptr)
         preset_updater->sync_config_async();
 }
@@ -5140,11 +5267,11 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             if (platformType == "win") {
                 fileSize   = defaultObj.value("file_size", 0);
                 fileMd5    = defaultObj.value("file_md5", "");
-                fileSha256 = defaultObj.value("file_sha256", "");            
-                version_info.url         = defaultObj.value("file_url", "");            
+                fileSha256 = defaultObj.value("file_sha256", "");
+                version_info.url         = defaultObj.value("file_url", "");
 
                 reservedData             = defaultObj.value("reserved_1", "");
-                reservedData2            = defaultObj.value("reserved_2", "");         
+                reservedData2            = defaultObj.value("reserved_2", "");
             }
             else if (platformType == "mac")
             {
@@ -5173,8 +5300,8 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
                 version_info.url = platformObj.value("file_url", "");
 
                 reservedData  = platformObj.value("reserved_1", "");
-                reservedData2 = platformObj.value("reserved_2", "");  
-                
+                reservedData2 = platformObj.value("reserved_2", "");
+
             }
             else
             {
@@ -5211,7 +5338,7 @@ void GUI_App::check_new_version_sf(bool show_tips, bool by_user)
             GUI::wxGetApp().QueueEvent(evt);
         } catch (const std::exception& ex) {
             std::string errorMsg = ex.what();
-            BOOST_LOG_TRIVIAL(fatal) << "request server soft update data error:" << errorMsg;            
+            BOOST_LOG_TRIVIAL(fatal) << "request server soft update data error:" << errorMsg;
           }
         })
         .perform();
@@ -5264,6 +5391,19 @@ void GUI_App::no_new_version()
 }
 
 std::string GUI_App::version_display = "";
+wxString GUI_App::flutter_web_base_url(const wxString& path)
+{
+    return wxString::FromUTF8(LOCALHOST_URL + std::to_string(get_page_http_port()) +
+                              "/web/flutter_web/index.html?path=" + std::string(path.utf8_str()));
+}
+
+// Full launch url: base plus &version= of the embedding desktop client, so the
+// flutter side can identify which app build it is talking to.
+wxString GUI_App::build_flutter_web_url(const wxString& path)
+{
+    return flutter_web_base_url(path) + wxString::Format("&version=%s", Snapmaker_VERSION);
+}
+
 std::string GUI_App::format_display_version()
 {
     if (!version_display.empty()) return version_display;
@@ -5644,7 +5784,7 @@ void GUI_App::stop_sync_user_preset()
 //    m_http_server.stop();
 //}
 
-void GUI_App::start_page_http_server() 
+void GUI_App::start_page_http_server()
 {
     if (!m_page_http_server.is_started())
         m_page_http_server.start();
@@ -6362,12 +6502,7 @@ bool GUI_App::check_and_keep_current_preset_changes(const wxString& caption, con
                             static_cast<TabPrinter*>(tab)->cache_extruder_cnt();
                         }
                     }
-                    std::vector<std::string> selected_options2;
-                    std::transform(selected_options.begin(), selected_options.end(), std::back_inserter(selected_options2), [](auto & o) {
-                        auto i = o.find('#');
-                        return i != std::string::npos ? o.substr(0, i) : o;
-                    });
-                    tab->cache_config_diff(selected_options2);
+                    tab->cache_config_diff(selected_options);
                     if (!is_called_from_configwizard)
                         tab->m_presets->discard_current_changes();
                 }
@@ -6963,7 +7098,7 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
     }
     auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
 
-    user_update_privacy_notify(isAgree == "true");    
+    user_update_privacy_notify(isAgree == "true");
     BOOST_LOG_TRIVIAL(warning) << "run_wizard changed the privacy policy with: " << (isAgree);
     return res;
 }
@@ -7151,6 +7286,23 @@ void GUI_App::page_state_notify_webview(wxWebView* webview, const std::string& s
     }
 }
 
+void GUI_App::notify_foreground_change(const bool active)
+{
+    if (active)
+        sm_maybe_refresh_login_token();
+
+    json data;
+    data["state"] = active;
+
+    for (const auto& instance : m_foreground_change_subscribers) {
+        auto ptr = instance.second.lock();
+        if (ptr) {
+            ptr->m_res_data = data;
+            ptr->send_to_js();
+        }
+    }
+}
+
 void GUI_App::cache_notify(const std::string& key, const json& res)
 {
     for (const auto& instance : m_cache_subscribers) {
@@ -7175,7 +7327,7 @@ void GUI_App::user_update_privacy_notify(const bool& res)
     json data;
 
     data[PRIVACY_POLICY_FLAGS] = res;
-    
+
     for (const auto& instance : m_user_update_privacy_subscribers) {
         auto ptr = instance.second.lock();
         if (ptr) {
@@ -7202,7 +7354,7 @@ bool GUI_App::config_wizard_startup()
     auto isAgree = wxGetApp().app_config->get("app", PRIVACY_POLICY_FLAGS);
     user_update_privacy_notify(isAgree == "true");
     BOOST_LOG_TRIVIAL(warning) << "config_wizard_startup changed the privacy policy with: " << (isAgree);
-    try {
+
         if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {
             BOOST_LOG_TRIVIAL(info) << "run wizard...";
             run_wizard(ConfigWizard::RR_DATA_EMPTY);
@@ -7211,17 +7363,10 @@ bool GUI_App::config_wizard_startup()
         return true;
     }
 
-        if (isAgree.empty())
-        {
-            run_wizard(ConfigWizard::RR_DATA_EMPTY); // Compatible with older versions
-            return true;
-        }
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "config_wizard_startup exception: " << e.what();
-        flush_logs();
-    } catch (...) {
-        BOOST_LOG_TRIVIAL(error) << "config_wizard_startup unknown exception";
-        flush_logs();
+    if (isAgree.empty())
+    {
+        run_wizard(ConfigWizard::RR_DATA_EMPTY); // Compatible with older versions
+        return true;
     }
 
     return false;
@@ -7506,7 +7651,7 @@ bool GUI_App::sm_disconnect_current_machine(bool need_reload_printerview)
             // wxGetApp().load_current_presets();
 
         });
-        
+
     }
 
     return true;

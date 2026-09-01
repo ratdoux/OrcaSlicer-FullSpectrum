@@ -4,10 +4,145 @@
   "instantiation": "true",
   "name": "Snapmaker ASA @J1",
   "setting_id": "1131956201",
-  "inherits": "Snapmaker ASA @J1 base",
+  "inherits": "fdm_filament_asa_category",
   "compatible_printers": [
     "Snapmaker J1 (0.4 nozzle)",
     "Snapmaker J1 (0.6 nozzle)",
     "Snapmaker J1 (0.8 nozzle)"
+  ],
+  "close_fan_the_first_x_layers": [
+    "4"
+  ],
+  "complete_print_exhaust_fan_speed": [
+    "80"
+  ],
+  "during_print_exhaust_fan_speed": [
+    "60"
+  ],
+  "enable_pressure_advance": [
+    "1"
+  ],
+  "eng_plate_temp": [
+    "0"
+  ],
+  "eng_plate_temp_initial_layer": [
+    "0"
+  ],
+  "fan_cooling_layer_time": [
+    "20"
+  ],
+  "fan_max_speed": [
+    "20"
+  ],
+  "fan_min_speed": [
+    "0"
+  ],
+  "filament_cooling_final_speed": [
+    "3.4"
+  ],
+  "filament_cooling_initial_speed": [
+    "2.2"
+  ],
+  "filament_cooling_moves": [
+    "0"
+  ],
+  "filament_cost": [
+    "80"
+  ],
+  "filament_end_gcode": [
+    ""
+  ],
+  "filament_flow_ratio": [
+    "0.94"
+  ],
+  "filament_flow_support": [
+    "standard"
+  ],
+  "filament_is_high_temperature": [
+    "0"
+  ],
+  "filament_loading_speed": [
+    "25"
+  ],
+  "filament_loading_speed_start": [
+    "3"
+  ],
+  "filament_max_volumetric_speed": [
+    "9.6"
+  ],
+  "filament_minimal_purge_on_wipe_tower": [
+    "0"
+  ],
+  "filament_multitool_ramming": [
+    "0"
+  ],
+  "filament_multitool_ramming_flow": [
+    "10"
+  ],
+  "filament_multitool_ramming_volume": [
+    "0"
+  ],
+  "filament_retract_length_toolchange": [
+    "nil"
+  ],
+  "filament_retraction_length": [
+    "0.6"
+  ],
+  "filament_start_gcode": [
+    ""
+  ],
+  "filament_unloading_speed": [
+    "25"
+  ],
+  "filament_unloading_speed_start": [
+    "3"
+  ],
+  "filament_vendor": [
+    "Snapmaker"
+  ],
+  "filament_z_hop": [
+    "0.7"
+  ],
+  "hot_plate_temp": [
+    "110"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "100"
+  ],
+  "nozzle_temperature": [
+    "255"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "255"
+  ],
+  "overhang_fan_speed": [
+    "20"
+  ],
+  "pellet_flow_coefficient": [
+    "0.4157"
+  ],
+  "pressure_advance": [
+    "0.04"
+  ],
+  "slow_down_layer_time": [
+    "5"
+  ],
+  "temperature_vitrification": [
+    "182"
+  ],
+  "textured_plate_temp": [
+    "0"
+  ],
+  "textured_plate_temp_initial_layer": [
+    "0"
+  ],
+  "bed_type": [
+    "Hot Plate"
+  ],
+  "filament_load_time": [
+    "0"
+  ],
+  "filament_unload_time": [
+    "0"
   ]
 }

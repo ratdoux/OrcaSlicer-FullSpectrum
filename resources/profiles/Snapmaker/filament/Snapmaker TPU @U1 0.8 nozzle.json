@@ -1,0 +1,68 @@
+{
+  "type": "filament",
+  "from": "system",
+  "instantiation": "true",
+  "name": "Snapmaker TPU @U1 0.8 nozzle",
+  "setting_id": "STPU001",
+  "inherits": "Snapmaker TPU @U1 base",
+  "compatible_printers": [
+    "Snapmaker U1 (0.8 nozzle)"
+  ],
+  "filament_vendor": [
+    "Snapmaker"
+  ],
+  "complete_print_exhaust_fan_speed": [
+    "70"
+  ],
+  "during_print_exhaust_fan_speed": [
+    "70"
+  ],
+  "fan_min_speed": [
+    "100"
+  ],
+  "filament_cost": [
+    "29.9"
+  ],
+  "filament_max_volumetric_speed": [
+    "10.5"
+  ],
+  "filament_multitool_ramming": [
+    "1"
+  ],
+  "filament_multitool_ramming_flow": [
+    "15"
+  ],
+  "filament_multitool_ramming_volume": [
+    "1"
+  ],
+  "filament_retract_length_toolchange": [
+    "4"
+  ],
+  "graphic_effect_plate_temp": [
+    "35"
+  ],
+  "graphic_effect_plate_temp_initial_layer": [
+    "35"
+  ],
+  "hot_plate_temp": [
+    "35"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "35"
+  ],
+  "supertack_plate_temp": [
+    "0"
+  ],
+  "supertack_plate_temp_initial_layer": [
+    "0"
+  ],
+  "temperature_vitrification": [
+    "30"
+  ],
+  "textured_plate_temp": [
+    "35"
+  ],
+  "textured_plate_temp_initial_layer": [
+    "35"
+  ]
+}

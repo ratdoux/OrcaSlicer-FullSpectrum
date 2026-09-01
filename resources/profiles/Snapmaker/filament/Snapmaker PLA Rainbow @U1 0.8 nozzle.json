@@ -1,0 +1,98 @@
+{
+  "type": "filament",
+  "from": "system",
+  "instantiation": "true",
+  "name": "Snapmaker PLA Rainbow @U1 0.8 nozzle",
+  "inherits": "Snapmaker PLA Rainbow @U1 base",
+  "filament_id": "SNPPRB001",
+  "compatible_printers": [
+    "Snapmaker U1 (0.8 nozzle)"
+  ],
+  "additional_cooling_fan_speed": [
+    "100"
+  ],
+  "complete_print_exhaust_fan_speed": [
+    "70"
+  ],
+  "during_print_exhaust_fan_speed": [
+    "50"
+  ],
+  "fan_cooling_layer_time": [
+    "100"
+  ],
+  "fan_min_speed": [
+    "100"
+  ],
+  "filament_cost": [
+    "19.9"
+  ],
+  "filament_flow_ratio": [
+    "0.97"
+  ],
+  "filament_max_volumetric_speed": [
+    "22"
+  ],
+  "filament_multitool_ramming": [
+    "1"
+  ],
+  "filament_multitool_ramming_flow": [
+    "18"
+  ],
+  "filament_multitool_ramming_volume": [
+    "1"
+  ],
+  "filament_retract_length_toolchange": [
+    "10"
+  ],
+  "filament_retraction_length": [
+    "0.8"
+  ],
+  "graphic_effect_plate_temp": [
+    "70"
+  ],
+  "graphic_effect_plate_temp_initial_layer": [
+    "70"
+  ],
+  "hot_plate_temp": [
+    "65"
+  ],
+  "hot_plate_temp_initial_layer": [
+    "65"
+  ],
+  "nozzle_temperature": [
+    "230"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "230"
+  ],
+  "overhang_fan_threshold": [
+    "50%"
+  ],
+  "pressure_advance": [
+    "0.01"
+  ],
+  "reduce_fan_stop_start_freq": [
+    "1"
+  ],
+  "slow_down_layer_time": [
+    "15"
+  ],
+  "slow_down_min_speed": [
+    "20"
+  ],
+  "supertack_plate_temp": [
+    "40"
+  ],
+  "supertack_plate_temp_initial_layer": [
+    "40"
+  ],
+  "temperature_vitrification": [
+    "55"
+  ],
+  "textured_plate_temp": [
+    "65"
+  ],
+  "textured_plate_temp_initial_layer": [
+    "65"
+  ]
+}

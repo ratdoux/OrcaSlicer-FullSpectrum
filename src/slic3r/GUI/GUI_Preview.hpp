@@ -110,6 +110,9 @@ class Preview : public wxPanel
     //BBS: add only gcode mode
     bool m_only_gcode { false };
     bool m_reload_paint_after_background_process_apply{false};
+    // Set by Plater::reslice() memory dialog. When true, load_print_as_fff
+    // passes skip_toolpaths=true to skip load_toolpaths GPU vertex buffers.
+    bool m_skip_toolpath_preview { false };
 
 public:
     enum class OptionType : unsigned int
@@ -165,6 +168,8 @@ public:
     void show_layers_sliders(bool show = true);
     void set_reload_paint_after_background_process_apply(bool flag) { m_reload_paint_after_background_process_apply = flag; }
     bool get_reload_paint_after_background_process_apply() { return m_reload_paint_after_background_process_apply; }
+    void set_skip_toolpath_preview(bool v) { m_skip_toolpath_preview = v; }
+    GCodeProcessorResult* get_gcode_result() { return m_gcode_result; }
 
 private:
     bool init(wxWindow* parent, Bed3D& bed, Model* model);

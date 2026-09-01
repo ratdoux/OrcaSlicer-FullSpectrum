@@ -692,6 +692,12 @@ public:
     // Compare the content of get_selected_preset() with get_edited_preset() configs, return the list of keys where they differ.
     std::vector<std::string>    current_different_from_parent_options(const bool deep_compare = false) const
         { return dirty_options(&this->get_edited_preset(), this->get_selected_preset_parent(), deep_compare); }
+    std::vector<std::string>    current_flow_variant_dirty_options(ConfigFlowDomain domain,
+                                                                    const std::vector<std::string> &option_keys) const
+        { return flow_variant_dirty_options(&this->get_edited_preset(), &this->get_selected_preset(), domain, option_keys); }
+    std::vector<std::string>    current_flow_variant_different_from_parent_options(ConfigFlowDomain domain,
+                                                                                    const std::vector<std::string> &option_keys) const
+        { return flow_variant_dirty_options(&this->get_edited_preset(), this->get_selected_preset_parent(), domain, option_keys); }
 
     // Compare the content of get_saved_preset() with get_edited_preset() configs, return true if they differ.
     bool                        saved_is_dirty() const
@@ -786,6 +792,9 @@ private:
 public:
     static bool                     is_dirty(const Preset *edited, const Preset *reference);
     static std::vector<std::string> dirty_options(const Preset *edited, const Preset *reference, const bool deep_compare = false);
+    static std::vector<std::string> flow_variant_dirty_options(const Preset *edited, const Preset *reference,
+                                                               ConfigFlowDomain domain,
+                                                               const std::vector<std::string> &option_keys);
     //BBS: add function for dirty_options_without_option_list
     static std::vector<std::string> dirty_options_without_option_list(const Preset *edited, const Preset *reference, const std::set<std::string>& option_ignore_list, const bool deep_compare = false);
 private:

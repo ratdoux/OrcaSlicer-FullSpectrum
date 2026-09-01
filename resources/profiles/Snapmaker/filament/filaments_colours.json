@@ -1,6 +1,6 @@
 {
 	"vendor": "Snapmaker",
-	"updated_date": "2026-06-11",
+	"updated_date": "2026-08-28",
 	"filaments": [
 		{
 			"filament_id": "1682237920",
@@ -475,6 +475,18 @@
 						"zh_CN": "透光紫色"
 					},
 					"enabled": true
+				},
+				{
+					"sku": "34225",
+					"mode": 0,
+					"filament_color": [
+						"#EBEBEB"
+					],
+					"color_name": {
+						"en": "Translucent White",
+						"zh_CN": "透光白色"
+					},
+					"enabled": true
 				}
 			]
 		},
@@ -578,6 +590,7 @@
 			"filament_color": [
 				{
 					"sku": "34262",
+					"TD": 5.5,
 					"mode": 0,
 					"filament_color": [
 						"#08ABFB"
@@ -590,6 +603,7 @@
 				},
 				{
 					"sku": "34263",
+					"TD": 5.5,
 					"mode": 0,
 					"filament_color": [
 						"#D93B90"
@@ -602,6 +616,7 @@
 				},
 				{
 					"sku": "34264",
+					"TD": 9.5,
 					"mode": 0,
 					"filament_color": [
 						"#F9ED3D"
@@ -614,6 +629,7 @@
 				},
 				{
 					"sku": "34265",
+					"TD": 8.8,
 					"mode": 0,
 					"filament_color": [
 						"#9199A4"
@@ -621,6 +637,54 @@
 					"color_name": {
 						"en": "Semi-Translucent Gray",
 						"zh_CN": "半透灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34266",
+					"mode": 0,
+					"filament_color": [
+						"#F5F4F2"
+					],
+					"color_name": {
+						"en": "Semi-Translucent White",
+						"zh_CN": "半透白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34267",
+					"mode": 0,
+					"filament_color": [
+						"#00C3FF"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Cyan",
+						"zh_CN": "半透青色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34268",
+					"mode": 0,
+					"filament_color": [
+						"#F54399"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Magenta",
+						"zh_CN": "半透品红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34269",
+					"mode": 0,
+					"filament_color": [
+						"#FAE727"
+					],
+					"color_name": {
+						"en": "Semi-Translucent Yellow",
+						"zh_CN": "半透黄色"
 					},
 					"enabled": true
 				}
@@ -1037,10 +1101,59 @@
 					"enabled": true
 				},
 				{
+					"sku": "34147",
+					"mode": 0,
+					"filament_color": [
+						"#363538"
+					],
+					"color_name": {
+						"en": "Ink Black",
+						"zh_CN": "墨黑"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34148",
+					"mode": 0,
+					"filament_color": [
+						"#EB6232"
+					],
+					"color_name": {
+						"en": "Bright Orange",
+						"zh_CN": "亮橙"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34150",
+					"mode": 0,
+					"filament_color": [
+						"#7F865B"
+					],
+					"color_name": {
+						"en": "Olive Green",
+						"zh_CN": "橄榄绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34151",
+					"mode": 0,
+					"filament_color": [
+						"#F3CFB2"
+					],
+					"color_name": {
+						"en": "Champagne",
+						"zh_CN": "香槟色"
+					},
+					"enabled": true
+				},
+				{
 					"sku": "34202",
 					"mode": 0,
 					"filament_color": [
-						"#D9A63A", "#CC434F"
+						"#D9A63A",
+						"#CC434F"
 					],
 					"color_name": {
 						"en": "Sunset Ember",
@@ -1052,7 +1165,8 @@
 					"sku": "34203",
 					"mode": 0,
 					"filament_color": [
-						"#D9A63A", "#9675CD"
+						"#D9A63A",
+						"#9675CD"
 					],
 					"color_name": {
 						"en": "Aurora Gold",
@@ -1064,7 +1178,8 @@
 					"sku": "34204",
 					"mode": 0,
 					"filament_color": [
-						"#D9A63A", "#C4C7D9"
+						"#D9A63A",
+						"#C4C7D9"
 					],
 					"color_name": {
 						"en": "Solar Alloy",
@@ -1076,7 +1191,8 @@
 					"sku": "34205",
 					"mode": 0,
 					"filament_color": [
-						"#ECED17", "#44ADE5"
+						"#ECED17",
+						"#44ADE5"
 					],
 					"color_name": {
 						"en": "Mint Lemonade",
@@ -1088,7 +1204,8 @@
 					"sku": "34206",
 					"mode": 0,
 					"filament_color": [
-						"#44ADE5", "#18CCAF"
+						"#44ADE5",
+						"#18CCAF"
 					],
 					"color_name": {
 						"en": "Sea Glass",
@@ -1100,7 +1217,8 @@
 					"sku": "34207",
 					"mode": 0,
 					"filament_color": [
-						"#C4C7D9", "#44ADE5"
+						"#C4C7D9",
+						"#44ADE5"
 					],
 					"color_name": {
 						"en": "Ice Lake",
@@ -1112,7 +1230,8 @@
 					"sku": "34208",
 					"mode": 0,
 					"filament_color": [
-						"#CBF914", "#D623AA"
+						"#CBF914",
+						"#D623AA"
 					],
 					"color_name": {
 						"en": "City Billboard",
@@ -1413,6 +1532,126 @@
 					"color_name": {
 						"en": "Pure White",
 						"zh_CN": "纯白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34121",
+					"mode": 0,
+					"filament_color": [
+						"#53D6D0"
+					],
+					"color_name": {
+						"en": "Turquoise Blue",
+						"zh_CN": "绿松石蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34122",
+					"mode": 0,
+					"filament_color": [
+						"#0066D9"
+					],
+					"color_name": {
+						"en": "Azure Blue",
+						"zh_CN": "蔚蓝色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34123",
+					"mode": 0,
+					"filament_color": [
+						"#485259"
+					],
+					"color_name": {
+						"en": "Charcoal Gray",
+						"zh_CN": "炭灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34124",
+					"mode": 0,
+					"filament_color": [
+						"#911821"
+					],
+					"color_name": {
+						"en": "Burgundy Red",
+						"zh_CN": "勃艮第红"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34125",
+					"mode": 0,
+					"filament_color": [
+						"#EEDDD2"
+					],
+					"color_name": {
+						"en": "Peach Beige",
+						"zh_CN": "蜜桃米色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34126",
+					"mode": 0,
+					"filament_color": [
+						"#CB8748"
+					],
+					"color_name": {
+						"en": "Caramel Brown",
+						"zh_CN": "焦糖棕"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34127",
+					"mode": 0,
+					"filament_color": [
+						"#31532E"
+					],
+					"color_name": {
+						"en": "Army Green",
+						"zh_CN": "军绿色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34128",
+					"mode": 0,
+					"filament_color": [
+						"#AFD6C1"
+					],
+					"color_name": {
+						"en": "Mint Green",
+						"zh_CN": "薄荷绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34129",
+					"mode": 0,
+					"filament_color": [
+						"#D3D0EB"
+					],
+					"color_name": {
+						"en": "Light Purple",
+						"zh_CN": "浅紫色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34130",
+					"mode": 0,
+					"filament_color": [
+						"#660066"
+					],
+					"color_name": {
+						"en": "Plum Purple",
+						"zh_CN": "梅子紫"
 					},
 					"enabled": true
 				}
@@ -1793,6 +2032,326 @@
 					"color_name": {
 						"en": "Green",
 						"zh_CN": "绿色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "GFL9922",
+			"filament_name": "Snapmaker PLA Wood @U1",
+			"filament_type": "PLA",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34056",
+					"mode": 0,
+					"filament_color": [
+						"#C0A086"
+					],
+					"color_name": {
+						"en": "Oak",
+						"zh_CN": "橡木色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34057",
+					"mode": 0,
+					"filament_color": [
+						"#F2C6A2"
+					],
+					"color_name": {
+						"en": "Maple",
+						"zh_CN": "枫木色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34058",
+					"mode": 0,
+					"filament_color": [
+						"#775C50"
+					],
+					"color_name": {
+						"en": "Walnut",
+						"zh_CN": "胡桃木色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34059",
+					"mode": 0,
+					"filament_color": [
+						"#AE7575"
+					],
+					"color_name": {
+						"en": "Rosewood",
+						"zh_CN": "玫瑰木色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "1417031127011",
+			"filament_name": "Snapmaker PLA Basic @U1",
+			"filament_type": "PLA Basic",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34011",
+					"mode": 0,
+					"filament_color": [
+						"#000000"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34012",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "White",
+						"zh_CN": "白色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "29716562900",
+			"filament_name": "Snapmaker TPU @U1",
+			"filament_type": "TPU",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34006",
+					"mode": 0,
+					"filament_color": [
+						"#000000"
+					],
+					"color_name": {
+						"en": "Black",
+						"zh_CN": "黑色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34007",
+					"mode": 0,
+					"filament_color": [
+						"#F5CE00"
+					],
+					"color_name": {
+						"en": "Yellow",
+						"zh_CN": "黄色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "31046369800",
+			"filament_name": "Snapmaker PVA @U1",
+			"filament_type": "PVA",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34019",
+					"mode": 0,
+					"filament_color": [
+						"#EDE4B0"
+					],
+					"color_name": {
+						"en": "Pure",
+						"zh_CN": "透明"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "4227461134",
+			"filament_name": "Snapmaker Support For PLA @U1",
+			"filament_type": "Support For PLA",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34342",
+					"mode": 0,
+					"filament_color": [
+						"#EBF7FF"
+					],
+					"color_name": {
+						"en": "Natural White",
+						"zh_CN": "自然白"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "PEBA_90A_001",
+			"filament_name": "Snapmaker PEBA 90A @U1",
+			"filament_type": "PEBA 90A",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34282",
+					"mode": 0,
+					"filament_color": [
+						"#1F2329"
+					],
+					"color_name": {
+						"en": "Jet Black",
+						"zh_CN": "曜石黑"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34283",
+					"mode": 0,
+					"filament_color": [
+						"#FFFFFF"
+					],
+					"color_name": {
+						"en": "Pure White",
+						"zh_CN": "纯白色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34284",
+					"mode": 0,
+					"filament_color": [
+						"#7E888D"
+					],
+					"color_name": {
+						"en": "Cool Grey",
+						"zh_CN": "冷灰色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34285",
+					"mode": 0,
+					"filament_color": [
+						"#FF7B00"
+					],
+					"color_name": {
+						"en": "Vibrant Orange",
+						"zh_CN": "活力橙色"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34286",
+					"mode": 0,
+					"filament_color": [
+						"#FFED00"
+					],
+					"color_name": {
+						"en": "Bright Yellow",
+						"zh_CN": "亮黄色"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "SPGLOW001",
+			"filament_name": "Snapmaker PLA Glow @U1",
+			"filament_type": "PLA Glow",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34344",
+					"mode": 0,
+					"filament_color": [
+						"#A1FFAC"
+					],
+					"color_name": {
+						"en": "Glow Green",
+						"zh_CN": "夜光绿"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34345",
+					"mode": 0,
+					"filament_color": [
+						"#7AC0E9"
+					],
+					"color_name": {
+						"en": "Glow Blue",
+						"zh_CN": "夜光蓝"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34346",
+					"mode": 0,
+					"filament_color": [
+						"#F8FF80"
+					],
+					"color_name": {
+						"en": "Glow Yellow",
+						"zh_CN": "夜光黄"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34347",
+					"mode": 0,
+					"filament_color": [
+						"#FF9D5B"
+					],
+					"color_name": {
+						"en": "Glow Orange",
+						"zh_CN": "夜光橙"
+					},
+					"enabled": true
+				},
+				{
+					"sku": "34348",
+					"mode": 0,
+					"filament_color": [
+						"#F17B8F"
+					],
+					"color_name": {
+						"en": "Glow Pink",
+						"zh_CN": "夜光粉"
+					},
+					"enabled": true
+				}
+			]
+		},
+		{
+			"filament_id": "PLA_RAINBOW_001",
+			"filament_name": "Snapmaker PLA Rainbow @U1",
+			"filament_type": "PLA Rainbow",
+			"enabled": true,
+			"filament_color": [
+				{
+					"sku": "34360",
+					"mode": 1,
+					"filament_color": [
+						"#64C5D9",
+						"#8CB1DF",
+						"#CB95D0",
+						"#D7BFAA",
+						"#C6D4C0"
+					],
+					"color_name": {
+						"en": "Pastel Rainbow",
+						"zh_CN": "柔和彩虹"
 					},
 					"enabled": true
 				}

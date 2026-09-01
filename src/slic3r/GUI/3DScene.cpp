@@ -8,7 +8,7 @@
 #include "BitmapCache.hpp"
 #include "Camera.hpp"
 #include "MixedColorMatchHelpers.hpp"
-
+#include "Frustum.hpp"
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/ExtrusionEntity.hpp"
 #include "libslic3r/ExtrusionEntityCollection.hpp"
@@ -28,6 +28,9 @@
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Tesselate.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/QuadricEdgeCollapse.hpp"
+#include <thread>
+#include <algorithm>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1561,6 +1564,97 @@ std::shared_ptr<SourceColorPreviewJob> start_source_color_preview(std::shared_pt
 
 } // namespace
 
+// LOD mesh sharing map: maps TriangleMesh* -> LOD entry for that mesh.
+// When multiple volumes reference the same TriangleMesh, LOD simplified models are shared.
+// The entry holds an owning shared_ptr to the mesh, so the raw pointer used as
+// lookup key cannot dangle or be reused by another mesh while the entry
+// exists. Entries are maintained by load_object_volume()/release_volume():
+// a volume registers itself on creation and is removed on deletion; the entry
+// dies (releasing the mesh) with its last volume.
+struct MeshLodEntry {
+    std::shared_ptr<const TriangleMesh> mesh; // keeps the key mesh alive
+    std::set<GLVolume*>                  volumes;
+};
+static std::map<const TriangleMesh*, MeshLodEntry> g_meshVolumesMap;
+
+// LOD run-time constants
+const unsigned char LOD_UPDATE_FREQUENCY = 20;
+const float         ZOOM_THRESHOLD       = 0.3f;
+// pixel thresholds for LOD screen-size evaluation
+const Vec2i32       LOD_SCREEN_MIN        = Vec2i32(150, 110);
+const Vec2i32       LOD_SCREEN_MAX       = Vec2i32(300, 200);
+const int           SUPER_LARGE_FACES    = 500000;
+const int           LARGE_FACES          = 100000;
+
+//QEM face threshold
+const int           INIT_FACE_LOW_COUNT  = 200;
+const int           FINAL_FACE_LOW_COUNT = 1000;
+const float         QEM_FACE_RATIO       = 0.5f;
+const float         AABB_RANGE_EPSILON   = 1.0f;
+
+//QEM Middle Small max error threshold
+const float MIDDLE_LOD_NORMAL_FACE_MAX_ERROR      = 0.1f;
+const float MIDDLE_LOD_SUPER_LARGE_FACE_MAX_ERROR = 0.08f;
+const float MIDDLE_LOD_LARGE_FACE_MAX_ERROR       = 0.05f;
+
+const float SMALL_LOD_NORMAL_FACE_MAX_ERROR      = 0.5f;
+const float SMALL_LOD_SUPER_LARGE_FACE_MAX_ERROR = 0.4f;
+const float SMALL_LOD_LARGE_FACE_MAX_ERROR       = 0.3f;
+
+// Cached camera state for LOD evaluation
+float                 GLVolume::s_lastCameraZoomValue = 0.0f;
+float                 GLVolume::s_curZoom             = 1.0f;
+Matrix4d              GLVolume::s_curViewProjMatrix   = Matrix4d::Identity();
+std::array<int, 4>    GLVolume::s_curViewport         = {0, 0, 0, 0};
+
+// Project a 3D point to 2D screen coordinates using the view-projection matrix
+static Vec2f CalcPtInScreen(const Vec3d& pt, const Matrix4d& viewProjMat, int windowWidth, int windowHeight)
+{
+    Vec4d point(pt.x(), pt.y(), pt.z(), 1.0);
+    Vec4d pointNDCSpace = viewProjMat * point;
+    Vec3d pointScreenSpace = Vec3d(pointNDCSpace.x(), pointNDCSpace.y(), pointNDCSpace.z()) / pointNDCSpace.w();
+    float x = 0.5f * (1 + pointScreenSpace(0)) * windowWidth;
+    float y = 0.5f * (1 - pointScreenSpace(1)) * windowHeight;
+    return Vec2f(x, y);
+}
+
+// Determine which LOD level to use based on the volume's bounding box screen-space size
+static LODLevel CalcVolumeBoxInScreenBiggerThanThreshold(const BoundingBoxf3& worldAABB, const Matrix4d& viewProjMat, int windowWidth, int windowHeight)
+{
+    const Vec3d& min3d = worldAABB.min;
+    const Vec3d& max3d = worldAABB.max;
+    std::array<Vec3d, 8> srcVertices;
+    srcVertices[0] = min3d;
+    srcVertices[1] = Vec3d(max3d.x(), min3d.y(), min3d.z());
+    srcVertices[2] = Vec3d(max3d.x(), max3d.y(), min3d.z());
+    srcVertices[3] = Vec3d(min3d.x(), max3d.y(), min3d.z());
+    srcVertices[4] = Vec3d(min3d.x(), min3d.y(), max3d.z());
+    srcVertices[5] = Vec3d(max3d.x(), min3d.y(), max3d.z());
+    srcVertices[6] = max3d;
+    srcVertices[7] = Vec3d(min3d.x(), max3d.y(), max3d.z());
+
+    BoundingBoxf box2d;
+    for (int i = 0; i < srcVertices.size(); i++)
+    {
+        Vec2f screenPt = CalcPtInScreen(srcVertices[i], viewProjMat, windowWidth, windowHeight);
+        box2d.merge(screenPt.cast<double>());
+    }
+    double sizeX = box2d.size().x();
+    double sizeY = box2d.size().y();
+    if (sizeX >= LOD_SCREEN_MAX.x() || sizeY >= LOD_SCREEN_MAX.y())
+    {
+        return LODLevel::High;
+    }
+    if (sizeX <= LOD_SCREEN_MIN.x() && sizeY <= LOD_SCREEN_MIN.y())
+    {
+        return LODLevel::Small;
+    }
+    else
+    {
+        return LODLevel::Middle;
+    }
+}
+
 const float GLVolume::SinkingContours::HalfWidth = 0.25f;
 
 void GLVolume::SinkingContours::render()
@@ -1680,6 +1774,7 @@ GLVolume::GLVolume(float r, float g, float b, float a)
     , force_sinking_contours(false)
     , picking(false)
     , tverts_range(0, size_t(-1))
+    , m_tvertsRangeLod(0, size_t(-1))
 {
     color = {r, g, b, a};
     set_render_color(color);
@@ -1949,6 +2044,130 @@ static ImageMapPreviewPalette image_map_preview_palette()
     return palette;
 }
 
+bool GLVolume::SimplifyMesh(const TriangleMesh& mesh, std::shared_ptr<GUI::GLModel> model, std::shared_ptr<std::atomic<bool>> readyFlag, LODLevel lod) const
+{
+    return SimplifyMesh(mesh.its, model, readyFlag, lod);
+}
+
+bool GLVolume::SimplifyMesh(const indexed_triangle_set& its, std::shared_ptr<GUI::GLModel> model, std::shared_ptr<std::atomic<bool>> readyFlag, LODLevel lod) const
+{
+    if (its.indices.size() == 0 || its.vertices.size() == 0)
+    {
+        return false;
+    }
+
+    auto itsCopy = std::make_unique<indexed_triangle_set>(its);
+
+    float maxError = std::numeric_limits<float>::max();
+    if (lod == LODLevel::Middle)
+    {
+        maxError = MIDDLE_LOD_NORMAL_FACE_MAX_ERROR;
+        if (its.indices.size() > SUPER_LARGE_FACES)
+        {
+            maxError = MIDDLE_LOD_SUPER_LARGE_FACE_MAX_ERROR;
+        }
+        else if(its.indices.size() > LARGE_FACES)
+        {
+            maxError = MIDDLE_LOD_LARGE_FACE_MAX_ERROR;
+        }
+    }
+    if (lod == LODLevel::Small)
+    {
+        maxError = SMALL_LOD_NORMAL_FACE_MAX_ERROR;
+        if (its.indices.size() > SUPER_LARGE_FACES)
+        {
+            maxError = SMALL_LOD_SUPER_LARGE_FACE_MAX_ERROR;
+        }
+        else if(its.indices.size() > LARGE_FACES)
+        {
+            maxError = SMALL_LOD_LARGE_FACE_MAX_ERROR;
+        }
+    }
+
+    TriangleMesh originMesh(*itsCopy);
+
+    // Run simplification in background thread (async, detached)
+    // Ref: https://people.eecs.berkeley.edu/~jrs/meshpapers/GarlandHeckbert2.pdf
+    std::thread worker = std::thread(
+        [model, readyFlag, maxError, originMesh](std::unique_ptr<indexed_triangle_set> itsPtr) {
+            int      initFaceCount  = itsPtr->indices.size();
+            uint32_t triangleCount  = 0;
+            float    maxErrCopy     = maxError;
+
+            its_quadric_edge_collapse(*itsPtr, triangleCount, &maxErrCopy);
+
+            // Validate simplification quality
+            int endFaceCount = (*itsPtr).indices.size();
+            if (initFaceCount < INIT_FACE_LOW_COUNT || (initFaceCount < FINAL_FACE_LOW_COUNT && endFaceCount < initFaceCount * QEM_FACE_RATIO))
+            {
+                BOOST_LOG_TRIVIAL(info) << "LOD simplify: rejected (too few faces) init=" << initFaceCount << " end=" << endFaceCount;
+                return;
+            }
+
+            TriangleMesh simplifiedMesh(*itsPtr);
+            Vec3f        originMin  = originMesh.stats().min - Vec3f(AABB_RANGE_EPSILON, AABB_RANGE_EPSILON, AABB_RANGE_EPSILON);
+            Vec3f        originMax  = originMesh.stats().max + Vec3f(AABB_RANGE_EPSILON, AABB_RANGE_EPSILON, AABB_RANGE_EPSILON);
+
+            // Ensure simplified mesh stays within original bounding box
+            if (originMin.x() < simplifiedMesh.stats().min.x() &&
+                originMin.y() < simplifiedMesh.stats().min.y() &&
+                originMin.z() < simplifiedMesh.stats().min.z() &&
+                originMax.x() > simplifiedMesh.stats().max.x() &&
+                originMax.y() > simplifiedMesh.stats().max.y() &&
+                originMax.z() > simplifiedMesh.stats().max.z()) {
+                if (model && model.use_count() >= 2) {
+                    // The model is render-disabled until the main thread sees
+                    // readyFlag (GLModel.hpp threading contract), so this
+                    // write is exclusive to this thread.
+                    model->init_from(simplifiedMesh);
+                    BOOST_LOG_TRIVIAL(info) << "LOD simplify: completed successfully, faces=" << initFaceCount
+                                            << " -> " << endFaceCount
+                                            << " (use_count=" << model.use_count() << ")";
+                } else {
+                    BOOST_LOG_TRIVIAL(info) << "LOD simplify: skipped init (use_count="
+                                                << (model ? model.use_count() : 0) << ")";
+                }
+            } else {
+                BOOST_LOG_TRIVIAL(info) << "LOD simplify: rejected (out of AABB bounds)";
+            }
+
+            // Last touch of the model: hand it over to the main thread. The
+            // release store pairs with the acquire load in
+            // promote_ready_lod_models(), making the init_from() writes above
+            // visible before enable_render() is called.
+            if (readyFlag)
+                readyFlag->store(true, std::memory_order_release);
+        },
+        std::move(itsCopy));
+
+    if (worker.joinable())
+    {
+        worker.detach();
+    }
+    return true;
+}
+
+void GLVolume::set_bounding_boxes_as_dirty()
+{
+    // Force immediate LOD re-evaluation
+    m_lodUpdateIndex      = LOD_UPDATE_FREQUENCY;
+    m_transformed_bounding_box.reset();
+    m_transformed_convex_hull_bounding_box.reset();
+    m_transformed_non_sinking_bounding_box.reset();
+}
+
+void GLVolume::promote_ready_lod_models()
+{
+    // The LOD models stay render-disabled while their background thread may
+    // still be writing them. Once the worker signals completion (release
+    // store in SimplifyMesh), the acquire load below makes its writes
+    // visible, and enable_render() hands the model over to the main thread.
+    if (m_modelMiddle && m_lodMiddleReady && m_modelMiddle->is_render_disabled() && m_lodMiddleReady->load(std::memory_order_acquire))
+        m_modelMiddle->enable_render();
+    if (m_modelSmall && m_lodSmallReady && m_modelSmall->is_render_disabled() && m_lodSmallReady->load(std::memory_order_acquire))
+        m_modelSmall->enable_render();
+}
+
 Transform3d GLVolume::world_matrix() const
 {
     Transform3d m          = m_instance_transformation.get_matrix() * m_volume_transformation.get_matrix();
@@ -1995,7 +2214,21 @@ BoundingBoxf3 GLVolume::transformed_convex_hull_bounding_box(const Transform3d& 
 
 BoundingBoxf3 GLVolume::transformed_non_sinking_bounding_box(const Transform3d& trafo) const
 {
-    return GUI::wxGetApp().plater()->model().objects[object_idx()]->volumes[volume_idx()]->mesh().transformed_bounding_box(trafo, 0.0);
+    auto* plater = GUI::wxGetApp().plater();
+    if (!plater)
+        return bounding_box().transformed(trafo);
+
+    const auto& objects = plater->model().objects;
+    int         obj_idx = object_idx();
+    if (obj_idx < 0 || obj_idx >= (int) objects.size() || !objects[obj_idx])
+        return bounding_box().transformed(trafo);
+
+    const auto& volumes = objects[obj_idx]->volumes;
+    int         vol_idx = volume_idx();
+    if (vol_idx < 0 || vol_idx >= (int) volumes.size())
+        return bounding_box().transformed(trafo);
+
+    return volumes[vol_idx]->mesh().transformed_bounding_box(trafo, 0.0);
 }
 
 const BoundingBoxf3& GLVolume::transformed_non_sinking_bounding_box() const
@@ -2053,97 +2286,6 @@ void GLVolume::render()
 
     simple_render(shader, model_objects, colors);
 }
-
-// BBS: add outline related logic
-void GLVolume::render_with_outline(const GUI::Size& cnv_size)
-{
-    if (!is_active)
-        return;
-
-    GLShaderProgram* shader = GUI::wxGetApp().get_current_shader();
-    if (shader == nullptr)
-        return;
-
-    ModelObjectPtrs&       model_objects = GUI::wxGetApp().model().objects;
-    std::vector<ColorRGBA> colors        = get_extruders_colors();
-
-    const GUI::OpenGLManager::EFramebufferType framebuffers_type = GUI::OpenGLManager::get_framebuffers_type();
-    if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Unknown) {
-        // No supported, degrade to normal rendering
-        simple_render(shader, model_objects, colors);
-        return;
-    }
-
-    // 1st. render pass, render the model into a separate render target that has only depth buffer
-    GLuint depth_fbo = 0;
-    GLuint depth_tex = 0;
-    if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Arb) {
-        glsafe(::glGenFramebuffers(1, &depth_fbo));
-        glsafe(::glBindFramebuffer(GL_FRAMEBUFFER, depth_fbo));
-
-        glActiveTexture(GL_TEXTURE0);
-        glsafe(::glGenTextures(1, &depth_tex));
-        glsafe(::glBindTexture(GL_TEXTURE_2D, depth_tex));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-        glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, cnv_size.get_width(), cnv_size.get_height(), 0, GL_DEPTH_COMPONENT,
-                              GL_FLOAT, nullptr));
-
-        glsafe(::glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_tex, 0));
-    } else {
-        glsafe(::glGenFramebuffersEXT(1, &depth_fbo));
-        glsafe(::glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, depth_fbo));
-
-        glActiveTexture(GL_TEXTURE0);
-        glsafe(::glGenTextures(1, &depth_tex));
-        glsafe(::glBindTexture(GL_TEXTURE_2D, depth_tex));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-        glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-        glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, cnv_size.get_width(), cnv_size.get_height(), 0, GL_DEPTH_COMPONENT,
-                              GL_FLOAT, nullptr));
-
-        glsafe(::glFramebufferTexture2D(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_TEXTURE_2D, depth_tex, 0));
-    }
-    glsafe(::glClear(GL_DEPTH_BUFFER_BIT));
-    if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
-        model.render();
-    else
-        model.render(this->tverts_range);
-    glsafe(::glBindTexture(GL_TEXTURE_2D, 0));
-
-    // 2nd. render pass, just a normal render with the depth buffer passed as a texture
-    if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Arb) {
-        glsafe(::glBindFramebuffer(GL_FRAMEBUFFER, 0));
-    } else if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Ext) {
-        glsafe(::glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0));
-    }
-    shader->set_uniform("is_outline", true);
-    shader->set_uniform("screen_size", Vec2f{cnv_size.get_width(), cnv_size.get_height()});
-    glActiveTexture(GL_TEXTURE0);
-    glsafe(::glBindTexture(GL_TEXTURE_2D, depth_tex));
-    shader->set_uniform("depth_tex", 0);
-    simple_render(shader, model_objects, colors);
-
-    // Some clean up to do
-    glsafe(::glBindTexture(GL_TEXTURE_2D, 0));
-    shader->set_uniform("is_outline", false);
-    if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Arb) {
-        glsafe(::glBindFramebuffer(GL_FRAMEBUFFER, 0));
-        if (depth_fbo != 0)
-            glsafe(::glDeleteFramebuffers(1, &depth_fbo));
-    } else if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Ext) {
-        glsafe(::glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0));
-        if (depth_fbo != 0)
-            glsafe(::glDeleteFramebuffersEXT(1, &depth_fbo));
-    }
-    if (depth_tex != 0)
-        glsafe(::glDeleteTextures(1, &depth_tex));
-}
-
 // BBS add render for simple case
 void GLVolume::simple_render(GLShaderProgram*            shader,
                              ModelObjectPtrs&            model_objects,
@@ -2640,10 +2782,45 @@ void GLVolume::simple_render(GLShaderProgram*            shader,
                 m.render(this->tverts_range);
         }
     } else {
-        if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
-            model.render();
-        else
-            model.render(this->tverts_range);
+        // Select LOD model based on current LOD level
+        static int lodRenderLogCounter = 0;
+        lodRenderLogCounter++;
+        if (!picking) {
+            // DEBUG: color-code LOD levels for visual verification
+            // GREEN = HIGH (original), BLUE = MIDDLE, RED = SMALL
+            if (m_curLodLevel == LODLevel::Small && m_modelSmall && !m_modelSmall->is_render_disabled() && m_modelSmall->is_initialized()) {
+                if (lodRenderLogCounter % 180 == 0)
+                    BOOST_LOG_TRIVIAL(debug) << "LOD: SMALL '" << name << "'";
+                m_modelSmall->set_color(render_color);
+                //m_modelSmall->set_color(ColorRGBA::GREEN());
+                m_modelSmall->render();
+            } else if (m_curLodLevel == LODLevel::Middle && m_modelMiddle && !m_modelMiddle->is_render_disabled() && m_modelMiddle->is_initialized()) {
+                if (lodRenderLogCounter % 180 == 0)
+                    BOOST_LOG_TRIVIAL(debug) << "LOD: MID '" << name << "'";
+                m_modelMiddle->set_color(render_color);
+                //m_modelMiddle->set_color(ColorRGBA::BLUE());
+                m_modelMiddle->render();
+            } else {
+                if (lodRenderLogCounter % 180 == 0) {
+                    BOOST_LOG_TRIVIAL(debug) << "LOD: HIGH fallback '" << name
+                                              << "' lv=" << static_cast<int>(m_curLodLevel)
+                                              << " s=" << (m_modelSmall ? (int)(!m_modelSmall->is_render_disabled() && m_modelSmall->is_initialized()) : -1)
+                                              << " m=" << (m_modelMiddle ? (int)(!m_modelMiddle->is_render_disabled() && m_modelMiddle->is_initialized()) : -1);
+                }
+                // model.set_color() already called in render loop line 1301
+                //model.set_color(ColorRGBA::RED());
+                if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
+                    model.render();
+                else
+                    model.render(this->tverts_range);
+            }
+        } else {
+            // Picking: always use full-resolution model
+            if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
+                model.render();
+            else
+                model.render(this->tverts_range);
+        }
     }
     if (this->is_left_handed())
         glFrontFace(GL_CCW);
@@ -2707,13 +2884,15 @@ std::vector<int> GLVolumeCollection::load_object(const ModelObject*      model_o
                                                  const std::vector<int>& instance_idxs,
                                                  const std::string&      color_by,
                                                  bool                    opengl_initialized,
-                                                 bool                    need_raycaster)
+                                                 bool                    need_raycaster,
+                                                 bool                    lodEnabled)
 {
     std::vector<int> volumes_idx;
     for (int volume_idx = 0; volume_idx < int(model_object->volumes.size()); ++volume_idx)
         for (int instance_idx : instance_idxs)
-            volumes_idx.emplace_back(this->GLVolumeCollection::load_object_volume(model_object, obj_idx, volume_idx, instance_idx, color_by,
-                                                                                  opengl_initialized, false, false, need_raycaster));
+            volumes_idx.emplace_back(this->GLVolumeCollection::load_object_volume(
+                model_object, obj_idx, volume_idx, instance_idx, color_by,
+                opengl_initialized, false, false, need_raycaster, lodEnabled));
     return volumes_idx;
 }
 
@@ -2725,7 +2904,8 @@ int GLVolumeCollection::load_object_volume(const ModelObject* model_object,
                                            bool               opengl_initialized,
                                            bool               in_assemble_view,
                                            bool               use_loaded_id,
-                                           bool               need_raycaster)
+                                           bool               need_raycaster,
+                                           bool               lodEnabled)
 {
     const ModelVolume*   model_volume = model_object->volumes[volume_idx];
     const int            extruder_id  = model_volume->extruder_id();
@@ -2733,20 +2913,71 @@ int GLVolumeCollection::load_object_volume(const ModelObject* model_object,
     auto                 color        = GLVolume::MODEL_COLOR[((color_by == "volume") ? volume_idx : obj_idx) % 4];
     color.a(model_volume->is_model_part() ? 0.7f : 0.4f);
 
-    std::shared_ptr<const TriangleMesh> mesh = model_volume->mesh_ptr();
+    std::shared_ptr<const TriangleMesh> meshSharedPtr = model_volume->mesh_ptr();
+    const TriangleMesh*                 meshPtr       = meshSharedPtr.get();
     this->volumes.emplace_back(new GLVolume(color));
     GLVolume& v = *this->volumes.back();
     v.set_color(color_from_model_volume(*model_volume));
     v.name = model_volume->name;
 
+    // LOD mesh sharing: if another volume already loaded this mesh, reuse its LOD data
+    v.m_oriMesh = meshPtr;
+    auto iter = g_meshVolumesMap.find(meshPtr);
+    if (iter != g_meshVolumesMap.end()) {
+        MeshLodEntry& entry = iter->second;
+        if (!entry.volumes.empty()) {
+            GLVolume* firstVolume = *entry.volumes.begin();
+            // Share LOD models via shared_ptr (ref-counted, safe GPU buffer sharing)
+            v.m_modelMiddle = firstVolume->m_modelMiddle;
+            v.m_modelSmall  = firstVolume->m_modelSmall;
+            // Share the readiness flags together with the models: while a
+            // flag is false its model may still be written by the background
+            // thread and must stay render-disabled.
+            v.m_lodMiddleReady = firstVolume->m_lodMiddleReady;
+            v.m_lodSmallReady  = firstVolume->m_lodSmallReady;
+            // Note: model (main mesh) is always created per-volume since it's a value type
+            // This avoids dangling GPU buffer issues when one volume is destroyed
+        }
+        entry.volumes.emplace(&v);
+    } else {
+        MeshLodEntry entry;
+        entry.mesh = meshSharedPtr; // keep the mesh (and thus the map key) alive
+        entry.volumes.emplace(&v);
+        g_meshVolumesMap.emplace(meshPtr, std::move(entry));
+    }
+
+    // Always init the main model (GLModel is a value type, not shared)
+    const TriangleMesh& mesh = *meshPtr;
 #if ENABLE_SMOOTH_NORMALS
     v.model.init_from(mesh, true);
 #else
-    v.model.init_from(*mesh);
-    if (need_raycaster) {
-        v.mesh_raycaster = std::make_unique<GUI::MeshRaycaster>(mesh);
-    }
+    v.model.init_from(mesh);
 #endif // ENABLE_SMOOTH_NORMALS
+
+    // Generate LOD simplified models only once (shared via shared_ptr)
+    if (lodEnabled && !v.m_modelMiddle && !v.m_modelSmall) {
+        BOOST_LOG_TRIVIAL(info) << "LOD: Creating simplified models for '" << v.name
+                                << "' faces=" << mesh.its.indices.size();
+        v.m_modelMiddle = std::make_shared<GUI::GLModel>();
+        // Keep rendering disabled until the background thread finishes
+        // init_from() (GLModel.hpp threading contract); the main thread
+        // re-enables it in promote_ready_lod_models() once the ready flag
+        // is observed.
+        v.m_modelMiddle->disable_render();
+        v.m_lodMiddleReady = std::make_shared<std::atomic<bool>>(false);
+        v.SimplifyMesh(mesh, v.m_modelMiddle, v.m_lodMiddleReady, LODLevel::Middle);
+
+        v.m_modelSmall = std::make_shared<GUI::GLModel>();
+        v.m_modelSmall->disable_render();
+        v.m_lodSmallReady = std::make_shared<std::atomic<bool>>(false);
+        v.SimplifyMesh(mesh, v.m_modelSmall, v.m_lodSmallReady, LODLevel::Small);
+    } else if (!lodEnabled) {
+        BOOST_LOG_TRIVIAL(info) << "LOD: Disabled for '" << v.name << "'";
+    }
+
+    if (need_raycaster) {
+        v.mesh_raycaster = std::make_unique<GUI::MeshRaycaster>(meshSharedPtr);
+    }
     v.composite_id = GLVolume::CompositeID(obj_idx, volume_idx, instance_idx);
 
     if (model_volume->is_model_part()) {
@@ -2877,6 +3108,21 @@ GLVolume* GLVolumeCollection::new_nontoolpath_volume(const ColorRGBA& rgba)
     return out;
 }
 
+void GLVolumeCollection::release_volume(GLVolume* volume)
+{
+    if (volume == nullptr || volume->m_oriMesh == nullptr)
+        return;
+    auto iter = g_meshVolumesMap.find(volume->m_oriMesh);
+    if (iter == g_meshVolumesMap.end())
+        return;
+    MeshLodEntry& entry = iter->second;
+    entry.volumes.erase(volume);
+    if (entry.volumes.empty())
+        // Last holder is gone: drop the entry together with its owning
+        // reference to the mesh, so the key address can be reused safely.
+        g_meshVolumesMap.erase(iter);
+}
+
 GLVolumeWithIdAndZList volumes_to_render(const GLVolumePtrs&                  volumes,
                                          GLVolumeCollection::ERenderType      type,
                                          const Transform3d&                   view_matrix,
@@ -2922,15 +3168,14 @@ int GLVolumeCollection::get_selection_support_threshold_angle(bool& enable_suppo
     return support_threshold_angle;
 }
 
-// BBS: add outline drawing logic
 void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
                                 bool                                 disable_cullface,
-                                const Transform3d&                   view_matrix,
-                                const Transform3d&                   projection_matrix,
-                                const GUI::Size&                     cnv_size,
+                                const GUI::Camera&                   camera,
                                 std::function<bool(const GLVolume&)> filter_func,
                                 bool                                 partly_inside_enable) const
 {
+    const Transform3d& view_matrix = camera.get_view_matrix();
+    const Transform3d& projection_matrix = camera.get_projection_matrix();
     GLVolumeWithIdAndZList to_render = volumes_to_render(volumes, type, view_matrix, filter_func);
     if (to_render.empty())
         return;
@@ -2951,7 +3196,46 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
     if (disable_cullface)
         glsafe(::glDisable(GL_CULL_FACE));
 
+    // Set static camera state for LOD evaluation in GLVolume rendering
+    GLVolume::s_curZoom = camera.get_zoom();
+    GLVolume::s_curViewProjMatrix = (projection_matrix.matrix() * view_matrix.matrix()).eval();
+    GLVolume::s_curViewport = camera.get_viewport();
+
+    // Evaluate LOD level for each volume once per frame
+    float curZoom = GLVolume::s_curZoom;
+    bool  shouldEvaluate = (std::abs(curZoom - GLVolume::s_lastCameraZoomValue) > ZOOM_THRESHOLD);
+    if (shouldEvaluate)
+    {
+        GLVolume::s_lastCameraZoomValue = curZoom;
+    }
+    for (GLVolumeWithIdAndZ& volume : to_render)
+    {
+        GLVolume* v = volume.first;
+        // Hand over LOD models whose background initialization finished.
+        // Must run every frame, on the main thread only.
+        v->promote_ready_lod_models();
+        if (!v->picking && (shouldEvaluate || ++v->m_lodUpdateIndex >= LOD_UPDATE_FREQUENCY))
+        {
+            v->m_lodUpdateIndex = 0;
+            LODLevel prevLod = v->m_curLodLevel;
+            v->m_curLodLevel = CalcVolumeBoxInScreenBiggerThanThreshold(
+                v->transformed_bounding_box(), GLVolume::s_curViewProjMatrix,
+                GLVolume::s_curViewport[2], GLVolume::s_curViewport[3]);
+            if (prevLod != v->m_curLodLevel) {
+                BOOST_LOG_TRIVIAL(debug) << "LOD level changed: " << static_cast<int>(prevLod)
+                                           << " -> " << static_cast<int>(v->m_curLodLevel)
+                                           << " (zoom=" << curZoom << ", name=" << v->name << ")";
+            }
+        }
+    }
+
     for (GLVolumeWithIdAndZ& volume : to_render) {
+        //CPU Frustum culling
+        auto _worldAABB = volume.first->transformed_bounding_box();
+        if (!camera.GetFrustum().Intersects(_worldAABB))
+        {
+            continue;
+        }
 #if ENABLE_MODIFIERS_ALWAYS_TRANSPARENT
         if (type == ERenderType::Transparent) {
             volume.first->force_transparent = true;
@@ -2988,10 +3272,6 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
         shader->set_uniform("color_clip_plane", m_color_clip_plane);
         shader->set_uniform("uniform_color_clip_plane_1", m_color_clip_plane_colors[0]);
         shader->set_uniform("uniform_color_clip_plane_2", m_color_clip_plane_colors[1]);
-        // BOOST_LOG_TRIVIAL(info) << boost::format("set uniform_color to {%1%, %2%, %3%, %4%}, with_outline=%5%, selected %6%")
-        //     %volume.first->render_color[0]%volume.first->render_color[1]%volume.first->render_color[2]%volume.first->render_color[3]
-        //     %with_outline%volume.first->selected;
-
         // BBS set print_volume to render volume
         // shader->set_uniform("print_volume.type", static_cast<int>(m_render_volume.type));
         // shader->set_uniform("print_volume.xy_data", m_render_volume.data);
@@ -3075,9 +3355,7 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
             ModelObjectPtrs& model_objects = GUI::wxGetApp().model().objects;
             std::vector<ColorRGBA> extruder_colors = get_extruders_colors();
             volume.first->simple_render(shader, model_objects, extruder_colors, false, &m_z_range);
-        } else if (!rendered_preview_gradient && volume.first->selected && GUI::wxGetApp().show_outline())
-            volume.first->render_with_outline(cnv_size);
-        else if (!rendered_preview_gradient) {
+        } else if (!rendered_preview_gradient) {
             volume.first->render();
         }
 
@@ -3117,7 +3395,7 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType      type,
 
 bool GLVolumeCollection::check_outside_state(const BuildVolume& build_volume, ModelInstanceEPrintVolumeState* out_state) const
 {
-    if (GUI::wxGetApp().plater() == NULL) {
+    if (GUI::wxGetApp().plater() == NULL || GUI::wxGetApp().is_recreating_gui()) {
         if (out_state != nullptr)
             *out_state = ModelInstancePVS_Inside;
         return false;

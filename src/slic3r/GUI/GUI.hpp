@@ -87,6 +87,9 @@ extern void desktop_open_any_folder(const std::string& path);
 
 //open dir and select the file to show
 extern void desktop_open_any_folderEx(const std::string& path);
+
+// Open the folder itself (enter it, no file selection)
+extern void desktop_open_folder(const std::string& path);
 } // namespace GUI
 } // namespace Slic3r
 

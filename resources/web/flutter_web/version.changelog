@@ -1,9 +1,9 @@
  #  Changelog
  
-## 2026-06-25
-### Features
-  * Add purifier control.
-  * Support official consumable identification.
-### Improvements
-  * Optimize internal API call logic.
-  * Optimize the experience of obtaining consumable matching on the print initiation page.
+ ## 2026-08-24
+ ###Features
+  * Added device control capabilities. 
+  * Added support for more official consumables.
+ ### Bug Fixes
+  * Fixed IP input issue in the German language environment.
+  * Fixed other known issues.

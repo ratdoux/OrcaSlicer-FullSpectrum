@@ -28,6 +28,11 @@
 #include <wx/tbarbase.h>
 #include "wx/textctrl.h"
 
+#include <functional>
+#include <memory>
+
+#include "GUI_Utils.hpp"
+
 namespace Slic3r { namespace GUI {
 
 class SMUserLogin : public wxDialog
@@ -55,6 +60,7 @@ public:
 
     void OnScriptResponseMessage(wxCommandEvent &evt);
     void RunScript(const wxString &javascript);
+    void try_complete_oauth_callback();
 
     bool m_networkOk;
     bool ShowErrorPage();
@@ -65,6 +71,11 @@ public:
 private:
     wxTimer *m_timer { nullptr };
     void     OnTimer(wxTimerEvent &event);
+    void     OnCallbackPollTimer(wxTimerEvent &event);
+
+    wxTimer *m_callback_timer { nullptr };
+    bool     m_callback_handled = false;
+    int      m_callback_attempts = 0;
 
 private:
 
@@ -90,6 +101,22 @@ private:
     wxString m_sm_user_agent;
 
     DECLARE_EVENT_TABLE()
+};
+
+class SMAskUserLoginDialog : public DPIDialog
+{
+public:
+    SMAskUserLoginDialog(wxWindow *parent);
+    ~SMAskUserLoginDialog();
+
+    void SetKeepAliveCallback(std::function<void()> fn);
+
+protected:
+    void on_dpi_changed(const wxRect &suggested_rect) override {}
+
+private:
+    std::unique_ptr<wxTimer> m_keepalive_timer;
+    std::function<void()> m_keepalive_fn;
 };
 
 }} // namespace Slic3r::GUI

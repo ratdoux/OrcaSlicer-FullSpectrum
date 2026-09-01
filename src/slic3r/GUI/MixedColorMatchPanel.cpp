@@ -99,14 +99,14 @@ private:
         for (int w : m_weights) total += std::max(0, w);
         if (total <= 0) return;
         for (size_t i = 0; i < m_weights.size(); ++i)
-            if (m_weights[i] > 0) { ids.push_back((int)i); counts.push_back(m_weights[i]); }
+            if (m_weights[i] > 0) { ids.push_back(static_cast<int>(i)); counts.push_back(m_weights[i]); }
 
         std::vector<int> pattern;
         pattern.reserve(SEGMENTS);
         std::vector<int> emitted(counts.size(), 0);
         for (int pos = 0; pos < SEGMENTS; ++pos) {
             int best = 0; double best_score = -1e9;
-            for (int i = 0; i < (int)counts.size(); ++i) {
+            for (int i = 0; i < static_cast<int>(counts.size()); ++i) {
                 double score = double(pos + 1) * double(counts[i]) / double(total) - double(emitted[i]);
                 if (score > best_score) { best_score = score; best = i; }
             }
@@ -117,7 +117,7 @@ private:
         const int seg = std::max(1, sz.GetHeight() / SEGMENTS);
         for (int s = 0; s < SEGMENTS; ++s) {
             const int idx = pattern[s];
-            const wxColour &c = (idx >= 0 && idx < (int)m_colors.size() && m_colors[idx].IsOk())
+            const wxColour &c = (idx >= 0 && idx < static_cast<int>(m_colors.size()) && m_colors[idx].IsOk())
                 ? m_colors[idx] : wxColour(200, 200, 200);
             dc.SetBrush(wxBrush(c));
             dc.SetPen(*wxTRANSPARENT_PEN);

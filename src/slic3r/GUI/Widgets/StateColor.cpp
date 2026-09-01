@@ -56,6 +56,7 @@ static std::map<wxColour, wxColour> gDarkColors{
     {"#333333", "#E4E4E7"}, // rgb(51, 51, 51)     Primary text
     {"#1A1A1A", "#FFFFFD"}, // rgb(26, 26, 26)     Hovered/active primary text (must not be #FFFFFF)
     {"#242424", "#E4E4E6"}, // rgb(36, 36, 36)    Primary text (hex input, cancel btn)
+    {"#18181B", "#E4E4E7"}, // rgb(24, 24, 27)    Login confirmation text
     {"#4A4A4A", "#A1A1AA"}, // rgb(74, 74, 74)    Secondary text (segmented btns)
     {"#7E7E7E", "#A1A1AB"}, // rgb(126, 126, 126)  Recommendation section labels
     {"#8F8F8F", "#8A8A95"}, // rgb(143, 143, 143) Label text (Hex:, Preview, percentages)
@@ -65,7 +66,10 @@ static std::map<wxColour, wxColour> gDarkColors{
     {"#FFF3EB", "#452A1A"}, // rgb(255, 243, 235)  Warning banner background
     {"#FF842D", "#FF9F43"}, // rgb(255, 132, 45)   Warning text
     {"#B4B4B4", "#73737D"}, // rgb(180, 180, 180)  Preview/strip border
-    {"#D1D5DC", "#52525C"}, // rgb(209, 213, 220)  Cancel button border
+    {"#E7E7E7", "#54545B"}, // rgb(231, 231, 231)  MixedFilament preview panel background
+    // NOTE: removed {"#939393","#000000"} — its dark value #000000 collided with
+    // {"#000000","#FFFFFE"} in revert()'s reverse map and broke lightModeColorFor(#000000).
+    {"#D1D5DC", "#52525B"}, // rgb(209, 213, 220)  Cancel button border
     {"#FF0000", "#FF5252"}, // rgb(255, 0, 0)      Hex input error border
     {"#019687", "#00675C"}, // rgb(1, 150, 135)    Confirm button bg (near #009688)
     {"#26A69A", "#008172"}, // rgb(38, 166, 154)   Default target/match color

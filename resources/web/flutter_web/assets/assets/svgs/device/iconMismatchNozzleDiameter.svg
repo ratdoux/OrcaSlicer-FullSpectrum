@@ -1,0 +1,37 @@
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Frame 2147224989">
+<g id="Frame" clip-path="url(#clip0_5391_4200)">
+<g id="Group 2147224744">
+<circle id="Ellipse 179" cx="14" cy="14" r="13.125" stroke="#FF3B30" stroke-width="1.75"/>
+<g id="Group 2147224743">
+<g id="Group 2147224739">
+<g id="Group 2147224736">
+<g id="Group 2147224741">
+<path id="Vector 766" d="M8.71875 21.4102L19.2894 21.4102" stroke="#FF3B30" stroke-width="1.4" stroke-linecap="round"/>
+<path id="Vector 767" d="M8.71875 20.2422V22.5755" stroke="#FF3B30" stroke-width="1.4" stroke-linecap="round"/>
+<path id="Vector 768" d="M19.2891 20.2422V22.5755" stroke="#FF3B30" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+</g>
+</g>
+<g id="Group 2147224740">
+<rect id="Rectangle 34625674" x="8.5584" y="12.1336" width="10.885" height="3.7975" rx="0.7175" stroke="#FF3B30" stroke-width="1.4"/>
+<g id="Rectangle 34625676">
+<mask id="path-6-inside-1_5391_4200" fill="white">
+<rect x="10.457" y="11.4336" width="7.0875" height="5.1975" rx="0.945"/>
+</mask>
+<rect x="10.457" y="11.4336" width="7.0875" height="5.1975" rx="0.945" stroke="#FF3B30" stroke-width="2.8" mask="url(#path-6-inside-1_5391_4200)"/>
+</g>
+<rect id="Rectangle 34625675" x="11.866" y="5.31328" width="4.27" height="6.6325" rx="0.7175" stroke="#FF3B30" stroke-width="1.4"/>
+<path id="Polygon 15" d="M13.416 19.0361C13.702 19.4398 14.301 19.4398 14.5869 19.0361L16.6641 16.1045H11.3389L13.416 19.0361Z" stroke="#FF3B30" stroke-width="1.4"/>
+</g>
+</g>
+</g>
+<path id="Vector 769" d="M2.91699 2.91797L25.0837 25.0846" stroke="#FF3B30" stroke-width="1.75" stroke-linecap="round"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_5391_4200">
+<rect width="28" height="28" fill="white"/>
+</clipPath>
+</defs>
+</svg>

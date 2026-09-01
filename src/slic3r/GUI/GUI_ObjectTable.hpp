@@ -489,6 +489,32 @@ public:
         }
     }
 
+    // Snapmaker: flow variant — speed keys became vector options (values ordered by
+    // process_flow_support) while the grid keeps editing a scalar: the standard (first) value.
+    ConfigOptionFloat get_global_speed_value(const DynamicPrintConfig& global_config, const std::string& config_option)
+    {
+        const auto* floats = global_config.option<ConfigOptionFloats>(config_option);
+        return ConfigOptionFloat(floats != nullptr && !floats->values.empty() ? floats->values.front() : 0.);
+    }
+
+    ConfigOptionFloat get_object_speed_value(const DynamicPrintConfig& global_config, ModelConfig* obj_config, const std::string& config_option)
+    {
+        if (obj_config->has(config_option)) {
+            const auto* floats = dynamic_cast<const ConfigOptionFloats*>(obj_config->option(config_option));
+            return ConfigOptionFloat(floats != nullptr && !floats->values.empty() ? floats->values.front() : 0.);
+        }
+        return get_global_speed_value(global_config, config_option);
+    }
+
+    ConfigOptionFloat get_volume_speed_value(const DynamicPrintConfig& global_config, ModelConfig* obj_config, ModelConfig* volume_config, const std::string& config_option)
+    {
+        if (volume_config->has(config_option)) {
+            const auto* floats = dynamic_cast<const ConfigOptionFloats*>(volume_config->option(config_option));
+            return ConfigOptionFloat(floats != nullptr && !floats->values.empty() ? floats->values.front() : 0.);
+        }
+        return get_object_speed_value(global_config, obj_config, config_option);
+    }
+
     int get_row_count() { return m_grid_data.size() + 1; }
     int get_col_count() { return m_col_data.size(); }
     ObjectGridCol* get_grid_col(int col) { return m_col_data[col]; }

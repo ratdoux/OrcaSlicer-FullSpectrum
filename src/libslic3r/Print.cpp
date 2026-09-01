@@ -691,6 +691,17 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         } else if (steps_ignore.find(opt_key) != steps_ignore.end()) {
             // These steps have no influence on the G-code whatsoever. Just ignore them.
         } else if (
+               opt_key == "filament_volume_type"
+            || opt_key == "nozzle_volume_type"
+            || opt_key == "filament_flow_support"
+            || opt_key == "process_flow_support"
+            || opt_key == "printer_flow_support"
+            || opt_key == "filament_flow_step_size") {
+            // Snapmaker: switching a filament's flow variant changes the values read out of
+            // flow-variant arrays without the arrays themselves
+            // changing, so everything has to be recalculated. Do NOT move these keys into steps_gcode.
+            invalidated |= this->invalidate_all_steps();
+        } else if (
                opt_key == "skirt_type"
             || opt_key == "skirt_loops"
             || opt_key == "skirt_speed"
@@ -1994,12 +2005,12 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
             std::string warning_key;
 
             // check jerk
-            if (m_default_object_config.default_jerk == 1 || m_default_object_config.outer_wall_jerk == 1 ||
-                m_default_object_config.inner_wall_jerk == 1) {
+            if (m_default_object_config.default_jerk.values.front() == 1 || m_default_object_config.outer_wall_jerk.values.front() == 1 ||
+                m_default_object_config.inner_wall_jerk.values.front() == 1) {
                warning->string = L("Setting the jerk speed too low could lead to artifacts on curved surfaces");
-               if (m_default_object_config.outer_wall_jerk == 1)
+               if (m_default_object_config.outer_wall_jerk.values.front() == 1)
                     warning_key = "outer_wall_jerk";
-               else if (m_default_object_config.inner_wall_jerk == 1)
+               else if (m_default_object_config.inner_wall_jerk.values.front() == 1)
                     warning_key = "inner_wall_jerk";
                else
                     warning_key = "default_jerk";
@@ -2007,12 +2018,12 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
                warning->opt_key = warning_key;
             }
 
-            if (warning_key.empty() && m_default_object_config.default_jerk > 0) {
+            if (warning_key.empty() && m_default_object_config.default_jerk.values.front() > 0) {
                std::vector<std::string> jerk_to_check = {"default_jerk",     "outer_wall_jerk",    "inner_wall_jerk", "infill_jerk",
                                                          "top_surface_jerk", "initial_layer_jerk", "travel_jerk"};
                const auto               max_jerk = std::min(m_config.machine_max_jerk_x.values[0], m_config.machine_max_jerk_y.values[0]);
                warning_key.clear();
-               if (m_default_object_config.default_jerk > 0)
+               if (m_default_object_config.default_jerk.values.front() > 0)
                     warning_key = check_motion_ability_object_setting(jerk_to_check, max_jerk);
                if (!warning_key.empty()) {
                     warning->string = L(
@@ -2025,7 +2036,7 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
 
             // check  junction deviation
             const auto max_junction_deviation = m_config.machine_max_junction_deviation.values[0];
-            if (warning_key.empty() && m_default_object_config.default_junction_deviation.value > max_junction_deviation) {
+            if (warning_key.empty() && m_default_object_config.default_junction_deviation.values.front() > max_junction_deviation) {
                 warning->string  = L( "Junction deviation setting exceeds the printer's maximum value "
                                       "(machine_max_junction_deviation).\nOrca will "
                                       "automatically cap the junction deviation to ensure it doesn't surpass the printer's "
@@ -2036,7 +2047,7 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
             
             // check acceleration
             const auto max_accel = m_config.machine_max_acceleration_extruding.values[0];
-            if (warning_key.empty() && m_default_object_config.default_acceleration > 0 && max_accel > 0) {
+            if (warning_key.empty() && m_default_object_config.default_acceleration.values.front() > 0 && max_accel > 0) {
                const bool support_travel_acc = (m_config.gcode_flavor == gcfRepetier || m_config.gcode_flavor == gcfMarlinFirmware ||
                                                 m_config.gcode_flavor == gcfRepRapFirmware);
 
@@ -3264,14 +3275,14 @@ void Print::_make_wipe_tower()
                         volume_to_purge *= m_config.flush_multiplier;
 
                         // Not all of that can be used for infill purging:
-                        // volume_to_purge -= (float)m_config.filament_minimal_purge_on_wipe_tower.get_at(extruder_id);
+                        // volume_to_purge -= (float)get_value_at(m_config, m_config.filament_minimal_purge_on_wipe_tower, ConfigFlowDomain::Filament, extruder_id);
 
                         // try to assign some infills/objects for the wiping:
                         volume_to_purge = layer_tools.wiping_extrusions().mark_wiping_extrusions(*this, current_extruder_id, extruder_id,
                                                                                                  volume_to_purge);
 
                         // add back the minimal amount toforce on the wipe tower:
-                        // volume_to_purge += (float)m_config.filament_minimal_purge_on_wipe_tower.get_at(extruder_id);
+                        // volume_to_purge += (float)get_value_at(m_config, m_config.filament_minimal_purge_on_wipe_tower, ConfigFlowDomain::Filament, extruder_id);
 
                         // request a toolchange at the wipe tower with at least volume_to_wipe purging amount
                         wipe_tower.plan_toolchange((float) layer_tools.print_z, (float) layer_tools.wipe_tower_layer_height,
@@ -3401,14 +3412,14 @@ void Print::_make_wipe_tower()
                             volume_to_wipe = wipe_volumes[current_extruder_id][extruder_id]; // total volume to wipe after this toolchange
                             volume_to_wipe *= m_config.flush_multiplier;
                             // Not all of that can be used for infill purging:
-                            volume_to_wipe -= (float) m_config.filament_minimal_purge_on_wipe_tower.get_at(extruder_id);
+                            volume_to_wipe -= (float) get_value_at(m_config, m_config.filament_minimal_purge_on_wipe_tower, ConfigFlowDomain::Filament, extruder_id);
 
                             // try to assign some infills/objects for the wiping:
                             volume_to_wipe = layer_tools.wiping_extrusions().mark_wiping_extrusions(*this, current_extruder_id, extruder_id,
                                                                                                     volume_to_wipe);
 
                             // add back the minimal amount toforce on the wipe tower:
-                            volume_to_wipe += (float) m_config.filament_minimal_purge_on_wipe_tower.get_at(extruder_id);
+                            volume_to_wipe += (float) get_value_at(m_config, m_config.filament_minimal_purge_on_wipe_tower, ConfigFlowDomain::Filament, extruder_id);
                         }
 
                         // request a toolchange at the wipe tower with at least volume_to_wipe purging amount

@@ -37,7 +37,7 @@ void CoolingBuffer::reset(const Vec3d &position)
     m_current_pos[0] = float(position.x());
     m_current_pos[1] = float(position.y());
     m_current_pos[2] = float(position.z());
-    m_current_pos[4] = float(m_config.travel_speed.value);
+    m_current_pos[4] = float(get_value_at(m_config, m_config.travel_speed, ConfigFlowDomain::Process));
     m_fan_speed = -1;
     m_additional_fan_speed = -1;
     m_current_fan_speed = -1;
@@ -732,10 +732,10 @@ std::string CoolingBuffer::apply_layer_cooldown(
         &ironing_fan_control, &ironing_fan_speed
     ](bool immediately_apply) {
 #define EXTRUDER_CONFIG(OPT) m_config.OPT.get_at(m_current_extruder)
-        float fan_min_speed = EXTRUDER_CONFIG(fan_min_speed);
+        float fan_min_speed = get_value_at(m_config, m_config.fan_min_speed, ConfigFlowDomain::Filament, m_current_extruder);
         float fan_speed_new = EXTRUDER_CONFIG(reduce_fan_stop_start_freq) ? fan_min_speed : 0;
         //BBS
-        int additional_fan_speed_new = EXTRUDER_CONFIG(additional_cooling_fan_speed);
+        int additional_fan_speed_new = get_value_at(m_config, m_config.additional_cooling_fan_speed, ConfigFlowDomain::Filament, m_current_extruder);
         int close_fan_the_first_x_layers = EXTRUDER_CONFIG(close_fan_the_first_x_layers);
         // Is the fan speed ramp enabled?
         int full_fan_speed_layer = EXTRUDER_CONFIG(full_fan_speed_layer);
@@ -747,7 +747,7 @@ std::string CoolingBuffer::apply_layer_cooldown(
             close_fan_the_first_x_layers = 1;
         }
         if (int(layer_id) >= close_fan_the_first_x_layers) {
-            float   fan_max_speed             = EXTRUDER_CONFIG(fan_max_speed);
+            float   fan_max_speed             = get_value_at(m_config, m_config.fan_max_speed, ConfigFlowDomain::Filament, m_current_extruder);
             float slow_down_layer_time = float(EXTRUDER_CONFIG(slow_down_layer_time));
             float fan_cooling_layer_time      = float(EXTRUDER_CONFIG(fan_cooling_layer_time));
             //BBS: always enable the fan speed interpolation according to layer time

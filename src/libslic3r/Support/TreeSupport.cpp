@@ -1300,7 +1300,12 @@ static void make_perimeter_and_infill(ExtrusionEntitiesPtr& dst, const ExPolygon
             dst = std::move(loops_entities);
         }
     }
-    dst.erase(std::remove_if(dst.begin(), dst.end(), [](ExtrusionEntity *entity) { return static_cast<ExtrusionEntityCollection *>(entity)->empty(); }), dst.end());
+
+    // Orca: Some entities are direct paths, so check the type before testing for an empty collection.
+    dst.erase(std::remove_if(dst.begin(), dst.end(), [](ExtrusionEntity *entity) {
+        return entity != nullptr && entity->is_collection() && static_cast<ExtrusionEntityCollection *>(entity)->empty();
+    }), dst.end());
+
     if (infill_first) {
         // sort regions to reduce travel
         Points ordering_points;
@@ -1527,9 +1532,28 @@ void TreeSupport::generate_toolpaths()
                         bool need_infill = with_infill;
                         if(m_object_config->support_base_pattern==smpDefault)
                             need_infill &= area_group.need_infill;
-                        std::shared_ptr<Fill> filler_support = std::shared_ptr<Fill>(Fill::new_from_type(layer_id == 0 ? ipConcentric : m_support_params.base_fill_pattern));
+                        // Ported from upstream OrcaSlicer d2ca5d3a1e.
+                        //
+                        // The bed-contacting support base (layer 0, no raft) previously forced
+                        // ipConcentric and computed spacing as
+                        //   support_base_pattern_spacing * support_density.
+                        // When the effective support_base_pattern_spacing is 0 (per-object override
+                        // or global default), spacing becomes 0, which makes FillConcentric's
+                        // while(!last.empty()) convergence loop spin forever: distance=0 means
+                        // offset2_ex(last, -(0+0), +0) is a no-op, so the polygon never shrinks.
+                        //
+                        // Fix: on the bed-contacting base layer, use ipRectilinear (which has no
+                        // offset-convergence loop) and real flow spacing (always > 0).
+                        const bool support_base_on_bed = (layer_id == 0 && m_raft_layers == 0);
+                        const InfillPattern base_fill_pattern = support_base_on_bed
+                            ? ipRectilinear
+                            : m_support_params.base_fill_pattern;
+                        std::shared_ptr<Fill> filler_support =
+                            std::shared_ptr<Fill>(Fill::new_from_type(base_fill_pattern));
                         filler_support->set_bounding_box(bbox_object);
-                        filler_support->spacing = object_config.support_base_pattern_spacing.value * support_density;// constant spacing to align support infill lines
+                        filler_support->spacing = support_base_on_bed
+                            ? flow.spacing()
+                            : (object_config.support_base_pattern_spacing.value * support_density);
                         filler_support->angle = Geometry::deg2rad(object_config.support_angle.value);
 
                         Polygons loops = to_polygons(poly);

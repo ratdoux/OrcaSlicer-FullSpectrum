@@ -39,6 +39,7 @@ struct DeviceInfo {
     bool        connected;
 	std::string img;
 	std::vector<std::string> nozzle_sizes;
+	std::vector<std::string> nozzle_volume_type;
     std::string              sn;
     int              protocol;
     std::string              api_key;
@@ -55,9 +56,58 @@ struct DeviceInfo {
 
 
     
-    // 用于JSON序列化
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(DeviceInfo, ip, dev_id, dev_name, model_name, preset_name, connected, img, nozzle_sizes, sn, protocol,api_key,
-		user, password, ca, cert, key, clientId, port, link_mode, userid, id)
+    // For JSON serialization, nozzle_volume_type needs to be compatible with scenarios where this field is missing in old configurations
+    friend void to_json(json& j, const DeviceInfo& device)
+    {
+        j = json{{"ip", device.ip},
+                 {"dev_id", device.dev_id},
+                 {"dev_name", device.dev_name},
+                 {"model_name", device.model_name},
+                 {"preset_name", device.preset_name},
+                 {"connected", device.connected},
+                 {"img", device.img},
+                 {"nozzle_sizes", device.nozzle_sizes},
+                 {"nozzle_volume_type", device.nozzle_volume_type},
+                 {"sn", device.sn},
+                 {"protocol", device.protocol},
+                 {"api_key", device.api_key},
+                 {"user", device.user},
+                 {"password", device.password},
+                 {"ca", device.ca},
+                 {"cert", device.cert},
+                 {"key", device.key},
+                 {"clientId", device.clientId},
+                 {"port", device.port},
+                 {"link_mode", device.link_mode},
+                 {"userid", device.userid},
+                 {"id", device.id}};
+    }
+
+    friend void from_json(const json& j, DeviceInfo& device)
+    {
+        j.at("ip").get_to(device.ip);
+        j.at("dev_id").get_to(device.dev_id);
+        j.at("dev_name").get_to(device.dev_name);
+        j.at("model_name").get_to(device.model_name);
+        j.at("preset_name").get_to(device.preset_name);
+        j.at("connected").get_to(device.connected);
+        j.at("img").get_to(device.img);
+        j.at("nozzle_sizes").get_to(device.nozzle_sizes);
+        device.nozzle_volume_type = j.value("nozzle_volume_type", std::vector<std::string>{});
+        j.at("sn").get_to(device.sn);
+        j.at("protocol").get_to(device.protocol);
+        j.at("api_key").get_to(device.api_key);
+        j.at("user").get_to(device.user);
+        j.at("password").get_to(device.password);
+        j.at("ca").get_to(device.ca);
+        j.at("cert").get_to(device.cert);
+        j.at("key").get_to(device.key);
+        j.at("clientId").get_to(device.clientId);
+        j.at("port").get_to(device.port);
+        j.at("link_mode").get_to(device.link_mode);
+        j.at("userid").get_to(device.userid);
+        j.at("id").get_to(device.id);
+    }
 };
 
 // Connected LAN mode BambuLab printer

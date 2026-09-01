@@ -121,6 +121,7 @@ void Field::PostInitialize()
 	{
 	case coPercents:
 	case coFloats:
+    case coFloatsOrPercents:
 	case coStrings:
 	case coBools:
 	case coInts:
@@ -285,7 +286,7 @@ void Field::get_value_by_opt_type(wxString& str, const bool check_value/* = true
 		}
         double val;
 
-        bool is_na_value = m_opt.nullable && str == m_na_value;
+        bool is_na_value = m_opt.nullable && (str == m_na_value || str == _(L("N/A")));
 
         const char dec_sep = is_decimal_separator_point() ? '.' : ',';
         const char dec_sep_alt = dec_sep == '.' ? ',' : '.';
@@ -359,8 +360,10 @@ void Field::get_value_by_opt_type(wxString& str, const bool check_value/* = true
 		break; }
 	case coString:
 	case coStrings:
+    case coFloatsOrPercents:
     case coFloatOrPercent: {
-        if (m_opt.type == coFloatOrPercent && !str.IsEmpty() &&  str.Last() != '%')
+        const bool is_float_or_percent = m_opt.type == coFloatOrPercent || m_opt.type == coFloatsOrPercents;
+        if (is_float_or_percent && !str.IsEmpty() && str.Last() != '%')
         {
             double val = 0.;
             const char dec_sep = is_decimal_separator_point() ? '.' : ',';
@@ -701,6 +704,19 @@ void TextCtrl::BUILD() {
 	wxString text_value = wxString("");
 
 	switch (m_opt.type) {
+    case coFloatsOrPercents:
+    {
+        const auto *values = m_opt.get_default_value<ConfigOptionFloatsOrPercents>();
+        if (values != nullptr && !values->values.empty()) {
+            const size_t safe_idx = std::min(static_cast<size_t>(std::max(m_opt_idx, 0)), values->values.size() - 1);
+            const FloatOrPercent &value = values->values[safe_idx];
+            text_value = double_to_string(value.value);
+            if (value.percent)
+                text_value += "%";
+            m_last_meaningful_value = text_value;
+        }
+        break;
+    }
 	case coFloatOrPercent:
 	{
 		text_value = double_to_string(m_opt.default_value->getFloat());
@@ -858,6 +874,7 @@ bool TextCtrl::value_was_changed()
     }
     case coString:
     case coStrings:
+    case coFloatsOrPercents:
     case coFloatOrPercent:
         return boost::any_cast<std::string>(m_value) != boost::any_cast<std::string>(val);
     default:
@@ -879,10 +896,11 @@ void TextCtrl::propagate_value()
 void TextCtrl::set_value(const boost::any& value, bool change_event/* = false*/) {
     m_disable_change_event = !change_event;
     if (m_opt.nullable) {
-        if (boost::any_cast<wxString>(value) != _(L("N/A")))
+        const wxString text_value = boost::any_cast<wxString>(value);
+        if (text_value != _(L("N/A")))
             m_last_meaningful_value = value;
 
-        text_ctrl()->SetValue(boost::any_cast<wxString>(value)); // BBS
+        text_ctrl()->SetValue(text_value); // BBS
     }
     else
         text_ctrl()->SetValue(value.empty() ? "" : boost::any_cast<wxString>(value)); // BBS // BBS: null value
@@ -1654,8 +1672,15 @@ boost::any& Choice::get_value()
                     m_opt_id == "ironing_pattern" || m_opt_id == "support_ironing_pattern" ||
                     m_opt_id == "support_style" || m_opt_id == "curr_bed_type")
         {
-            const std::string &key = m_opt.enum_values[field->GetSelection()];
-            m_value = int(m_opt.enum_keys_map->at(key));
+            // Selection can be invalid when the current value is not present in the rebuilt
+            // enum list (e.g. stale support_style vs support_type); fall back to the first
+            // entry instead of indexing out of bounds.
+            const int selection = field->GetSelection();
+            if (! m_opt.enum_values.empty()) {
+                const int index = (selection >= 0 && selection < static_cast<int>(m_opt.enum_values.size())) ? selection : 0;
+                const std::string &key = m_opt.enum_values[index];
+                m_value = static_cast<int>(m_opt.enum_keys_map->at(key));
+            }
         }
         // Support ThirdPartyPrinter
         else if (m_opt_id.compare("host_type") == 0 && m_opt.enum_values.size() > field->GetCount())

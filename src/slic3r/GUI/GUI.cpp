@@ -123,7 +123,30 @@ void change_opt_value(DynamicPrintConfig& config, const t_config_option_key& opt
             return;
         }
 
+        if (opt_def->type == coFloats && opt_def->nullable) {
+            ConfigOptionFloatsNullable value_new { boost::any_cast<double>(value) };
+            config.option<ConfigOptionFloatsNullable>(opt_key)->set_at(&value_new, opt_index, 0);
+            return;
+        }
+
+        if (opt_def->type == coPercents && opt_def->nullable) {
+            ConfigOptionPercentsNullable value_new { boost::any_cast<double>(value) };
+            config.option<ConfigOptionPercentsNullable>(opt_key)->set_at(&value_new, opt_index, 0);
+            return;
+        }
+
 		switch (opt_def->type) {
+        case coFloatsOrPercents: {
+            std::string str = boost::any_cast<std::string>(value);
+            bool percent = false;
+            if (!str.empty() && str.back() == '%') {
+                str.pop_back();
+                percent = true;
+            }
+            ConfigOptionFloatsOrPercents value_new { FloatOrPercent { std::stod(str), percent } };
+            config.option<ConfigOptionFloatsOrPercents>(opt_key)->set_at(&value_new, opt_index, 0);
+            break;
+        }
 		case coFloatOrPercent:{
 			std::string str = boost::any_cast<std::string>(value);
 			bool percent = false;
@@ -560,17 +583,30 @@ void desktop_open_datadir_folder()
 void desktop_open_any_folderEx(const std::string& path)
 {
 #ifdef _WIN32
-    // Convert path to Windows format (backslashes) and ensure it's properly quoted
-    boost::filesystem::path file_path(path);
-    file_path.make_preferred(); // Convert forward slashes to backslashes
-    wxString widepath = from_path(file_path);
-    // Quote the path to handle spaces and special characters
+    wxString widepath = wxString::FromUTF8(path);
+    widepath.Replace("/", "\\");
     wxString cmd = L"explorer /select,\"" + widepath + L"\"";
     ::wxExecute(cmd, wxEXEC_ASYNC, nullptr);
 #else
     desktop_open_any_folder(path);
 #endif
 }
+
+void desktop_open_folder(const std::string& path)
+{
+#ifdef _WIN32
+    wxString widepath = wxString::FromUTF8(path);
+    wxString cmd = L"explorer \"" + widepath + L"\"";
+    ::wxExecute(cmd, wxEXEC_ASYNC, nullptr);
+#elif __APPLE__
+    const char* argv[] = { "open", path.data(), nullptr };
+    ::wxExecute(const_cast<char**>(argv), wxEXEC_ASYNC, nullptr);
+#else
+    const char* argv[] = { "xdg-open", path.data(), nullptr };
+    ::wxExecute(const_cast<char**>(argv), wxEXEC_ASYNC, nullptr);
+#endif
+}
+
 void desktop_open_any_folder( const std::string& path )
 {
     // Execute command to open a file explorer, platform dependent.

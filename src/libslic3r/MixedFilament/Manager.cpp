@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <boost/log/trivial.hpp>
+#include <cstdlib>
 #include <locale>
 #include <sstream>
 #include <unordered_map>
@@ -81,30 +82,32 @@ void shift_physical_ref_after_deletion(MixedFilamentPhysicalRef& ref, unsigned i
 
 bool definition_uses_physical_filament(const MixedFilamentDefinition& definition, unsigned int physical_id)
 {
-    for (const MixedFilamentWeightedComponent& component : definition.recipe.blend.components)
-        if (physical_ref_is_present(component.filament, physical_id))
-            return true;
-
     if (definition.recipe.manual_pattern) {
         for (const std::vector<MixedFilamentPhysicalRef>& group : definition.recipe.manual_pattern->groups)
             for (const MixedFilamentPhysicalRef& ref : group)
                 if (physical_ref_is_present(ref, physical_id))
                     return true;
+        return false;
     }
+
+    for (const MixedFilamentWeightedComponent& component : definition.recipe.blend.components)
+        if (physical_ref_is_present(component.filament, physical_id))
+            return true;
 
     return false;
 }
 
 void shift_definition_after_physical_deletion(MixedFilamentDefinition& definition, unsigned int deleted_physical_id)
 {
-    for (MixedFilamentWeightedComponent& component : definition.recipe.blend.components)
-        shift_physical_ref_after_deletion(component.filament, deleted_physical_id);
-
     if (definition.recipe.manual_pattern) {
         for (std::vector<MixedFilamentPhysicalRef>& group : definition.recipe.manual_pattern->groups)
             for (MixedFilamentPhysicalRef& ref : group)
                 shift_physical_ref_after_deletion(ref, deleted_physical_id);
+        return;
     }
+
+    for (MixedFilamentWeightedComponent& component : definition.recipe.blend.components)
+        shift_physical_ref_after_deletion(component.filament, deleted_physical_id);
 }
 
 MixedFilamentLegacyRow legacy_row_from_definition_for_manager(const MixedFilamentDefinition& definition)
@@ -112,6 +115,28 @@ MixedFilamentLegacyRow legacy_row_from_definition_for_manager(const MixedFilamen
     MixedFilamentLegacyRow row = mixed_filament_legacy_row_from_definition(definition);
     normalize_legacy_row(row);
     return row;
+}
+
+bool mixed_filament_references_exceed_physical(const std::string& gradient_component_ids,
+                                               const std::string& manual_pattern,
+                                               size_t             num_physical)
+{
+    for (unsigned int id : MixedFilamentManager::decode_gradient_component_ids(gradient_component_ids, 0))
+        if (id > num_physical)
+            return true;
+
+    const std::string normalized = MixedFilamentManager::normalize_manual_pattern(manual_pattern);
+    for (const std::string& group : MixedFilamentManager::split_pattern_groups(normalized)) {
+        for (const std::string& token : MixedFilamentManager::split_pattern_group_to_tokens(group, 0)) {
+            if (token == "1" || token == "2")
+                continue;
+            char*               end = nullptr;
+            const unsigned long id  = std::strtoul(token.c_str(), &end, 10);
+            if (end != token.c_str() && *end == '\0' && id > num_physical)
+                return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -185,14 +210,21 @@ std::vector<unsigned int> MixedFilamentManager::decode_gradient_component_ids(co
 
 std::string MixedFilamentManager::encode_gradient_component_ids(const std::vector<unsigned int>& component_ids)
 {
+    const bool extended = std::any_of(component_ids.begin(), component_ids.end(), [](unsigned int id) { return id > 9; });
+    if (extended && component_ids.size() == 1 && component_ids.front() <= kMaxPhysicalFilaments)
+        return "/" + std::to_string(component_ids.front());
+
     std::string encoded;
-    encoded.reserve(component_ids.size());
-    bool seen[10] = {false};
+    std::unordered_set<unsigned int> seen;
     for (const unsigned int component_id : component_ids) {
-        if (component_id == 0 || component_id > kMaxPhysicalFilaments || seen[component_id])
+        if (component_id == 0 || component_id > kMaxPhysicalFilaments || !seen.insert(component_id).second)
             continue;
-        seen[component_id] = true;
-        encoded.push_back(char('0' + component_id));
+        if (extended && !encoded.empty())
+            encoded.push_back('/');
+        if (extended)
+            encoded += std::to_string(component_id);
+        else
+            encoded.push_back(char('0' + component_id));
     }
     return encoded;
 }
@@ -239,6 +271,7 @@ unsigned int MixedFilamentManager::physical_filament_from_token(const std::strin
 
 void MixedFilamentManager::auto_generate(const std::vector<std::string>& filament_colours)
 {
+    sync_mutable_legacy_cache_to_definitions(filament_colours.size());
     // Keep a copy of the old list so we can preserve user-modified ratios,
     // tombstones, and custom rows.
     std::vector<MixedFilamentDefinition> old = std::move(m_definitions);
@@ -305,6 +338,7 @@ void MixedFilamentManager::auto_generate(const std::vector<std::string>& filamen
 
 void MixedFilamentManager::remove_physical_filament(unsigned int deleted_filament_id)
 {
+    sync_mutable_legacy_cache_to_definitions(m_display_context.num_physical);
     if (deleted_filament_id == 0 || m_definitions.empty())
         return;
 
@@ -339,6 +373,7 @@ void MixedFilamentManager::add_custom_filament(unsigned int                    c
 bool MixedFilamentManager::add_custom_filament_definition(MixedFilamentDefinition         definition,
                                                           const std::vector<std::string>& filament_colours)
 {
+    sync_mutable_legacy_cache_to_definitions(filament_colours.size());
     const size_t n = filament_colours.size();
     if (n < 2)
         return false;
@@ -363,6 +398,108 @@ bool MixedFilamentManager::add_custom_filament_definition(MixedFilamentDefinitio
     invalidate_legacy_cache();
     refresh_display_colors(filament_colours);
     return true;
+}
+
+void MixedFilamentManager::add_batch_custom_filaments(const std::vector<MixedFilamentBatchEntry>& entries,
+                                                       const std::vector<std::string>&             filament_colours,
+                                                       std::vector<unsigned int>*                  out_assigned_ids)
+{
+    sync_mutable_legacy_cache_to_definitions(filament_colours.size());
+    if (out_assigned_ids != nullptr) {
+        out_assigned_ids->clear();
+        out_assigned_ids->reserve(entries.size());
+    }
+
+    const size_t num_physical = filament_colours.size();
+    if (num_physical < 2) {
+        if (out_assigned_ids != nullptr)
+            out_assigned_ids->assign(entries.size(), 0u);
+        return;
+    }
+    if (entries.empty())
+        return;
+
+    size_t current_total = total_filaments(num_physical);
+    for (const MixedFilamentBatchEntry& entry : entries) {
+        if (current_total >= MAXIMUM_FILAMENT_NUMBER) {
+            if (out_assigned_ids != nullptr)
+                out_assigned_ids->push_back(0u);
+            continue;
+        }
+
+        unsigned int component_a = std::clamp(entry.component_a, 1u, static_cast<unsigned int>(num_physical));
+        unsigned int component_b = std::clamp(entry.component_b, 1u, static_cast<unsigned int>(num_physical));
+        if (component_a == component_b)
+            component_b = component_a == 1 ? 2u : 1u;
+
+        MixedFilamentLegacyRow row;
+        row.component_a                 = component_a;
+        row.component_b                 = component_b;
+        row.stable_id                   = allocate_stable_id();
+        row.mix_b_percent               = std::clamp(entry.mix_b_percent, 0, 100);
+        row.ratio_a                     = 1;
+        row.ratio_b                     = 1;
+        row.manual_pattern              = normalize_manual_pattern(entry.manual_pattern);
+        row.gradient_component_ids      = normalize_gradient_component_ids(entry.gradient_component_ids);
+        row.gradient_component_weights  = entry.gradient_component_weights;
+        row.distribution_mode           = entry.distribution_mode;
+        row.gradient_enabled            = entry.gradient_enabled;
+        row.gradient_start              = entry.gradient_start;
+        row.gradient_end                = entry.gradient_end;
+        row.display_color               = entry.display_color;
+        row.enabled                     = true;
+        row.deleted                     = false;
+        row.custom                      = true;
+        row.origin_auto                 = false;
+        row.ui_mode                     = 2;
+
+        if (row.gradient_enabled && std::abs(row.gradient_start - row.gradient_end) < MixedFilament::k_min_gradient_difference)
+            row.gradient_enabled = false;
+        if (mixed_filament_references_exceed_physical(row.gradient_component_ids, row.manual_pattern, num_physical)) {
+            if (out_assigned_ids != nullptr)
+                out_assigned_ids->push_back(0u);
+            continue;
+        }
+
+        normalize_legacy_row(row);
+        m_definitions.emplace_back(mixed_filament_definition_from_legacy_row(row, num_physical));
+        if (out_assigned_ids != nullptr)
+            out_assigned_ids->push_back(static_cast<unsigned int>(current_total + 1));
+        ++current_total;
+    }
+
+    invalidate_legacy_cache();
+    refresh_display_colors(filament_colours);
+}
+
+std::vector<unsigned int> MixedFilamentManager::build_mixed_deletion_painting_remap(
+    size_t num_physical, size_t t2_total_filaments, const std::vector<unsigned int>& deleted_t2_vids)
+{
+    std::vector<unsigned int> remap(t2_total_filaments + 1, 0u);
+    if (deleted_t2_vids.empty()) {
+        for (size_t id = 1; id <= t2_total_filaments; ++id)
+            remap[id] = static_cast<unsigned int>(id);
+        return remap;
+    }
+
+    std::vector<unsigned int> sorted_deleted = deleted_t2_vids;
+    std::sort(sorted_deleted.begin(), sorted_deleted.end());
+    sorted_deleted.erase(std::unique(sorted_deleted.begin(), sorted_deleted.end()), sorted_deleted.end());
+
+    for (size_t old_id = 1; old_id <= t2_total_filaments; ++old_id) {
+        if (old_id <= num_physical) {
+            remap[old_id] = static_cast<unsigned int>(old_id);
+            continue;
+        }
+
+        const auto   it            = std::lower_bound(sorted_deleted.begin(), sorted_deleted.end(), static_cast<unsigned int>(old_id));
+        const size_t deleted_below = static_cast<size_t>(it - sorted_deleted.begin());
+        if (it != sorted_deleted.end() && *it == old_id)
+            remap[old_id] = 0u;
+        else if (deleted_below < old_id)
+            remap[old_id] = static_cast<unsigned int>(old_id - deleted_below);
+    }
+    return remap;
 }
 
 void MixedFilamentManager::clear_custom_entries()
@@ -451,7 +588,8 @@ std::string MixedFilamentManager::serialize_custom_entries()
         definition.identity.stable_id        = normalize_stable_id(definition.identity.stable_id);
         MixedFilamentLegacyRow mf                     = legacy_row_from_definition_for_manager(definition);
         const std::string normalized_ids     = normalize_gradient_component_ids(mf.gradient_component_ids);
-        const std::string normalized_weights = normalize_gradient_component_weights(mf.gradient_component_weights, normalized_ids.size());
+        const size_t normalized_id_count = decode_gradient_component_ids(normalized_ids, 0).size();
+        const std::string normalized_weights = normalize_gradient_component_weights(mf.gradient_component_weights, normalized_id_count);
         const size_t gradient_component_count = decode_gradient_component_ids(normalized_ids, m_display_context.num_physical).size();
         const size_t expected_gradient_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
             (mf.gradient_enabled ? size_t(3) : size_t(0));
@@ -590,8 +728,8 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
             (void) enabled;
             mf.enabled                    = !deleted;
             mf.gradient_component_ids     = normalize_gradient_component_ids(gradient_component_ids);
-            mf.gradient_component_weights = normalize_gradient_component_weights(gradient_component_weights,
-                                                                                 mf.gradient_component_ids.size());
+            mf.gradient_component_weights = normalize_gradient_component_weights(
+                gradient_component_weights, decode_gradient_component_ids(mf.gradient_component_ids, 0).size());
             mf.manual_pattern             = normalize_manual_pattern(manual_pattern);
             mf.distribution_mode          = clamp_int(distribution_mode, int(MixedFilamentLegacyRow::LayerCycle), int(MixedFilamentLegacyRow::Simple));
             mf.local_z_max_sublayers      = std::max(0, local_z_max_sublayers);
@@ -630,7 +768,8 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
         mf.ratio_a                    = 1;
         mf.ratio_b                    = 1;
         mf.gradient_component_ids     = normalize_gradient_component_ids(gradient_component_ids);
-        mf.gradient_component_weights = normalize_gradient_component_weights(gradient_component_weights, mf.gradient_component_ids.size());
+        mf.gradient_component_weights = normalize_gradient_component_weights(
+            gradient_component_weights, decode_gradient_component_ids(mf.gradient_component_ids, 0).size());
         mf.manual_pattern             = normalize_manual_pattern(manual_pattern);
         mf.distribution_mode          = clamp_int(distribution_mode, int(MixedFilamentLegacyRow::LayerCycle), int(MixedFilamentLegacyRow::Simple));
         mf.local_z_max_sublayers      = std::max(0, local_z_max_sublayers);
@@ -736,7 +875,13 @@ std::optional<unsigned int> MixedFilamentManager::filament_id_from_stable_id(Mix
 
 std::vector<MixedFilamentDefinition> MixedFilamentManager::mixed_filament_definitions(size_t num_physical) const
 {
-    (void) num_physical;
+    if (m_legacy_cache_mutable_borrowed && !m_legacy_cache_dirty) {
+        std::vector<MixedFilamentDefinition> definitions;
+        definitions.reserve(m_legacy_cache.size());
+        for (const MixedFilamentLegacyRow& row : m_legacy_cache)
+            definitions.emplace_back(mixed_filament_definition_from_legacy_row(row, num_physical));
+        return definitions;
+    }
     return m_definitions;
 }
 
@@ -834,6 +979,7 @@ void MixedFilamentManager::set_mixed_filament_legacy_rows(const std::vector<Mixe
 
 void MixedFilamentManager::refresh_display_colors(const std::vector<std::string>& filament_colours)
 {
+    sync_mutable_legacy_cache_to_definitions(filament_colours.size());
     MixedFilamentDisplayContext context = m_display_context;
     context.num_physical                = filament_colours.size();
     context.physical_colors             = filament_colours;
@@ -853,6 +999,12 @@ void MixedFilamentManager::refresh_display_colors(const std::vector<std::string>
 size_t MixedFilamentManager::visible_count() const
 {
     size_t count = 0;
+    if (m_legacy_cache_mutable_borrowed && !m_legacy_cache_dirty) {
+        for (const MixedFilamentLegacyRow& row : m_legacy_cache)
+            if (!row.deleted)
+                ++count;
+        return count;
+    }
     for (const MixedFilamentDefinition& definition : m_definitions)
         if (!definition.visibility.tombstoned)
             ++count;
@@ -862,6 +1014,12 @@ size_t MixedFilamentManager::visible_count() const
 std::vector<std::string> MixedFilamentManager::display_colors() const
 {
     std::vector<std::string> colors;
+    if (m_legacy_cache_mutable_borrowed && !m_legacy_cache_dirty) {
+        for (const MixedFilamentLegacyRow& row : m_legacy_cache)
+            if (!row.deleted)
+                colors.push_back(row.display_color);
+        return colors;
+    }
     for (const MixedFilamentDefinition& definition : m_definitions)
         if (!definition.visibility.tombstoned)
             colors.push_back(definition.presentation.display_color);
@@ -906,13 +1064,16 @@ const MixedFilamentLegacyRow* MixedFilamentManager::mixed_filament_from_id(unsig
 
 size_t MixedFilamentManager::mixed_filament_count() const
 {
+    if (m_legacy_cache_mutable_borrowed && !m_legacy_cache_dirty)
+        return m_legacy_cache.size();
     return m_definitions.size();
 }
 
 void MixedFilamentManager::invalidate_legacy_cache() const
 {
     m_legacy_cache_dirty = true;
-    m_legacy_cache_mutable_borrowed = false;
+    if (m_legacy_cache_mutable_borrowed)
+        rebuild_legacy_cache();
 }
 
 void MixedFilamentManager::rebuild_legacy_cache() const
@@ -945,9 +1106,9 @@ void MixedFilamentManager::sync_mutable_legacy_cache_to_definitions(size_t num_p
         definitions.emplace_back(std::move(definition));
     }
 
-    m_definitions                       = std::move(definitions);
-    m_legacy_cache_dirty                = true;
-    m_legacy_cache_mutable_borrowed     = false;
+    m_definitions        = std::move(definitions);
+    m_legacy_cache_dirty = true;
+    rebuild_legacy_cache();
 }
 
 void MixedFilamentManager::set_display_context(const MixedFilamentDisplayContext& context)
@@ -963,6 +1124,85 @@ void MixedFilamentManager::set_display_context(const MixedFilamentDisplayContext
         m_display_context.physical_tds.resize(m_display_context.num_physical, 0.0);
     if (!m_display_context.physical_colors.empty())
         refresh_display_colors(m_display_context.physical_colors);
+}
+
+RedundantFilamentSet compute_redundant_filaments(size_t                            num_physical,
+                                                 const std::vector<unsigned int>&   kept_physical_ids,
+                                                 const std::vector<unsigned int>&   kept_mixed_ids,
+                                                 const std::vector<MixedFilament>& mixed_filaments)
+{
+    if (num_physical == 0)
+        return {};
+
+    RedundantFilamentSet result;
+    std::vector<bool>    physical_kept(num_physical + 1, false);
+    for (unsigned int id : kept_physical_ids)
+        if (id >= 1 && id <= num_physical)
+            physical_kept[id] = true;
+
+    size_t kept_count = 0;
+    for (size_t id = 1; id <= num_physical; ++id)
+        if (physical_kept[id])
+            ++kept_count;
+    if (kept_count == 0) {
+        physical_kept[1] = true;
+        kept_count       = 1;
+    }
+    result.new_num_physical = kept_count;
+
+    for (size_t id = num_physical; id >= 1; --id)
+        if (!physical_kept[id])
+            result.redundant_physical.push_back(static_cast<unsigned int>(id));
+
+    std::unordered_set<unsigned int> kept_mixed;
+    for (unsigned int id : kept_mixed_ids)
+        if (id > num_physical)
+            kept_mixed.insert(id);
+
+    unsigned int virtual_id = static_cast<unsigned int>(num_physical + 1);
+    for (const MixedFilament& mixed : mixed_filaments) {
+        if (!mixed.enabled || mixed.deleted)
+            continue;
+
+        const bool retained = kept_mixed.count(virtual_id) != 0;
+        bool       cascade  = false;
+        if (retained) {
+            const std::string pattern = MixedFilamentManager::normalize_manual_pattern(mixed.manual_pattern);
+            if (!pattern.empty()) {
+                for (const std::string& group : MixedFilamentManager::split_pattern_groups(pattern)) {
+                    for (const std::string& token : MixedFilamentManager::split_pattern_group_to_tokens(group, 0)) {
+                        const unsigned int physical_id = MixedFilamentManager::physical_filament_from_token(token, mixed, num_physical);
+                        if (physical_id < 1 || physical_id > num_physical || !physical_kept[physical_id]) {
+                            cascade = true;
+                            break;
+                        }
+                    }
+                    if (cascade)
+                        break;
+                }
+            } else if (mixed.component_a < 1 || mixed.component_a > num_physical || !physical_kept[mixed.component_a]
+                       || mixed.component_b < 1 || mixed.component_b > num_physical || !physical_kept[mixed.component_b]) {
+                cascade = true;
+            } else {
+                for (unsigned int physical_id :
+                     MixedFilamentManager::decode_gradient_component_ids(mixed.gradient_component_ids, 0)) {
+                    if (physical_id < 1 || physical_id > num_physical || !physical_kept[physical_id]) {
+                        cascade = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!retained || cascade) {
+            result.redundant_mixed.push_back(virtual_id);
+            if (cascade)
+                ++result.cascade_mixed_count;
+        }
+        ++virtual_id;
+    }
+
+    return result;
 }
 
 } // namespace Slic3r

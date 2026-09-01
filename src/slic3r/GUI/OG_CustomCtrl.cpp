@@ -802,8 +802,32 @@ void OG_CustomCtrl::CtrlLine::render(wxDC& dc, wxCoord h_pos, wxCoord v_pos)
             }
         }
         is_url_string = !suppress_hyperlinks && !og_line.label_path.empty();
+
+        // Snapmaker: prefix flow-variant filament parameters with a marker icon, but
+        // only when the edited filament supports high flow (i.e. the standard/high-flow
+        // toggle is shown). Placed left of the label; the label column shrinks by the
+        // icon width so field columns stay aligned with non-marked rows.
+        int flow_icon_offset = 0;
+        {
+            bool is_flow_variant_line = false;
+            for (const Option& opt : option_set)
+                if (is_filament_flow_variant_option(opt.opt_id)) { is_flow_variant_line = true; break; }
+            if (is_flow_variant_line) {
+                bool high_flow_supported = false;
+                if (auto* cog = dynamic_cast<ConfigOptionsGroup*>(ctrl->opt_group))
+                    if (const DynamicPrintConfig* cfg = cog->get_config())
+                        if (auto* fs = cfg->option<ConfigOptionStrings>("filament_flow_support"))
+                            high_flow_supported = fs->values.size() > 1;
+                if (high_flow_supported) {
+                    wxBitmap icon = create_scaled_bitmap("flow_variant", ctrl);
+                    const wxSize isz = get_bitmap_size(icon);
+                    dc.DrawBitmap(icon, h_pos, v_pos + lround((height - isz.GetHeight()) / 2.0));
+                    flow_icon_offset = isz.GetWidth() + ctrl->m_h_gap;
+                }
+            }
+        }
         // BBS
-        h_pos = draw_text(dc, wxPoint(h_pos, v_pos), label /* + ":" */, text_clr, ctrl->opt_group->label_width * ctrl->m_em_unit, is_url_string, true);
+        h_pos = draw_text(dc, wxPoint(h_pos + flow_icon_offset, v_pos), label /* + ":" */, text_clr, ctrl->opt_group->label_width * ctrl->m_em_unit - flow_icon_offset, is_url_string, true);
     }
 
     // If there's a widget, build it and set result to the correct position.

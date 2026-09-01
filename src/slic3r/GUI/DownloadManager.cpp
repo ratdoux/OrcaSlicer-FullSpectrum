@@ -1,6 +1,8 @@
 #include "DownloadManager.hpp"
 #include "GUI_App.hpp"
 #include "libslic3r/Utils.hpp"
+#include "HttpServer.hpp"
+#include "slic3r/Utils/FileDecrypt.hpp"
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/log/trivial.hpp>
@@ -72,8 +74,12 @@ std::string DownloadManager::get_unique_file_path(const boost::filesystem::path&
         }
         unique_path = parent_dir / new_filename;
     }
-    
+
+#ifdef _WIN32
+    std::string result = boost::nowide::narrow(unique_path.wstring());
+#else
     std::string result = unique_path.string();
+#endif
     BOOST_LOG_TRIVIAL(debug) << boost::format("DownloadManager::get_unique_file_path: Final unique path: '%1%'") % result;
     return result;
 }
@@ -85,12 +91,25 @@ size_t DownloadManager::start_wcp_download(const std::string& file_url,
                                              const std::string& file_name,
                                              std::shared_ptr<SSWCP_Instance> wcp_instance,
                                              bool use_original_event_id) {
+    return start_wcp_download(file_url, file_name, wcp_instance, use_original_event_id, false, "");
+}
+
+size_t DownloadManager::start_wcp_download(const std::string& file_url,
+                                             const std::string& file_name,
+                                             std::shared_ptr<SSWCP_Instance> wcp_instance,
+                                             bool use_original_event_id,
+                                             bool need_decrypt,
+                                             const std::string& sn) {
     
     std::lock_guard<std::mutex> lock(m_tasks_mutex);
     size_t task_id = m_next_task_id++;
     
     auto downloadPath = wxGetApp().app_config->get("download_path");
+#ifdef _WIN32
+    boost::filesystem::path dest_folder(boost::nowide::widen(downloadPath));
+#else
     boost::filesystem::path dest_folder(downloadPath);
+#endif
     boost::filesystem::create_directories(dest_folder);
     boost::filesystem::path dest_file = dest_folder / file_name;
     
@@ -105,11 +124,14 @@ size_t DownloadManager::start_wcp_download(const std::string& file_url,
                                                 actual_file_name, 
                                                 dest_path, 
                                                 wcp_instance,
-                                                use_original_event_id);
+                                                use_original_event_id,
+                                                need_decrypt,
+                                                sn);
+
+    m_tasks[task_id] = task;
 
     task->state = DownloadTaskState::Downloading;
-    
-    m_tasks[task_id] = task;
+
     start_download_impl(task);
     return task_id;
 }
@@ -124,8 +146,12 @@ size_t DownloadManager::start_internal_download(const std::string& file_url,
     
     std::lock_guard<std::mutex> lock(m_tasks_mutex);
     size_t task_id = m_next_task_id++;
-    
+
+#ifdef _WIN32
+    boost::filesystem::path dest_path_obj(boost::nowide::widen(dest_path));
+#else
     boost::filesystem::path dest_path_obj(dest_path);
+#endif
     
     boost::filesystem::path dest_file_path;
     if (boost::filesystem::is_directory(dest_path_obj) || dest_path_obj.filename().empty()) {
@@ -150,9 +176,10 @@ size_t DownloadManager::start_internal_download(const std::string& file_url,
                                                 unique_dest_path, 
                                                 std::move(callbacks));
 
-    task->state = DownloadTaskState::Downloading;
-    
     m_tasks[task_id] = task;
+
+    task->state = DownloadTaskState::Downloading;
+
     start_download_impl(task);
     
     return task_id;
@@ -163,7 +190,11 @@ size_t DownloadManager::start_internal_download(const std::string& file_url,
                                                  DownloadCallbacks callbacks) {
     // Get default download path
     auto downloadPath = wxGetApp().app_config->get("download_path");
+#ifdef _WIN32
+    boost::filesystem::path dest_folder(boost::nowide::widen(downloadPath));
+#else
     boost::filesystem::path dest_folder(downloadPath);
+#endif
     boost::filesystem::create_directories(dest_folder);
     
     boost::filesystem::path dest_file = dest_folder / file_name;
@@ -172,6 +203,47 @@ size_t DownloadManager::start_internal_download(const std::string& file_url,
     std::string dest_path = get_unique_file_path(dest_file);
     
     return start_internal_download(file_url, file_name, dest_path, std::move(callbacks));
+}
+
+size_t DownloadManager::start_internal_download(const std::string& file_url,
+                                                 const std::string& file_name,
+                                                 DownloadCallbacks callbacks,
+                                                 bool need_decrypt,
+                                                 const std::string& sn) {
+    // Get default download path
+    auto downloadPath = wxGetApp().app_config->get("download_path");
+#ifdef _WIN32
+    boost::filesystem::path dest_folder(boost::nowide::widen(downloadPath));
+#else
+    boost::filesystem::path dest_folder(downloadPath);
+#endif
+    if (!sn.empty()) {
+        dest_folder /= sn;
+    }
+    boost::filesystem::create_directories(dest_folder);
+    
+    boost::filesystem::path dest_file = dest_folder / file_name;
+    
+    // Generate unique file path if file already exists
+    std::string dest_path = get_unique_file_path(dest_file);
+    
+    std::lock_guard<std::mutex> lock(m_tasks_mutex);
+    size_t task_id = m_next_task_id++;
+    
+    auto task = std::make_shared<DownloadTask>(task_id, 
+                                                file_url, 
+                                                file_name, 
+                                                dest_path, 
+                                                std::move(callbacks),
+                                                need_decrypt,
+                                                sn);
+
+    m_tasks[task_id] = task;
+
+    task->state = DownloadTaskState::Downloading;
+    start_download_impl(task);
+
+    return task_id;
 }
 
 void DownloadManager::start_download_impl(std::shared_ptr<DownloadTask> task) {
@@ -204,21 +276,26 @@ void DownloadManager::start_download_impl(std::shared_ptr<DownloadTask> task) {
                 if (progress.dltotal > 0) {
                     percent = (int)(progress.dlnow * 100 / progress.dltotal);
                 }
-                
-                task->percent = percent;
-                
-                // Throttle progress updates: update every 5% or every second
+
                 std::lock_guard<std::mutex> lock(m_tasks_mutex);
-                
+
                 // Double-check task still exists after acquiring lock
                 if (m_tasks.find(task->task_id) == m_tasks.end()) {
                     cancel = true;
                     return;
                 }
-                
+
                 auto& last_pct = m_last_percent[task->task_id];
                 auto& last_upd = m_last_update[task->task_id];
-                
+
+                // Monotonic progress: weak networks can report dlnow fluctuation
+                // (retry/buffer) that would otherwise make the bar jump backwards.
+                if (percent < last_pct) {
+                    percent = last_pct;
+                }
+                task->percent = percent;
+
+                // Throttle progress updates: update every 5% or every second
                 auto now = std::chrono::steady_clock::now();
                 bool should_update = false;
                 
@@ -251,7 +328,12 @@ void DownloadManager::start_download_impl(std::shared_ptr<DownloadTask> task) {
                         BOOST_LOG_TRIVIAL(debug) << "DownloadManager: Ignoring complete callback for canceled task " << task->task_id;
                         return;
                     }
-                    
+
+                    if (task->callbacks.on_should_write && !task->callbacks.on_should_write()) {
+                        cleanup_task(task->task_id);
+                        return;
+                    }
+
                     try {
                         // Save file
                         boost::nowide::ofstream file(task->dest_path, std::ios::binary);
@@ -277,10 +359,28 @@ void DownloadManager::start_download_impl(std::shared_ptr<DownloadTask> task) {
                             return;
                         }
                         file.close();
-                        
+
+                        std::string final_path = task->dest_path;
+
+                        if (task->need_decrypt && !task->sn.empty()) {
+                            const std::string enc_path = task->dest_path;
+                            const std::string tmp_path = enc_path + ".tmp";
+
+                            if (!decrypt_file_aes_cbc(enc_path, task->sn, Slic3r::PBKDF2_ITERATIONS, tmp_path)) {
+                                send_error_update(task, "File decryption failed");
+                                cleanup_task(task->task_id);
+                                return;
+                            }
+
+                            boost::filesystem::remove(enc_path);
+                            boost::filesystem::rename(tmp_path, enc_path);
+
+                            task->decrypt_path = enc_path;
+                        }
+
                         task->state = DownloadTaskState::Completed;
                         task->percent = 100;
-                        send_complete_update(task, task->dest_path);
+                        send_complete_update(task, final_path);
                         cleanup_task(task->task_id);
                     } catch (std::exception& e) {
                         std::string error_msg = std::string("File write exception: ") + e.what();
@@ -361,11 +461,16 @@ bool DownloadManager::cancel_download(size_t task_id) {
                 task->callbacks.on_progress = nullptr;
                 task->callbacks.on_complete = nullptr;
             }
-            
+
+            std::string partial_path = task->dest_path;
             // Cleanup task directly (already holding the lock, don't call cleanup_task)
             m_tasks.erase(task_id);
             m_last_percent.erase(task_id);
             m_last_update.erase(task_id);
+            if (!partial_path.empty()) {
+                boost::system::error_code ec;
+                boost::filesystem::remove(partial_path, ec);
+            }
         } else {
             return false;
         }

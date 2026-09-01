@@ -13,30 +13,45 @@ add_executable(${_TEST_NAME}_tests
 	test_full_spectrum_ks_pair_residual.cpp
 	test_mixed_filament.cpp
 	test_obj_image_map.cpp
+	test_mixed_filament_color_golden.cpp
 	test_triangle_selector.cpp
 	test_local_z_order_optimizer.cpp
 	test_placeholder_parser.cpp
 	test_polygon.cpp
+	test_profile_load_util.cpp
 	test_mutable_polygon.cpp
 	test_mutable_priority_queue.cpp
 	test_stl.cpp
 	test_meshboolean.cpp
-	# test_marchingsquares.cpp
+	test_marchingsquares.cpp
 	test_timeutils.cpp
 	test_voronoi.cpp
     test_optimizers.cpp
-    # test_png_io.cpp
+    test_png_io.cpp
+	test_sswcp_protocol.cpp
     test_indexed_triangle_set.cpp
     ../libnest2d/printer_parts.cpp
 	)
 
 if (TARGET OpenVDB::openvdb)
     target_sources(${_TEST_NAME}_tests PRIVATE test_hollowing.cpp)
+    # libslic3r links OpenVDB PRIVATE, so its symbols don't propagate to test
+    # executables. test_hollowing.cpp references OpenVDB directly and must link
+    # it explicitly here.
+    target_link_libraries(${_TEST_NAME}_tests PRIVATE OpenVDB::openvdb)
 endif()
     
-target_link_libraries(${_TEST_NAME}_tests test_common libslic3r OpenSSL::Crypto)
+find_package(JPEG REQUIRED)
+find_package(PNG REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(libnoise REQUIRED)
+find_package(Qhull 7.2 QUIET)
+if(UNIX AND NOT APPLE)
+    target_link_options(${_TEST_NAME}_tests PRIVATE "-Wl,--no-as-needed")
+endif()
+target_link_libraries(${_TEST_NAME}_tests PRIVATE ${TEST_LINK_LIBS})
 if (WIN32)
-    target_link_libraries(${_TEST_NAME}_tests bcrypt.lib)
+    target_link_libraries(${_TEST_NAME}_tests PRIVATE bcrypt.lib)
 endif()
 set_property(TARGET ${_TEST_NAME}_tests PROPERTY FOLDER "tests")
 
@@ -50,5 +65,5 @@ if (WIN32)
 	endif()
 endif()
 
-# catch_discover_tests(${_TEST_NAME}_tests TEST_PREFIX "${_TEST_NAME}: ")
-add_test(${_TEST_NAME}_tests ${_TEST_NAME}_tests ${CATCH_EXTRA_ARGS})
+catch_discover_tests(${_TEST_NAME}_tests TEST_PREFIX "${_TEST_NAME}: " EXTRA_ARGS ${CATCH_EXTRA_ARGS})
+# add_test(${_TEST_NAME}_tests ${_TEST_NAME}_tests ${CATCH_EXTRA_ARGS})

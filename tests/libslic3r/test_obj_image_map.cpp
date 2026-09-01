@@ -1,4 +1,5 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
@@ -28,6 +29,8 @@
 #include <numeric>
 #include <sstream>
 #include <set>
+
+using Catch::Approx;
 
 using namespace Slic3r;
 

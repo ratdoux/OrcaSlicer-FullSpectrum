@@ -217,8 +217,9 @@ std::string GCodeWriter::set_acceleration_internal(Acceleration type, unsigned i
         gcode << (separate_travel ? "M204 T" : "M204 P") << acceleration;
     else if (FLAVOR_IS(gcfKlipper)) {
         gcode << "SET_VELOCITY_LIMIT ACCEL=" << acceleration;
-        if (this->config.accel_to_decel_enable) {
-            gcode << " ACCEL_TO_DECEL=" << acceleration * this->config.accel_to_decel_factor / 100;
+        unsigned int filament_id = m_extruder != nullptr ? m_extruder->id() : 0;
+        if (get_value_at(this->config, this->config.accel_to_decel_enable, ConfigFlowDomain::Process, filament_id)) {
+            gcode << " ACCEL_TO_DECEL=" << acceleration * get_value_at(this->config, this->config.accel_to_decel_factor, ConfigFlowDomain::Process, filament_id) / 100;
             if (GCodeWriter::full_gcode_comment)
                 gcode << " ; adjust ACCEL_TO_DECEL";
         }
@@ -285,8 +286,9 @@ std::string GCodeWriter::set_accel_and_jerk(unsigned int acceleration, double je
     gcode << "SET_VELOCITY_LIMIT";
     if (acceleration != 0 && acceleration != m_last_acceleration) {
         gcode << " ACCEL=" << acceleration;
-        if (this->config.accel_to_decel_enable) {
-            gcode << " ACCEL_TO_DECEL=" << acceleration * this->config.accel_to_decel_factor / 100;
+        unsigned int filament_id = m_extruder != nullptr ? m_extruder->id() : 0;
+        if (get_value_at(this->config, this->config.accel_to_decel_enable, ConfigFlowDomain::Process, filament_id)) {
+            gcode << " ACCEL_TO_DECEL=" << acceleration * get_value_at(this->config, this->config.accel_to_decel_factor, ConfigFlowDomain::Process, filament_id) / 100;
         }
         m_last_acceleration = acceleration;
         is_empty = false;
@@ -487,6 +489,19 @@ std::string GCodeWriter::set_speed(double F, const std::string &comment, const s
     return w.string();
 }
 
+double GCodeWriter::active_travel_speed(bool first_layer_aware) const
+{
+    unsigned int extruder_id = m_extruder != nullptr ? m_extruder->id() : 0;
+    double speed = get_value_at(this->config, this->config.travel_speed, ConfigFlowDomain::Process, extruder_id);
+
+    if (first_layer_aware && m_is_first_layer) {
+        const auto ilt_fop = get_value_at(this->config, this->config.initial_layer_travel_speed, ConfigFlowDomain::Process, extruder_id);
+        speed              = ilt_fop.percent ? (ilt_fop.value * 0.01 * speed) : ilt_fop.value;
+    }
+
+    return speed;
+}
+
 std::string GCodeWriter::travel_to_xy(const Vec2d &point, const std::string &comment)
 {
     m_pos(0) = point(0);
@@ -498,8 +513,7 @@ std::string GCodeWriter::travel_to_xy(const Vec2d &point, const std::string &com
     
     GCodeG1Formatter w;
     w.emit_xy(point_on_plate);
-    auto speed = m_is_first_layer
-        ? this->config.get_abs_value("initial_layer_travel_speed") : this->config.travel_speed.value;
+    auto speed = this->active_travel_speed(true);
     w.emit_f(speed * 60.0);
     //BBS
     w.emit_comment(GCodeWriter::full_gcode_comment, comment);
@@ -519,8 +533,7 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const std::string &co
         used for unlift. */
         // BBS
     Vec3d dest_point = point;
-    auto travel_speed =
-        m_is_first_layer ? this->config.get_abs_value("initial_layer_travel_speed") : this->config.travel_speed.value;
+    auto travel_speed = this->active_travel_speed(true);
     //BBS: a z_hop need to be handle when travel
     if (std::abs(m_to_lift) > EPSILON) {
         assert(std::abs(m_lifted) < EPSILON);
@@ -617,13 +630,13 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const std::string &co
     {
         //force to move xy first then z after filament change
         w.emit_xy(Vec2d(point_on_plate.x(), point_on_plate.y()));
-        w.emit_f(this->config.travel_speed.value * 60.0);
+        w.emit_f(this->active_travel_speed() * 60.0);
         w.emit_comment(GCodeWriter::full_gcode_comment, comment);
         out_string = w.string() + _travel_to_z(point_on_plate.z(), comment);
     } else {
         GCodeG1Formatter w;
         w.emit_xyz(point_on_plate);
-        w.emit_f(this->config.travel_speed.value * 60.0);
+        w.emit_f(this->active_travel_speed() * 60.0);
         w.emit_comment(GCodeWriter::full_gcode_comment, comment);
         out_string = w.string();
     }
@@ -657,11 +670,9 @@ std::string GCodeWriter::_travel_to_z(double z, const std::string &comment)
     m_pos(2) = z;
 
     double speed = this->config.travel_speed_z.value;
-    if (speed == 0.) {
-        speed = m_is_first_layer ? this->config.get_abs_value("initial_layer_travel_speed")
-                                 : this->config.travel_speed.value;
-    }
-    
+    if (speed == 0.)
+        speed = this->active_travel_speed(true);
+
     GCodeG1Formatter w;
     w.emit_z(z);
     w.emit_f(speed * 60.0);
@@ -675,11 +686,9 @@ std::string GCodeWriter::_spiral_travel_to_z(double z, const Vec2d &ij_offset, c
     m_pos(2) = z;
 
     double speed = this->config.travel_speed_z.value;
-    if (speed == 0.) {
-        speed = m_is_first_layer ? this->config.get_abs_value("initial_layer_travel_speed")
-                                 : this->config.travel_speed.value;
-    }
-    
+    if (speed == 0.)
+        speed = this->active_travel_speed(true);
+
     std::string output = "G17\n";
     GCodeG2G3Formatter w(true);
     w.emit_z(z);

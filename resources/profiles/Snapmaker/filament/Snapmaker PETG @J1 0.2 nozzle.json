@@ -10,5 +10,11 @@
   ],
   "filament_max_volumetric_speed": [
     "1.6"
+  ],
+  "fan_max_speed": [
+    "30"
+  ],
+  "fan_min_speed": [
+    "10"
   ]
 }

@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/GCodeReader.hpp"
 #include "libslic3r/Layer.hpp"
@@ -12,7 +12,7 @@ TEST_CASE("SupportMaterial: Three raft layers created", "[SupportMaterial]")
 {
 	Slic3r::Print print;
 	Slic3r::Test::init_and_process_print({ TestMesh::cube_20x20x20 }, print, {
-		{ "support_material", 1 },
+		{ "enable_support",  true },
 		{ "raft_layers",      3 }
 		});
     REQUIRE(print.objects().front()->support_layers().size() == 3);
@@ -28,6 +28,7 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
 	auto check = [](Slic3r::Print &print, bool &first_support_layer_height_ok, bool &layer_height_minimum_ok, bool &layer_height_maximum_ok, bool &top_spacing_ok)
 	{
         ConstSupportLayerPtrsAdaptor support_layers = print.objects().front()->support_layers();
+        REQUIRE(!support_layers.empty());
 
 		first_support_layer_height_ok = support_layers.front()->print_z == print.config().initial_layer_print_height.value;
 
@@ -74,10 +75,10 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
         WHEN("First layer height = 0.4") {
 			Slic3r::Print print;
 			Slic3r::Test::init_and_process_print({ mesh }, print, {
-				{ "support_material",	1 },
+				{ "enable_support",		true },
 				{ "layer_height",		0.2 },
-				{ "first_layer_height", 0.4 },
-                { "dont_support_bridges", false },
+				{ "initial_layer_print_height", 0.4 },
+                { "bridge_no_support", false },
 			});
 			bool a, b, c, d;
             check(print, a, b, c, d);
@@ -89,10 +90,10 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
         WHEN("Layer height = 0.2 and, first layer height = 0.3") {
 			Slic3r::Print print;
 			Slic3r::Test::init_and_process_print({ mesh }, print, {
-				{ "support_material",	1 },
+				{ "enable_support",		true },
 				{ "layer_height",		0.2 },
-				{ "first_layer_height", 0.3 },
-                { "dont_support_bridges", false },
+				{ "initial_layer_print_height", 0.3 },
+                { "bridge_no_support", false },
             });
             bool a, b, c, d;
             check(print, a, b, c, d);
@@ -104,10 +105,10 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
         WHEN("Layer height = nozzle_diameter[0]") {
 			Slic3r::Print print;
 			Slic3r::Test::init_and_process_print({ mesh }, print, {
-				{ "support_material",	1 },
+				{ "enable_support",		true },
 				{ "layer_height",		0.2 },
-				{ "first_layer_height", 0.3 },
-                { "dont_support_bridges", false },
+				{ "initial_layer_print_height", 0.3 },
+                { "bridge_no_support", false },
             });
             bool a, b, c, d;
             check(print, a, b, c, d);

@@ -50,6 +50,7 @@ class PrintHostQueueDialog;
 class Plater;
 class MainFrame;
 class ParamsDialog;
+class SliceModePopup;
 
 enum QuickSlice
 {
@@ -199,6 +200,9 @@ protected:
     WXLRESULT MSWWindowProc(WXUINT nMsg, WXWPARAM wParam, WXLPARAM lParam) override;
 #endif
 
+    // Log and dispatch foreground/background change to Flutter subscribers
+    void NotifyActivateChange(bool active);
+
 public:
     MainFrame();
     ~MainFrame() = default;
@@ -290,10 +294,17 @@ public:
 
     bool        is_loaded() const { return m_loaded; }
     bool        is_last_input_file() const  { return !m_qs_last_input_file.IsEmpty(); }
+    // True once the close/restart path entered MainFrame::shutdown(): children
+    // must stop pumping the event loop (e.g. synchronous webview scripts whose
+    // wxYield would run the pending frame deletion mid-handler and crash).
+    bool        is_shutting_down() const { return m_shutting_down; }
     //BBS GUI refactor: remove unused layout new/dlg
     //bool        is_dlg_layout() const { return m_layout == ESettingsLayout::Dlg; }
 
     void        reslice_now();
+    // Run the slice-button action programmatically: refresh the scene, then slice
+    // the current plate or all plates according to the user's slice-mode selection.
+    void        start_slice();
     void        export_config();
     // Query user for the config file and open it.
     void        load_config_file();
@@ -320,6 +331,10 @@ public:
     void        request_select_tab(TabPosition pos);
     int         get_calibration_curr_tab();
     void        select_view(const std::string& direction);
+        /**
+     * @brief Fits the active canvas camera to the scene or selection.
+     */
+    void        ZoomCameraToFit() const;
     // Propagate changed configuration from the Tab to the Plater and save changes to the AppConfig
     void        on_config_changed(DynamicPrintConfig* cfg) const ;
     void        set_print_button_to_default(PrintSelectType select_type);
@@ -399,8 +414,10 @@ public:
     SideButton* m_slice_option_btn{ nullptr };
     SideButton* m_print_btn{ nullptr };
     SideButton* m_print_option_btn{ nullptr };
+    SliceModePopup* m_slice_mode_popup{ nullptr };
     mutable bool          m_slice_enable{ true };
     mutable bool          m_print_enable{ true };
+    bool                  m_shutting_down{ false };
     bool get_enable_slice_status();
     bool get_enable_print_status();
     //BBS

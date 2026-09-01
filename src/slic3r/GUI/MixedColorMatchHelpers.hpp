@@ -16,8 +16,35 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <functional>
+#include <memory>
+
+namespace Slic3r { class Print; }
 
 namespace Slic3r { namespace GUI {
+
+// ---- Shared constants ----
+
+// Canonical preset name for the Full Spectrum (formerly "CMYW") recommended-mode
+// palette. Resolved at call time against the current printer's nozzle_diameter:
+// if a matching Full Spectrum preset exists for that nozzle, it is returned;
+// otherwise falls back to the canonical 0.4 variant (the only SKU shipped today).
+// Future-proof: shipping a new nozzle variant (e.g. 0.6/0.8) just requires adding
+// its preset JSON under resources/profiles/Snapmaker/filament/ -- no code change.
+//
+// Thread-safety convention: same as the other preset_bundle readers in this file
+// (build_mixed_filament_display_context, extract_model_colors, etc.) -- caller
+// MUST be on the UI thread. No worker-thread call site exists today; the worker
+// lambda in launch_background_match captures values by copy precisely to keep
+// off preset_bundle (see load_full_spectrum_colors's safety note).
+std::string full_spectrum_preset_name();
+
+// True iff a Full Spectrum preset exists for the printer's *current* nozzle
+// diameter (no 0.4 fallback, unlike full_spectrum_preset_name). UI-thread only
+// (reads preset_bundle, same convention as above). Used by the batch-match guard
+// to gate Recommended mode on preset availability rather than a hard-coded 0.4.
+bool full_spectrum_preset_exists_for_current_nozzle();
 
 // ---- CIELAB color space types ----
 
@@ -171,7 +198,15 @@ MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std:
                                                           const std::vector<double>&      physical_tds,
                                                           const std::vector<std::string>& physical_material_ids,
                                                           MixedFilamentColorEngine        color_engine,
-                                                          bool                            use_td_prediction);
+                                                          bool                            use_td_prediction,
+                                                          int                             max_component_percent = 100,
+                                                          bool                            check_compatible       = true);
+
+MixedColorMatchRecipeResult build_best_color_match_recipe(const std::vector<std::string>& physical_colors,
+                                                          const wxColour&                 target_color,
+                                                          int                             min_component_percent = 0,
+                                                          int                             max_component_percent = 100,
+                                                          bool                            check_compatible       = true);
 
 MixedFilamentDefinition mixed_filament_definition_from_color_match_recipe(
     const MixedColorMatchRecipeResult& recipe,
@@ -308,5 +343,115 @@ CyclePatternParseResult parse_cycle_pattern(const std::string& normalized_patter
 std::string summarize_cycle_pattern_text(const std::string& normalized_pattern,
                                          const MixedFilament& entry,
                                          int num_physical);
+
+// ---- Batch Match Mapping ----
+
+/// Represents one color extracted from a multi-color model.
+struct ModelColorEntry
+{
+    unsigned int              color_index;    // 1-based
+    wxColour                  color;          // parsed wxColour for GUI operations
+    std::string               hex_value;      // "#RRGGBB"
+    std::vector<unsigned int> extruder_ids;   // extruder IDs (1-based) that use this color
+};
+
+/// One model color → mixed filament recipe mapping.
+struct ColorMappingEntry
+{
+    unsigned int                  model_color_index;
+    wxColour                      source_color;
+    MixedColorMatchRecipeResult   recipe;
+    unsigned int                  target_filament_id = 0;
+    wxColour                      matched_color;
+    double                        delta_e          = std::numeric_limits<double>::infinity();
+    bool                          is_pure_recipe   = false;
+    double                        pure_delta_e     = std::numeric_limits<double>::infinity();
+    std::vector<unsigned int>     merged_model_indices;
+    std::vector<unsigned int>     source_extruder_ids; // which model extruders need this mapping
+    // Set when the confirm handler overwrites this recipe onto an EXISTING mixed
+    // row (matched by stable id) instead of creating a new one.  Such a mapping
+    // stays in the list so cleanup keeps its row (kept_mixed) and apply skips it,
+    // but add_batch_custom_filaments / assigned_ids skip it.
+    bool                          in_place_edited  = false;
+};
+
+/// Result of a full batch color-matching operation.
+struct BatchMatchResult
+{
+    std::vector<unsigned int>      selected_physical_ids;
+    std::vector<ColorMappingEntry> mappings;
+    std::vector<Slic3r::MixedFilament> mixed_filaments;
+    double                         avg_delta_e  = std::numeric_limits<double>::infinity();
+    bool                           success      = false;
+    std::string                    error_message;
+    int                            error_code   = 0; // 0=ok, 1=partial, 2=cancelled, 3=timeout
+    bool                           is_recommended_mode       = false;
+    std::vector<std::string>       recommended_physical_colors;
+};
+
+/// Extract all unique colors from a multi-color 3D model.
+/// Uses ModelVolume::get_extruders() → Print::config().filament_colour[].
+/// Caps at 64 colors. Logs and skips malformed colors.
+std::vector<ModelColorEntry> extract_model_colors(const Slic3r::Print& print);
+
+/// Main entry: batch-match all model colors to filament recipes.
+/// Callable from background thread (cancel_token checked per-color).
+BatchMatchResult batch_match_model_colors(
+    const std::vector<ModelColorEntry>&          model_colors,
+    const std::vector<std::string>&             physical_colors,
+    int                                          min_component_percent,
+    int                                          max_component_percent = 100,
+    std::shared_ptr<std::atomic<bool>>           cancel_token = nullptr,
+    std::function<void(int,int)>                 progress_callback = nullptr,
+    bool                                         check_compatible = true);
+
+#if 0 // Dead code — no deduplication is performed (explicit policy since phase2)
+/// Deduplicate mappings where matched colors are visually close (ΔE < 1.5).
+std::vector<ColorMappingEntry> deduplicate_batch_mappings(
+    const std::vector<ColorMappingEntry>& raw_mappings,
+    double                                 merge_threshold = 1.5);
+#endif // 0
+
+/// Assign 1-based filament IDs: pure recipes → physical IDs (1-4), mixed → virtual.
+/// Virtual IDs start at num_physical + existing_mixed_count + 1 to avoid colliding
+/// with pre-existing mixed filaments already painted on the model.
+void assign_batch_virtual_filament_ids(
+    BatchMatchResult& result,
+    size_t             num_physical,
+    size_t             existing_mixed_count = 0);
+
+/// Merge mappings whose NON-PURE recipes are byte-identical (same components + ratio +
+/// gradient) into a single entry, so identical recipes share one virtual slot instead of
+/// each creating a duplicate mixed-filament row. Pure-recipe mappings (is_pure_recipe)
+/// are passed through untouched — they target existing physical IDs and never allocate a
+/// new slot. The surviving mapping keeps the FIRST occurrence's target_filament_id and
+/// accumulates the union of source_extruder_ids (so apply_batch_match_to_model still
+/// remaps every source extruder) plus merged_model_indices. Order is preserved.
+///
+/// Identity fingerprint: {component_a, component_b, mix_b_percent, gradient_component_ids,
+/// gradient_component_weights, manual_pattern}. Derived fields (preview_color, delta_e,
+/// display_color) are excluded — identical recipes produce identical blends by construction.
+std::vector<ColorMappingEntry> merge_duplicate_recipe_mappings(
+    const std::vector<ColorMappingEntry>& mappings);
+
+/// Populate result.mixed_filaments from result.mappings.
+void populate_mixed_filaments_from_mappings(
+    BatchMatchResult&                           result,
+    const Slic3r::MixedFilamentDisplayContext&  context);
+
+/// Apply matched recipes back to model painting data.
+/// Walks every volume's mmu_segmentation_facets and remaps original
+/// extruder_id→target_filament_id from the match result.
+void apply_batch_match_to_model(const BatchMatchResult& result);
+
+/// Recommend best 4-color filament combo from available presets.
+/// Pre-filters to Top-15 by single-color ΔE, then scores C(15,4)=1365 combos.
+/// Returns empty vector if fewer than 4 candidates available.
+std::vector<std::string> recommend_best_filament_combo(
+    const std::vector<ModelColorEntry>&  model_colors,
+    const std::vector<std::string>&      all_preset_colors,
+    int                                  min_component_percent = 15,
+    int                                  max_component_percent = 100,
+    std::shared_ptr<std::atomic<bool>>   cancel_token = nullptr);
 
 }} // namespace Slic3r::GUI

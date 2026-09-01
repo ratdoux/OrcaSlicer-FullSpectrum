@@ -4,7 +4,7 @@
   "instantiation": "true",
   "name": "Snapmaker PET",
   "setting_id": "3543479015",
-  "inherits": "Snapmaker PET @base",
+  "inherits": "fdm_filament_pet_category",
   "compatible_printers": [
     "Snapmaker A250 (0.4 nozzle)",
     "Snapmaker A250 (0.6 nozzle)",
@@ -30,5 +30,50 @@
     "Snapmaker A350 QSKit (0.4 nozzle)",
     "Snapmaker A350 QSKit (0.6 nozzle)",
     "Snapmaker A350 QSKit (0.8 nozzle)"
+  ],
+  "enable_pressure_advance": [
+    "1"
+  ],
+  "fan_max_speed": [
+    "40"
+  ],
+  "fan_min_speed": [
+    "0"
+  ],
+  "filament_cooling_final_speed": [
+    "3.4"
+  ],
+  "filament_cooling_initial_speed": [
+    "2.2"
+  ],
+  "filament_cooling_moves": [
+    "0"
+  ],
+  "filament_loading_speed": [
+    "25"
+  ],
+  "filament_loading_speed_start": [
+    "3"
+  ],
+  "filament_max_volumetric_speed": [
+    "6"
+  ],
+  "filament_unloading_speed": [
+    "25"
+  ],
+  "filament_unloading_speed_start": [
+    "3"
+  ],
+  "overhang_fan_speed": [
+    "60"
+  ],
+  "slow_down_min_speed": [
+    "50"
+  ],
+  "filament_load_time": [
+    "0"
+  ],
+  "filament_unload_time": [
+    "0"
   ]
 }

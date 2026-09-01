@@ -16,6 +16,7 @@
 #include "GLTexture.hpp"
 #include "MeshUtils.hpp"
 
+#include <atomic>
 #include <functional>
 #include <optional>
 
@@ -49,6 +50,7 @@ extern Slic3r::ColorRGBA              adjust_color_for_rendering(const Slic3r::C
 namespace Slic3r {
 namespace GUI {
     class Size;
+    class Camera;
 
     // Image-map colour preview is a viewport-only preference. Original texture
     // matches the authored asset; predicted colours apply the active filament
@@ -82,6 +84,13 @@ using ModelObjectPtrs = std::vector<ModelObject*>;
 // Return appropriate color based on the ModelVolume.
 extern ColorRGBA color_from_model_volume(const ModelVolume& model_volume);
 
+// LOD (Level of Detail) rendering optimization
+enum class LODLevel {
+    High,   // Original full-resolution mesh
+    Middle, // Medium simplification
+    Small,  // High simplification
+};
+
 class GLVolume {
 public:
     std::string name;
@@ -103,6 +112,12 @@ public:
 
     static float explosion_ratio;
     static float last_explosion_ratio;
+
+    // Cached camera state for LOD evaluation (set before render)
+    static float              s_lastCameraZoomValue;
+    static float              s_curZoom;
+    static Matrix4d           s_curViewProjMatrix;
+    static std::array<int, 4> s_curViewport;
 
     enum EHoverState : unsigned char
     {
@@ -162,6 +177,22 @@ public:
     std::vector<double>    preview_gradient_positions;
     std::vector<std::vector<ColorRGBA>> preview_gradient_colors_by_extruder;
     std::vector<std::vector<double>>    preview_gradient_positions_by_extruder;
+
+    // LOD (Level of Detail) rendering
+    // Each LOD level has its own simplified model; shared across volumes with the same mesh
+    mutable LODLevel                 m_curLodLevel{ LODLevel::High };
+    mutable unsigned char            m_lodUpdateIndex{ 0 };
+    std::shared_ptr<GUI::GLModel>    m_modelMiddle;
+    std::shared_ptr<GUI::GLModel>    m_modelSmall;
+    // Completion flags for the background simplification threads. The worker
+    // stores true (release) as its last touch of the LOD model; the main
+    // thread loads it (acquire) in promote_ready_lod_models() and only then
+    // calls enable_render() and starts using the model. Shared alongside the
+    // models so volumes sharing a LOD model share its readiness too.
+    std::shared_ptr<std::atomic<bool>> m_lodMiddleReady;
+    std::shared_ptr<std::atomic<bool>> m_lodSmallReady;
+    const TriangleMesh*              m_oriMesh{ nullptr };
+    std::pair<size_t, size_t>        m_tvertsRangeLod;
 
     struct CompositeID {
         CompositeID(int object_id, int volume_id, int instance_id) : object_id(object_id), volume_id(volume_id), instance_id(instance_id) {}
@@ -375,18 +406,18 @@ public:
 
     virtual void        render();
 
-    //BBS: add outline related logic and add virtual specifier
-    virtual void render_with_outline(const GUI::Size& cnv_size);
-
     //BBS: add simple render function for thumbnail
     void simple_render(GLShaderProgram* shader, ModelObjectPtrs& model_objects, std::vector<ColorRGBA>& extruder_colors,
                        bool ban_light = false, const std::array<float, 2>* z_range = nullptr);
 
-    void                set_bounding_boxes_as_dirty() {
-        m_transformed_bounding_box.reset();
-        m_transformed_convex_hull_bounding_box.reset();
-        m_transformed_non_sinking_bounding_box.reset();
-    }
+    // LOD mesh simplification (async, uses quadric edge collapse)
+    bool SimplifyMesh(const TriangleMesh& mesh, std::shared_ptr<GUI::GLModel> model, std::shared_ptr<std::atomic<bool>> readyFlag, LODLevel lod) const;
+    bool SimplifyMesh(const indexed_triangle_set& its, std::shared_ptr<GUI::GLModel> model, std::shared_ptr<std::atomic<bool>> readyFlag, LODLevel lod) const;
+    // Main-thread handoff: enable rendering of LOD models whose background
+    // initialization has completed (see SimplifyMesh). Call once per frame.
+    void promote_ready_lod_models();
+
+    void                set_bounding_boxes_as_dirty();
 
     bool                is_sla_support() const;
     bool                is_sla_pad() const;
@@ -410,7 +441,6 @@ class GLWipeTowerVolume : public GLVolume {
 public:
     GLWipeTowerVolume(const std::vector<ColorRGBA>& colors);
     void render() override;
-    void render_with_outline(const GUI::Size& cnv_size) override { render(); }
 
     std::vector<GUI::GLModel> model_per_colors;
     bool                              IsTransparent();
@@ -491,7 +521,8 @@ public:
         const std::vector<int>	&instance_idxs,
         const std::string 		&color_by,
         bool 					 opengl_initialized,
-        bool                     need_raycaster = true);
+        bool                     need_raycaster = true,
+        bool                     lodEnabled = true);
 
     int load_object_volume(
         const ModelObject *model_object,
@@ -502,7 +533,8 @@ public:
         bool 			   opengl_initialized,
         bool               in_assemble_view = false,
         bool               use_loaded_id = false,
-        bool               need_raycaster = true);
+        bool               need_raycaster = true,
+        bool               lodEnabled = true);
     // Load SLA auxiliary GLVolumes (for support trees or pad).
     void load_object_auxiliary(
         const SLAPrintObject           *print_object,
@@ -521,18 +553,18 @@ public:
 
     int get_selection_support_threshold_angle(bool&) const;
     // Render the volumes by OpenGL.
-    //BBS: add outline drawing logic
     void render(ERenderType                           type,
-                bool                                  disable_cullface,
-                const Transform3d &                   view_matrix,
-                const Transform3d&                    projection_matrix,
-                const GUI::Size&                      cnv_size,
-                std::function<bool(const GLVolume &)> filter_func   = std::function<bool(const GLVolume &)>(),
-                bool                                  partly_inside_enable =true
+                 bool                                  disable_cullface,
+                 const GUI::Camera&                    camera,
+                 std::function<bool(const GLVolume &)> filter_func   = std::function<bool(const GLVolume &)>(),
+                 bool                                  partly_inside_enable =true
            ) const;
 
-    // Clear the geometry
-    void clear() { for (auto *v : volumes) delete v; volumes.clear(); }
+    // Clear the geometry. Volumes are unregistered from the LOD sharing map
+    // (release_volume) before being deleted.
+    void clear() { for (auto *v : volumes) { release_volume(v); delete v; } volumes.clear(); }
+
+    void release_volume(GLVolume* volume);
 
     bool empty() const { return volumes.empty(); }
     void set_range(double low, double high) { for (GLVolume *vol : this->volumes) vol->set_range(low, high); }

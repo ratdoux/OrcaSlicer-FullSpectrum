@@ -8,6 +8,7 @@
 #include "libslic3r/Format/STL.hpp"
 
 #include <cstdlib>
+#include <fstream>
 #include <string>
 
 #include <boost/nowide/cstdio.hpp>
@@ -17,6 +18,16 @@
 using namespace std;
 
 namespace Slic3r { namespace Test {
+
+DynamicPrintConfig default_print_config()
+{
+    const FullPrintConfig &defaults = FullPrintConfig::defaults();
+    DynamicPrintConfig config;
+    config.apply(static_cast<const PrintObjectConfig &>(defaults), true);
+    config.apply(static_cast<const PrintRegionConfig &>(defaults), true);
+    config.apply(static_cast<const PrintConfig &>(defaults), true);
+    return config;
+}
 
 // Mesh enumeration to name mapping
 const std::unordered_map<TestMesh, const char*, TestMeshHash> mesh_names {
@@ -197,7 +208,7 @@ static bool verbose_gcode()
 
 void init_print(std::vector<TriangleMesh> &&meshes, Slic3r::Print &print, Slic3r::Model &model, const DynamicPrintConfig &config_in, bool comments)
 {
-	DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+	DynamicPrintConfig config = default_print_config();
     config.apply(config_in);
 
     if (verbose_gcode())
@@ -209,7 +220,7 @@ void init_print(std::vector<TriangleMesh> &&meshes, Slic3r::Print &print, Slic3r
 		object->add_volume(std::move(t));
 		object->add_instance();
 	}
-    arrange_objects(model, InfiniteBed{}, ArrangeParams{ scaled(min_object_distance(config))});
+    arrange_objects(model, get_bed_shape(config), ArrangeParams{ scaled(min_object_distance(config))}, [](arrangement::ArrangePolygon&) {});
 	for (ModelObject *mo : model.objects) {
         mo->ensure_on_bed();
 		print.auto_assign_extruders(mo);
@@ -240,14 +251,14 @@ void init_print(std::initializer_list<TriangleMesh> input_meshes, Slic3r::Print 
 
 void init_print(std::initializer_list<TestMesh> meshes, Slic3r::Print &print, Slic3r::Model &model, std::initializer_list<Slic3r::ConfigBase::SetDeserializeItem> config_items, bool comments)
 {
-	Slic3r::DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
+	Slic3r::DynamicPrintConfig config = default_print_config();
 	config.set_deserialize_strict(config_items);
 	init_print(meshes, print, model, config, comments);
 }
 
 void init_print(std::initializer_list<TriangleMesh> meshes, Slic3r::Print &print, Slic3r::Model &model, std::initializer_list<Slic3r::ConfigBase::SetDeserializeItem> config_items, bool comments)
 {
-	Slic3r::DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
+	Slic3r::DynamicPrintConfig config = default_print_config();
 	config.set_deserialize_strict(config_items);
 	init_print(meshes, print, model, config, comments);
 }
@@ -282,13 +293,14 @@ void init_and_process_print(std::initializer_list<TriangleMesh> meshes, Slic3r::
 
 std::string gcode(Print & print)
 {
-	boost::filesystem::path temp = boost::filesystem::unique_path();
+    boost::filesystem::path temp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
     print.set_status_silent();
     print.process();
-    print.export_gcode(temp.string(), nullptr, nullptr);
-    std::ifstream t(temp.string());
+    GCodeProcessorResult result;
+    std::string output_path = print.export_gcode(temp.string(), &result, nullptr);
+    std::ifstream t(output_path);
 	std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-	boost::nowide::remove(temp.string().c_str());
+	boost::nowide::remove(output_path.c_str());
 	return str;
 }
 
@@ -336,11 +348,11 @@ std::string slice(std::initializer_list<TriangleMesh> meshes, std::initializer_l
 
 } } // namespace Slic3r::Test
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 SCENARIO("init_print functionality", "[test_data]") {
 	GIVEN("A default config") {
-		Slic3r::DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
+		Slic3r::DynamicPrintConfig config = Slic3r::Test::default_print_config();
 		WHEN("init_print is called with a single mesh.") {
 			Slic3r::Model model;
 			Slic3r::Print print;

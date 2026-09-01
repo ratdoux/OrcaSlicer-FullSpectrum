@@ -1,4 +1,5 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <iostream>
 #include <boost/filesystem.hpp>
@@ -32,7 +33,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 					THEN("Area is 22^2mm2") {
 						REQUIRE(output.size() == 1);
-						REQUIRE(output.front().area() == Approx(22. * 22. * s * s));
+						REQUIRE_THAT(output.front().area(), WithinRel(22. * 22. * s * s, 0.001));
 					}
 				}
 				DYNAMIC_SECTION("minus 1mm, miter " << miter << "x") {
@@ -46,7 +47,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 					THEN("Area is 18^2mm2") {
 						REQUIRE(output.size() == 1);
-						REQUIRE(output.front().area() == Approx(18. * 18. * s * s));
+						REQUIRE_THAT(output.front().area(), WithinRel(18. * 18. * s * s, 0.001));
 					}
 				}
 			}
@@ -64,7 +65,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 					THEN("Area is 22^2mm2") {
 						REQUIRE(output.size() == 1);
-						REQUIRE(output.front().area() == Approx(22. * 22. * s * s));
+						REQUIRE_THAT(output.front().area(), WithinRel(22. * 22. * s * s, 0.001));
 					}
 				}
 				DYNAMIC_SECTION("minus 1mm, miter " << miter << "x") {
@@ -78,7 +79,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 					THEN("Area is 18^2mm2") {
 						REQUIRE(output.size() == 1);
-						REQUIRE(output.front().area() == Approx(18. * 18. * s * s));
+						REQUIRE_THAT(output.front().area(), WithinRel(18. * 18. * s * s, 0.001));
 					}
 				}
 			}
@@ -106,7 +107,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 						THEN("Area is 22^2-8^2 mm2") {
 							REQUIRE(output.size() == 1);
-							REQUIRE(output.front().area() == Approx((22. * 22. - 8. * 8.) * s * s));
+							REQUIRE_THAT(output.front().area(), WithinRel((22. * 22. - 8. * 8.) * s * s, 0.001));
 						}
 					}
 					WHEN("minus 1mm") {
@@ -120,7 +121,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 						THEN("Area is 18^2-12^2 mm2") {
 							REQUIRE(output.size() == 1);
-							REQUIRE(output.front().area() == Approx((18. * 18. - 12. * 12.) * s * s));
+							REQUIRE_THAT(output.front().area(), WithinRel((18. * 18. - 12. * 12.) * s * s, 0.001));
 						}
 					}
 				}
@@ -140,7 +141,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 						THEN("Area is 22^2-8^2 mm2") {
 							REQUIRE(output.size() == 1);
-							REQUIRE(output.front().area() == Approx((22. * 22. - 8. * 8.) * s * s));
+							REQUIRE_THAT(output.front().area(), WithinRel((22. * 22. - 8. * 8.) * s * s, 0.001));
 						}
 					}
 					WHEN("minus 1mm") {
@@ -154,7 +155,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 						THEN("Area is 18^2-12^2 mm2") {
 							REQUIRE(output.size() == 1);
-							REQUIRE(output.front().area() == Approx((18. * 18. - 12. * 12.) * s * s));
+							REQUIRE_THAT(output.front().area(), WithinRel((18. * 18. - 12. * 12.) * s * s, 0.001));
 						}
 					}
 				}
@@ -186,7 +187,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 					THEN("Area matches") {
 						REQUIRE(output.size() == 1);
-						REQUIRE(output.front().area() == Approx(area_offsetted));
+						REQUIRE_THAT(output.front().area(), WithinRel(area_offsetted, 0.001));
 					}
 				}
 			}
@@ -205,7 +206,7 @@ SCENARIO("Constant offset", "[ClipperUtils]") {
 #endif
 					THEN("Area matches") {
 						REQUIRE(output.size() == 1);
-						REQUIRE(output.front().area() == Approx(area_offsetted));
+						REQUIRE_THAT(output.front().area(), WithinRel(area_offsetted, 0.001));
 					}
 				}
 			}

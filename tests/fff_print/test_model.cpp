@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Model.hpp"
@@ -16,7 +16,7 @@ SCENARIO("Model construction", "[Model]") {
     GIVEN("A Slic3r Model") {
 		Slic3r::Model model;
         Slic3r::TriangleMesh sample_mesh = Slic3r::make_cube(20,20,20);
-        Slic3r::DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
+        Slic3r::DynamicPrintConfig config = Slic3r::Test::default_print_config();
         Slic3r::Print print;
 
         WHEN("Model object is added") {
@@ -42,19 +42,20 @@ SCENARIO("Model construction", "[Model]") {
 				}
             }
             model_object->add_instance();
-            arrange_objects(model, InfiniteBed{scaled(Vec2d(100, 100))}, ArrangeParams{scaled(min_object_distance(config))});
+            arrange_objects(model, get_bed_shape(config), ArrangeParams{scaled(min_object_distance(config))}, [](arrangement::ArrangePolygon&) {});
 			model_object->ensure_on_bed();
 			print.auto_assign_extruders(model_object);
 			THEN("Print works?") {
 				print.set_status_silent();
 				print.apply(model, config);
 				print.process();
-				boost::filesystem::path temp = boost::filesystem::unique_path();
-                print.export_gcode(temp.string(), nullptr, nullptr);
-                REQUIRE(boost::filesystem::exists(temp));
-				REQUIRE(boost::filesystem::is_regular_file(temp));
-				REQUIRE(boost::filesystem::file_size(temp) > 0);
-				boost::nowide::remove(temp.string().c_str());
+				boost::filesystem::path temp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
+                GCodeProcessorResult result;
+                const std::string output_path = print.export_gcode(temp.string(), &result, nullptr);
+                REQUIRE(boost::filesystem::exists(output_path));
+				REQUIRE(boost::filesystem::is_regular_file(output_path));
+				REQUIRE(boost::filesystem::file_size(output_path) > 0);
+				boost::nowide::remove(output_path.c_str());
 			}
         }
     }

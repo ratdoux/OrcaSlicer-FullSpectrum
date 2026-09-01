@@ -50,6 +50,14 @@
   <!-- 在head中添加 -->
   <meta name="theme-color" content="#ffffff">
   <link rel="apple-touch-startup-image" href="splash.png">
+  <style>
+    html, body {
+      overflow: hidden;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
 </head>
 <body>
   <script src="/web/lan_request_guard.js"></script>
@@ -69,7 +77,7 @@
         seqid: 1222222,
         cmd: "sw_OpenOrcaWebview",
         params: {
-          url: "http://127.0.0.1:7357/?locale=zh-cn-CN&dark_model=1&path=/",
+          url: "http://127.0.0.1:7357/?locale=zh-cn-CN&dark_mode=1&path=/",
         },
       });
        // 调用 window.postMessage 传递消息给 flutter

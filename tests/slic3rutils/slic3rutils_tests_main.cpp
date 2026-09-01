@@ -2,7 +2,7 @@
 
 #include "slic3r/Utils/Http.hpp"
 
-TEST_CASE("Check SSL certificates paths", "[Http][NotWorking]") {
+TEST_CASE("Check SSL certificates paths", "[Http][NotWorking][!mayfail]") {
     
     Slic3r::Http g = Slic3r::Http::get("https://github.com/");
     
@@ -20,7 +20,7 @@ TEST_CASE("Check SSL certificates paths", "[Http][NotWorking]") {
     REQUIRE(status == 200);
 }
 
-TEST_CASE("Http digest authentication", "[Http][NotWorking]") {
+TEST_CASE("Http digest authentication", "[Http][NotWorking][!mayfail]") {
     Slic3r::Http g = Slic3r::Http::get("https://jigsaw.w3.org/HTTP/Digest/");
 
     g.auth_digest("guest", "guest");
@@ -39,7 +39,7 @@ TEST_CASE("Http digest authentication", "[Http][NotWorking]") {
     REQUIRE(status == 200);
 }
 
-TEST_CASE("Http basic authentication", "[Http][NotWorking]") {
+TEST_CASE("Http basic authentication", "[Http][NotWorking][!mayfail]") {
     Slic3r::Http g = Slic3r::Http::get("https://jigsaw.w3.org/HTTP/Basic/");
 
     g.auth_basic("guest", "guest");

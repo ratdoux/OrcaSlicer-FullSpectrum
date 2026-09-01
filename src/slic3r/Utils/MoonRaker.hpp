@@ -136,6 +136,8 @@ public:
 
     virtual void async_upload_camera_timelapse(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
 
+    virtual void async_upload_timelapse_instance(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
+
     virtual void async_delete_camera_timelapse(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
 
     virtual void async_get_timelapse_instance(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) {}
@@ -181,11 +183,11 @@ public:
     private:
         int64_t connection_id_;
         uint32_t seq_id_low_bits_;
-        static const uint32_t MAX_SEQ_ID_INCREASED_LIMIT = 0xFFFFFFFF; // 32位掩码
+        static const uint32_t MAX_SEQ_ID_INCREASED_LIMIT = 0xFFFFFFFF; // 32-bit mask
 
         void init_connection_id() {
             seq_id_low_bits_ = 0;
-            // 获取当前时间戳并取低31位
+            // get current timestamp and take lower 31 bits
             auto now = std::chrono::system_clock::now();
             auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now.time_since_epoch()
@@ -206,9 +208,9 @@ public:
             if (connection_id_ == -1) {
                 throw std::runtime_error("Connection not initialized.");
             }
-            // 递增并限制在32位
+            // increment and wrap within 32 bits
             seq_id_low_bits_ = (seq_id_low_bits_ + 1) & MAX_SEQ_ID_INCREASED_LIMIT;
-            // 组合高31位和低32位，确保符号位为0
+            // combine upper 31 bits and lower 32 bits, sign bit stays 0
             return (connection_id_ << 32) | seq_id_low_bits_;
         }
     };
@@ -277,6 +279,8 @@ public:
     virtual void async_cancel_pull_cloud_file(std::function<void(const nlohmann::json& response)>) override;
 
     virtual void async_upload_camera_timelapse(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) override;
+
+    virtual void async_upload_timelapse_instance(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) override;
 
     virtual void async_delete_camera_timelapse(const nlohmann::json& targets, std::function<void(const nlohmann::json& response)>) override;
 

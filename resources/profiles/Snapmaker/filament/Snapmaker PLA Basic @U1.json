@@ -287,5 +287,42 @@
     ],
     "graphic_effect_plate_temp_initial_layer": [
         "65"
+    ],
+    "supertack_plate_temp": [
+        "40"
+    ],
+    "supertack_plate_temp_initial_layer": [
+        "40"
+    ],
+    "default_filament_colour": [
+        ""
+    ],
+    "filament_flow_support": [
+        "standard"
+    ],
+    "filament_is_high_temperature": [
+        "0"
+    ],
+    "filament_retract_restart_extra_toolchange": [
+        "nil"
+    ],
+    "filament_settings_id": [
+        ""
+    ],
+    "filament_tower_ironing_area": [
+        "4"
+    ],
+    "internal_bridge_fan_speed": [
+        "-1"
+    ],
+    "ironing_fan_speed": [
+        "-1"
+    ],
+    "version": "0.0.0.0",
+    "filament_load_time": [
+        "2"
+    ],
+    "filament_unload_time": [
+        "2"
     ]
 }

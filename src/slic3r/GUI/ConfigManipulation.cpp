@@ -125,22 +125,42 @@ void ConfigManipulation::check_nozzle_temperature_initial_layer_range(DynamicPri
 
 void ConfigManipulation::check_filament_max_volumetric_speed(DynamicPrintConfig *config)
 {
-    //if (is_msg_dlg_already_exist) return;
-    //float max_volumetric_speed = config->opt_float("filament_max_volumetric_speed");
+    auto *max_speeds = config->option<ConfigOptionFloats>("filament_max_volumetric_speed");
+    if (max_speeds == nullptr || max_speeds->values.empty())
+        return;
 
-    float max_volumetric_speed = config->has("filament_max_volumetric_speed") ? config->opt_float("filament_max_volumetric_speed", (float) 0.5) : 0.5;
-    // BBS: limite the min max_volumetric_speed
-    if (max_volumetric_speed < 0.5) {
-        const wxString     msg_text = _(L("Too small max volumetric speed.\nReset to 0.5."));
-        MessageDialog      dialog(nullptr, msg_text, "", wxICON_WARNING | wxOK);
+    size_t variant_count = max_speeds->values.size();
+    if (const auto *flow_support = config->option<ConfigOptionStrings>("filament_flow_support");
+        flow_support != nullptr && !flow_support->values.empty())
+        variant_count = std::max(variant_count, flow_support->values.size());
+
+    ConfigOptionFloats corrected = *max_speeds;
+    const double fallback = corrected.values.front();
+    corrected.resize(variant_count);
+    for (size_t idx = max_speeds->values.size(); idx < variant_count; ++idx)
+        corrected.values[idx] = fallback;
+    bool needs_correction = corrected.values.size() != max_speeds->values.size();
+    bool has_invalid_value = false;
+    for (size_t idx = 0; idx < variant_count; ++idx) {
+        if (corrected.get_at(idx) < 0.5) {
+            corrected.values[idx] = 0.5;
+            needs_correction = true;
+            has_invalid_value = true;
+        }
+    }
+
+    if (needs_correction) {
         DynamicPrintConfig new_conf = *config;
-        is_msg_dlg_already_exist    = true;
-        dialog.ShowModal();
-        new_conf.set_key_value("filament_max_volumetric_speed", new ConfigOptionFloats({0.5}));
+        if (has_invalid_value) {
+            const wxString msg_text = _(L("Too small max volumetric speed.\nReset to 0.5."));
+            MessageDialog  dialog(nullptr, msg_text, "", wxICON_WARNING | wxOK);
+            is_msg_dlg_already_exist = true;
+            dialog.ShowModal();
+        }
+        new_conf.set_key_value("filament_max_volumetric_speed", corrected.clone());
         apply(config, &new_conf);
         is_msg_dlg_already_exist = false;
     }
-
 }
 
 void ConfigManipulation::check_chamber_temperature(DynamicPrintConfig* config)
@@ -531,22 +551,29 @@ void ConfigManipulation::apply_null_fff_config(DynamicPrintConfig *config, std::
     }
 }
 
-void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, const bool is_global_config)
+void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, const bool is_global_config, size_t flow_variant_index)
 {
     PresetBundle *preset_bundle  = wxGetApp().preset_bundle;
 
     auto gcflavor = preset_bundle->printers.get_edited_preset().config.option<ConfigOptionEnum<GCodeFlavor>>("gcode_flavor")->value;
     const bool bSEMM = preset_bundle->printers.get_edited_preset().config.opt_bool("single_extruder_multi_material");
 
-    bool have_volumetric_extrusion_rate_slope = config->option<ConfigOptionFloat>("max_volumetric_extrusion_rate_slope")->value > 0;
-    float have_volumetric_extrusion_rate_slope_segment_length = config->option<ConfigOptionFloat>("max_volumetric_extrusion_rate_slope_segment_length")->value;
+    auto process_flow_float = [config, flow_variant_index](const char *key, double fallback) {
+        const auto *option = config->option<ConfigOptionFloats>(key);
+        if (option == nullptr || option->values.empty())
+            return fallback;
+        return option->get_at(std::min(flow_variant_index, option->values.size() - 1));
+    };
+
+    bool have_volumetric_extrusion_rate_slope = process_flow_float("max_volumetric_extrusion_rate_slope", 0) > 0;
+    float have_volumetric_extrusion_rate_slope_segment_length = process_flow_float("max_volumetric_extrusion_rate_slope_segment_length", 0);
     toggle_field("enable_arc_fitting", !have_volumetric_extrusion_rate_slope);
     toggle_line("max_volumetric_extrusion_rate_slope_segment_length", have_volumetric_extrusion_rate_slope);
     toggle_line("extrusion_rate_smoothing_external_perimeter_only", have_volumetric_extrusion_rate_slope);
     if(have_volumetric_extrusion_rate_slope) config->set_key_value("enable_arc_fitting", new ConfigOptionBool(false));
     if(have_volumetric_extrusion_rate_slope_segment_length < 0.5) {
         DynamicPrintConfig new_conf = *config;
-        new_conf.set_key_value("max_volumetric_extrusion_rate_slope_segment_length", new ConfigOptionFloat(1));
+        new_conf.set_key_value("max_volumetric_extrusion_rate_slope_segment_length", new ConfigOptionFloats { 1. });
         apply(config, &new_conf);
     }
 
@@ -631,13 +658,13 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     for (auto el : { "top_surface_line_width", "top_surface_speed" })
         toggle_field(el, has_top_shell);
 
-    bool have_default_acceleration = config->opt_float("default_acceleration") > 0;
+    bool have_default_acceleration = process_flow_float("default_acceleration", 0) > 0;
 
     for (auto el : {"outer_wall_acceleration", "inner_wall_acceleration", "initial_layer_acceleration",
         "top_surface_acceleration", "travel_acceleration", "bridge_acceleration", "sparse_infill_acceleration", "internal_solid_infill_acceleration"})
         toggle_field(el, have_default_acceleration);
 
-    bool have_default_jerk = config->opt_float("default_jerk") > 0;
+    bool have_default_jerk = process_flow_float("default_jerk", 0) > 0;
 
     for (auto el : { "outer_wall_jerk", "inner_wall_jerk", "initial_layer_jerk", "top_surface_jerk", "travel_jerk", "infill_jerk"})
         toggle_field(el, have_default_jerk);
@@ -817,7 +844,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     bool have_avoid_crossing_perimeters = config->opt_bool("reduce_crossing_wall");
     toggle_line("max_travel_detour_distance", have_avoid_crossing_perimeters);
 
-    bool has_overhang_speed = config->opt_bool("enable_overhang_speed");
+    bool has_overhang_speed = config->opt_bool("enable_overhang_speed", 0);
     for (auto el : {"overhang_1_4_speed", "overhang_2_4_speed", "overhang_3_4_speed", "overhang_4_4_speed"})
         toggle_line(el, has_overhang_speed);
 
@@ -845,7 +872,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     for (auto el : {"accel_to_decel_enable", "accel_to_decel_factor"})
         toggle_line(el, gcflavor == gcfKlipper);
     if(gcflavor == gcfKlipper)
-        toggle_field("accel_to_decel_factor", config->opt_bool("accel_to_decel_enable"));
+        toggle_field("accel_to_decel_factor", config->opt_bool("accel_to_decel_enable", 0));
 
     bool have_make_overhang_printable = config->opt_bool("make_overhang_printable");
     toggle_line("make_overhang_printable_angle", have_make_overhang_printable);

@@ -252,6 +252,11 @@ bool GLGizmosManager::init()
 
 bool GLGizmosManager::init_icon_textures()
 {
+    if (!icon_list.empty())
+    {
+        return true;
+    }
+
     ImTextureID texture_id;
 
     icon_list.clear();
@@ -282,6 +287,26 @@ bool GLGizmosManager::init_icon_textures()
 
     if (IMTexture::load_from_svg_file(Slic3r::resources_dir() + "/images/toolbar_tooltip_hover.svg", 25, 25, texture_id)) // ORCA: Use same resolution with gizmos to prevent blur on icon
         icon_list.insert(std::make_pair((int)IC_TOOLBAR_TOOLTIP_HOVER, texture_id));
+    else
+        return false;
+
+    if (IMTexture::load_from_svg_file(Slic3r::resources_dir() + "/images/fit_camera.svg", 64, 64, texture_id))
+        icon_list.insert(std::make_pair(static_cast<int>(IC_FIT_CAMERA), texture_id));
+    else
+        return false;
+
+    if (IMTexture::load_from_svg_file(Slic3r::resources_dir() + "/images/fit_camera_hover.svg", 64, 64, texture_id))
+        icon_list.insert(std::make_pair(static_cast<int>(IC_FIT_CAMERA_HOVER), texture_id));
+    else
+        return false;
+
+    if (IMTexture::load_from_svg_file(Slic3r::resources_dir() + "/images/fit_camera_dark.svg", 64, 64, texture_id))
+        icon_list.insert(std::make_pair(static_cast<int>(IC_FIT_CAMERA_DARK), texture_id));
+    else
+        return false;
+
+    if (IMTexture::load_from_svg_file(Slic3r::resources_dir() + "/images/fit_camera_dark_hover.svg", 64, 64, texture_id))
+        icon_list.insert(std::make_pair(static_cast<int>(IC_FIT_CAMERA_DARK_HOVER), texture_id));
     else
         return false;
 

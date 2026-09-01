@@ -1,4 +1,5 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 
 #include "libslic3r/FullSpectrumICCPolynomialEstimator.hpp"
 #include "libslic3r/FullSpectrumKSPairResidual.hpp"
@@ -11,6 +12,7 @@
 #include <string>
 
 using namespace Slic3r;
+using Catch::Approx;
 
 namespace {
 

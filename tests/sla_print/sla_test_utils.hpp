@@ -1,7 +1,8 @@
 #ifndef SLA_TEST_UTILS_HPP
 #define SLA_TEST_UTILS_HPP
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 #include <test_utils.hpp>
 
 // Debug
@@ -175,7 +176,7 @@ void check_raster_transformations(sla::RasterBase::Orientation o,
 
 ExPolygon square_with_hole(double v);
 
-inline double pixel_area(TPixel px, const sla::RasterBase::PixelDim &pxdim)
+inline double pixel_area(TPixel px, const sla::PixelDim &pxdim)
 {
     return (pxdim.h_mm * pxdim.w_mm) * px * 1. / (FullWhite - FullBlack);
 }
@@ -183,7 +184,7 @@ inline double pixel_area(TPixel px, const sla::RasterBase::PixelDim &pxdim)
 double raster_white_area(const sla::RasterGrayscaleAA &raster);
 long raster_pxsum(const sla::RasterGrayscaleAA &raster);
 
-double predict_error(const ExPolygon &p, const sla::RasterBase::PixelDim &pd);
+double predict_error(const ExPolygon &p, const sla::PixelDim &pd);
 
 sla::SupportPoints calc_support_pts(
     const TriangleMesh &                      mesh,

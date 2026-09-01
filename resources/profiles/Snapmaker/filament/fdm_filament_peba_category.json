@@ -1,0 +1,10 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "fdm_filament_peba_category",
+    "inherits": "fdm_filament_common",
+    "filament_type": [
+        "PEBA"
+    ]
+}

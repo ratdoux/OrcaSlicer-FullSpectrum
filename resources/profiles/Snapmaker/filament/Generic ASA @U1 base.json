@@ -1,0 +1,136 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "Generic ASA @U1 base",
+    "inherits": "fdm_filament_asa_category",
+    "chamber_temperatures": [
+        "0"
+    ],
+    "close_fan_the_first_x_layers": [
+        "3"
+    ],
+    "complete_print_exhaust_fan_speed": [
+        "70"
+    ],
+    "during_print_exhaust_fan_speed": [
+        "70"
+    ],
+    "enable_pressure_advance": [
+        "0"
+    ],
+    "eng_plate_temp": [
+        "90"
+    ],
+    "eng_plate_temp_initial_layer": [
+        "90"
+    ],
+    "fan_cooling_layer_time": [
+        "35"
+    ],
+    "fan_max_speed": [
+        "80"
+    ],
+    "fan_min_speed": [
+        "10"
+    ],
+    "filament_cooling_final_speed": [
+        "3.4"
+    ],
+    "filament_cooling_initial_speed": [
+        "2.2"
+    ],
+    "filament_cooling_moves": [
+        "4"
+    ],
+    "filament_cost": [
+        "20"
+    ],
+    "filament_end_gcode": [
+        ""
+    ],
+    "filament_flow_ratio": [
+        "0.95"
+    ],
+    "filament_flow_support": [
+        "standard"
+    ],
+    "filament_is_high_temperature": [
+        "1"
+    ],
+    "filament_loading_speed": [
+        "28"
+    ],
+    "filament_loading_speed_start": [
+        "3"
+    ],
+    "filament_max_volumetric_speed": [
+        "12"
+    ],
+    "filament_minimal_purge_on_wipe_tower": [
+        "15"
+    ],
+    "filament_multitool_ramming": [
+        "1"
+    ],
+    "filament_multitool_ramming_flow": [
+        "12"
+    ],
+    "filament_multitool_ramming_volume": [
+        "0.5"
+    ],
+    "filament_retract_length_toolchange": [
+        "10"
+    ],
+    "filament_retraction_length": [
+        "nil"
+    ],
+    "filament_start_gcode": [
+        ""
+    ],
+    "filament_unloading_speed": [
+        "90"
+    ],
+    "filament_unloading_speed_start": [
+        "100"
+    ],
+    "filament_vendor": [
+        "Generic"
+    ],
+    "filament_z_hop": [
+        "nil"
+    ],
+    "hot_plate_temp": [
+        "90"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "90"
+    ],
+    "nozzle_temperature": [
+        "260"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "260"
+    ],
+    "overhang_fan_speed": [
+        "80"
+    ],
+    "pellet_flow_coefficient": [
+        "0.4157"
+    ],
+    "pressure_advance": [
+        "0.02"
+    ],
+    "slow_down_layer_time": [
+        "3"
+    ],
+    "temperature_vitrification": [
+        "100"
+    ],
+    "textured_plate_temp": [
+        "90"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "90"
+    ]
+}

@@ -173,7 +173,7 @@ void FillBedJob::prepare()
         ap.poly = m_selected.front().poly;
         ap.bed_idx = PartPlateList::MAX_PLATES_COUNT;
         ap.itemid = -1;
-        ap.setter = [this, mi](const ArrangePolygon &p) {
+        ap.setter = [this](const ArrangePolygon &p) {
             ModelObject *mo = m_plater->model().objects[m_object_idx];
             ModelObject* newObj = m_plater->model().add_object(*mo);
             newObj->name = mo->name +" "+ std::to_string(p.itemid);
@@ -279,7 +279,8 @@ void FillBedJob::finalize(bool canceled, std::exception_ptr &eptr)
         return s + int(ap.priority == 0 && ap.bed_idx == 0);
     });
 
-    int oldSize = m_plater->model().objects.size();
+    Model& model = m_plater->model();
+    const size_t oldObjectCount = model.objects.size();
 
     if (added_cnt > 0) {
         //BBS: adjust the selected instances
@@ -305,9 +306,15 @@ void FillBedJob::finalize(bool canceled, std::exception_ptr &eptr)
             BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << boost::format(":selected: bed_id %1%, trans {%2%,%3%}") % ap.bed_idx % unscale<double>(ap.translation(X)) % unscale<double>(ap.translation(Y));
         }
 
-        int   newSize = m_plater->model().objects.size();
+        const size_t newObjectCount = model.objects.size();
+        if (newObjectCount > oldObjectCount)
+        {
+            ModelObjectPtrs newObjects(model.objects.begin() + oldObjectCount, model.objects.end());
+            model.InitializeAssemblyPositions(newObjects);
+        }
+
         auto obj_list = m_plater->sidebar().obj_list();
-        for (size_t i = oldSize; i < newSize; i++) {
+        for (size_t i = oldObjectCount; i < newObjectCount; i++) {
             obj_list->add_object_to_list(i, true, true, false);
             obj_list->update_printable_state(i, 0);
         }

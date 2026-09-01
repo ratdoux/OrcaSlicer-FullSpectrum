@@ -1,3 +1,4 @@
+#pragma once
 #ifndef slic3r_MixedFilament_hpp_
 #define slic3r_MixedFilament_hpp_
 
@@ -408,6 +409,26 @@ std::string           filament_display_label(unsigned int filament_id_1based, si
 //
 // Virtual filament IDs are numbered starting at (num_physical + 1).  For a
 // 4-extruder printer the first mixed filament has ID 5, the second 6, etc.
+// ---- Batch Match Mapping ----
+
+/// Lightweight wx-free entry for batch-inserting matched filaments.
+/// The GUI layer populates this from ColorMappingEntry, then passes
+/// to MixedFilamentManager::add_batch_custom_filaments().
+struct MixedFilamentBatchEntry
+{
+    unsigned int component_a     = 1;
+    unsigned int component_b     = 2;
+    int          mix_b_percent   = 50;
+    std::string  manual_pattern;
+    std::string  gradient_component_ids;
+    std::string  gradient_component_weights;
+    int          distribution_mode = int(MixedFilament::Simple);
+    bool         gradient_enabled  = false;
+    float        gradient_start    = MixedFilament::k_default_gradient_dominant;
+    float        gradient_end      = MixedFilament::k_default_gradient_minority;
+    std::string  display_color;   // pre-computed "#RRGGBB" hex
+};
+
 // ---------------------------------------------------------------------------
 class MixedFilamentManager
 {
@@ -440,6 +461,19 @@ public:
     void add_custom_filament(unsigned int component_a, unsigned int component_b, int mix_b_percent, const std::vector<std::string> &filament_colours);
     bool add_custom_filament_definition(MixedFilamentDefinition definition, const std::vector<std::string> &filament_colours);
 
+    // Batch-insert custom mixed filaments from a match-mapping operation.
+    // Each entry is fully specified except `stable_id`, which is allocated internally.
+    // Entries exceeding `MAXIMUM_FILAMENT_NUMBER` are silently dropped.
+    // All entries receive `ui_mode = 2` (MATCH), `custom = true`.
+    // Calls `refresh_display_colors()` exactly once after all inserts.
+    // If `out_assigned_ids` is non-null it is filled with one entry per input
+    // `entries[i]`: the 1-based virtual filament id actually created, or 0 when
+    // the entry was dropped (cap reached, or invalid components).
+    void add_batch_custom_filaments(
+        const std::vector<MixedFilamentBatchEntry>& entries,
+        const std::vector<std::string>&             filament_colours,
+        std::vector<unsigned int>*                  out_assigned_ids = nullptr);
+
     // Remove all custom rows, keep auto-generated ones.
     void clear_custom_entries();
 
@@ -457,7 +491,7 @@ public:
 
     // Normalize a manual mixed-pattern string into compact token form.
     // Accepts separators and A/B aliases. Returns empty string if invalid.
-    static constexpr size_t kMaxPhysicalFilaments = 9;
+    static constexpr size_t kMaxPhysicalFilaments = 64;
     static std::string normalize_manual_pattern(const std::string &pattern);
     static int         mix_percent_from_manual_pattern(const std::string &pattern);
     static std::vector<unsigned int> decode_gradient_component_ids(const std::string &components,
@@ -570,6 +604,30 @@ public:
                                                             const std::vector<float> &component_surface_offsets,
                                                             float                    reference_width_mm = 0.4f);
 
+    // Build the T2(pre-delete) -> T3(post-delete) painting remap for the batch-
+    // match cleanup path that marks redundant mixed rows deleted. Virtual IDs
+    // are enumerated over *enabled* rows, so deleting a row renumbers every
+    // higher survivor down by one; the model's painted facets still hold the
+    // pre-deletion IDs and must be remapped or they resolve to the wrong row.
+    //
+    // Rule (per old_vid in T2 space):
+    //   old_vid in deleted_t2_vids        -> 0          (NONE; the deleted row)
+    //   old_vid <= num_physical           -> old_vid    (physical slots: identity)
+    //   else                              -> old_vid - count(deleted vids < old_vid)
+    //
+    // num_physical:        physical filament count (unchanged by mixed-only deletion).
+    // t2_total_filaments:  total filament count BEFORE deletion (physical + enabled mixed).
+    // deleted_t2_vids:     1-based virtual IDs of the rows being deleted (any order).
+    // Returns:             vector of size t2_total_filaments + 1; remap[0] is unused (0).
+    //
+    // Pure function: no stable_id lookup, no (a,b) pair fallback, no dependence on the
+    // MixedFilament payload. The offset math is the whole computation, which is why it
+    // is unit-testable without the GUI cleanup harness.
+    static std::vector<unsigned int> build_mixed_deletion_painting_remap(
+        size_t                            num_physical,
+        size_t                            t2_total_filaments,
+        const std::vector<unsigned int>&  deleted_t2_vids);
+
     // ---- Accessors ------------------------------------------------------
 
     std::vector<MixedFilamentDefinition> mixed_filament_definitions(size_t num_physical = 0) const;
@@ -599,6 +657,7 @@ public:
     size_t                           mixed_filament_count() const;
 
     size_t visible_count() const;
+    size_t enabled_count() const { return visible_count(); }
 
     // Total filament count = num_physical + number of visible mixed filaments.
     size_t total_filaments(size_t num_physical) const { return num_physical + visible_count(); }
@@ -606,6 +665,8 @@ public:
     // Return the display colours of all visible mixed filaments (in order).
     std::vector<std::string> display_colors() const;
     void set_display_context(const MixedFilamentDisplayContext &context);
+    // Recompute every mixed filament's display_color from its recipe against the
+    // given physical colours (also refreshes the internal display context).
     void refresh_display_colors(const std::vector<std::string> &filament_colours);
 
 private:
@@ -632,6 +693,83 @@ private:
     uint64_t                             m_next_stable_id      = 1;
     MixedFilamentDisplayContext m_display_context;
 };
+
+/// Result of computing which filaments are redundant after a batch colour match.
+struct RedundantFilamentSet
+{
+    /// 1-based physical filament IDs that are not in the kept set, sorted descending.
+    std::vector<unsigned int> redundant_physical;
+    /// 1-based virtual filament IDs that are not in the kept set or whose
+    /// physical components were deleted (cascade), sorted ascending (enumerated
+    /// order of the mixed-filament list).
+    std::vector<unsigned int> redundant_mixed;
+    /// Number of physical filaments after removing all redundants.
+    size_t new_num_physical = 1;
+    /// Redundant mixed rows deleted because a physical component was dropped
+    /// rather than because the row itself was not in the kept-mixed set.
+    size_t cascade_mixed_count = 0;
+};
+
+/// Compute which physical and mixed filaments are redundant after a batch colour
+/// match, given the sets the match decided to keep.
+///
+/// @param num_physical        Current number of physical filament presets.
+/// @param kept_physical_ids   1-based physical IDs the match selected.
+/// @param kept_mixed_ids      1-based virtual IDs of mixed filaments the match
+///                            just created (non-pure mapping targets).
+/// @param mixed_filaments     The current mixed-filament list (const ref).
+///
+/// @return  A RedundantFilamentSet.  redundant_mixed is in ascending
+///          (enumerated) order; redundant_physical is descending.
+///          The survivor floor guarantees at least one physical filament is
+///          kept (filament 1 when kept_physical_ids is empty).
+///
+/// KNOWN DIVERGENCE: cascade detection bounds literal pattern/gradient tokens
+/// by `num_physical` here, while remove_physical_filament bounds them by
+/// kMaxPhysicalFilaments (64) and uses an ==deleted criterion.  The two disagree
+/// only for a literal token > num_physical, which cannot exist in the live
+/// mixed list: the validation perimeter is enforced at EVERY write path —
+/// load_custom_entries AND add_batch_custom_filaments both call
+/// references_exceed_physical to reject such rows, and add_custom_filament /
+/// auto_generate never set a manual_pattern/gradient at all.  This is
+/// intentional and guarded by the [!shouldfail] test tagged "m1"; weakening
+/// the validation perimeter (removing the add_batch guard) makes that state
+/// reachable.
+RedundantFilamentSet compute_redundant_filaments(
+    size_t                            num_physical,
+    const std::vector<unsigned int>  &kept_physical_ids,
+    const std::vector<unsigned int>  &kept_mixed_ids,
+    const std::vector<MixedFilament> &mixed_filaments);
+
+// Returns true when the mixed filament represents a simple two-color gradient
+// that can be rendered as a vertical color ramp (no manual pattern, exactly 2 components).
+inline bool is_simple_gradient(const MixedFilament& mf)
+{
+    // Lightweight ID count without heap allocation.
+    // Canonical form: legacy "12" = two IDs, extended "1/12/3" = three IDs.
+    auto count_ids = [](const std::string& s) -> size_t {
+        if (s.empty()) return 0;
+        if (s.find('/') != std::string::npos) {
+            size_t n = 0;
+            bool in_token = false;
+            for (char c : s) {
+                if (c == '/') {
+                    if (in_token) ++n;
+                    in_token = false;
+                } else {
+                    in_token = true;
+                }
+            }
+            if (in_token) ++n;
+            return n;
+        }
+        return s.size();
+    };
+    return mf.gradient_enabled
+        && mf.component_a != mf.component_b
+        && MixedFilamentManager::normalize_manual_pattern(mf.manual_pattern).empty()
+        && count_ids(mf.gradient_component_ids) < 3;
+}
 
 } // namespace Slic3r
 

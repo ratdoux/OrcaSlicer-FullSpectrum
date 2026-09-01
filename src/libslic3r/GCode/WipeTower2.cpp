@@ -1318,9 +1318,9 @@ WipeTower2::WipeTower2(const PrintConfig&                     config,
     , m_bridging(float(config.wipe_tower_bridging))
     , m_no_sparse_layers(config.wipe_tower_no_sparse_layers)
     , m_gcode_flavor(config.gcode_flavor)
-    , m_travel_speed(config.travel_speed)
-    , m_infill_speed(default_region_config.sparse_infill_speed)
-    , m_perimeter_speed(default_region_config.inner_wall_speed)
+    , m_travel_speed(float(get_value_at(config, config.travel_speed, ConfigFlowDomain::Process, initial_tool)))
+    , m_infill_speed(float(get_value_at(config, default_region_config.sparse_infill_speed, ConfigFlowDomain::Process, initial_tool)))
+    , m_perimeter_speed(float(get_value_at(config, default_region_config.inner_wall_speed, ConfigFlowDomain::Process, initial_tool)))
     , m_current_tool(initial_tool)
     , wipe_volumes(wiping_matrix)
     , m_wipe_tower_max_purge_speed(float(config.wipe_tower_max_purge_speed))
@@ -1338,7 +1338,7 @@ WipeTower2::WipeTower2(const PrintConfig&                     config,
     // it is taken over following default. Speeds from config are not
     // easily accessible here.
     const float default_speed = 60.f;
-    m_first_layer_speed       = config.initial_layer_speed;
+    m_first_layer_speed       = config.initial_layer_speed.values.front();
     if (m_first_layer_speed == 0.f) // just to make sure autospeed doesn't break it.
         m_first_layer_speed = default_speed / 2.f;
 
@@ -1392,9 +1392,9 @@ void WipeTower2::set_extruder(size_t idx, const PrintConfig& config)
     m_filpar[idx].material = config.filament_type.get_at(idx);
     m_filpar[idx].is_soluble = config.wipe_tower_filament == 0 ? config.filament_soluble.get_at(idx) :
                                (idx != size_t(config.wipe_tower_filament - 1));
-    m_filpar[idx].temperature = config.nozzle_temperature.get_at(idx);
-    m_filpar[idx].first_layer_temperature              = config.nozzle_temperature_initial_layer.get_at(idx);
-    m_filpar[idx].filament_minimal_purge_on_wipe_tower = config.filament_minimal_purge_on_wipe_tower.get_at(idx);
+    m_filpar[idx].temperature = get_value_at(config, config.nozzle_temperature, ConfigFlowDomain::Filament, idx);
+    m_filpar[idx].first_layer_temperature              = get_value_at(config, config.nozzle_temperature_initial_layer, ConfigFlowDomain::Filament, idx);
+    m_filpar[idx].filament_minimal_purge_on_wipe_tower = get_value_at(config, config.filament_minimal_purge_on_wipe_tower, ConfigFlowDomain::Filament, idx);
     m_filpar[idx].flat_iron_area                       = config.filament_tower_ironing_area.get_at(idx);
 
     // If this is a single extruder MM printer, we will use all the SE-specific config values.
@@ -1418,7 +1418,7 @@ void WipeTower2::set_extruder(size_t idx, const PrintConfig& config)
     float nozzle_diameter         = float(config.nozzle_diameter.get_at(idx));
     m_filpar[idx].nozzle_diameter = nozzle_diameter; // to be used in future with (non-single) multiextruder MM
 
-    float max_vol_speed = float(config.filament_max_volumetric_speed.get_at(idx));
+    float max_vol_speed = float(get_value_at(config, config.filament_max_volumetric_speed, ConfigFlowDomain::Filament, idx));
     if (max_vol_speed != 0.f)
         m_filpar[idx].max_e_speed = (max_vol_speed / filament_area());
 
@@ -1437,9 +1437,9 @@ void WipeTower2::set_extruder(size_t idx, const PrintConfig& config)
         // and the same time step has to be used when the ramming is performed.
     } else {
         // We will use the same variables internally, but the correspondence to the configuration options will be different.
-        float vol                                      = config.filament_multitool_ramming_volume.get_at(idx);
-        float flow                                     = config.filament_multitool_ramming_flow.get_at(idx);
-        m_filpar[idx].multitool_ramming                = config.filament_multitool_ramming.get_at(idx) && vol > 0.f && flow > 0.f;
+        float vol                                      = get_value_at(config, config.filament_multitool_ramming_volume, ConfigFlowDomain::Filament, idx);
+        float flow                                     = get_value_at(config, config.filament_multitool_ramming_flow, ConfigFlowDomain::Filament, idx);
+        m_filpar[idx].multitool_ramming                = get_value_at(config, config.filament_multitool_ramming, ConfigFlowDomain::Filament, idx) && vol > 0.f && flow > 0.f;
         m_filpar[idx].ramming_line_width_multiplicator = m_ramming_width_ratio;
         m_filpar[idx].ramming_step_multiplicator       = 1.;
 
@@ -1456,8 +1456,8 @@ void WipeTower2::set_extruder(size_t idx, const PrintConfig& config)
     m_used_filament_length.resize(
         std::max(m_used_filament_length.size(), idx + 1)); // makes sure that the vector is big enough so we don't have to check later
 
-    m_filpar[idx].retract_length = config.retraction_length.get_at(idx);
-    m_filpar[idx].retract_speed  = config.retraction_speed.get_at(idx);
+    m_filpar[idx].retract_length = get_value_at(config, config.retraction_length, ConfigFlowDomain::Filament, idx);
+    m_filpar[idx].retract_speed  = get_value_at(config, config.retraction_speed, ConfigFlowDomain::Filament, idx);
 }
 
 // Returns gcode to prime the nozzles at the front edge of the print bed.
@@ -2409,7 +2409,7 @@ std::vector<std::vector<float>> WipeTower2::extract_wipe_volumes(const PrintConf
     // Also include filament_minimal_purge_on_wipe_tower. This is needed for the preview.
     for (unsigned int i = 0; i < number_of_extruders; ++i)
         for (unsigned int j = 0; j < number_of_extruders; ++j)
-            wipe_volumes[i][j] = std::max<float>(wipe_volumes[i][j] * scale, config.filament_minimal_purge_on_wipe_tower.get_at(j));
+            wipe_volumes[i][j] = std::max<float>(wipe_volumes[i][j] * scale, get_value_at(config, config.filament_minimal_purge_on_wipe_tower, ConfigFlowDomain::Filament, j));
 
     return wipe_volumes;
 }

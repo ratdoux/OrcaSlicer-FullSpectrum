@@ -8,6 +8,7 @@
 #include <wx/sizer.h>
 #include <wx/menu.h>
 #include <wx/progdlg.h>
+#include <wx/textentry.h>
 #include <wx/tooltip.h>
 //#include <wx/glcanvas.h>
 #include <wx/filename.h>
@@ -56,6 +57,9 @@
 #include <ctime>
 
 #include "GUI_App.hpp"
+#include "FilamentGroupDialog.hpp"
+#include "FlowTypeHelper.hpp"
+#include "SliceModePopup.hpp"
 #include "UnsavedChangesDialog.hpp"
 #include "MsgDialog.hpp"
 #include "Notebook.hpp"
@@ -72,6 +76,9 @@
 #include <dbt.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <wtsapi32.h>
+#include <powersetting.h>
+#pragma comment(lib, "Wtsapi32.lib")
 #endif // _WIN32
 #include <slic3r/GUI/CreatePresetsDialog.hpp>
 #include "sentry_wrapper/SentryWrapper.hpp"
@@ -96,6 +103,54 @@ wxDEFINE_EVENT(EVT_NETWORK_TEST_LOG_UPDATE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_BACKUP_POST, wxCommandEvent);
 wxDEFINE_EVENT(EVT_LOAD_URL, wxCommandEvent);
 wxDEFINE_EVENT(EVT_LOAD_PRINTER_URL, LoadPrinterViewEvent);
+
+/**
+ * @brief Checks whether a wxWidgets text input currently owns the focus.
+ * @return True when keyboard input belongs to a text control.
+ */
+static bool IsTextEntryFocused()
+{
+    for (wxWindow* window = wxWindow::FindFocus(); window != nullptr; window = window->GetParent())
+    {
+        if (dynamic_cast<wxTextEntry*>(window) != nullptr)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Checks whether the Fit Camera shortcut must be passed through.
+ * @param plater Current plater instance.
+ * @return True when the shortcut must not trigger Fit Camera.
+ */
+static bool ShouldSkipFitCameraShortcut(Plater* plater)
+{
+    if (plater == nullptr || IsTextEntryFocused())
+    {
+        return true;
+    }
+
+    ImGuiWrapper* const imgui = wxGetApp().imgui();
+    if (imgui != nullptr && (imgui->want_keyboard() || imgui->want_text_input()))
+    {
+        return true;
+    }
+
+    GLCanvas3D* const currentCanvas = plater->get_current_canvas3D();
+    if (currentCanvas == nullptr)
+    {
+        return true;
+    }
+
+    GLCanvas3D* const viewCanvas = plater->get_view3D_canvas3D();
+    GLCanvas3D* const assembleCanvas = plater->get_assmeble_canvas3D();
+    return (viewCanvas != nullptr && viewCanvas->get_gizmos_manager().is_running()) ||
+           (assembleCanvas != nullptr && assembleCanvas->get_gizmos_manager().is_running()) ||
+           currentCanvas->get_gizmos_manager().is_running();
+}
 
 enum class ERescaleTarget
 {
@@ -501,6 +556,7 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
     Bind(wxEVT_ACTIVATE, [this](wxActivateEvent& event) {
         if (m_plater != nullptr && event.GetActive())
             m_plater->on_activate();
+        NotifyActivateChange(event.GetActive());
         event.Skip();
     });
 
@@ -618,6 +674,23 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
             if (m_plater) { m_plater->add_file(); }
             return;
         }
+
+        const bool isFitCameraShortcut = !evt.HasAnyModifiers() &&
+                                         (evt.GetKeyCode() == 'Z' || evt.GetKeyCode() == 'z');
+        if (isFitCameraShortcut)
+        {
+            if (ShouldSkipFitCameraShortcut(m_plater) || !can_change_view())
+            {
+                evt.Skip();
+            }
+            else
+            {
+                ZoomCameraToFit();
+            }
+
+            return;
+        }
+
         evt.Skip();
     });
 
@@ -769,6 +842,33 @@ WXLRESULT MainFrame::MSWWindowProc(WXUINT nMsg, WXWPARAM wParam, WXLPARAM lParam
         AdjustWorkingAreaForAutoHide(hWnd, mmi);
         return 0;
     }
+    case WM_WTSSESSION_CHANGE: {
+        switch (wParam) {
+        case WTS_SESSION_LOCK:
+            BOOST_LOG_TRIVIAL(warning) << "[ACTIVATE_EVT] Windows session locked";
+            wxGetApp().notify_foreground_change(false);
+            break;
+        case WTS_SESSION_UNLOCK:
+            BOOST_LOG_TRIVIAL(warning) << "[ACTIVATE_EVT] Windows session unlocked";
+            wxGetApp().notify_foreground_change(true);
+            break;
+        }
+        break;
+    }
+    case WM_POWERBROADCAST: {
+        if (wParam == PBT_POWERSETTINGCHANGE) {
+            auto* power_settings = reinterpret_cast<POWERBROADCAST_SETTING*>(lParam);
+            if (IsEqualGUID(power_settings->PowerSetting, GUID_CONSOLE_DISPLAY_STATE)) {
+                // GUID_CONSOLE_DISPLAY_STATE Data: 0x0=off, 0x1=on, 0x2=dimmed
+                DWORD display_state = power_settings->Data[0];
+                bool is_screen_on = (display_state == 0x1);
+                BOOST_LOG_TRIVIAL(warning) << "[ACTIVATE_EVT] Console display state changed: "
+                                           << (is_screen_on ? "on" : (display_state == 0x2 ? "dimmed" : "off"));
+                wxGetApp().notify_foreground_change(is_screen_on);
+            }
+        }
+        break;
+    }
     }
     return wxFrame::MSWWindowProc(nMsg, wParam, lParam);
 }
@@ -910,6 +1010,7 @@ void MainFrame::update_layout()
 void MainFrame::shutdown(bool isRecreate)
 {
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "MainFrame::shutdown enter";
+    m_shutting_down = true;
     // BBS: backup
     Slic3r::set_backup_callback(nullptr);
 #ifdef _WIN32
@@ -1354,6 +1455,14 @@ void MainFrame::register_win32_callbacks()
         if (! RegisterRawInputDevices(devices, device_count, sizeof(RAWINPUTDEVICE)))
             BOOST_LOG_TRIVIAL(error) << "RegisterRawInputDevices failed";
     }
+
+    // Register for Windows session change notifications (lock/unlock)
+    if (!::WTSRegisterSessionNotification(this->GetHWND(), NOTIFY_FOR_THIS_SESSION))
+        BOOST_LOG_TRIVIAL(error) << "WTSRegisterSessionNotification failed";
+
+    // Register for console display state notifications (screen on/off/dimmed)
+    if (!::RegisterPowerSettingNotification(this->GetHWND(), &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE))
+        BOOST_LOG_TRIVIAL(error) << "RegisterPowerSettingNotification failed";
 }
 #endif // _WIN32
 
@@ -1645,6 +1754,20 @@ wxBoxSizer* MainFrame::create_side_tools()
     sizer->Add(m_print_option_btn, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(2));
     sizer->Add(m_print_btn       , 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(19));
 
+    // Snapmaker requirement 7.1: hover popup on the slice button for choosing the
+    // standard / custom filament grouping mode. Shown only when the nozzles mix flow
+    // variant types (>= 2 distinct across the per-nozzle flow combos) AND at least one
+    // filament actually supports high flow -- otherwise there is nothing to group, so
+    // slicing routes every filament to its single nozzle type.
+    m_slice_mode_popup = new SliceModePopup(this);
+    auto try_show_slice_mode_popup = [this](wxMouseEvent &e) {
+        e.Skip();
+        if (m_slice_enable && GUI::FlowType::distinct_nozzle_flow_type_count() >= 2)
+            m_slice_mode_popup->ShowFor({m_slice_btn, m_slice_option_btn}, m_slice_btn);
+    };
+    m_slice_btn->Bind(wxEVT_ENTER_WINDOW, try_show_slice_mode_popup);
+    m_slice_option_btn->Bind(wxEVT_ENTER_WINDOW, try_show_slice_mode_popup);
+
     sizer->Layout();
 
     // m_publish_btn->Bind(wxEVT_BUTTON, [this](auto& e) {
@@ -1664,13 +1787,23 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_slice_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
+            if (m_slice_mode_popup)
+                m_slice_mode_popup->HidePopup();
+            // Snapmaker requirement 7.1: the custom per-filament grouping applies only
+            // in custom mode with mixed nozzle flow types -- then confirm the mapping
+            // before slicing (both "Slice plate" and "Slice all" go through this
+            // button). Otherwise every filament follows the single selected nozzle
+            // flow type (all standard -> standard, all high flow -> high flow; standard
+            // mode with mixed nozzles falls back to standard), dropping stale mappings.
+            if (GUI::FlowType::grouping_mode() == FILAMENT_GROUPING_CUSTOM && GUI::FlowType::distinct_nozzle_flow_type_count() >= 2) {
+                GUI::FilamentGroupDialog dlg(this);
+                if (dlg.ShowModal() != wxID_OK)
+                    return;
+            } else {
+                GUI::FlowType::sync_filament_volume_types_for_slice();
+            }
             //this->m_plater->select_view_3D("Preview");
-            m_plater->exit_gizmo();
-            m_plater->update(true, true);
-            if (m_slice_select == eSliceAll)
-                wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_ALL));
-            else
-                wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_PLATE));
+            start_slice();
 
         });
 
@@ -1712,6 +1845,8 @@ wxBoxSizer* MainFrame::create_side_tools()
 
     m_slice_option_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
+            if (m_slice_mode_popup)
+                m_slice_mode_popup->HidePopup();
             SidePopup* p = new SidePopup(this);
             SideButton* slice_all_btn = new SideButton(p, _L("Slice all"), "");
             slice_all_btn->SetCornerRadius(0);
@@ -1920,6 +2055,14 @@ bool MainFrame::get_enable_slice_status()
             enable = false;
         }
         else if (m_plater->is_plate_blocked_by_filament_temp_mixing(part_plate_list.get_curr_plate_index()))
+        {
+            enable = false;
+        }
+        else if (m_plater->is_plate_blocked_by_cold_plate(part_plate_list.get_curr_plate_index()))
+        {
+            enable = false;
+        }
+        else if (m_plater->is_plate_blocked_by_flow_ratio_zero(part_plate_list.get_curr_plate_index()))
         {
             enable = false;
         }
@@ -2375,6 +2518,15 @@ static void add_common_view_menu_items(wxMenu* view_menu, MainFrame* mainFrame, 
         "", nullptr, [can_change_view]() { return can_change_view(); }, mainFrame);
     append_menu_item(view_menu, wxID_ANY, _L("Right") + "\t" + ctrl + "6", _L("Right View"), [mainFrame](wxCommandEvent&) { mainFrame->select_view("right"); },
         "", nullptr, [can_change_view]() { return can_change_view(); }, mainFrame);
+
+#ifdef __APPLE__
+    const wxString fitCameraLabel = _L("Fit in all view");
+#else
+    const wxString fitCameraLabel = _L("Fit in all view") + "\tZ";
+#endif
+    append_menu_item(view_menu, wxID_ANY, fitCameraLabel, _L("Fit in all view"),
+        [mainFrame](wxCommandEvent&) { mainFrame->ZoomCameraToFit(); },
+        "", nullptr, [can_change_view]() { return can_change_view(); }, mainFrame);
 }
 
 void MainFrame::init_menubar_as_editor()
@@ -2804,15 +2956,6 @@ void MainFrame::init_menubar_as_editor()
                 m_plater->get_current_canvas3D()->post_event(SimpleEvent(wxEVT_PAINT));
             },
             this, [this]() { return m_plater->is_view3D_shown(); }, [this]() { return m_plater->is_view3D_overhang_shown(); }, this);
-
-        append_menu_check_item(
-            viewMenu, wxID_ANY, _L("Show Selected Outline (beta)"), _L("Show outline around selected object in 3D scene."),
-            [this](wxCommandEvent&) {
-                wxGetApp().toggle_show_outline();
-                m_plater->get_current_canvas3D()->post_event(SimpleEvent(wxEVT_PAINT));
-            },
-            this, [this]() { return m_tabpanel->GetSelection() == TabPosition::tp3DEditor; },
-            [this]() { return wxGetApp().show_outline(); }, this);
 
         /*viewMenu->AppendSeparator();
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &Wireframe") + "\t" + ctrl + shift + _L("Enter"), _L("Show wireframes in 3D scene."),
@@ -3272,7 +3415,19 @@ void MainFrame::update_menubar()
 void MainFrame::reslice_now()
 {
     if (m_plater)
-        m_plater->reslice();
+        (void)m_plater->reslice();
+}
+
+void MainFrame::start_slice()
+{
+    if (!m_plater)
+        return;
+    m_plater->exit_gizmo();
+    m_plater->update(true, true);
+    if (m_slice_select == eSliceAll)
+        wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_ALL));
+    else
+        wxPostEvent(m_plater, SimpleEvent(EVT_GLTOOLBAR_SLICE_PLATE));
 }
 
 struct ConfigsOverwriteConfirmDialog : MessageDialog
@@ -3580,6 +3735,20 @@ void MainFrame::select_view(const std::string& direction)
 {
      if (m_plater)
          m_plater->select_view(direction);
+}
+
+void MainFrame::ZoomCameraToFit() const
+{
+    if (m_plater == nullptr || !can_change_view())
+    {
+        return;
+    }
+
+    GLCanvas3D* const canvas = m_plater->canvas3D();
+    if (canvas != nullptr)
+    {
+        canvas->ZoomToFit();
+    }
 }
 
 // #ys_FIXME_to_delete
@@ -3937,6 +4106,12 @@ void MainFrame::RunScript(wxString js)
 {
     if (m_webview != nullptr)
         m_webview->RunScript(js);
+}
+
+void MainFrame::NotifyActivateChange(bool active)
+{
+    BOOST_LOG_TRIVIAL(warning) << "[ACTIVATE_EVT] OrcaSlicer switched to " << (active ? "foreground" : "background");
+    wxGetApp().notify_foreground_change(active);
 }
 
 void MainFrame::downloadOpenProject(const std::string& fileUrl, const std::string& fileName, std::string completeFilePath)

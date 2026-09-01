@@ -1,7 +1,11 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/ProjectSchemaVersion.hpp"
+#include "libslic3r/Preset.hpp"
 #include "libslic3r/LocalesUtils.hpp"
+
+#include <algorithm>
 
 #include <cereal/types/polymorphic.hpp>
 #include <cereal/types/string.hpp> 
@@ -10,24 +14,42 @@
 
 using namespace Slic3r;
 
+TEST_CASE("Project schema registry handles versions", "[Config][FlowVariant]")
+{
+    const auto& schema = ProjectSchemaRegistry::definition();
+    REQUIRE(schema.config_key == std::string("project_schema_version"));
+    REQUIRE(schema.current_version == 1);
+
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.erase(schema.config_key);
+    REQUIRE(ProjectSchemaRegistry::version_from(config) == schema.legacy_version);
+    REQUIRE_FALSE(ProjectSchemaRegistry::is_newer(config));
+
+    config.set_key_value(schema.config_key, new ConfigOptionInt(schema.current_version));
+    REQUIRE_FALSE(ProjectSchemaRegistry::is_newer(config));
+
+    config.set_key_value(schema.config_key, new ConfigOptionInt(schema.current_version + 1));
+    REQUIRE(ProjectSchemaRegistry::is_newer(config));
+}
+
 SCENARIO("Generic config validation performs as expected.", "[Config]") {
     GIVEN("A config generated from default options") {
         Slic3r::DynamicPrintConfig config = Slic3r::DynamicPrintConfig::full_print_config();
-        WHEN( "perimeter_extrusion_width is set to 250%, a valid value") {
-            config.set_deserialize_strict("perimeter_extrusion_width", "250%");
+        WHEN( "line_width is set to 250%, a valid value") {
+            config.set_deserialize_strict("line_width", "250%");
             THEN( "The config is read as valid.") {
                 REQUIRE(config.validate().empty());
             }
         }
-        WHEN( "perimeter_extrusion_width is set to -10, an invalid value") {
-            config.set("perimeter_extrusion_width", -10);
+        WHEN( "line_width is set to -10, an invalid value") {
+            config.set("line_width", -10);
             THEN( "Validate returns error") {
                 REQUIRE(! config.validate().empty());
             }
         }
 
-        WHEN( "perimeters is set to -10, an invalid value") {
-            config.set("perimeters", -10);
+        WHEN( "wall_loops is set to -10, an invalid value") {
+            config.set("wall_loops", -10);
             THEN( "Validate returns error") {
                 REQUIRE(! config.validate().empty());
             }
@@ -64,9 +86,9 @@ SCENARIO("Config accessor functions perform as expected.", "[Config]") {
             }
         }
         WHEN("A numeric option is set from serialized string") {
-            config.set_deserialize_strict("bed_temperature", "100");
+            config.set_deserialize_strict("nozzle_diameter", "0.6");
             THEN("The underlying value is set correctly.") {
-                REQUIRE(config.opt<ConfigOptionInts>("bed_temperature")->get_at(0) == 100);
+                REQUIRE(config.opt<ConfigOptionFloats>("nozzle_diameter")->get_at(0) == 0.6);
             }
         }
 #if 0
@@ -79,76 +101,76 @@ SCENARIO("Config accessor functions perform as expected.", "[Config]") {
         }
 #endif
         WHEN("An floating-point option is set through the integer interface") {
-            config.set("perimeter_speed", 10);
+            config.set("bridge_flow", 10);
             THEN("The underlying value is set correctly.") {
-                REQUIRE(config.opt<ConfigOptionFloat>("perimeter_speed")->getFloat() == 10.0);
+                REQUIRE(config.opt<ConfigOptionFloat>("bridge_flow")->getFloat() == 10.0);
             }
         }
         WHEN("A floating-point option is set through the double interface") {
-            config.set("perimeter_speed", 5.5);
+            config.set("bridge_flow", 5.5);
             THEN("The underlying value is set correctly.") {
-                REQUIRE(config.opt<ConfigOptionFloat>("perimeter_speed")->getFloat() == 5.5);
+                REQUIRE(config.opt<ConfigOptionFloat>("bridge_flow")->getFloat() == 5.5);
             }
         }
         WHEN("An integer-based option is set through the double interface") {
             THEN("A BadOptionTypeException exception is thrown.") {
-                REQUIRE_THROWS_AS(config.set("bed_temperature", 5.5), BadOptionTypeException);
+                REQUIRE_THROWS_AS(config.set("wall_loops", 5.5), BadOptionTypeException);
             }
         }
         WHEN("A numeric option is set to a non-numeric value.") {
             THEN("A BadOptionTypeException exception is thown.") {
-                REQUIRE_THROWS_AS(config.set_deserialize_strict("perimeter_speed", "zzzz"), BadOptionValueException);
+                REQUIRE_THROWS_AS(config.set_deserialize_strict("bridge_flow", "zzzz"), BadOptionValueException);
             }
             THEN("The value does not change.") {
-                REQUIRE(config.opt<ConfigOptionFloat>("perimeter_speed")->getFloat() == 60.0);
+                REQUIRE(config.opt<ConfigOptionFloat>("bridge_flow")->getFloat() == 1.0);
             }
         }
         WHEN("A string option is set through the string interface") {
-            config.set("end_gcode", "100");
+            config.set("machine_end_gcode", "100");
             THEN("The underlying value is set correctly.") {
-                REQUIRE(config.opt<ConfigOptionString>("end_gcode")->value == "100");
+                REQUIRE(config.opt<ConfigOptionString>("machine_end_gcode")->value == "100");
             }
         }
         WHEN("A string option is set through the integer interface") {
-            config.set("end_gcode", 100);
+            config.set("machine_end_gcode", 100);
             THEN("The underlying value is set correctly.") {
-                REQUIRE(config.opt<ConfigOptionString>("end_gcode")->value == "100");
+                REQUIRE(config.opt<ConfigOptionString>("machine_end_gcode")->value == "100");
             }
         }
         WHEN("A string option is set through the double interface") {
-            config.set("end_gcode", 100.5);
+            config.set("machine_end_gcode", 100.5);
             THEN("The underlying value is set correctly.") {
-                REQUIRE(config.opt<ConfigOptionString>("end_gcode")->value == float_to_string_decimal_point(100.5));
+                REQUIRE(config.opt<ConfigOptionString>("machine_end_gcode")->value == float_to_string_decimal_point(100.5));
             }
         }
         WHEN("A float or percent is set as a percent through the string interface.") {
-            config.set_deserialize_strict("first_layer_extrusion_width", "100%");
+            config.set_deserialize_strict("initial_layer_line_width", "100%");
             THEN("Value and percent flag are 100/true") {
-                auto tmp = config.opt<ConfigOptionFloatOrPercent>("first_layer_extrusion_width");
+                auto tmp = config.opt<ConfigOptionFloatOrPercent>("initial_layer_line_width");
                 REQUIRE(tmp->percent == true);
                 REQUIRE(tmp->value == 100);
             }
         }
         WHEN("A float or percent is set as a float through the string interface.") {
-            config.set_deserialize_strict("first_layer_extrusion_width", "100");
+            config.set_deserialize_strict("initial_layer_line_width", "100");
             THEN("Value and percent flag are 100/false") {
-                auto tmp = config.opt<ConfigOptionFloatOrPercent>("first_layer_extrusion_width");
+                auto tmp = config.opt<ConfigOptionFloatOrPercent>("initial_layer_line_width");
                 REQUIRE(tmp->percent == false);
                 REQUIRE(tmp->value == 100);
             }
         }
         WHEN("A float or percent is set as a float through the int interface.") {
-            config.set("first_layer_extrusion_width", 100);
+            config.set("initial_layer_line_width", 100);
             THEN("Value and percent flag are 100/false") {
-                auto tmp = config.opt<ConfigOptionFloatOrPercent>("first_layer_extrusion_width");
+                auto tmp = config.opt<ConfigOptionFloatOrPercent>("initial_layer_line_width");
                 REQUIRE(tmp->percent == false);
                 REQUIRE(tmp->value == 100);
             }
         }
         WHEN("A float or percent is set as a float through the double interface.") {
-            config.set("first_layer_extrusion_width", 100.5);
+            config.set("initial_layer_line_width", 100.5);
             THEN("Value and percent flag are 100.5/false") {
-                auto tmp = config.opt<ConfigOptionFloatOrPercent>("first_layer_extrusion_width");
+                auto tmp = config.opt<ConfigOptionFloatOrPercent>("initial_layer_line_width");
                 REQUIRE(tmp->percent == false);
                 REQUIRE(tmp->value == 100.5);
             }
@@ -181,9 +203,9 @@ SCENARIO("Config accessor functions perform as expected.", "[Config]") {
 
         WHEN("getX called on an unset option.") {
             THEN("The default is returned.") {
-                REQUIRE(config.opt_float("layer_height") == 0.3);
+                REQUIRE(config.opt_float("layer_height") == 0.2);
                 REQUIRE(config.opt_int("raft_layers") == 0);
-                REQUIRE(config.opt_bool("support_material") == false);
+                REQUIRE(config.opt_bool("enable_support") == false);
             }
         }
 

@@ -1,0 +1,7 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "Generic TPU 95A HF @U1 base",
+    "inherits": "fdm_filament_tpu_95a_hf_category"
+}

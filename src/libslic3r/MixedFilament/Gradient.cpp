@@ -5,22 +5,26 @@
 #include <cstdlib>
 #include <numeric>
 #include <sstream>
+#include <unordered_set>
 
 namespace Slic3r { namespace MixedFilamentInternal {
 
 std::string normalize_gradient_component_ids(const std::string& components)
 {
+    const std::vector<unsigned int> ids = decode_gradient_component_ids(components, 0);
+    const bool extended = std::any_of(ids.begin(), ids.end(), [](unsigned int id) { return id > 9; });
+
+    if (extended && ids.size() == 1)
+        return "/" + std::to_string(ids.front());
+
     std::string normalized;
-    normalized.reserve(components.size());
-    bool seen[10] = {false};
-    for (const char c : components) {
-        if (c < '1' || c > '9')
-            continue;
-        const int idx = c - '0';
-        if (seen[idx])
-            continue;
-        seen[idx] = true;
-        normalized.push_back(c);
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (extended && i != 0)
+            normalized.push_back('/');
+        if (extended)
+            normalized += std::to_string(ids[i]);
+        else
+            normalized.push_back(char('0' + ids[i]));
     }
     return normalized;
 }
@@ -28,19 +32,40 @@ std::string normalize_gradient_component_ids(const std::string& components)
 std::vector<unsigned int> decode_gradient_component_ids(const std::string& components, size_t num_physical)
 {
     std::vector<unsigned int> ids;
-    if (components.empty() || num_physical == 0)
+    if (components.empty())
         return ids;
 
-    bool seen[10] = {false};
+    const bool validate = num_physical > 0;
+    std::unordered_set<unsigned int> seen;
     ids.reserve(components.size());
-    for (const char c : components) {
-        if (c < '1' || c > '9')
-            continue;
-        const unsigned int id = unsigned(c - '0');
-        if (id == 0 || id > num_physical || seen[id])
-            continue;
-        seen[id] = true;
-        ids.emplace_back(id);
+
+    if (components.find('/') != std::string::npos) {
+        std::string token;
+        for (const char c : components) {
+            if (c == '/') {
+                if (!token.empty()) {
+                    const unsigned int id = unsigned(std::strtoul(token.c_str(), nullptr, 10));
+                    if (id >= 1 && (!validate || id <= num_physical) && seen.insert(id).second)
+                        ids.emplace_back(id);
+                    token.clear();
+                }
+            } else {
+                token.push_back(c);
+            }
+        }
+        if (!token.empty()) {
+            const unsigned int id = unsigned(std::strtoul(token.c_str(), nullptr, 10));
+            if (id >= 1 && (!validate || id <= num_physical) && seen.insert(id).second)
+                ids.emplace_back(id);
+        }
+    } else {
+        for (const char c : components) {
+            if (c < '1' || c > '9')
+                continue;
+            const unsigned int id = unsigned(c - '0');
+            if ((!validate || id <= num_physical) && seen.insert(id).second)
+                ids.emplace_back(id);
+        }
     }
     return ids;
 }
@@ -319,8 +344,11 @@ std::vector<int> normalized_percent_vector_or_equal(const std::vector<int>& weig
 std::optional<MixedFilamentWeightedBlend> mixed_filament_weighted_blend_from_legacy_row(const MixedFilamentLegacyRow& row,
                                                                                        size_t                        num_physical)
 {
-    const std::string normalized_ids = normalize_gradient_component_ids(row.gradient_component_ids);
-    if (normalized_ids.size() < 3)
+    const std::vector<unsigned int> normalized_ids = decode_gradient_component_ids(row.gradient_component_ids, 0);
+    const size_t valid_id_count = std::count_if(normalized_ids.begin(), normalized_ids.end(), [num_physical](unsigned int id) {
+        return id != 0 && (num_physical == 0 || id <= num_physical);
+    });
+    if (valid_id_count < 3)
         return std::nullopt;
 
     const std::vector<int> parsed_weights = parse_gradient_weight_tokens(row.gradient_component_weights);
@@ -337,7 +365,7 @@ std::optional<MixedFilamentWeightedBlend> mixed_filament_weighted_blend_from_leg
         if (!use_parsed_weights)
             return std::nullopt;
         for (size_t i = 0; i < normalized_ids.size(); ++i)
-            if (unsigned(normalized_ids[i] - '0') == id)
+            if (normalized_ids[i] == id)
                 return parsed_weights[i];
         return std::nullopt;
     };
@@ -351,8 +379,8 @@ std::optional<MixedFilamentWeightedBlend> mixed_filament_weighted_blend_from_leg
     const int pair_b_percent = std::clamp(row.mix_b_percent, 0, 100);
     add_id(row.component_a, 100 - pair_b_percent);
     add_id(row.component_b, pair_b_percent);
-    for (const char c : normalized_ids)
-        add_id(unsigned(c - '0'), 0);
+    for (const unsigned int id : normalized_ids)
+        add_id(id, 0);
 
     if (ids.size() < 3)
         return std::nullopt;

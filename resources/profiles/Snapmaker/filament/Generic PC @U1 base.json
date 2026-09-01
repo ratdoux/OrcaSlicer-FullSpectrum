@@ -1,0 +1,7 @@
+{
+    "type": "filament",
+    "from": "system",
+    "instantiation": "false",
+    "name": "Generic PC @U1 base",
+    "inherits": "fdm_filament_pc_category"
+}

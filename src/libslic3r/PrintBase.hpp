@@ -2,12 +2,14 @@
 #define slic3r_PrintBase_hpp_
 
 #include "libslic3r.h"
+#include "Utils.hpp"
 #include <set>
 #include <vector>
 #include <string>
 #include <functional>
 #include <atomic>
 #include <mutex>
+#include <chrono>
 
 #include "ObjectID.hpp"
 #include "Model.hpp"
@@ -19,10 +21,12 @@ namespace Slic3r {
 enum StringExceptionType {
     STRING_EXCEPT_NOT_DEFINED                   = 0,
     STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE   = 1,
-    STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP      = 2,
+    STRING_EXCEPT_FILAMENTS_MIXING_TEMP      = 2,
     STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT = 3,
     STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT = 4,
     STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT = 5,
+    STRING_EXCEPT_COLD_PLATE_INCOMPATIBLE     = 6,
+    STRING_EXCEPT_FLOW_RATIO_ZERO             = 7,
     STRING_EXCEPT_COUNT
 };
 
@@ -484,6 +488,20 @@ public:
     // in case a successive change of the Print / PrintObject / PrintRegion instances changed
     // the state of the finished or running calculations.
     void                       set_cancel_callback(cancel_callback_type cancel_callback) { m_cancel_callback = cancel_callback; }
+
+    // Memory guard threshold: when available physical memory drops below this
+    // value (512 MB), the guard pauses slicing and asks the user whether to continue.
+    // "Available" = min(physical RAM available, system commit available),
+    // so the guard catches both page-fault thrashing and OOM crashes.
+    // Adjust this constant to change the warning threshold.
+    static constexpr size_t MEM_GUARD_THRESHOLD = 512ULL * 1024 * 1024; // 512 MB
+
+    // Runtime memory guard: callback invoked from throw_if_canceled() when
+    // available physical memory drops below a threshold during slicing.
+    // Returns true to continue, false to cancel. The callback may block
+    // (e.g., to show a UI dialog and wait for user response).
+    typedef std::function<bool()>  memory_guard_callback_type;
+    void                       set_memory_guard_callback(memory_guard_callback_type cb) { m_memory_guard_callback = std::move(cb); }
     // Has the calculation been canceled?
 	enum CancelStatus {
 		// No cancelation, background processing should run.
@@ -500,7 +518,11 @@ public:
 	void                       cancel() { m_cancel_status = CANCELED_BY_USER; }
 	void                       cancel_internal() { m_cancel_status = CANCELED_INTERNAL; }
     // Cancel the running computation. Stop execution of all the background threads.
-	void                       restart() { m_cancel_status = NOT_CANCELED; }
+	void                       restart() {
+        m_cancel_status.store(NOT_CANCELED, std::memory_order_release);
+        m_memory_guard_acknowledged.store(false, std::memory_order_relaxed);
+        m_low_mem_count.store(0, std::memory_order_relaxed);
+    }
     // Returns true if the last step was finished with success.
     virtual bool               finished() const = 0;
 
@@ -539,7 +561,53 @@ protected:
 
     // If the background processing stop was requested, throw CanceledException.
     // To be called by the worker thread and its sub-threads (mostly launched on the TBB thread pool) regularly.
-    void                   throw_if_canceled() const { if (m_cancel_status.load(std::memory_order_acquire)) throw CanceledException(); }
+    // Also invokes the runtime memory guard to detect low-memory conditions.
+    void                   throw_if_canceled() const {
+        if (m_cancel_status.load(std::memory_order_acquire)) throw CanceledException();
+        const_cast<PrintBase*>(this)->check_memory_guard();
+    }
+
+    // Runtime memory guard: samples available system memory every 500ms.
+    // If below MEM_GUARD_THRESHOLD (512 MB), invokes m_memory_guard_callback.
+    // The callback may block (e.g., to show a UI dialog). If it returns
+    // false, sets CANCELED_INTERNAL and throws CanceledException.
+    // An atomic flag prevents concurrent dialog invocations from TBB workers.
+    void                   check_memory_guard() {
+        auto now = std::chrono::steady_clock::now();
+        // Throttle to one sample per 500ms per Print instance.
+        if (now - m_last_mem_check < std::chrono::milliseconds(500))
+            return;
+        m_last_mem_check = now;
+
+        size_t avail = Slic3r::get_available_physical_memory();
+        if (avail == 0)
+            return;
+
+        if (avail < MEM_GUARD_THRESHOLD) {
+            // Require sustained low memory (2 consecutive samples = 1 second)
+            // to avoid false triggers from transient OS cache fluctuations.
+            int prev = m_low_mem_count.fetch_add(1, std::memory_order_relaxed);
+            if (prev < 1)
+                return;
+            // User already acknowledged the warning — don't ask again this slice.
+            if (m_memory_guard_acknowledged.load(std::memory_order_relaxed))
+                return;
+            static std::atomic<bool> s_dialog_active{false};
+            bool expected = false;
+            if (s_dialog_active.compare_exchange_strong(expected, true)) {
+                bool cont = m_memory_guard_callback();
+                s_dialog_active.store(false);
+                if (!cont) {
+                    m_cancel_status.store(CANCELED_BY_USER, std::memory_order_release);
+                    throw CanceledException();
+                }
+                m_memory_guard_acknowledged.store(true, std::memory_order_relaxed);
+            }
+        } else {
+            // Memory recovered -- reset the sustained-low counter.
+            m_low_mem_count.store(0, std::memory_order_relaxed);
+        }
+    }
     // Wrapper around this->throw_if_canceled(), so that throw_if_canceled() may be passed to a function without making throw_if_canceled() public.
     PrintTryCancel         make_try_cancel() const { return PrintTryCancel(this); }
 
@@ -567,6 +635,22 @@ private:
 
     // Callback to be evoked to stop the background processing before a state is updated.
     cancel_callback_type                    m_cancel_callback = [](){};
+
+    // Callback invoked by the runtime memory guard when available physical
+    // memory drops below threshold. Default: no-op (always continue).
+    memory_guard_callback_type              m_memory_guard_callback = []() { return true; };
+
+    // Set to true when the user acknowledges the memory warning once.
+    // Prevents repeated dialogs within the same slicing session.
+    // Reset to false by restart() at the start of each new slice.
+    std::atomic<bool>                       m_memory_guard_acknowledged{false};
+
+    // Sustained low-memory sample counter for the memory guard.
+    // Requires 2 consecutive low samples before triggering the dialog.
+    std::atomic<int>                        m_low_mem_count{0};
+
+    // Last memory-guard sample timestamp (throttle: 1 sample / 500ms).
+    std::chrono::steady_clock::time_point   m_last_mem_check{std::chrono::steady_clock::now()};
 
     // Mutex used for synchronization of the worker thread with the UI thread:
     // The mutex will be used to guard the worker thread against entering a stage

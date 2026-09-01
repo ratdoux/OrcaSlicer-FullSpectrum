@@ -18,6 +18,8 @@
 #include "Widgets/Button.hpp"
 #include "GUI_Factories.hpp"
 
+#include <wx/wupdlock.h>
+
 
 namespace Slic3r {
 namespace GUI {
@@ -195,7 +197,7 @@ ParamsPanel::ParamsPanel( wxWindow* parent, wxWindowID id, const wxPoint& pos, c
     // Create additional panel to Fit() it from OnActivate()
     // It's needed for tooltip showing on OSX
     m_tmp_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBK_LEFT | wxTAB_TRAVERSAL);
-    auto  sizer = new wxBoxSizer(wxHORIZONTAL);
+    auto  sizer = new wxBoxSizer(wxVERTICAL);
     m_tmp_panel->SetSizer(sizer);
     m_tmp_panel->Layout();
 
@@ -329,6 +331,12 @@ ParamsPanel::ParamsPanel( wxWindow* parent, wxWindowID id, const wxPoint& pos, c
         }
     };
 
+    m_page_header = new wxPanel(page_parent);
+    m_page_header->SetBackgroundColour(*wxWHITE);
+    m_page_header_sizer = new wxBoxSizer(wxHORIZONTAL);
+    m_page_header->SetSizer(m_page_header_sizer);
+    m_page_header->Hide();
+
     m_page_view = new PageScrolledWindow(page_parent);
     m_page_view->SetBackgroundColour(*wxWHITE);
     m_page_sizer = new wxBoxSizer(wxVERTICAL);
@@ -442,9 +450,11 @@ void ParamsPanel::create_layout()
     m_left_sizer->AddSpacer(6 * em_unit(this) / 10);
 #if __WXOSX__
     m_left_sizer->Add(m_tmp_panel, 1, wxEXPAND | wxALL, 0);
-    m_tmp_panel->GetSizer()->Add( m_page_view, 1, wxEXPAND );
+    m_tmp_panel->GetSizer()->Add(m_page_header, 0, wxEXPAND);
+    m_tmp_panel->GetSizer()->Add(m_page_view, 1, wxEXPAND);
 #else
-    m_left_sizer->Add( m_page_view, 1, wxEXPAND );
+    m_left_sizer->Add(m_page_header, 0, wxEXPAND);
+    m_left_sizer->Add(m_page_view, 1, wxEXPAND);
 #endif
 
     //this->SetSizer( m_top_sizer );
@@ -492,6 +502,16 @@ void ParamsPanel::refresh_tabs()
         m_tab_print_layer = wxGetApp().get_layer_tab();
     }
     return;
+}
+
+void ParamsPanel::show_page_header(bool show)
+{
+    if (!m_page_header || m_page_header->IsShown() == show)
+        return;
+
+    m_page_header->Show(show);
+    m_page_header->GetParent()->Layout();
+    Layout();
 }
 
 void ParamsPanel::clear_page()

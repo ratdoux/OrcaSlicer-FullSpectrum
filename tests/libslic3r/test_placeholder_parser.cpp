@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include "libslic3r/PlaceholderParser.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -14,41 +14,40 @@ SCENARIO("Placeholder parser scripting", "[PlaceholderParser]") {
 	    { "nozzle_diameter", "0.6;0.6;0.6;0.6" },
 	    { "temperature", "357;359;363;378" }
 	});
-    // To test the "first_layer_extrusion_width" over "first_layer_heigth".
-    // "first_layer_heigth" over "layer_height" is no more supported after first_layer_height was moved from PrintObjectConfig to PrintConfig.
-//  config.option<ConfigOptionFloatOrPercent>("first_layer_height")->value = 150.;
-//  config.option<ConfigOptionFloatOrPercent>("first_layer_height")->percent = true;
-    config.option<ConfigOptionFloatOrPercent>("first_layer_height")->value = 1.5 * config.opt_float("layer_height");
-    config.option<ConfigOptionFloatOrPercent>("first_layer_height")->percent = false;
-    // To let the PlaceholderParser throw when referencing first_layer_speed if it is set to percent, as the PlaceholderParser does not know
-    // a percent to what.
-    config.option<ConfigOptionFloatOrPercent>("first_layer_speed")->value = 50.;
-    config.option<ConfigOptionFloatOrPercent>("first_layer_speed")->percent = true;
+    // Test current line width / speed option names after the first-layer schema migration.
+    config.option<ConfigOptionFloat>("initial_layer_print_height")->value = 1.5 * config.opt_float("layer_height");
+    config.option<ConfigOptionFloatOrPercent>("outer_wall_line_width")->value = 0.675;
+    config.option<ConfigOptionFloatOrPercent>("outer_wall_line_width")->percent = false;
+    config.option<ConfigOptionFloatOrPercent>("initial_layer_line_width")->value = 0.9;
+    config.option<ConfigOptionFloatOrPercent>("initial_layer_line_width")->percent = false;
+    config.option<ConfigOptionFloatOrPercent>("support_line_width")->value = 0.675;
+    config.option<ConfigOptionFloatOrPercent>("support_line_width")->percent = false;
+    config.option<ConfigOptionFloat>("initial_layer_speed")->value = 50.;
 
     parser.apply_config(config);
 	parser.set("foo", 0);
 	parser.set("bar", 2);
 	parser.set("num_extruders", 4);
 
-    SECTION("nested config options (legacy syntax)") { REQUIRE(parser.process("[temperature_[foo]]") == "357"); }
-    SECTION("array reference") { REQUIRE(parser.process("{temperature[foo]}") == "357"); }
-    SECTION("whitespaces and newlines are maintained") { REQUIRE(parser.process("test [ temperature_ [foo] ] \n hu") == "test 357 \n hu"); }
+    SECTION("nested config options (legacy syntax)") { REQUIRE(parser.process("[nozzle_diameter_[foo]]") == "0.6"); }
+    SECTION("array reference") { REQUIRE_THAT(std::stod(parser.process("{nozzle_diameter[foo]}")), WithinRel(0.6, 0.001)); }
+    SECTION("whitespaces and newlines are maintained") { REQUIRE(parser.process("test [ nozzle_diameter_ [foo] ] \n hu") == "test 0.6 \n hu"); }
 
     // Test the math expressions.
     SECTION("math: 2*3") { REQUIRE(parser.process("{2*3}") == "6"); }
     SECTION("math: 2*3/6") { REQUIRE(parser.process("{2*3/6}") == "1"); }
     SECTION("math: 2*3/12") { REQUIRE(parser.process("{2*3/12}") == "0"); }
-    SECTION("math: 2.*3/12") { REQUIRE(std::stod(parser.process("{2.*3/12}")) == Approx(0.5)); }
-    SECTION("math: 10 % 2.5") { REQUIRE(std::stod(parser.process("{10%2.5}")) == Approx(0.)); }
-    SECTION("math: 11 % 2.5") { REQUIRE(std::stod(parser.process("{11%2.5}")) == Approx(1.)); }
+    SECTION("math: 2.*3/12") { REQUIRE_THAT(std::stod(parser.process("{2.*3/12}")), WithinRel(0.5, 0.001)); }
+    SECTION("math: 10 % 2.5") { REQUIRE_THAT(std::stod(parser.process("{10%2.5}")), WithinRel(0., 0.001)); }
+    SECTION("math: 11 % 2.5") { REQUIRE_THAT(std::stod(parser.process("{11%2.5}")), WithinRel(1., 0.001)); }
     SECTION("math: 2*(3-12)") { REQUIRE(parser.process("{2*(3-12)}") == "-18"); }
     SECTION("math: 2*foo*(3-12)") { REQUIRE(parser.process("{2*foo*(3-12)}") == "0"); }
     SECTION("math: 2*bar*(3-12)") { REQUIRE(parser.process("{2*bar*(3-12)}") == "-36"); }
-    SECTION("math: 2.5*bar*(3-12)") { REQUIRE(std::stod(parser.process("{2.5*bar*(3-12)}")) == Approx(-45)); }
+    SECTION("math: 2.5*bar*(3-12)") { REQUIRE_THAT(std::stod(parser.process("{2.5*bar*(3-12)}")), WithinRel(-45, 0.001)); }
     SECTION("math: min(12, 14)") { REQUIRE(parser.process("{min(12, 14)}") == "12"); }
     SECTION("math: max(12, 14)") { REQUIRE(parser.process("{max(12, 14)}") == "14"); }
-    SECTION("math: min(13.4, -1238.1)") { REQUIRE(std::stod(parser.process("{min(13.4, -1238.1)}")) == Approx(-1238.1)); }
-    SECTION("math: max(13.4, -1238.1)") { REQUIRE(std::stod(parser.process("{max(13.4, -1238.1)}")) == Approx(13.4)); }
+    SECTION("math: min(13.4, -1238.1)") { REQUIRE_THAT(std::stod(parser.process("{min(13.4, -1238.1)}")), WithinRel(-1238.1, 0.001)); }
+    SECTION("math: max(13.4, -1238.1)") { REQUIRE_THAT(std::stod(parser.process("{max(13.4, -1238.1)}")), WithinRel(13.4, 0.001)); }
     SECTION("math: int(13.4)") { REQUIRE(parser.process("{int(13.4)}") == "13"); }
     SECTION("math: int(-13.4)") { REQUIRE(parser.process("{int(-13.4)}") == "-13"); }
     SECTION("math: round(13.4)") { REQUIRE(parser.process("{round(13.4)}") == "13"); }
@@ -65,22 +64,18 @@ SCENARIO("Placeholder parser scripting", "[PlaceholderParser]") {
     SECTION("math: zdigits(5., 15, 8)") { REQUIRE(parser.process("{zdigits(5, 15, 8)}") == "000005.00000000"); }
     SECTION("math: digits(13.84375892476, 15, 8)") { REQUIRE(parser.process("{digits(13.84375892476, 15, 8)}") == "    13.84375892"); }
     SECTION("math: zdigits(13.84375892476, 15, 8)") { REQUIRE(parser.process("{zdigits(13.84375892476, 15, 8)}") == "000013.84375892"); }
-    SECTION("math: interpolate_table(13.84375892476, (0, 0), (20, 20))") { REQUIRE(std::stod(parser.process("{interpolate_table(13.84375892476, (0, 0), (20, 20))}")) == Approx(13.84375892476)); }
-    SECTION("math: interpolate_table(13, (0, 0), (20, 20), (30, 20))") { REQUIRE(std::stod(parser.process("{interpolate_table(13, (0, 0), (20, 20), (30, 20))}")) == Approx(13.)); }
-    SECTION("math: interpolate_table(25, (0, 0), (20, 20), (30, 20))") { REQUIRE(std::stod(parser.process("{interpolate_table(25, (0, 0), (20, 20), (30, 20))}")) == Approx(20.)); }
+    SECTION("math: interpolate_table(13.84375892476, (0, 0), (20, 20))") { REQUIRE_THAT(std::stod(parser.process("{interpolate_table(13.84375892476, (0, 0), (20, 20))}")), WithinRel(13.84375892476, 0.001)); }
+    SECTION("math: interpolate_table(13, (0, 0), (20, 20), (30, 20))") { REQUIRE_THAT(std::stod(parser.process("{interpolate_table(13, (0, 0), (20, 20), (30, 20))}")), WithinRel(13., 0.001)); }
+    SECTION("math: interpolate_table(25, (0, 0), (20, 20), (30, 20))") { REQUIRE_THAT(std::stod(parser.process("{interpolate_table(25, (0, 0), (20, 20), (30, 20))}")), WithinRel(20., 0.001)); }
 
-    // Test the "coFloatOrPercent" and "xxx_extrusion_width" substitutions.
-    // first_layer_extrusion_width ratio_over first_layer_heigth.
-    SECTION("perimeter_extrusion_width") { REQUIRE(std::stod(parser.process("{perimeter_extrusion_width}")) == Approx(0.67500001192092896)); }
-    SECTION("first_layer_extrusion_width") { REQUIRE(std::stod(parser.process("{first_layer_extrusion_width}")) == Approx(0.9)); }
-    SECTION("support_material_xy_spacing") { REQUIRE(std::stod(parser.process("{support_material_xy_spacing}")) == Approx(0.3375)); }
-    // external_perimeter_speed over perimeter_speed
-    SECTION("external_perimeter_speed") { REQUIRE(std::stod(parser.process("{external_perimeter_speed}")) == Approx(30.)); }
-    // infill_overlap over perimeter_extrusion_width
-    SECTION("infill_overlap") { REQUIRE(std::stod(parser.process("{infill_overlap}")) == Approx(0.16875)); }
-    // If first_layer_speed is set to percent, then it is applied over respective extrusion types by overriding their respective speeds.
-    // The PlaceholderParser has no way to know which extrusion type the caller has in mind, therefore it throws.
-    SECTION("first_layer_speed") { REQUIRE_THROWS(parser.process("{first_layer_speed}")); }
+    // Test the "coFloatOrPercent" substitutions.
+    SECTION("outer_wall_line_width") { REQUIRE_THAT(std::stod(parser.process("{outer_wall_line_width}")), WithinRel(0.67500001192092896, 0.001)); }
+    SECTION("initial_layer_line_width") { REQUIRE_THAT(std::stod(parser.process("{initial_layer_line_width}")), WithinRel(0.9, 0.001)); }
+    SECTION("support_line_width") { REQUIRE_THAT(std::stod(parser.process("{support_line_width}")), WithinRel(0.67500001192092896, 0.001)); }
+    // small_perimeter_speed over outer_wall_speed
+    SECTION("small_perimeter_speed") { REQUIRE_THAT(std::stod(parser.process("{small_perimeter_speed}")), WithinRel(30., 0.001)); }
+    SECTION("infill_wall_overlap") { REQUIRE_THAT(std::stod(parser.process("{infill_wall_overlap}")), WithinRel(15., 0.001)); }
+    SECTION("initial_layer_speed") { REQUIRE_THAT(std::stod(parser.process("{initial_layer_speed}")), WithinRel(50., 0.001)); }
 
     // Test the boolean expression parser.
     auto boolean_expression = [&parser](const std::string& templ) { return parser.evaluate_boolean_expression(templ, parser.config()); };

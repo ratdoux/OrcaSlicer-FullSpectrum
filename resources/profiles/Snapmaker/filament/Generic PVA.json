@@ -1,10 +1,10 @@
 {
     "type": "filament",
-    "name": "Generic PVA",
-    "inherits": "Generic PVA @base",
     "from": "system",
-    "setting_id": "GFSS99",
     "instantiation": "true",
+    "name": "Generic PVA",
+    "setting_id": "GFSS99",
+    "inherits": "Generic PVA @U1 base",
     "compatible_printers": [
         "Snapmaker U1 (0.4 nozzle)"
     ],
@@ -55,5 +55,101 @@
     ],
     "textured_plate_temp_initial_layer": [
         "65"
+    ],
+    "filament_type": [
+        "PVA"
+    ],
+    "additional_cooling_fan_speed": [
+        "70"
+    ],
+    "close_fan_the_first_x_layers": [
+        "1"
+    ],
+    "complete_print_exhaust_fan_speed": [
+        "70"
+    ],
+    "cool_plate_temp": [
+        "45"
+    ],
+    "cool_plate_temp_initial_layer": [
+        "45"
+    ],
+    "during_print_exhaust_fan_speed": [
+        "70"
+    ],
+    "fan_min_speed": [
+        "100"
+    ],
+    "filament_cooling_final_speed": [
+        "3.4"
+    ],
+    "filament_cooling_initial_speed": [
+        "2.2"
+    ],
+    "filament_cooling_moves": [
+        "4"
+    ],
+    "filament_cost": [
+        "20"
+    ],
+    "filament_density": [
+        "1.24"
+    ],
+    "filament_deretraction_speed": [
+        "nil"
+    ],
+    "filament_flow_ratio": [
+        "0.95"
+    ],
+    "filament_flow_support": [
+        "standard"
+    ],
+    "filament_loading_speed": [
+        "28"
+    ],
+    "filament_loading_speed_start": [
+        "3"
+    ],
+    "filament_minimal_purge_on_wipe_tower": [
+        "15"
+    ],
+    "filament_retraction_length": [
+        "nil"
+    ],
+    "filament_retraction_speed": [
+        "nil"
+    ],
+    "filament_settings_id": [
+        ""
+    ],
+    "filament_soluble": [
+        "1"
+    ],
+    "filament_unloading_speed": [
+        "90"
+    ],
+    "filament_unloading_speed_start": [
+        "100"
+    ],
+    "filament_z_hop_types": [
+        "nil"
+    ],
+    "graphic_effect_plate_temp": [
+        "0"
+    ],
+    "graphic_effect_plate_temp_initial_layer": [
+        "0"
+    ],
+    "nozzle_temperature_range_high": [
+        "240"
+    ],
+    "pellet_flow_coefficient": [
+        "0.4157"
+    ],
+    "slow_down_layer_time": [
+        "7"
+    ],
+    "chamber_temperatures": [
+        "0"
     ]
 }
