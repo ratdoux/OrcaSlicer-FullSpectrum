@@ -844,7 +844,18 @@ void HttpServer::ResponseFile::write_response(std::stringstream& ssOut)
     // 读取文件内容并计算长度（关键：使用字节长度）
     std::ostringstream fileStream;
     fileStream << file.rdbuf();
-    std::string fileContent    = fileStream.str();
+    std::string fileContent = fileStream.str();
+
+    // Web resources may be updated independently of the slicer executable. Inject the
+    // slicer-owned LAN request guard so a web update cannot reintroduce an unsupported
+    // X-Request-Id header on direct printer requests.
+    static constexpr const char* lan_request_guard_tag = "<script src=\"/web/lan_request_guard.js\"></script>";
+    if (ends_with(file_path, "flutter_web/index.html") && fileContent.find(lan_request_guard_tag) == std::string::npos) {
+        const size_t body_start = fileContent.find("<body");
+        const size_t body_end   = body_start == std::string::npos ? std::string::npos : fileContent.find('>', body_start);
+        if (body_end != std::string::npos)
+            fileContent.insert(body_end + 1, std::string("\n  ") + lan_request_guard_tag);
+    }
     size_t      content_length = fileContent.size(); // 字节长度，非字符数
 
     // 确定Content-Type（保持原有逻辑）
