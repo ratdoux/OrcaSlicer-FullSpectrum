@@ -79,12 +79,27 @@ struct SubLayerPlan
     size_t layer_id { 0 };
     size_t pass_index { 0 };
     bool   split_interval { false };
+    bool   external_perimeters_only { false };
     double z_lo { 0.0 };
     double z_hi { 0.0 };
     double print_z { 0.0 };
     double flow_height { 0.0 };
     size_t dependency_group { 0 };
     size_t dependency_order { 0 };
+    // Adaptive Local-Z keeps the authored XY perimeter and uses this pass
+    // metadata to derive a continuously varying physical Z and bead height at
+    // G-code time. Other Local-Z modes remain ordinary constant-Z sublayers.
+    bool                      adaptive_nonplanar { false };
+    size_t                    adaptive_component_index { 0 };
+    std::vector<unsigned int> adaptive_component_ids;
+    std::vector<int>          adaptive_component_weights;
+    // A strict N-component adaptive cadence owns N nominal layer heights.
+    // Every component is emitted once, on successive nominal layers, while
+    // these bounds keep all locally varying component thicknesses on the same
+    // fixed-height cadence cycle.
+    double                    adaptive_cycle_z_lo { 0.0 };
+    double                    adaptive_cycle_z_hi { 0.0 };
+    double                    adaptive_sample_z { 0.0 };
     std::vector<ExPolygons> painted_masks_by_extruder;
     std::vector<ExPolygons> fixed_painted_masks_by_extruder;
     ExPolygons              base_masks;

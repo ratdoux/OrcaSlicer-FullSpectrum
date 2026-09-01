@@ -3,6 +3,7 @@
 #include "ToolOrdering.hpp"
 #include "Layer.hpp"
 #include "ClipperUtils.hpp"
+#include "ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "ParameterUtils.hpp"
 
 // #define SLIC3R_DEBUG
@@ -717,6 +718,15 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
         layer_tools.layer_index       = layerCount;
         layer_tools.object_layer_count = int(object.layers().size());
         layer_tools.layer_height      = layer->height;
+        const std::optional<unsigned int> synchronized_object_filament =
+            object.model_object() != nullptr && m_mixed_mgr != nullptr ?
+                ImageMap::model_whole_object_cadence_filament(*object.model_object(),
+                                                               *m_mixed_mgr,
+                                                               m_num_physical,
+                                                               layerCount,
+                                                               float(layer->print_z),
+                                                               float(layer->height)) :
+                std::nullopt;
 
         // Override extruder with the next 
     	for (; it_per_layer_extruder_override != per_layer_extruder_switches.end() && it_per_layer_extruder_override->first < layer->print_z + EPSILON; ++ it_per_layer_extruder_override)
@@ -739,7 +749,11 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
                             something_nonoverriddable = true;
                 }
 
-                if (something_nonoverriddable){
+                if (synchronized_object_filament) {
+                    layer_tools.extruders.emplace_back(*synchronized_object_filament);
+                    if (layerCount == 0)
+                        firstLayerExtruders.emplace_back(int(*synchronized_object_filament));
+                } else if (something_nonoverriddable) {
                     const unsigned int configured_wall = (extruder_override == 0) ? region.config().wall_filament.value : extruder_override;
                     unsigned int       wall_ext        = resolve_mixed(configured_wall, layerCount, float(layer->print_z), float(layer->height));
                     const unsigned int grouped_id =
@@ -795,7 +809,10 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
                 }
             }
 
-            if (something_nonoverriddable || !m_print_config_ptr) {
+            if (synchronized_object_filament) {
+                if (has_solid_infill || has_sparse_infill)
+                    layer_tools.extruders.emplace_back(*synchronized_object_filament);
+            } else if (something_nonoverriddable || !m_print_config_ptr) {
             	if (extruder_override == 0) {
 	                if (has_solid_infill)
 	                    layer_tools.extruders.emplace_back(layer_tools.solid_infill_filament(region) + 1);

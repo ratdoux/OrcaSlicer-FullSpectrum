@@ -5,6 +5,7 @@
 #include "ElephantFootCompensation.hpp"
 #include "Geometry.hpp"
 #include "I18N.hpp"
+#include "ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "Layer.hpp"
 #include "MutablePolygon.hpp"
 #include "PrintConfig.hpp"
@@ -310,6 +311,23 @@ void PrintObject::make_perimeters()
         m_typed_slices = false;
     }
 
+    // Perimeter path modulation V2 is geometry-first. Reshape each layer
+    // before any wall topology is generated so outer/inner walls and infill
+    // are all derived from the same non-overlapping envelope.
+    const std::unique_ptr<ImageMap::PerimeterEnvelopeRenderer> image_map_perimeter_renderer =
+        ImageMap::PerimeterEnvelopeRenderer::create(*this);
+    if (image_map_perimeter_renderer != nullptr) {
+        tbb::parallel_for(
+            tbb::blocked_range<size_t>(0, m_layers.size()),
+            [this, image_map_perimeter_renderer = image_map_perimeter_renderer.get()](const tbb::blocked_range<size_t>& range) {
+                for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+                    m_print->throw_if_canceled();
+                    image_map_perimeter_renderer->apply_to_slices(*m_layers[layer_idx]);
+                }
+            });
+        m_print->throw_if_canceled();
+    }
+
     // compare each layer to the one below, and mark those slices needing
     // one additional inner perimeter, like the top of domed objects-
 
@@ -382,15 +400,52 @@ void PrintObject::make_perimeters()
     }
 
     BOOST_LOG_TRIVIAL(debug) << "Generating perimeters in parallel - start";
-    tbb::parallel_for(
-        tbb::blocked_range<size_t>(0, m_layers.size()),
-        [this](const tbb::blocked_range<size_t>& range) {
-            for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
-                m_print->throw_if_canceled();
-                m_layers[layer_idx]->make_perimeters();
-            }
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()), [this](const tbb::blocked_range<size_t>& range) {
+        for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+            m_print->throw_if_canceled();
+            m_layers[layer_idx]->make_perimeters();
         }
-    );
+    });
+    m_print->throw_if_canceled();
+
+    // Hybrid image-map modulation narrows and shifts only the already-created
+    // external extrusion paths. Wall count, inner walls and infill topology
+    // remain those produced from the geometry-first envelope above.
+    if (image_map_perimeter_renderer != nullptr) {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()),
+                          [this,
+                           image_map_perimeter_renderer = image_map_perimeter_renderer.get()](const tbb::blocked_range<size_t>& range) {
+                              for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+                                  m_print->throw_if_canceled();
+                                  image_map_perimeter_renderer->apply_to_perimeters(*m_layers[layer_idx]);
+                              }
+                          });
+        m_print->throw_if_canceled();
+    }
+
+    // Perimeter generation may discover that a thin modulated shell cannot
+    // carry the configured V2 bead. Commit the exact fallback envelope only
+    // after all layers have finished using the modulated neighbours for wall
+    // classification, matching the reference implementation's deferred
+    // fallback handoff.
+    for (Layer* layer : m_layers) {
+        bool layer_changed = false;
+        for (LayerRegion* region : layer->regions()) {
+            if (!region->image_map_has_perimeter_fallback_slices)
+                continue;
+            region->slices     = std::move(region->image_map_perimeter_fallback_slices);
+            region->raw_slices = to_expolygons(region->slices.surfaces);
+            region->image_map_has_perimeter_fallback_slices = false;
+            layer_changed = true;
+        }
+        if (layer_changed) {
+            layer->make_slices();
+            layer->lslices_bboxes.clear();
+            layer->lslices_bboxes.reserve(layer->lslices.size());
+            for (const ExPolygon& expolygon : layer->lslices)
+                layer->lslices_bboxes.emplace_back(get_extents(expolygon));
+        }
+    }
     m_print->throw_if_canceled();
     BOOST_LOG_TRIVIAL(debug) << "Generating perimeters in parallel - end";
 
@@ -945,66 +1000,41 @@ bool PrintObject::invalidate_state_by_config_options(
             if (this->is_mm_painted() && (opt_key == "filter_out_gap_fill" && (opt_key == "gap_infill_speed" && is_gap_fill_changed_state_due_to_speed())))
                 steps.emplace_back(posSlice);
             steps.emplace_back(posPerimeters);
-        } else if (
-               opt_key == "layer_height"
-            || opt_key == "dithering_z_step_size"
-            || opt_key == "dithering_local_z_mode"
-            || opt_key == "dithering_local_z_whole_objects"
-            || opt_key == "dithering_local_z_preserve_first_layer"
-            || opt_key == "dithering_local_z_direct_multicolor"
-            || opt_key == "dithering_local_z_independent_layer_height"
-            || opt_key == "dithering_local_z_gradient_layer_height"
-            || opt_key == "dithering_step_painted_zones_only"
-            || opt_key == "mixed_filament_component_bias_enabled"
-            || opt_key == "mixed_filament_region_collapse"
-            || opt_key == "mmu_segmented_region_max_width"
-            || opt_key == "fs_surface_paint_only"
-            || opt_key == "fs_painted_zone_extra_perimeters"
-            || opt_key == "mmu_segmented_region_interlocking_depth"
-            || opt_key == "raft_layers"
-            || opt_key == "raft_contact_distance"
-            || opt_key == "slice_closing_radius"
-            || opt_key == "slicing_mode"
-            || opt_key == "slowdown_for_curled_perimeters"
-            || opt_key == "make_overhang_printable"
-            || opt_key == "make_overhang_printable_angle"
-            || opt_key == "make_overhang_printable_hole_size"
-            || opt_key == "interlocking_beam"
-            || opt_key == "interlocking_orientation"
-            || opt_key == "interlocking_beam_layer_count"
-            || opt_key == "interlocking_depth"
-            || opt_key == "interlocking_boundary_avoidance"
-            || opt_key == "interlocking_beam_width") {
+        } else if (opt_key == "layer_height" || opt_key == "dithering_z_step_size" || opt_key == "dithering_local_z_mode" ||
+                   opt_key == "dithering_local_z_whole_objects" || opt_key == "dithering_local_z_preserve_first_layer" ||
+                   opt_key == "dithering_local_z_direct_multicolor" || opt_key == "dithering_local_z_independent_layer_height" ||
+                   opt_key == "dithering_local_z_gradient_layer_height" || opt_key == "dithering_step_painted_zones_only" ||
+                   opt_key == "mixed_filament_component_bias_enabled" || opt_key == "texture_mapping_outer_wall_gradient_global_strength" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_max_line_width" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_min_line_width" || opt_key == "image_map_perimeter_modulation_mode" ||
+                   opt_key == "image_map_perimeter_printable_width" || opt_key == "mixed_filament_region_collapse" ||
+                   opt_key == "mmu_segmented_region_max_width" || opt_key == "fs_surface_paint_only" ||
+                   opt_key == "fs_painted_zone_extra_perimeters" || opt_key == "mmu_segmented_region_interlocking_depth" ||
+                   opt_key == "raft_layers" || opt_key == "raft_contact_distance" || opt_key == "slice_closing_radius" ||
+                   opt_key == "slicing_mode" || opt_key == "slowdown_for_curled_perimeters" || opt_key == "make_overhang_printable" ||
+                   opt_key == "make_overhang_printable_angle" || opt_key == "make_overhang_printable_hole_size" ||
+                   opt_key == "interlocking_beam" || opt_key == "interlocking_orientation" || opt_key == "interlocking_beam_layer_count" ||
+                   opt_key == "interlocking_depth" || opt_key == "interlocking_boundary_avoidance" ||
+                   opt_key == "interlocking_beam_width") {
             steps.emplace_back(posSlice);
-        } else if (
-               opt_key == "mixed_filament_gradient_mode"
-            || opt_key == "mixed_filament_height_lower_bound"
-            || opt_key == "mixed_filament_advanced_dithering"
-            || opt_key == "mixed_filament_component_bias_enabled"
-            || opt_key == "mixed_filament_surface_indentation"
-            || opt_key == "mixed_filament_region_collapse"
-            || opt_key == "mixed_filament_definitions") {
+        } else if (opt_key == "mixed_filament_gradient_mode" || opt_key == "mixed_filament_height_lower_bound" ||
+                   opt_key == "mixed_filament_advanced_dithering" || opt_key == "mixed_filament_component_bias_enabled" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_global_strength" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_max_line_width" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_min_line_width" || opt_key == "image_map_perimeter_modulation_mode" ||
+                   opt_key == "image_map_perimeter_printable_width" || opt_key == "mixed_filament_surface_indentation" ||
+                   opt_key == "mixed_filament_region_collapse" || opt_key == "mixed_filament_definitions") {
             // Mixed filament gradient controls affect layer cadence and virtual
             // tool distribution, so force a re-slice prompt like other
             // layer-structure settings.
             steps.emplace_back(posSlice);
-		} else if (
-               opt_key == "elefant_foot_compensation"
-            || opt_key == "elefant_foot_compensation_layers"
-            || opt_key == "support_top_z_distance"
-            || opt_key == "support_bottom_z_distance"
-            || opt_key == "xy_hole_compensation"
-            || opt_key == "xy_contour_compensation"
-            //BBS: [Arthur] the following params affect bottomBridge surface type detection
-            || opt_key == "support_type"
-            || opt_key == "bridge_no_support"
-            || opt_key == "max_bridge_length"
-            || opt_key == "support_interface_top_layers"
-            || opt_key == "support_critical_regions_only"
-            || opt_key == "hole_to_polyhole"
-            || opt_key == "hole_to_polyhole_threshold"
-            || opt_key == "hole_to_polyhole_twisted"
-            ) {
+        } else if (opt_key == "elefant_foot_compensation" || opt_key == "elefant_foot_compensation_layers" ||
+                   opt_key == "support_top_z_distance" || opt_key == "support_bottom_z_distance" || opt_key == "xy_hole_compensation" ||
+                   opt_key == "xy_contour_compensation"
+                   // BBS: [Arthur] the following params affect bottomBridge surface type detection
+                   || opt_key == "support_type" || opt_key == "bridge_no_support" || opt_key == "max_bridge_length" ||
+                   opt_key == "support_interface_top_layers" || opt_key == "support_critical_regions_only" ||
+                   opt_key == "hole_to_polyhole" || opt_key == "hole_to_polyhole_threshold" || opt_key == "hole_to_polyhole_twisted") {
             steps.emplace_back(posSlice);
         } else if (opt_key == "enable_support") {
             steps.emplace_back(posSupportMaterial);
@@ -1015,61 +1045,30 @@ bool PrintObject::invalidate_state_by_config_options(
             	// See GH #1482 for details.
 	            steps.emplace_back(posSlice);
 	        }
-        } else if (
-        	   opt_key == "support_type"
-            || opt_key == "support_angle"
-            || opt_key == "support_on_build_plate_only"
-            || opt_key == "support_critical_regions_only"
-            || opt_key == "support_remove_small_overhang"
-            || opt_key == "enforce_support_layers"
-            || opt_key == "support_filament"
-            || opt_key == "support_line_width"
-            || opt_key == "support_interface_top_layers"
-            || opt_key == "support_interface_bottom_layers"
-            || opt_key == "support_interface_pattern"
-            || opt_key == "support_interface_loop_pattern"
-            || opt_key == "support_interface_filament"
-            || opt_key == "support_interface_not_for_body"
-            || opt_key == "support_interface_spacing"
-            || opt_key == "support_bottom_interface_spacing" //BBS
-            || opt_key == "support_base_pattern"
-            || opt_key == "support_style"
-            || opt_key == "support_object_xy_distance"
-            || opt_key == "support_object_first_layer_gap"
-            || opt_key == "support_base_pattern_spacing"
-            || opt_key == "support_expansion"
-            //|| opt_key == "independent_support_layer_height" // BBS
-            || opt_key == "support_threshold_angle"
-            || opt_key == "support_threshold_overlap"
-            || opt_key == "support_ironing"
-            || opt_key == "support_ironing_pattern"
-            || opt_key == "support_ironing_flow"
-            || opt_key == "support_ironing_spacing"
-            || opt_key == "raft_expansion"
-            || opt_key == "raft_first_layer_density"
-            || opt_key == "raft_first_layer_expansion"
-            || opt_key == "bridge_no_support"
-            || opt_key == "max_bridge_length"
-            || opt_key == "initial_layer_line_width"
-            || opt_key == "tree_support_adaptive_layer_height"
-            || opt_key == "tree_support_auto_brim"
-            || opt_key == "tree_support_brim_width"
-            || opt_key == "tree_support_top_rate"
-            || opt_key == "tree_support_branch_distance"
-            || opt_key == "tree_support_branch_distance_organic"
-            || opt_key == "tree_support_tip_diameter"
-            || opt_key == "tree_support_branch_diameter"
-            || opt_key == "tree_support_branch_diameter_organic"
-            || opt_key == "tree_support_branch_diameter_angle"
-            || opt_key == "tree_support_branch_angle"
-            || opt_key == "tree_support_branch_angle_organic"
-            || opt_key == "tree_support_angle_slow"
-            || opt_key == "tree_support_wall_count") {
+        } else if (opt_key == "support_type" || opt_key == "support_angle" || opt_key == "support_on_build_plate_only" ||
+                   opt_key == "support_critical_regions_only" || opt_key == "support_remove_small_overhang" ||
+                   opt_key == "enforce_support_layers" || opt_key == "support_filament" || opt_key == "support_line_width" ||
+                   opt_key == "support_interface_top_layers" || opt_key == "support_interface_bottom_layers" ||
+                   opt_key == "support_interface_pattern" || opt_key == "support_interface_loop_pattern" ||
+                   opt_key == "support_interface_filament" || opt_key == "support_interface_not_for_body" ||
+                   opt_key == "support_interface_spacing" || opt_key == "support_bottom_interface_spacing" // BBS
+                   || opt_key == "support_base_pattern" || opt_key == "support_style" || opt_key == "support_object_xy_distance" ||
+                   opt_key == "support_object_first_layer_gap" || opt_key == "support_base_pattern_spacing" ||
+                   opt_key == "support_expansion"
+                   //|| opt_key == "independent_support_layer_height" // BBS
+                   || opt_key == "support_threshold_angle" || opt_key == "support_threshold_overlap" || opt_key == "support_ironing" ||
+                   opt_key == "support_ironing_pattern" || opt_key == "support_ironing_flow" || opt_key == "support_ironing_spacing" ||
+                   opt_key == "raft_expansion" || opt_key == "raft_first_layer_density" || opt_key == "raft_first_layer_expansion" ||
+                   opt_key == "bridge_no_support" || opt_key == "max_bridge_length" || opt_key == "initial_layer_line_width" ||
+                   opt_key == "tree_support_adaptive_layer_height" || opt_key == "tree_support_auto_brim" ||
+                   opt_key == "tree_support_brim_width" || opt_key == "tree_support_top_rate" ||
+                   opt_key == "tree_support_branch_distance" || opt_key == "tree_support_branch_distance_organic" ||
+                   opt_key == "tree_support_tip_diameter" || opt_key == "tree_support_branch_diameter" ||
+                   opt_key == "tree_support_branch_diameter_organic" || opt_key == "tree_support_branch_diameter_angle" ||
+                   opt_key == "tree_support_branch_angle" || opt_key == "tree_support_branch_angle_organic" ||
+                   opt_key == "tree_support_angle_slow" || opt_key == "tree_support_wall_count") {
             steps.emplace_back(posSupportMaterial);
-        } else if (
-               opt_key == "bottom_shell_layers"
-            || opt_key == "top_shell_layers") {
-
+        } else if (opt_key == "bottom_shell_layers" || opt_key == "top_shell_layers") {
             steps.emplace_back(posSlice);
 #if (0)
             const auto *old_shell_layers = old_config.option<ConfigOptionInt>(opt_key);
@@ -1088,58 +1087,29 @@ bool PrintObject::invalidate_state_by_config_options(
                 steps.emplace_back(posSlice);
             }
 #endif
-        } else if (
-               opt_key == "interface_shells"
-            || opt_key == "infill_multiline"
-            || opt_key == "infill_combination"
-            || opt_key == "infill_combination_max_layer_height"
-            || opt_key == "bottom_shell_thickness"
-            || opt_key == "top_shell_thickness"
-            || opt_key == "minimum_sparse_infill_area"
-            || opt_key == "enable_infill_filament_override"
-            || opt_key == "infill_filament_use_base_first_layers"
-            || opt_key == "infill_filament_use_base_last_layers"
-            || opt_key == "sparse_infill_filament"
-            || opt_key == "solid_infill_filament"
-            || opt_key == "sparse_infill_line_width"
-            || opt_key == "skin_infill_line_width"
-            || opt_key == "skeleton_infill_line_width"
-            || opt_key == "infill_direction"
-            || opt_key == "solid_infill_direction"
-            || opt_key == "align_infill_direction_to_model" 
-            || opt_key == "extra_solid_infills"
-            || opt_key == "ensure_vertical_shell_thickness"
-            || opt_key == "bridge_angle"
-            || opt_key == "internal_bridge_angle" // ORCA: Internal bridge angle override
-            //BBS
-            || opt_key == "bridge_density"
-            || opt_key == "internal_bridge_density") {
+        } else if (opt_key == "interface_shells" || opt_key == "infill_multiline" || opt_key == "infill_combination" ||
+                   opt_key == "infill_combination_max_layer_height" || opt_key == "bottom_shell_thickness" ||
+                   opt_key == "top_shell_thickness" || opt_key == "minimum_sparse_infill_area" ||
+                   opt_key == "enable_infill_filament_override" || opt_key == "infill_filament_use_base_first_layers" ||
+                   opt_key == "infill_filament_use_base_last_layers" || opt_key == "sparse_infill_filament" ||
+                   opt_key == "solid_infill_filament" || opt_key == "sparse_infill_line_width" || opt_key == "skin_infill_line_width" ||
+                   opt_key == "skeleton_infill_line_width" || opt_key == "infill_direction" || opt_key == "solid_infill_direction" ||
+                   opt_key == "align_infill_direction_to_model" || opt_key == "extra_solid_infills" ||
+                   opt_key == "ensure_vertical_shell_thickness" || opt_key == "bridge_angle" ||
+                   opt_key == "internal_bridge_angle" // ORCA: Internal bridge angle override
+                   // BBS
+                   || opt_key == "bridge_density" || opt_key == "internal_bridge_density") {
             steps.emplace_back(posPrepareInfill);
-        } else if (
-               opt_key == "top_surface_pattern"
-            || opt_key == "bottom_surface_pattern"
-            || opt_key == "internal_solid_infill_pattern"
-            || opt_key == "external_fill_link_max_length"
-            || opt_key == "infill_anchor"
-            || opt_key == "infill_anchor_max"
-            || opt_key == "top_surface_line_width"
-            || opt_key == "top_surface_density"
-            || opt_key == "bottom_surface_density"
-            || opt_key == "initial_layer_line_width"
-            || opt_key == "small_area_infill_flow_compensation"
-            || opt_key == "lateral_lattice_angle_1"
-            || opt_key == "lateral_lattice_angle_2"
-            || opt_key == "infill_overhang_angle") {
+        } else if (opt_key == "top_surface_pattern" || opt_key == "bottom_surface_pattern" || opt_key == "internal_solid_infill_pattern" ||
+                   opt_key == "external_fill_link_max_length" || opt_key == "infill_anchor" || opt_key == "infill_anchor_max" ||
+                   opt_key == "top_surface_line_width" || opt_key == "top_surface_density" || opt_key == "bottom_surface_density" ||
+                   opt_key == "initial_layer_line_width" || opt_key == "small_area_infill_flow_compensation" ||
+                   opt_key == "lateral_lattice_angle_1" || opt_key == "lateral_lattice_angle_2" || opt_key == "infill_overhang_angle") {
             steps.emplace_back(posInfill);
-        } else if (opt_key == "sparse_infill_pattern"
-                   || opt_key == "symmetric_infill_y_axis"
-                   || opt_key == "infill_shift_step"
-                   || opt_key == "sparse_infill_rotate_template"
-                   || opt_key == "solid_infill_rotate_template"
-                   || opt_key == "skeleton_infill_density"
-                   || opt_key == "skin_infill_density"
-                   || opt_key == "infill_lock_depth"
-                   || opt_key == "skin_infill_depth") {
+        } else if (opt_key == "sparse_infill_pattern" || opt_key == "symmetric_infill_y_axis" || opt_key == "infill_shift_step" ||
+                   opt_key == "sparse_infill_rotate_template" || opt_key == "solid_infill_rotate_template" ||
+                   opt_key == "skeleton_infill_density" || opt_key == "skin_infill_density" || opt_key == "infill_lock_depth" ||
+                   opt_key == "skin_infill_depth") {
             steps.emplace_back(posPrepareInfill);
         } else if (opt_key == "sparse_infill_density") {
             // One likely wants to reslice only when switching between zero infill to simulate boolean difference (subtracting volumes),
@@ -1156,26 +1126,13 @@ bool PrintObject::invalidate_state_by_config_options(
             // This value is used for calculating perimeter - infill overlap, thus perimeters need to be recalculated.
             steps.emplace_back(posPerimeters);
             steps.emplace_back(posPrepareInfill);
-        } else if (
-               opt_key == "outer_wall_line_width"
-            || opt_key == "wall_filament"
-            || opt_key == "fuzzy_skin"
-            || opt_key == "fuzzy_skin_thickness"
-            || opt_key == "fuzzy_skin_point_distance"
-            || opt_key == "fuzzy_skin_first_layer"
-            || opt_key == "fuzzy_skin_mode"
-            || opt_key == "fuzzy_skin_noise_type"
-            || opt_key == "fuzzy_skin_scale"
-            || opt_key == "fuzzy_skin_octaves"
-            || opt_key == "fuzzy_skin_persistence"
-            || opt_key == "detect_overhang_wall"
-            || opt_key == "overhang_reverse"
-            || opt_key == "overhang_reverse_internal_only"
-            || opt_key == "overhang_reverse_threshold"
-            || opt_key == "wall_direction"
-            || opt_key == "enable_overhang_speed"
-            || opt_key == "detect_thin_wall"
-            || opt_key == "precise_outer_wall") {
+        } else if (opt_key == "outer_wall_line_width" || opt_key == "wall_filament" || opt_key == "fuzzy_skin" ||
+                   opt_key == "fuzzy_skin_thickness" || opt_key == "fuzzy_skin_point_distance" || opt_key == "fuzzy_skin_first_layer" ||
+                   opt_key == "fuzzy_skin_mode" || opt_key == "fuzzy_skin_noise_type" || opt_key == "fuzzy_skin_scale" ||
+                   opt_key == "fuzzy_skin_octaves" || opt_key == "fuzzy_skin_persistence" || opt_key == "detect_overhang_wall" ||
+                   opt_key == "overhang_reverse" || opt_key == "overhang_reverse_internal_only" ||
+                   opt_key == "overhang_reverse_threshold" || opt_key == "wall_direction" || opt_key == "enable_overhang_speed" ||
+                   opt_key == "detect_thin_wall" || opt_key == "precise_outer_wall") {
             steps.emplace_back(posPerimeters);
             steps.emplace_back(posSupportMaterial);
         } else if (opt_key == "bridge_flow" || opt_key == "internal_bridge_flow") {
@@ -1186,54 +1143,24 @@ bool PrintObject::invalidate_state_by_config_options(
             	steps.emplace_back(posInfill);
 	            steps.emplace_back(posSupportMaterial);
 	        }
-        } else if (
-                opt_key == "wall_generator"
-            || opt_key == "wall_transition_length"
-            || opt_key == "wall_transition_filter_deviation"
-            || opt_key == "wall_transition_angle"
-            || opt_key == "wall_distribution_count"
-            || opt_key == "min_feature_size"
-            || opt_key == "min_length_factor"
-            || opt_key == "min_bead_width") {
+        } else if (opt_key == "wall_generator" || opt_key == "wall_transition_length" || opt_key == "wall_transition_filter_deviation" ||
+                   opt_key == "wall_transition_angle" || opt_key == "wall_distribution_count" || opt_key == "min_feature_size" ||
+                   opt_key == "min_length_factor" || opt_key == "min_bead_width") {
             steps.emplace_back(posSlice);
-        } else if (
-               opt_key == "seam_position"
-            || opt_key == "seam_slope_type"
-            || opt_key == "seam_slope_conditional"
-            || opt_key == "scarf_angle_threshold"
-            || opt_key == "scarf_overhang_threshold"
-            || opt_key == "scarf_joint_speed"
-            || opt_key == "scarf_joint_flow_ratio"
-            || opt_key == "seam_slope_start_height"
-            || opt_key == "seam_slope_entire_loop"
-            || opt_key == "seam_slope_min_length"
-            || opt_key == "seam_slope_steps"
-            || opt_key == "seam_slope_inner_walls"
-            || opt_key == "support_speed"
-            || opt_key == "support_interface_speed"
-            || opt_key == "overhang_1_4_speed"
-            || opt_key == "overhang_2_4_speed"
-            || opt_key == "overhang_3_4_speed"
-            || opt_key == "overhang_4_4_speed"
-            || opt_key == "bridge_speed"
-            || opt_key == "internal_bridge_speed"
-            || opt_key == "outer_wall_speed"
-            || opt_key == "small_perimeter_speed"
-            || opt_key == "small_perimeter_threshold"
-            || opt_key == "sparse_infill_speed"
-            || opt_key == "inner_wall_speed"
-            || opt_key == "internal_solid_infill_speed"
-            || opt_key == "top_surface_speed"
-            || opt_key == "bed_mesh_min"
-            || opt_key == "bed_mesh_max"
-            || opt_key == "adaptive_bed_mesh_margin"
-            || opt_key == "bed_mesh_probe_distance") {
+        } else if (opt_key == "seam_position" || opt_key == "seam_slope_type" || opt_key == "seam_slope_conditional" ||
+                   opt_key == "scarf_angle_threshold" || opt_key == "scarf_overhang_threshold" || opt_key == "scarf_joint_speed" ||
+                   opt_key == "scarf_joint_flow_ratio" || opt_key == "seam_slope_start_height" || opt_key == "seam_slope_entire_loop" ||
+                   opt_key == "seam_slope_min_length" || opt_key == "seam_slope_steps" || opt_key == "seam_slope_inner_walls" ||
+                   opt_key == "support_speed" || opt_key == "support_interface_speed" || opt_key == "overhang_1_4_speed" ||
+                   opt_key == "overhang_2_4_speed" || opt_key == "overhang_3_4_speed" || opt_key == "overhang_4_4_speed" ||
+                   opt_key == "bridge_speed" || opt_key == "internal_bridge_speed" || opt_key == "outer_wall_speed" ||
+                   opt_key == "small_perimeter_speed" || opt_key == "small_perimeter_threshold" || opt_key == "sparse_infill_speed" ||
+                   opt_key == "inner_wall_speed" || opt_key == "internal_solid_infill_speed" || opt_key == "top_surface_speed" ||
+                   opt_key == "bed_mesh_min" || opt_key == "bed_mesh_max" || opt_key == "adaptive_bed_mesh_margin" ||
+                   opt_key == "bed_mesh_probe_distance") {
             invalidated |= m_print->invalidate_step(psGCodeExport);
-        } else if (
-               opt_key == "flush_into_infill"
-            || opt_key == "flush_into_objects"
-            || opt_key == "flush_into_support"
-            || opt_key == "dithering_local_z_infill") {
+        } else if (opt_key == "flush_into_infill" || opt_key == "flush_into_objects" || opt_key == "flush_into_support" ||
+                   opt_key == "dithering_local_z_infill") {
             invalidated |= m_print->invalidate_step(psWipeTower);
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else {

@@ -16,6 +16,7 @@
 #include "GCode/WipeTower2.hpp"
 #include "ShortestPath.hpp"
 #include "ImageMap/PerimeterEnvelopeRenderer.hpp"
+#include "ImageMap/AdaptiveLocalZRenderer.hpp"
 #include "MixedFilament.hpp"
 #include "MixedFilament/PerimeterModulation.hpp"
 #include "Print.hpp"
@@ -3834,36 +3835,68 @@ static inline LocalZPathHeightStats collect_local_z_path_height_stats(const Extr
     return stats;
 }
 
-static inline Polylines collect_local_z_polylines(const ExtrusionEntityCollection& source)
+static inline Polylines collect_local_z_role_polylines(const ExtrusionEntityCollection& source, ExtrusionRole role)
 {
     Polylines lines;
     ExtrusionEntityCollection flattened = source.flatten(false);
     for (const ExtrusionEntity* entity : flattened.entities) {
         if (const auto* path = dynamic_cast<const ExtrusionPath*>(entity)) {
-            lines.emplace_back(path->polyline);
+            if (path->role() == role)
+                lines.emplace_back(path->polyline);
         } else if (const auto* multipath = dynamic_cast<const ExtrusionMultiPath*>(entity)) {
             for (const ExtrusionPath& p : multipath->paths)
-                lines.emplace_back(p.polyline);
+                if (p.role() == role)
+                    lines.emplace_back(p.polyline);
         } else if (const auto* loop = dynamic_cast<const ExtrusionLoop*>(entity)) {
             for (const ExtrusionPath& p : loop->paths)
-                lines.emplace_back(p.polyline);
+                if (p.role() == role)
+                    lines.emplace_back(p.polyline);
         }
     }
     return lines;
+}
+
+static inline Polylines collect_local_z_external_perimeter_polylines(const ExtrusionEntityCollection& source)
+{
+    return collect_local_z_role_polylines(source, erExternalPerimeter);
+}
+
+static inline double local_z_polyline_length(const Polylines& polylines)
+{
+    return std::accumulate(polylines.begin(), polylines.end(), 0., [](double length, const Polyline& polyline) {
+        return length + polyline.length();
+    });
+}
+
+enum class LocalZClipRoleScope
+{
+    All,
+    ExternalPerimeters,
+    AllExceptInnerPerimeters
+};
+
+static inline bool local_z_role_matches(ExtrusionRole role, LocalZClipRoleScope scope)
+{
+    return scope == LocalZClipRoleScope::All ||
+           (scope == LocalZClipRoleScope::ExternalPerimeters && role == erExternalPerimeter) ||
+           (scope == LocalZClipRoleScope::AllExceptInnerPerimeters && role != erPerimeter);
 }
 
 static std::unique_ptr<ExtrusionEntityCollection> clip_extrusion_collection_for_local_z(
     const ExtrusionEntityCollection& source,
     const ExPolygons*                include_masks,
     const ExPolygons*                exclude_masks,
-    const double                     flow_height_override)
+    const double                     flow_height_override,
+    const LocalZClipRoleScope         role_scope,
+    const ExPolygons*                non_external_exclude_masks = nullptr)
 {
     if (source.entities.empty())
         return nullptr;
 
     if ((include_masks == nullptr || include_masks->empty()) &&
         (exclude_masks == nullptr || exclude_masks->empty()) &&
-        flow_height_override <= EPSILON) {
+        (non_external_exclude_masks == nullptr || non_external_exclude_masks->empty()) &&
+        flow_height_override <= EPSILON && role_scope == LocalZClipRoleScope::All) {
         return std::make_unique<ExtrusionEntityCollection>(source);
     }
 
@@ -3873,12 +3906,68 @@ static std::unique_ptr<ExtrusionEntityCollection> clip_extrusion_collection_for_
     ExtrusionEntityCollection flattened = source.flatten(false);
     for (const ExtrusionEntity* entity : flattened.entities) {
         if (const auto* path = dynamic_cast<const ExtrusionPath*>(entity)) {
-            append_clipped_path(*path, include_masks, exclude_masks, flow_height_override, *out);
+            if (local_z_role_matches(path->role(), role_scope)) {
+                const ExPolygons* path_exclude_masks =
+                    non_external_exclude_masks != nullptr && path->role() != erExternalPerimeter ? non_external_exclude_masks : exclude_masks;
+                append_clipped_path(*path, include_masks, path_exclude_masks, flow_height_override, *out);
+            }
         } else if (const auto* multipath = dynamic_cast<const ExtrusionMultiPath*>(entity)) {
-            for (const ExtrusionPath& path : multipath->paths)
-                append_clipped_path(path, include_masks, exclude_masks, flow_height_override, *out);
+            const bool all_matching = std::all_of(multipath->paths.begin(), multipath->paths.end(), [role_scope](const ExtrusionPath& path) {
+                return local_z_role_matches(path.role(), role_scope);
+            });
+            const bool none_matching = std::none_of(multipath->paths.begin(), multipath->paths.end(), [role_scope](const ExtrusionPath& path) {
+                return local_z_role_matches(path.role(), role_scope);
+            });
+            if (none_matching)
+                continue;
+            const bool all_external = std::all_of(multipath->paths.begin(), multipath->paths.end(), [](const ExtrusionPath& path) {
+                return path.role() == erExternalPerimeter;
+            });
+            const bool all_non_external = std::none_of(multipath->paths.begin(), multipath->paths.end(), [](const ExtrusionPath& path) {
+                return path.role() == erExternalPerimeter;
+            });
+            if (all_matching && (all_external || all_non_external)) {
+                const ExPolygons* path_exclude_masks =
+                    non_external_exclude_masks != nullptr && all_non_external ? non_external_exclude_masks : exclude_masks;
+                for (const ExtrusionPath& path : multipath->paths)
+                    append_clipped_path(path, include_masks, path_exclude_masks, flow_height_override, *out);
+                continue;
+            }
+            for (const ExtrusionPath& path : multipath->paths) {
+                if (!local_z_role_matches(path.role(), role_scope))
+                    continue;
+                const ExPolygons* path_exclude_masks =
+                    non_external_exclude_masks != nullptr && path.role() != erExternalPerimeter ? non_external_exclude_masks : exclude_masks;
+                append_clipped_path(path, include_masks, path_exclude_masks, flow_height_override, *out);
+            }
         } else if (const auto* loop = dynamic_cast<const ExtrusionLoop*>(entity)) {
-            append_clipped_loop(*loop, include_masks, exclude_masks, flow_height_override, *out);
+            const bool all_matching = std::all_of(loop->paths.begin(), loop->paths.end(), [role_scope](const ExtrusionPath& path) {
+                return local_z_role_matches(path.role(), role_scope);
+            });
+            const bool none_matching = std::none_of(loop->paths.begin(), loop->paths.end(), [role_scope](const ExtrusionPath& path) {
+                return local_z_role_matches(path.role(), role_scope);
+            });
+            if (none_matching)
+                continue;
+            const bool all_external = std::all_of(loop->paths.begin(), loop->paths.end(), [](const ExtrusionPath& path) {
+                return path.role() == erExternalPerimeter;
+            });
+            const bool all_non_external = std::none_of(loop->paths.begin(), loop->paths.end(), [](const ExtrusionPath& path) {
+                return path.role() == erExternalPerimeter;
+            });
+            if (all_matching && (all_external || all_non_external)) {
+                const ExPolygons* path_exclude_masks =
+                    non_external_exclude_masks != nullptr && all_non_external ? non_external_exclude_masks : exclude_masks;
+                append_clipped_loop(*loop, include_masks, path_exclude_masks, flow_height_override, *out);
+                continue;
+            }
+            for (const ExtrusionPath& path : loop->paths) {
+                if (!local_z_role_matches(path.role(), role_scope))
+                    continue;
+                const ExPolygons* path_exclude_masks =
+                    non_external_exclude_masks != nullptr && path.role() != erExternalPerimeter ? non_external_exclude_masks : exclude_masks;
+                append_clipped_path(path, include_masks, path_exclude_masks, flow_height_override, *out);
+            }
         } else {
             // Fallback for unknown entity subclasses: keep behavior unchanged for now.
             if (include_masks == nullptr && exclude_masks == nullptr && flow_height_override <= EPSILON)
@@ -4709,8 +4798,14 @@ LayerResult GCode::process_layer(const Print& print,
     // Keep base exclusion smaller than mixed-pass inclusion to guarantee a slight overlap
     // instead of a moat at the boundary.
     constexpr double LOCAL_Z_BASE_MASK_EXPAND_MM      = 0.04;
+    // Adaptive masks follow the outer-wall centerline. The companion inner wall is normally
+    // one wall spacing farther inside, so literal mask intersection cannot identify it as
+    // belonging to the same painted perimeter. Expand only the ownership test (never the
+    // generated toolpath or clipping mask) far enough to reach that adjacent wall.
+    constexpr double LOCAL_Z_ADAPTIVE_INNER_OWNERSHIP_MM = 0.75;
     const float      local_z_perimeter_mask_expand    = float(scale_(LOCAL_Z_PERIMETER_MASK_EXPAND_MM));
     const float      local_z_base_mask_expand         = float(scale_(LOCAL_Z_BASE_MASK_EXPAND_MM));
+    const float      local_z_adaptive_inner_ownership = float(scale_(LOCAL_Z_ADAPTIVE_INNER_OWNERSHIP_MM));
     const bool       local_z_infill_enabled           = print.full_print_config().opt_bool("dithering_local_z_infill");
 
     struct LocalZPassBucket {
@@ -4722,7 +4817,11 @@ LayerResult GCode::process_layer(const Print& print,
         bool                    enabled { false };
         ExPolygons              raw_mixed_masks_union;
         ExPolygons              mixed_masks_union;
+        ExPolygons              non_adaptive_mixed_masks_union;
         ExPolygons              mixed_masks_union_for_base_exclude;
+        ExPolygons              non_adaptive_masks_for_base_exclude;
+        ExPolygons              adaptive_inner_ownership_masks;
+        bool                    has_adaptive_perimeter_pass { false };
         size_t                  local_clipped_collections { 0 };
         size_t                  base_clipped_collections { 0 };
         size_t                  base_clip_leak_warnings { 0 };
@@ -4835,8 +4934,13 @@ LayerResult GCode::process_layer(const Print& print,
                     ctx.pass_buckets.emplace_back(std::move(bucket));
 
                     const LocalZPassBucket& appended_bucket = ctx.pass_buckets.back();
-                    for (const ExPolygons& masks : appended_bucket.compensated_masks_by_extruder)
+                    for (const ExPolygons& masks : appended_bucket.compensated_masks_by_extruder) {
                         append(ctx.mixed_masks_union, masks);
+                        if (appended_bucket.plan != nullptr && appended_bucket.plan->external_perimeters_only)
+                            ctx.has_adaptive_perimeter_pass = true;
+                        else
+                            append(ctx.non_adaptive_mixed_masks_union, masks);
+                    }
                 }
             }
             if (!raw_mixed_masks_union.empty() && raw_mixed_masks_union.size() > 1)
@@ -4851,10 +4955,20 @@ LayerResult GCode::process_layer(const Print& print,
             }
             if (ctx.mixed_masks_union.empty() && !raw_mixed_masks_union.empty())
                 ctx.mixed_masks_union = raw_mixed_masks_union;
+            if (!ctx.non_adaptive_mixed_masks_union.empty() && ctx.non_adaptive_mixed_masks_union.size() > 1)
+                ctx.non_adaptive_mixed_masks_union = union_ex(ctx.non_adaptive_mixed_masks_union);
             const ExPolygons &base_exclude_source = !ctx.raw_mixed_masks_union.empty() ? ctx.raw_mixed_masks_union : ctx.mixed_masks_union;
             if (!base_exclude_source.empty()) {
                 ctx.mixed_masks_union_for_base_exclude =
                     local_z_compensate_masks(base_exclude_source, local_z_base_mask_expand, true);
+            }
+            if (!ctx.non_adaptive_mixed_masks_union.empty()) {
+                ctx.non_adaptive_masks_for_base_exclude =
+                    local_z_compensate_masks(ctx.non_adaptive_mixed_masks_union, local_z_base_mask_expand, true);
+            }
+            if (ctx.has_adaptive_perimeter_pass) {
+                ctx.adaptive_inner_ownership_masks =
+                    local_z_compensate_masks(ctx.mixed_masks_union, local_z_adaptive_inner_ownership, true);
             }
             if ((!independent_layer_height && ctx.pass_buckets.empty()) || ctx.mixed_masks_union.empty()) {
                 ctx.enabled = false;
@@ -4882,6 +4996,7 @@ LayerResult GCode::process_layer(const Print& print,
                                      << " layer_id=" << layer_id
                                      << " enabled=" << ctx.enabled
                                      << " split_pass_count=" << ctx.pass_buckets.size()
+                                     << " adaptive_external_only=" << ctx.has_adaptive_perimeter_pass
                                      << " mixed_mask_count=" << ctx.mixed_masks_union.size()
                                      << " base_exclude_mask_count=" << ctx.mixed_masks_union_for_base_exclude.size()
                                      << " perimeter_mask_expand_mm=" << LOCAL_Z_PERIMETER_MASK_EXPAND_MM
@@ -5021,6 +5136,22 @@ LayerResult GCode::process_layer(const Print& print,
 
         if (layer_to_print.object_layer != nullptr) {
             const Layer& layer = *layer_to_print.object_layer;
+            const PrintObject* cadence_print_object =
+                layer_to_print.original_object != nullptr ? layer_to_print.original_object : layer_to_print.object();
+            const std::optional<unsigned int> synchronized_object_extruder =
+                cadence_print_object != nullptr && cadence_print_object->model_object() != nullptr &&
+                        layer_tools.mixed_mgr != nullptr && layer_tools.num_physical > 0 ?
+                    [&]() -> std::optional<unsigned int> {
+                        const std::optional<unsigned int> physical = ImageMap::model_whole_object_cadence_filament(
+                            *cadence_print_object->model_object(),
+                            *layer_tools.mixed_mgr,
+                            layer_tools.num_physical,
+                            layer_tools.layer_index,
+                            float(layer.print_z),
+                            float(layer.height));
+                        return physical ? std::optional<unsigned int>(*physical - 1) : std::nullopt;
+                    }() :
+                    std::nullopt;
             LocalZLayerContext* local_z_ctx =
                 (local_z_perimeter_phase_b_enabled && layer_to_print_idx < local_z_layer_contexts.size() && local_z_layer_contexts[layer_to_print_idx].enabled)
                     ? &local_z_layer_contexts[layer_to_print_idx]
@@ -5114,7 +5245,15 @@ LayerResult GCode::process_layer(const Print& print,
                                         : pass_bucket.compensated_masks_by_extruder[pass_extruder_id];
                                     if (pass_masks.empty())
                                         continue;
-                                    auto clipped_local = clip_extrusion_collection_for_local_z(*extrusions, &pass_masks, nullptr, pass_bucket.plan->flow_height);
+                                    auto clipped_local = clip_extrusion_collection_for_local_z(
+                                        *extrusions,
+                                        &pass_masks,
+                                        nullptr,
+                                        pass_bucket.plan->flow_height,
+                                        entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
+                                                pass_bucket.plan->external_perimeters_only
+                                            ? LocalZClipRoleScope::ExternalPerimeters
+                                            : LocalZClipRoleScope::All);
                                     if (!clipped_local)
                                         continue;
 
@@ -5154,7 +5293,22 @@ LayerResult GCode::process_layer(const Print& print,
                             const ExPolygons* base_exclude_masks =
                                 local_z_ctx->mixed_masks_union_for_base_exclude.empty() ? &local_z_ctx->mixed_masks_union
                                                                                         : &local_z_ctx->mixed_masks_union_for_base_exclude;
-                            auto clipped_base = clip_extrusion_collection_for_local_z(*extrusions, nullptr, base_exclude_masks, 0.);
+                            // Adaptive phase-B owns the external wall wherever its compensated inclusion mask
+                            // reaches. Use that exact mask for partial ownership while retaining the separately
+                            // compensated mask for ordinary Local-Z roles such as inner walls.
+                            const ExPolygons* base_external_exclude_masks =
+                                local_z_ctx->has_adaptive_perimeter_pass ? &local_z_ctx->mixed_masks_union : base_exclude_masks;
+                            const ExtrusionEntityCollection& base_source = *extrusions;
+                            auto clipped_base = clip_extrusion_collection_for_local_z(
+                                base_source,
+                                nullptr,
+                                base_external_exclude_masks,
+                                0.,
+                                LocalZClipRoleScope::All,
+                                entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
+                                        local_z_ctx->has_adaptive_perimeter_pass
+                                    ? &local_z_ctx->non_adaptive_masks_for_base_exclude
+                                    : nullptr);
                             if (!clipped_base)
                                 continue;
                             const LocalZPathHeightStats base_height_stats = collect_local_z_path_height_stats(*clipped_base);
@@ -5162,7 +5316,7 @@ LayerResult GCode::process_layer(const Print& print,
                             const ExPolygons &mixed_leak_ref =
                                 !local_z_ctx->raw_mixed_masks_union.empty() ? local_z_ctx->raw_mixed_masks_union : local_z_ctx->mixed_masks_union;
                             if (local_z_ctx->base_clip_leak_warnings < 3 && !mixed_leak_ref.empty()) {
-                                Polylines clipped_base_lines = collect_local_z_polylines(*clipped_base);
+                                Polylines clipped_base_lines = collect_local_z_external_perimeter_polylines(*clipped_base);
                                 if (!clipped_base_lines.empty()) {
                                     Polylines leaked_segments = intersection_pl(std::move(clipped_base_lines), mixed_leak_ref);
                                     if (!leaked_segments.empty()) {
@@ -5189,7 +5343,10 @@ LayerResult GCode::process_layer(const Print& print,
 
                         // This extrusion is part of certain Region, which tells us which extruder should be used for it:
                         int correct_extruder_id = configured_extruder_id(entity_type, *filtered_extrusions, region);
-                        if (!is_anything_overridden &&
+                        if (synchronized_object_extruder)
+                            correct_extruder_id = int(*synchronized_object_extruder);
+                        if (!synchronized_object_extruder &&
+                            !is_anything_overridden &&
                             entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
                             layer_tools.mixed_mgr != nullptr &&
                             layer_tools.num_physical > 0 &&
@@ -5244,14 +5401,14 @@ LayerResult GCode::process_layer(const Print& print,
 
                         // Let's recover vector of extruder overrides:
                         const WipingExtrusions::ExtruderPerCopy* entity_overrides = nullptr;
-                        if (!layer_tools.has_extruder(correct_extruder_id)) {
+                        if (!synchronized_object_extruder && !layer_tools.has_extruder(correct_extruder_id)) {
                             // this entity is not overridden, but its extruder is not in layer_tools - we'll print it
                             // by last extruder on this layer (could happen e.g. when a wiping object is taller than others - dontcare
                             // extruders are eradicated from layer_tools)
                             correct_extruder_id = layer_tools.extruders.back();
                         }
                         printing_extruders.clear();
-                        if (is_anything_overridden) {
+                        if (is_anything_overridden && !synchronized_object_extruder) {
                             entity_overrides = const_cast<LayerTools&>(layer_tools)
                                                    .wiping_extrusions()
                                                    .get_extruder_overrides(filtered_extrusions, layer_to_print.original_object, correct_extruder_id,
@@ -5389,6 +5546,7 @@ LayerResult GCode::process_layer(const Print& print,
 
     if (!local_z_pass_refs.empty()) {
         int  local_z_phase_b_active_extruder = (m_writer.extruder() != nullptr) ? int(m_writer.extruder()->id()) : -1;
+        std::map<const PrintObject*, std::unique_ptr<ImageMap::AdaptiveLocalZRenderer>> adaptive_local_z_renderers;
         BOOST_LOG_TRIVIAL(info) << "Local-Z phase-b emitting"
                                 << " print_z=" << print_z
                                 << " path_passes=" << local_z_pass_refs.size();
@@ -5435,11 +5593,11 @@ LayerResult GCode::process_layer(const Print& print,
                                      << " pass_print_z=" << pass_plan.print_z
                                      << " pass_flow_height=" << pass_plan.flow_height
                                      << " extruder=" << local_extruder_id;
-            if (std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
+            if (!pass_plan.adaptive_nonplanar && std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
                 gcode += this->retract(false, false, LiftType::NormalLift);
                 gcode += m_writer.travel_to_z(pass_z, "Local-Z path pass");
             }
-            if (std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
+            if (!pass_plan.adaptive_nonplanar && std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
                 BOOST_LOG_TRIVIAL(warning) << "Local-Z pass z restore"
                                            << " print_z=" << print_z
                                            << " layer_id=" << pass_plan.layer_id
@@ -5477,12 +5635,23 @@ LayerResult GCode::process_layer(const Print& print,
                 m_last_obj_copy = this_object_copy;
                 this->set_origin(unscale(offset));
 
+                if (pass_plan.adaptive_nonplanar && adaptive_local_z_renderers.count(&instance_to_print.print_object) == 0)
+                    adaptive_local_z_renderers.emplace(&instance_to_print.print_object,
+                                                       ImageMap::AdaptiveLocalZRenderer::create(instance_to_print.print_object));
+                const auto renderer = adaptive_local_z_renderers.find(&instance_to_print.print_object);
+                m_adaptive_local_z_renderer = pass_plan.adaptive_nonplanar && renderer != adaptive_local_z_renderers.end()
+                    ? renderer->second.get()
+                    : nullptr;
+                m_adaptive_local_z_plan     = m_adaptive_local_z_renderer != nullptr ? &pass_plan : nullptr;
+
                 for (ObjectByExtruder::Island& island : instance_to_print.object_by_extruder.islands) {
                     gcode += this->extrude_perimeters(print, island.by_region, first_layer, false);
                     gcode += this->extrude_infill(print, island.by_region, false);
                     gcode += this->extrude_perimeters(print, island.by_region, first_layer, true);
                     gcode += this->extrude_infill(print, island.by_region, true);
                 }
+                m_adaptive_local_z_renderer = nullptr;
+                m_adaptive_local_z_plan     = nullptr;
                 m_config.reduce_crossing_wall.value = saved_reduce_crossing_wall;
             }
 
@@ -6376,7 +6545,8 @@ std::string GCode::extrude_loop(
         loop.split_at(last_pos, false);
 
     const auto seam_scarf_type   = m_config.seam_slope_type.value;
-    bool       enable_seam_slope = ((seam_scarf_type == SeamScarfType::External && !is_hole) || seam_scarf_type == SeamScarfType::All) &&
+    bool       enable_seam_slope = m_adaptive_local_z_renderer == nullptr &&
+                             ((seam_scarf_type == SeamScarfType::External && !is_hole) || seam_scarf_type == SeamScarfType::All) &&
                              !m_config.spiral_mode &&
                              (loop.role() == erExternalPerimeter || (loop.role() == erPerimeter && m_config.seam_slope_inner_walls)) &&
                              layer_id() > 0;
@@ -6900,18 +7070,43 @@ std::string GCode::_extrude(const ExtrusionPath& path, std::string description, 
 {
     std::string gcode;
 
+    if (m_adaptive_local_z_renderer != nullptr && m_adaptive_local_z_plan != nullptr &&
+        path.role() == erExternalPerimeter && dynamic_cast<const ExtrusionPathSloped*>(&path) == nullptr) {
+        const SubLayerPlan& plan = *m_adaptive_local_z_plan;
+        std::vector<ExtrusionPathSloped> segments = m_adaptive_local_z_renderer->modulate_path(
+            path,
+            *m_layer,
+            m_layer->lslices,
+            plan.adaptive_component_ids,
+            plan.adaptive_component_weights,
+            plan.adaptive_component_index,
+            (plan.adaptive_cycle_z_hi > plan.adaptive_cycle_z_lo + EPSILON ? plan.adaptive_cycle_z_lo : plan.z_lo) +
+                m_config.z_offset.value,
+            (plan.adaptive_cycle_z_hi > plan.adaptive_cycle_z_lo + EPSILON ? plan.adaptive_cycle_z_hi : plan.z_hi) +
+                m_config.z_offset.value,
+            plan.adaptive_sample_z,
+            m_config.mixed_filament_height_lower_bound.value);
+        if (!segments.empty()) {
+            for (const ExtrusionPathSloped& segment : segments)
+                gcode += this->_extrude(segment, description, speed);
+            return gcode;
+        }
+    }
+
     if (is_bridge(path.role()))
         description += " (bridge)";
 
     const ExtrusionPathSloped* sloped = dynamic_cast<const ExtrusionPathSloped*>(&path);
 
     const auto get_sloped_z = [&sloped, this](double z_ratio) {
+        if (sloped->local_z_modulation)
+            return sloped->interpolate_absolute_z(z_ratio);
         const auto height = sloped->height;
         return lerp(m_nominal_z - height, m_nominal_z, z_ratio);
     };
 
     bool slope_need_z_travel = false;
-    if (sloped != nullptr && !sloped->is_flat()) {
+    if (sloped != nullptr && (sloped->local_z_modulation || !sloped->is_flat())) {
         auto target_z       = get_sloped_z(sloped->slope_begin.z_ratio);
         slope_need_z_travel = m_writer.will_move_z(target_z);
     }
@@ -7003,7 +7198,7 @@ std::string GCode::_extrude(const ExtrusionPath& path, std::string description, 
         _mm3_per_mm *= m_config.bottom_solid_infill_flow_ratio;
     else if (path.role() == erInternalBridgeInfill)
         _mm3_per_mm *= m_config.internal_bridge_flow;
-    else if (sloped)
+    else if (sloped && !sloped->local_z_modulation)
         _mm3_per_mm *= m_config.scarf_joint_flow_ratio;
     // Effective extrusion length per distance unit = (filament_flow_ratio/cross_section) * mm3_per_mm / print flow ratio
     // m_writer.extruder()->e_per_mm3() below is (filament flow ratio / cross-sectional area)
@@ -7014,12 +7209,12 @@ std::string GCode::_extrude(const ExtrusionPath& path, std::string description, 
     if (speed == -1) {
         if (path.role() == erPerimeter) {
             speed = m_config.get_abs_value("inner_wall_speed");
-            if (sloped) {
+            if (sloped && !sloped->local_z_modulation) {
                 speed = std::min(speed, m_config.scarf_joint_speed.get_abs_value(m_config.get_abs_value("inner_wall_speed")));
             }
         } else if (path.role() == erExternalPerimeter) {
             speed = m_config.get_abs_value("outer_wall_speed");
-            if (sloped) {
+            if (sloped && !sloped->local_z_modulation) {
                 speed = std::min(speed, m_config.scarf_joint_speed.get_abs_value(m_config.get_abs_value("outer_wall_speed")));
             }
         } else if (path.role() == erInternalBridgeInfill) {
@@ -7120,7 +7315,7 @@ std::string GCode::_extrude(const ExtrusionPath& path, std::string description, 
         if (EXTRUDER_CONFIG(filament_max_volumetric_speed) > 0) {
             ref_speed = std::min(ref_speed, EXTRUDER_CONFIG(filament_max_volumetric_speed) / _mm3_per_mm);
         }
-        if (sloped) {
+        if (sloped && !sloped->local_z_modulation) {
             ref_speed = std::min(ref_speed, m_config.scarf_joint_speed.get_abs_value(ref_speed));
         }
 

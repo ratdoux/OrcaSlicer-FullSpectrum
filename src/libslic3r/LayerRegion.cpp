@@ -92,6 +92,25 @@ bool use_base_infill_filament(const PrintRegionConfig &config, int layer_index, 
     return layer_index < first_layers || layer_index >= layer_count - last_layers;
 }
 
+void remove_inner_perimeters(ExtrusionEntityCollection &collection)
+{
+    for (size_t entity_idx = 0; entity_idx < collection.entities.size();) {
+        ExtrusionEntity *entity = collection.entities[entity_idx];
+        bool             remove = entity == nullptr;
+        if (auto *child_collection = dynamic_cast<ExtrusionEntityCollection *>(entity)) {
+            remove_inner_perimeters(*child_collection);
+            remove = child_collection->empty();
+        } else if (entity != nullptr) {
+            remove = is_perimeter(entity->role()) && entity->inset_idx > 0;
+        }
+
+        if (remove)
+            collection.remove(entity_idx);
+        else
+            ++entity_idx;
+    }
+}
+
 } // namespace
 
 unsigned int LayerRegion::extruder(FlowRole role) const
@@ -199,6 +218,11 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
     const PrintRegionConfig &region_config = this->region().config();
     const PrintObjectConfig& object_config = this->layer()->object()->config();
     PrintRegionConfig        perimeter_config = region_config;
+    if (this->image_map_adaptive_perimeter_island) {
+        perimeter_config.wall_loops.value = std::max(2, perimeter_config.wall_loops.value);
+        perimeter_config.only_one_wall_first_layer.value = false;
+        perimeter_config.only_one_wall_top.value         = false;
+    }
     perimeter_config.wall_filament.value = int(effective_layer_filament_id(*this->layer(), unsigned(std::max(0, region_config.wall_filament.value))));
     perimeter_config.sparse_infill_filament.value = int(effective_layer_filament_id(*this->layer(), unsigned(std::max(0, region_config.sparse_infill_filament.value))));
     perimeter_config.solid_infill_filament.value = int(effective_layer_filament_id(*this->layer(), unsigned(std::max(0, region_config.solid_infill_filament.value))));
@@ -208,45 +232,227 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         (this->layer()->id() >= size_t(region_config.bottom_shell_layers.value) &&
          this->layer()->print_z >= region_config.bottom_shell_thickness - EPSILON);
 
-    PerimeterGenerator g(
-        // input:
-        &slices,
-        &compatible_regions,
-        this->layer()->height,
-        this->layer()->slice_z,
-        this->flow(frPerimeter),
-        &perimeter_config,
-        &this->layer()->object()->config(),
-        &print_config,
-        spiral_mode,
-        
-        // output:
-        &this->perimeters,
-        &this->thin_fills,
-        fill_surfaces,
-        //BBS
-        fill_no_overlap
-    );
-    
-    if (this->layer()->lower_layer != nullptr)
-        // Cummulative sum of polygons over all the regions.
-        g.lower_slices = &this->layer()->lower_layer->lslices;
-    if (this->layer()->upper_layer != NULL)
-        g.upper_slices = &this->layer()->upper_layer->lslices;
+    const Flow normal_external_flow = this->flow(frExternalPerimeter);
+    auto texture_external_flow = [&](float width_mm) {
+        const float min_width_for_positive_spacing_mm =
+            std::max(0.01f, float(this->layer()->height) * float(1. - 0.25 * PI) + 1e-4f);
+        Flow out = normal_external_flow.with_width(std::max(width_mm, min_width_for_positive_spacing_mm));
+        // Match OrcaSlicer-ImageMap: a wider outer bead must not push the
+        // following wall farther inward than the normal wall spacing.
+        out.set_spacing(std::min(out.spacing(), normal_external_flow.spacing()));
+        return out;
+    };
 
-    int region_id = this->region().print_object_region_id();
-    if (this->layer()->upper_layer != NULL)
-        g.upper_slices_same_region = &this->layer()->upper_layer->get_region(region_id)->slices;
+    auto process_slices = [&](const SurfaceCollection& input_slices, bool use_texture_width) {
+        PerimeterGenerator g(
+            // input:
+            &input_slices,
+            &compatible_regions,
+            this->layer()->height,
+            this->layer()->slice_z,
+            this->flow(frPerimeter),
+            &perimeter_config,
+            &this->layer()->object()->config(),
+            &print_config,
+            spiral_mode,
 
-    g.layer_id              = (int)this->layer()->id();
-    g.ext_perimeter_flow    = this->flow(frExternalPerimeter);
-    g.overhang_flow         = this->bridging_flow(frPerimeter, object_config.thick_bridges);
-    g.solid_infill_flow     = this->flow(frSolidInfill);
+            // output:
+            &this->perimeters,
+            &this->thin_fills,
+            fill_surfaces,
+            //BBS
+            fill_no_overlap
+        );
 
-    if (this->layer()->object()->config().wall_generator.value == PerimeterGeneratorType::Arachne && !spiral_mode)
-        g.process_arachne();
-    else
-        g.process_classic();
+        if (this->layer()->lower_layer != nullptr)
+            // Cummulative sum of polygons over all the regions.
+            g.lower_slices = &this->layer()->lower_layer->lslices;
+        if (this->layer()->upper_layer != NULL)
+            g.upper_slices = &this->layer()->upper_layer->lslices;
+
+        const int region_id = this->region().print_object_region_id();
+        if (this->layer()->upper_layer != NULL)
+            g.upper_slices_same_region = &this->layer()->upper_layer->get_region(region_id)->slices;
+
+        g.layer_id           = (int)this->layer()->id();
+        g.ext_perimeter_flow = use_texture_width ? texture_external_flow(this->image_map_external_perimeter_width_mm) :
+                                                  normal_external_flow;
+        g.overhang_flow      = this->bridging_flow(frPerimeter, object_config.thick_bridges);
+        g.solid_infill_flow  = this->flow(frSolidInfill);
+
+        // OrcaSlicer-ImageMap uses the classic generator for the full-width
+        // texture wall. Arachne derives its preferred outer bead from spacing
+        // and would collapse the requested 0.95 mm width back toward the
+        // ordinary wall width when we retain normal inter-wall spacing.
+        if (!use_texture_width && this->layer()->object()->config().wall_generator.value == PerimeterGeneratorType::Arachne && !spiral_mode)
+            g.process_arachne();
+        else
+            g.process_classic();
+    };
+
+    const bool              use_texture_width      = this->image_map_external_perimeter_width_mm > EPSILON;
+    const SurfaceCollection fill_surfaces_before   = *fill_surfaces;
+    const ExPolygons        fill_no_overlap_before = *fill_no_overlap;
+    process_slices(slices, use_texture_width);
+
+    if (use_texture_width && this->image_map_adaptive_perimeter_island && !this->perimeters.empty()) {
+        // The wide pass owns only the modulated outer carrier. Regenerate all
+        // inner insets at normal flow so a wide-pass inner wall can never be
+        // printed again underneath its normal-flow replacement.
+        ExtrusionEntityCollection wide_perimeters = std::move(this->perimeters);
+        ExtrusionEntityCollection wide_thin_fills  = std::move(this->thin_fills);
+        SurfaceCollection         wide_fill_surfaces{*fill_surfaces};
+        ExPolygons                wide_fill_no_overlap{*fill_no_overlap};
+        remove_inner_perimeters(wide_perimeters);
+
+        SurfaceCollection inner_source_slices;
+        const float carrier_center_shift =
+            std::max(0.f, 0.5f * (this->image_map_external_perimeter_width_mm - normal_external_flow.width()));
+        inner_source_slices.set(offset_ex(to_expolygons(slices.surfaces), -float(scale_(carrier_center_shift))), stInternal);
+
+        this->perimeters.clear();
+        this->thin_fills.clear();
+        *fill_surfaces   = fill_surfaces_before;
+        *fill_no_overlap = fill_no_overlap_before;
+        if (!inner_source_slices.empty())
+            process_slices(inner_source_slices, false);
+        ExtrusionEntityCollection normal_perimeters = std::move(this->perimeters);
+
+        this->perimeters  = std::move(wide_perimeters);
+        this->thin_fills  = std::move(wide_thin_fills);
+        *fill_surfaces    = std::move(wide_fill_surfaces);
+        *fill_no_overlap = std::move(wide_fill_no_overlap);
+
+        ExtrusionEntityCollection flattened = normal_perimeters.flatten();
+        auto *inner_perimeters = new ExtrusionEntityCollection;
+        for (const ExtrusionEntity *entity : flattened.entities) {
+            bool has_inner_inset = false;
+            bool has_outer_inset = false;
+            auto inspect_path = [&has_inner_inset, &has_outer_inset](const ExtrusionPath &path) {
+                has_inner_inset |= path.inset_idx > 0;
+                has_outer_inset |= path.inset_idx == 0;
+            };
+            if (const auto *path = dynamic_cast<const ExtrusionPath *>(entity)) {
+                inspect_path(*path);
+            } else if (const auto *multipath = dynamic_cast<const ExtrusionMultiPath *>(entity)) {
+                for (const ExtrusionPath &path : multipath->paths)
+                    inspect_path(path);
+            } else if (const auto *loop = dynamic_cast<const ExtrusionLoop *>(entity)) {
+                for (const ExtrusionPath &path : loop->paths)
+                    inspect_path(path);
+            }
+            if (has_inner_inset && !has_outer_inset)
+                inner_perimeters->entities.emplace_back(entity->clone());
+        }
+        if (inner_perimeters->empty()) {
+            const Flow inner_flow = this->flow(frPerimeter);
+            const float inner_center_offset =
+                0.5f * this->image_map_external_perimeter_width_mm +
+                0.5f * (normal_external_flow.spacing() + inner_flow.spacing());
+            Polygons inner_loops = to_polygons(
+                offset_ex(to_expolygons(slices.surfaces), -float(scale_(inner_center_offset))));
+            const size_t first_inner_loop = inner_perimeters->entities.size();
+            extrusion_entities_append_loops(inner_perimeters->entities,
+                                             std::move(inner_loops),
+                                             erPerimeter,
+                                             inner_flow.mm3_per_mm(),
+                                             inner_flow.width(),
+                                             inner_flow.height());
+            for (size_t loop_idx = first_inner_loop; loop_idx < inner_perimeters->entities.size(); ++loop_idx) {
+                ExtrusionEntity *entity = inner_perimeters->entities[loop_idx];
+                entity->inset_idx       = 1;
+                if (auto *loop = dynamic_cast<ExtrusionLoop *>(entity))
+                    for (ExtrusionPath &path : loop->paths)
+                        path.inset_idx = 1;
+            }
+        }
+        if (inner_perimeters->empty())
+            delete inner_perimeters;
+        else
+            this->perimeters.entities.emplace_back(inner_perimeters);
+    }
+
+    auto boundary_is_covered = [&](const ExPolygons& input_geometry) {
+        if (this->perimeters.entities.empty() && this->thin_fills.entities.empty())
+            return false;
+        Polygons covered;
+        const float coverage_margin = float(scale_(std::max(0.10f, 0.35f * this->image_map_external_perimeter_width_mm)));
+        this->perimeters.polygons_covered_by_width(covered, coverage_margin);
+        this->thin_fills.polygons_covered_by_width(covered, coverage_margin);
+        if (covered.empty())
+            return false;
+        const ExPolygons covered_geometry = union_ex(std::move(covered));
+        auto is_covered = [&covered_geometry](const Point& point) {
+            return std::any_of(covered_geometry.begin(), covered_geometry.end(),
+                               [&point](const ExPolygon& polygon) { return polygon.contains(point, true); });
+        };
+        for (const Line& boundary : to_lines(input_geometry)) {
+            const Vec2d  delta        = (boundary.b - boundary.a).cast<double>();
+            const size_t sample_count = std::max<size_t>(1, size_t(std::ceil(unscale<double>(delta.norm()) / 0.5)));
+            for (size_t sample_idx = 0; sample_idx <= sample_count; ++sample_idx) {
+                const Vec2d point = boundary.a.cast<double>() + delta * (double(sample_idx) / double(sample_count));
+                if (!is_covered(Point(coord_t(std::llround(point.x())), coord_t(std::llround(point.y())))))
+                    return false;
+            }
+        }
+        return true;
+    };
+
+    // Check unioned material boundaries, not the edges of each raw Surface.
+    // The latter include harmless internal seams and caused nearly every
+    // textured cube layer to fall back to an ordinary narrow wall.
+    const ExPolygons input_geometry = union_ex(to_expolygons(slices.surfaces));
+    // Match the V2 reference: a non-empty modulated result is authoritative.
+    // Treating disconnected texture details as a generation failure silently
+    // replaced their 0.95 mm wall with the ordinary 0.42 mm wall, producing
+    // the dense horizontal bands visible in the preview.
+    if (use_texture_width && ((this->perimeters.entities.empty() && this->thin_fills.entities.empty()) ||
+                              (!this->image_map_adaptive_perimeter_island && input_geometry.size() > 1 &&
+                               !boundary_is_covered(input_geometry)))) {
+        auto reset_outputs = [&]() {
+            this->perimeters.clear();
+            this->thin_fills.clear();
+            *fill_surfaces   = fill_surfaces_before;
+            *fill_no_overlap = fill_no_overlap_before;
+        };
+
+        SurfaceCollection fallback_slices;
+        if (compatible_regions.size() == 1 && !this->image_map_unmodulated_raw_slices.empty()) {
+            fallback_slices.set(this->image_map_unmodulated_raw_slices, stInternal);
+        } else {
+            for (const LayerRegion* compatible_region : compatible_regions) {
+                if (compatible_region == nullptr)
+                    continue;
+                if (!compatible_region->image_map_unmodulated_raw_slices.empty())
+                    fallback_slices.append(compatible_region->image_map_unmodulated_raw_slices, stInternal);
+                else
+                    fallback_slices.append(compatible_region->slices);
+            }
+            if (fallback_slices.surfaces.size() > 1) {
+                ExPolygons merged = offset_ex(fallback_slices.surfaces, ClipperSafetyOffset);
+                fallback_slices.set(std::move(merged), stInternal);
+            }
+        }
+
+        if (!fallback_slices.empty()) {
+            const ExPolygons fallback_geometry = union_ex(to_expolygons(fallback_slices.surfaces));
+            reset_outputs();
+            process_slices(fallback_slices, true);
+            if ((this->perimeters.entities.empty() && this->thin_fills.entities.empty()) ||
+                (!this->image_map_adaptive_perimeter_island && !fallback_geometry.empty() &&
+                 !boundary_is_covered(fallback_geometry))) {
+                // A truly thin source cannot carry the wide V2 bead. Preserve
+                // the source shell with its normal printable wall instead of
+                // leaving an empty layer or punching a hole through it.
+                reset_outputs();
+                process_slices(fallback_slices, false);
+            }
+            if (!this->perimeters.entities.empty() || !this->thin_fills.entities.empty()) {
+                this->image_map_perimeter_fallback_slices     = fallback_slices;
+                this->image_map_has_perimeter_fallback_slices = true;
+            }
+        }
+    }
 }
 
 #if 1

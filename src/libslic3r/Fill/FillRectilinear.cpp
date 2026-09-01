@@ -910,34 +910,54 @@ static std::vector<SegmentedIntersectionLine> slice_region_by_vertical_lines(con
             sil.intersections.erase(sil.intersections.begin() + j, sil.intersections.end());
     }
 
-    // Verify the segments. If something is wrong, give up.
-#ifdef INFILL_DEBUG_OUTPUT
-    #define INFILL_DEBUG_ASSERT(CONDITION)
-    try {
-#else // INFILL_DEBUG_OUTPUT
-    #define INFILL_DEBUG_ASSERT(CONDITION) assert(CONDITION)
-#endif // INFILL_DEBUG_OUTPUT
-#define ASSERT_THROW(CONDITION) do { INFILL_DEBUG_ASSERT(CONDITION); if (! (CONDITION)) throw InfillFailedException(); } while (0)
-    for (size_t i_seg = 0; i_seg < segs.size(); ++ i_seg) {
-        SegmentedIntersectionLine &sil = segs[i_seg];
-        // The intersection points have to be even.
-        ASSERT_THROW((sil.intersections.size() & 1) == 0);
+    // Verify the segments. Degenerate input may produce an invalid intersection ordering on a single scanline.
+    // Dropping that scanline is safe (empty scanlines are expected outside the polygon) and preferable to failing
+    // the whole fill region. Keep the stricter failure path when generating infill debug output.
+    const auto is_valid_scanline = [](const SegmentedIntersectionLine &sil) {
+        if ((sil.intersections.size() & 1) != 0)
+            return false;
+
         for (size_t i = 0; i < sil.intersections.size();) {
             // An intersection segment crossing the bigger contour may cross the inner offsetted contour even number of times.
-            ASSERT_THROW(sil.intersections[i].type == SegmentIntersection::OUTER_LOW);
+            if (sil.intersections[i].type != SegmentIntersection::OUTER_LOW)
+                return false;
+
             size_t j = i + 1;
-            ASSERT_THROW(j < sil.intersections.size());
-            ASSERT_THROW(sil.intersections[j].type == SegmentIntersection::INNER_LOW || sil.intersections[j].type == SegmentIntersection::OUTER_HIGH);
-            for (; j < sil.intersections.size() && sil.intersections[j].is_inner(); ++ j) ;
-            ASSERT_THROW(j < sil.intersections.size());
-            ASSERT_THROW((j & 1) == 1);
-            ASSERT_THROW(sil.intersections[j].type == SegmentIntersection::OUTER_HIGH);
-            ASSERT_THROW(i + 1 == j || sil.intersections[j - 1].type == SegmentIntersection::INNER_HIGH);
+            if (j >= sil.intersections.size() || (sil.intersections[j].type != SegmentIntersection::INNER_LOW &&
+                                                   sil.intersections[j].type != SegmentIntersection::OUTER_HIGH))
+                return false;
+
+            for (; j < sil.intersections.size() && sil.intersections[j].is_inner(); ++ j)
+                ;
+            if (j >= sil.intersections.size() || (j & 1) == 0 || sil.intersections[j].type != SegmentIntersection::OUTER_HIGH ||
+                (i + 1 != j && sil.intersections[j - 1].type != SegmentIntersection::INNER_HIGH))
+                return false;
+
             i = j + 1;
         }
+        return true;
+    };
+
+#ifdef INFILL_DEBUG_OUTPUT
+    try {
+#else
+    size_t invalid_scanlines = 0;
+#endif
+    for (size_t i_seg = 0; i_seg < segs.size(); ++ i_seg) {
+        SegmentedIntersectionLine &sil = segs[i_seg];
+        if (!is_valid_scanline(sil)) {
+#ifdef INFILL_DEBUG_OUTPUT
+            throw InfillFailedException();
+#else
+            sil.intersections.clear();
+            ++ invalid_scanlines;
+#endif
+        }
     }
-#undef ASSERT_THROW
-#undef INFILL_DEBUG_ASSERT
+#ifndef INFILL_DEBUG_OUTPUT
+    if (invalid_scanlines > 0)
+        BOOST_LOG_TRIVIAL(warning) << "Recovered from " << invalid_scanlines << " malformed infill scanline(s)";
+#endif
 #ifdef INFILL_DEBUG_OUTPUT
     } catch (const InfillFailedException & /* ex */) {
         // Export the buggy result into an SVG file.

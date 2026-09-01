@@ -37,6 +37,8 @@ namespace Slic3r {
 
 // Forward declarations.
 class GCode;
+struct SubLayerPlan;
+namespace ImageMap { class AdaptiveLocalZRenderer; }
 
 namespace { struct Item; }
 struct PrintInstance;
@@ -629,6 +631,8 @@ private:
     coordf_t m_nominal_z;
     bool m_need_change_layer_lift_z = false;
     int m_start_gcode_filament = -1;
+    const ImageMap::AdaptiveLocalZRenderer* m_adaptive_local_z_renderer { nullptr };
+    const SubLayerPlan*                     m_adaptive_local_z_plan { nullptr };
 
     std::set<unsigned int>                  m_initial_layer_extruders;
     // BBS

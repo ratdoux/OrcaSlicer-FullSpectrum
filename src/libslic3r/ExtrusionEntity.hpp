@@ -295,6 +295,12 @@ public:
 
     Slope slope_begin;
     Slope slope_end;
+    // Scarf paths express Z as a ratio inside the nominal layer. Adaptive
+    // Local-Z paths use explicit endpoints so they can follow an arbitrary
+    // non-planar interface without borrowing scarf flow or speed settings.
+    bool   local_z_modulation{false};
+    double absolute_z_begin{0.};
+    double absolute_z_end{0.};
 
     ExtrusionPathSloped(const ExtrusionPath& rhs, const Slope& begin, const Slope& end)
         : ExtrusionPath(rhs), slope_begin(begin), slope_end(end)
@@ -317,7 +323,11 @@ public:
         };
     }
 
-    bool is_flat() const { return is_approx(slope_begin.z_ratio, slope_end.z_ratio); }
+    bool is_flat() const
+    {
+        return local_z_modulation ? is_approx(absolute_z_begin, absolute_z_end) : is_approx(slope_begin.z_ratio, slope_end.z_ratio);
+    }
+    double interpolate_absolute_z(const double ratio) const { return lerp(absolute_z_begin, absolute_z_end, ratio); }
 };
 
 class ExtrusionPathOriented : public ExtrusionPath

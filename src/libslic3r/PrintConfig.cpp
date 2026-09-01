@@ -71,28 +71,31 @@ static t_config_enum_names enum_names_from_keys_map(const t_config_enum_values &
     template<> const t_config_enum_values& ConfigOptionEnum<NAME>::get_enum_values() { return s_keys_map_##NAME; } \
     template<> const t_config_enum_names& ConfigOptionEnum<NAME>::get_enum_names() { return s_keys_names_##NAME; }
 
-static t_config_enum_values s_keys_map_PrinterTechnology {
-    { "FFF",            ptFFF },
-    { "SLA",            ptSLA }
-};
+static t_config_enum_values s_keys_map_PrinterTechnology{{"FFF", ptFFF}, {"SLA", ptSLA}};
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(PrinterTechnology)
 
-static t_config_enum_values s_keys_map_PrintHostType {
-    { "prusalink",      htPrusaLink },
-    { "prusaconnect",   htPrusaConnect },
-    { "octoprint",      htOctoPrint },
-    { "crealityprint",  htCrealityPrint },
-    { "duet",           htDuet },
-    { "flashair",       htFlashAir },
-    { "astrobox",       htAstroBox },
-    { "repetier",       htRepetier },
-    { "mks",            htMKS },
-    { "esp3d",          htESP3D },
-    { "obico",          htObico },
-    { "flashforge",     htFlashforge },
-    { "simplyprint",    htSimplyPrint },
-    { "elegoolink",     htElegooLink }
+static const t_config_enum_values s_keys_map_ImageMapPerimeterModulationMode = {
+    {"reference_wide_path", int(ImageMapPerimeterModulationMode::ReferenceWidePath)},
+    {"printable_path", int(ImageMapPerimeterModulationMode::PrintablePath)},
+    {"hybrid_path_width", int(ImageMapPerimeterModulationMode::HybridPathWidth)},
+    {"image_controlled_width", int(ImageMapPerimeterModulationMode::ImageControlledWidth)},
 };
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(ImageMapPerimeterModulationMode)
+
+static t_config_enum_values s_keys_map_PrintHostType{{"prusalink", htPrusaLink},
+                                                     {"prusaconnect", htPrusaConnect},
+                                                     {"octoprint", htOctoPrint},
+                                                     {"crealityprint", htCrealityPrint},
+                                                     {"duet", htDuet},
+                                                     {"flashair", htFlashAir},
+                                                     {"astrobox", htAstroBox},
+                                                     {"repetier", htRepetier},
+                                                     {"mks", htMKS},
+                                                     {"esp3d", htESP3D},
+                                                     {"obico", htObico},
+                                                     {"flashforge", htFlashforge},
+                                                     {"simplyprint", htSimplyPrint},
+                                                     {"elegoolink", htElegooLink}};
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(PrintHostType)
 
 static t_config_enum_values s_keys_map_AuthorizationType {
@@ -4295,7 +4298,8 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Local-Z minimum sublayer height");
     def->category = L("Others");
     def->tooltip = L("Smallest sublayer height Local-Z may assign to an active filament. "
-                     "Requested blend percentages are applied directly to the nominal layer height and clamped to this minimum.\n\n"
+                     "Requested blend percentages divide the complete strict cadence-cycle height and are clamped to this minimum. "
+                     "Every adaptive Local-Z component is also capped at 0.32 mm, with excess redistributed inside the same cycle.\n\n"
                      "Detailed mixed filament setting explanations will be published once the project wiki is available.");
     def->sidetext = "mm";
     def->min = 0.01;
@@ -4322,12 +4326,69 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
-    def = this->add("mixed_filament_surface_indentation", coFloat);
-    def->label = L("Selective Expansion contraction");
+    def = this->add("texture_mapping_outer_wall_gradient_global_strength", coFloat);
+    def->label = L("Image-map outer wall modulation strength");
+    def->category = L("Multimaterial");
+    def->tooltip = L("Global strength for simple and adaptive image-map perimeter modulation.");
+    def->sidetext = "%";
+    def->min = 0.0;
+    def->max = 100.0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(100.0));
+
+    def = this->add("texture_mapping_outer_wall_gradient_max_line_width", coFloat);
+    def->label = L("Image-map maximum outer wall width");
+    def->category = L("Multimaterial");
+    def->tooltip = L("External perimeter width used by simple and adaptive image-map modulation. Wider lines provide more overlap for color mixing.");
+    def->sidetext = "mm";
+    def->min = 0.05;
+    def->max = 3.0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.95));
+
+    def = this->add("texture_mapping_outer_wall_gradient_min_line_width", coFloat);
+    def->label = L("Image-map minimum visible wall width");
+    def->category = L("Multimaterial");
+    def->tooltip = L("Minimum visible width retained at maximum inset. The difference from maximum width is the available modulation depth.");
+    def->sidetext = "mm";
+    def->min = 0.05;
+    def->max      = 2.0;
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.32));
+
+    def           = this->add("image_map_perimeter_modulation_mode", coEnum);
+    def->label    = L("Image-map perimeter modulation method");
+    def->category = L("Multimaterial");
+    def->tooltip  = L("Selects the external-wall mechanics used by Simple Perimeter Modulation and Adaptive Modulation's "
+                       "perimeter mode. Reference wide path keeps the maximum-width bead and moves its path. Printable path "
+                       "keeps a practical fixed-width bead and moves its path. Hybrid combines printable line-width reduction "
+                       "with the remaining path displacement. Image-controlled width keeps the inner edge fixed and varies the "
+                       "bead from the configured minimum to maximum, using the maximum width only where the image needs it.");
+    def->enum_keys_map = &ConfigOptionEnum<ImageMapPerimeterModulationMode>::get_enum_values();
+    def->enum_values   = {"reference_wide_path", "printable_path", "hybrid_path_width", "image_controlled_width"};
+    def->enum_labels   = {L("Reference wide path (configured maximum)"), L("Printable-width path"), L("Hybrid path + line width"),
+                          L("Image-controlled width (minimum to maximum)")};
+    def->mode          = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<ImageMapPerimeterModulationMode>(ImageMapPerimeterModulationMode::ReferenceWidePath));
+
+    def           = this->add("image_map_perimeter_printable_width", coFloat);
+    def->label    = L("Image-map printable carrier width");
+    def->category = L("Multimaterial");
+    def->tooltip  = L("Fixed maximum external-wall width used by printable-path and hybrid image-map modulation. Hybrid narrows "
+                       "this bead toward the minimum visible wall width and uses path displacement for the remaining modulation. "
+                       "Image-controlled width instead uses the configured image-map maximum width.");
+    def->sidetext = "mm";
+    def->min      = 0.05;
+    def->max      = 3.0;
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.55));
+
+    def           = this->add("mixed_filament_surface_indentation", coFloat);
+    def->label    = L("Selective Expansion contraction");
     def->category = L("Others");
-    def->tooltip = L("XY offset applied to mixed-filament painted regions before region assignment.\n\n"
-                     "Positive values contract the mixed zone inward. Negative values expand it outward.\n\n"
-                     "This applies to mixed filament usage in layer cadence, height cadence, and local Z dithering.");
+    def->tooltip  = L("XY offset applied to mixed-filament painted regions before region assignment.\n\n"
+                       "Positive values contract the mixed zone inward. Negative values expand it outward.\n\n"
+                       "This applies to mixed filament usage in layer cadence, height cadence, and local Z dithering.");
     def->sidetext = "mm";
     def->min = -2.0;
     def->max = 2.0;
@@ -4431,15 +4492,16 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.20));
 
-    def = this->add("dithering_local_z_gradient_overlap_window", coPercent);
-    def->label = L("Gradient overlap window");
+    def = this->add("dithering_local_z_gradient_middle_filament_window", coPercent);
+    def->label = L("Middle filament window");
     def->category = L("Others");
-    def->tooltip = L("Controls the Local-Z overlap window around internal stops in multi-filament gradients.\n\n"
-                     "Negative values expand the solid middle-filament portion around each internal stop. "
-                     "0% keeps the internal stop as only the middle filament. "
-                     "Positive values expand the overlap to the nearest surrounding gradient stops. "
-                     "The default 22% matches the current pair-cadence overlap.");
-    def->min = -100;
+    def->tooltip = L("Sets the portion of a multi-filament Local-Z gradient occupied only by each internal filament. "
+                     "The window is centered on that filament's gradient stop, with the adjacent two-filament transitions "
+                     "ending and starting at the window edges. The requested width is capped at the neighboring transition stops "
+                     "so transition regions never overlap.\n\n"
+                     "For example, 22% gives the middle filament a centered window covering 22% of the gradient whenever "
+                     "the surrounding stops leave enough room.");
+    def->min = 0;
     def->max = 100;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionPercent(22));
@@ -7219,6 +7281,13 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         opt_key = "prime_tower_brim_width";
     } else if (opt_key == "tool_change_gcode") {
         opt_key = "change_filament_gcode";
+    } else if (opt_key == "dithering_local_z_gradient_overlap_window") {
+        opt_key = "dithering_local_z_gradient_middle_filament_window";
+        // The former option used the sign to switch between a solid middle
+        // region and cross-pair overlap. Preserve its magnitude while moving
+        // every legacy value to the new solid-window behavior.
+        if (!value.empty() && value.front() == '-')
+            value.erase(value.begin());
     } else if (opt_key == "bridge_fan_speed") {
         opt_key = "overhang_fan_speed";
     } else if (opt_key == "infill_extruder") {

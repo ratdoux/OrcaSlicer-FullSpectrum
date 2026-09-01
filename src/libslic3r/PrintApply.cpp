@@ -1223,6 +1223,25 @@ static size_t append_image_map_painted_extruders(const ModelVolume&           vo
         const ImageMap::Zone& zone = data->zones[zone_idx];
         if (!referenced_zones[zone_idx] || !zone.enabled)
             continue;
+
+        // With whole-object cadence enabled, Simple PM is metadata on the
+        // object's authored outer wall rather than a separately owned material
+        // volume. Creating a painted region for its palette would make the
+        // mapped face close another shell against the base region and duplicate
+        // walls. Local-only Simple PM still needs its distinct tool owner.
+        if (zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2 && zone.synchronize_whole_object_cadence)
+            continue;
+
+        // Adaptive modulation keeps each recipe as a distinct
+        // region until its closed outer and inner walls have been generated.
+        // The virtual region resolves to one physical tool only for the
+        // current layer. Physical destinations are also kept available for
+        // legacy single-palette maps whose colors are solved dynamically.
+        if (zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+            for (unsigned int extruder_id = 1; extruder_id <= num_physical_extruders; ++extruder_id)
+                append_unique_painted_extruder(painting_extruders, extruder_id, num_physical_extruders);
+        }
+
         for (const ImageMap::PaletteEntry& entry : zone.palette) {
             unsigned int filament_id = 0;
             if (entry.mixed_filament_stable_id != 0) {
@@ -1270,6 +1289,11 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     new_full_config.option("mixed_filament_height_lower_bound", true);
     new_full_config.option("mixed_filament_advanced_dithering", true);
     new_full_config.option("mixed_filament_component_bias_enabled", true);
+    new_full_config.option("texture_mapping_outer_wall_gradient_global_strength", true);
+    new_full_config.option("texture_mapping_outer_wall_gradient_max_line_width", true);
+    new_full_config.option("texture_mapping_outer_wall_gradient_min_line_width", true);
+    new_full_config.option("image_map_perimeter_modulation_mode", true);
+    new_full_config.option("image_map_perimeter_printable_width", true);
     new_full_config.option("mixed_filament_surface_indentation", true);
     new_full_config.option("mixed_filament_region_collapse", true);
     new_full_config.option("mixed_filament_definitions", true);
@@ -1286,6 +1310,11 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_config.option("mixed_filament_height_lower_bound", true);
     m_config.option("mixed_filament_advanced_dithering", true);
     m_config.option("mixed_filament_component_bias_enabled", true);
+    m_config.option("texture_mapping_outer_wall_gradient_global_strength", true);
+    m_config.option("texture_mapping_outer_wall_gradient_max_line_width", true);
+    m_config.option("texture_mapping_outer_wall_gradient_min_line_width", true);
+    m_config.option("image_map_perimeter_modulation_mode", true);
+    m_config.option("image_map_perimeter_printable_width", true);
     m_config.option("mixed_filament_surface_indentation", true);
     m_config.option("mixed_filament_region_collapse", true);
     m_config.option("mixed_filament_definitions", true);
@@ -1302,6 +1331,11 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_default_object_config.option("mixed_filament_height_lower_bound", true);
     m_default_object_config.option("mixed_filament_advanced_dithering", true);
     m_default_object_config.option("mixed_filament_component_bias_enabled", true);
+    m_default_object_config.option("texture_mapping_outer_wall_gradient_global_strength", true);
+    m_default_object_config.option("texture_mapping_outer_wall_gradient_max_line_width", true);
+    m_default_object_config.option("texture_mapping_outer_wall_gradient_min_line_width", true);
+    m_default_object_config.option("image_map_perimeter_modulation_mode", true);
+    m_default_object_config.option("image_map_perimeter_printable_width", true);
     m_default_object_config.option("mixed_filament_surface_indentation", true);
     m_default_object_config.option("mixed_filament_region_collapse", true);
     m_default_object_config.option("mixed_filament_definitions", true);

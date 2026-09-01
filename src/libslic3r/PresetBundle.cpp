@@ -176,6 +176,11 @@ static std::vector<std::string> s_project_options {
     "mixed_filament_height_lower_bound",
     "mixed_filament_advanced_dithering",
     "mixed_filament_component_bias_enabled",
+    "texture_mapping_outer_wall_gradient_global_strength",
+    "texture_mapping_outer_wall_gradient_max_line_width",
+    "texture_mapping_outer_wall_gradient_min_line_width",
+    "image_map_perimeter_modulation_mode",
+    "image_map_perimeter_printable_width",
     "mixed_filament_surface_indentation",
     "mixed_filament_region_collapse",
     "mixed_filament_definitions",
@@ -189,6 +194,7 @@ static std::vector<std::string> s_project_options {
     "dithering_local_z_direct_multicolor",
     "dithering_local_z_independent_layer_height",
     "dithering_local_z_gradient_layer_height",
+    "dithering_local_z_gradient_middle_filament_window",
     "dithering_step_painted_zones_only",
 };
 

@@ -7,10 +7,18 @@
 #include "Geometry/VoronoiUtils.hpp"
 #include "MutablePolygon.hpp"
 #include "format.hpp"
+#include "ImageMap/ContinuousColorSolver.hpp"
 #include "ImageMap/FacetRasterizer.hpp"
+#include "ImageMap/Sampling.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <limits>
+#include <optional>
+#include <string>
 #include <utility>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <boost/log/trivial.hpp>
@@ -520,6 +528,8 @@ struct PaintedLine
     Line   projected_line;
     int    color;
 };
+
+using PaintedLineInjector = std::function<void(size_t, const Layer &, const EdgeGrid::Grid &, std::vector<PaintedLine> &)>;
 
 struct PaintedLineVisitor
 {
@@ -1827,6 +1837,7 @@ static void remove_multiple_edges_in_vertices(MMU_Graph &graph, const std::vecto
 static std::vector<std::vector<ExPolygons>> merge_segmented_layers(const std::vector<std::vector<ExPolygons>> &segmented_regions,
                                                                    std::vector<std::vector<ExPolygons>>      &&top_and_bottom_layers,
                                                                    const size_t                                num_facets_states,
+                                                                   const size_t                                protected_side_state_begin,
                                                                    const std::function<void()>                &throw_on_cancel_callback)
 {
     const size_t                         num_layers = segmented_regions.size();
@@ -1835,14 +1846,24 @@ static std::vector<std::vector<ExPolygons>> merge_segmented_layers(const std::ve
     assert(!top_and_bottom_layers.size() || num_facets_states == top_and_bottom_layers.size());
 
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - Merging segmented layers in parallel - Begin";
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&segmented_regions, &top_and_bottom_layers, &segmented_regions_merged, &num_facets_states, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, num_layers),
+        [&segmented_regions, &top_and_bottom_layers, &segmented_regions_merged, &num_facets_states,
+         protected_side_state_begin, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             assert(segmented_regions[layer_idx].size() == num_facets_states);
+            // Adaptive virtual side states are complete printable islands.
+            // Preserve them through top/bottom merging and trim the physical
+            // top/bottom ownership instead, keeping all regions disjoint.
+            ExPolygons protected_side_geometry;
+            for (size_t state = protected_side_state_begin; state < num_facets_states; ++state)
+                append(protected_side_geometry, segmented_regions[layer_idx][state]);
+            protected_side_geometry = union_ex(std::move(protected_side_geometry));
             for (size_t extruder_id = 0; extruder_id < num_facets_states; ++extruder_id) {
                 throw_on_cancel_callback();
                 if (!segmented_regions[layer_idx][extruder_id].empty()) {
                     ExPolygons segmented_regions_trimmed = segmented_regions[layer_idx][extruder_id];
-                    if (!top_and_bottom_layers.empty()) {
+                    if (!top_and_bottom_layers.empty() && extruder_id < protected_side_state_begin) {
                         for (const std::vector<ExPolygons> &top_and_bottom_by_extruder : top_and_bottom_layers) {
                             if (!top_and_bottom_by_extruder[layer_idx].empty() && !segmented_regions_trimmed.empty()) {
                                 segmented_regions_trimmed = diff_ex(segmented_regions_trimmed, top_and_bottom_by_extruder[layer_idx]);
@@ -1854,12 +1875,18 @@ static std::vector<std::vector<ExPolygons>> merge_segmented_layers(const std::ve
                 }
 
                 if (!top_and_bottom_layers.empty() && !top_and_bottom_layers[extruder_id][layer_idx].empty()) {
-                    bool was_top_and_bottom_empty = segmented_regions_merged[layer_idx][extruder_id].empty();
-                    append(segmented_regions_merged[layer_idx][extruder_id], top_and_bottom_layers[extruder_id][layer_idx]);
+                    ExPolygons top_and_bottom = top_and_bottom_layers[extruder_id][layer_idx];
+                    if (extruder_id < protected_side_state_begin && !protected_side_geometry.empty())
+                        top_and_bottom = diff_ex(top_and_bottom, protected_side_geometry);
+                    const bool was_top_and_bottom_empty = segmented_regions_merged[layer_idx][extruder_id].empty();
+                    append(segmented_regions_merged[layer_idx][extruder_id], std::move(top_and_bottom));
 
                     // Remove dimples (#7235) appearing after merging side segmentation of the model with tops and bottoms painted layers.
                     if (!was_top_and_bottom_empty)
-                        segmented_regions_merged[layer_idx][extruder_id] = offset2_ex(union_ex(segmented_regions_merged[layer_idx][extruder_id]), float(SCALED_EPSILON), -float(SCALED_EPSILON));
+                        segmented_regions_merged[layer_idx][extruder_id] =
+                            offset2_ex(union_ex(segmented_regions_merged[layer_idx][extruder_id]),
+                                       float(SCALED_EPSILON),
+                                       -float(SCALED_EPSILON));
                 }
             }
         }
@@ -1960,6 +1987,8 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
                                                               const float                                                      segmentation_interlocking_depth,
                                                               const bool                                                       segmentation_interlocking_beam,
                                                               const IncludeTopAndBottomLayers                                  include_top_and_bottom_layers,
+                                                              const size_t protected_side_state_begin,
+                                                              const PaintedLineInjector                                        &painted_line_injector,
                                                               const std::function<void()>                                     &throw_on_cancel_callback)
 {
     const size_t                          num_layers    = print_object.layers().size();
@@ -2125,9 +2154,13 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
                              << std::count_if(painted_lines.begin(), painted_lines.end(), [](const std::vector<PaintedLine> &pl) { return !pl.empty(); });
 
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - layers segmentation in parallel - begin";
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions, &num_facets_states, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions,
+                                                                       &num_facets_states, &layers, &painted_line_injector,
+                                                                       &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
+            if (painted_line_injector)
+                painted_line_injector(layer_idx, *layers[layer_idx], edge_grids[layer_idx], painted_lines[layer_idx]);
             if (!painted_lines[layer_idx].empty()) {
 #ifdef MM_SEGMENTATION_DEBUG_PAINTED_LINES
                 export_painted_lines_to_svg(debug_out_path("0-mm-painted-lines-%d-%d.svg", layer_idx, iRun), {painted_lines[layer_idx]}, input_expolygons[layer_idx]);
@@ -2179,7 +2212,12 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
         throw_on_cancel_callback();
     }
 
-    std::vector<std::vector<ExPolygons>> segmented_regions_merged = merge_segmented_layers(segmented_regions, std::move(top_and_bottom_layers), num_facets_states, throw_on_cancel_callback);
+    std::vector<std::vector<ExPolygons>> segmented_regions_merged =
+        merge_segmented_layers(segmented_regions,
+                               std::move(top_and_bottom_layers),
+                               num_facets_states,
+                               protected_side_state_begin,
+                               throw_on_cancel_callback);
     throw_on_cancel_callback();
 
 #ifdef MM_SEGMENTATION_DEBUG_REGIONS
@@ -2192,6 +2230,633 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
 #endif // MM_SEGMENTATION_DEBUG
 
     return segmented_regions_merged;
+}
+
+static bool has_adaptive_perimeter_mapping(const PrintObject &print_object)
+{
+    for (const ModelVolume *volume : print_object.model_object()->volumes) {
+        if (volume == nullptr || !volume->is_model_part())
+            continue;
+        const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+        if (data && std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone &zone) {
+                return zone.enabled && zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles && !zone.palette.empty();
+            }))
+            return true;
+    }
+    return false;
+}
+
+static bool has_adaptive_xy_perimeter_mapping(const PrintObject &print_object)
+{
+    for (const ModelVolume *volume : print_object.model_object()->volumes) {
+        if (volume == nullptr || !volume->is_model_part())
+            continue;
+        const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+        if (data && std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone &zone) {
+                return zone.enabled && zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles &&
+                       zone.adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::Perimeter && !zone.palette.empty();
+            }))
+            return true;
+    }
+    return false;
+}
+
+static float adaptive_perimeter_shell_width(const PrintObject &print_object)
+{
+    const PrintConfig &print_config = print_object.print()->config();
+    if (print_config.nozzle_diameter.values.empty())
+        return 0.5f;
+
+    const bool use_xy_perimeter_modulation = has_adaptive_xy_perimeter_mapping(print_object);
+    const double modulation_strength = use_xy_perimeter_modulation ?
+        std::clamp(print_config.texture_mapping_outer_wall_gradient_global_strength.value / 100., 0., 1.) : 0.;
+    const double maximum_recess =
+        std::max(0., print_config.texture_mapping_outer_wall_gradient_max_line_width.value -
+                         print_config.texture_mapping_outer_wall_gradient_min_line_width.value) *
+        modulation_strength;
+
+    float shell_width = 0.f;
+    for (const PrintRegion &region : print_object.all_regions()) {
+        const PrintRegionConfig &region_config = region.config();
+        const size_t extruder_idx = size_t(std::max(1, region_config.wall_filament.value) - 1);
+        const double nozzle_diameter = print_config.nozzle_diameter.get_at(extruder_idx);
+        double outer_width = region_config.get_abs_value("outer_wall_line_width", nozzle_diameter);
+        if (outer_width <= 0.)
+            outer_width = region_config.get_abs_value("line_width", nozzle_diameter);
+        if (outer_width <= 0.)
+            outer_width = nozzle_diameter;
+        double carrier_width = outer_width;
+        const ImageMapPerimeterModulationMode modulation_mode = print_config.image_map_perimeter_modulation_mode.value;
+        if (use_xy_perimeter_modulation &&
+            (modulation_mode == ImageMapPerimeterModulationMode::ReferenceWidePath ||
+             modulation_mode == ImageMapPerimeterModulationMode::ImageControlledWidth)) {
+            carrier_width = std::max(carrier_width, print_config.texture_mapping_outer_wall_gradient_max_line_width.value);
+        } else if (use_xy_perimeter_modulation) {
+            carrier_width = std::max(carrier_width, print_config.image_map_perimeter_printable_width.value);
+        }
+        double inner_width = region_config.get_abs_value("inner_wall_line_width", nozzle_diameter);
+        if (inner_width <= 0.)
+            inner_width = region_config.get_abs_value("line_width", nozzle_diameter);
+        if (inner_width <= 0.)
+            inner_width = nozzle_diameter;
+
+        // Every adaptive color zone is a closed printable island. Both the
+        // visible side and its inward return belong to the external loop. The
+        // regular inner loop has to clear that carrier on both sides of the
+        // strip. Reserve its width, both inter-wall gaps, and the maximum
+        // boundary recess so the weakest cadence layer still retains it.
+        shell_width = std::max(shell_width, float(carrier_width + 3. * inner_width + maximum_recess + 0.12));
+    }
+    return shell_width > 0.f ? shell_width : float(4. * print_config.nozzle_diameter.get_at(0) + maximum_recess + 0.12);
+}
+
+struct AdaptivePaintVolume
+{
+    struct TextureRecipeMap
+    {
+        uint32_t                                      zone_index{0};
+        int32_t                                       texture_asset_index{-1};
+        uint32_t                                      width{0};
+        uint32_t                                      height{0};
+        std::vector<uint16_t>                         labels;
+        std::vector<ImageMap::ContinuousColorRecipe> recipes{ImageMap::ContinuousColorRecipe{}};
+    };
+
+    std::shared_ptr<const TriangleMesh>         mesh;
+    std::shared_ptr<const ImageMap::VolumeData> data;
+    Transform3d                                 local_to_print{Transform3d::Identity()};
+    std::vector<TextureRecipeMap>               texture_recipe_maps;
+};
+
+struct AdaptivePaintSpan
+{
+    size_t       line_idx { 0 };
+    Line         line;
+    unsigned int color { 0 };
+    double       length_mm { 0. };
+};
+
+static uint32_t adaptive_recipe_color_key(const RGBA &color)
+{
+    auto quantize = [](float channel) {
+        return uint32_t(std::lround(std::clamp(channel, 0.f, 1.f) * 31.f));
+    };
+    return quantize(color[0]) | (quantize(color[1]) << 5) | (quantize(color[2]) << 10);
+}
+
+static std::string adaptive_recipe_component_mask(const ImageMap::ContinuousColorRecipe &recipe, size_t component_count)
+{
+    std::string mask(component_count, '0');
+    for (const size_t component_index : recipe.component_indices)
+        if (component_index < mask.size())
+            mask[component_index] = '1';
+    return mask;
+}
+
+static unsigned int adaptive_palette_filament_id(const ImageMap::PaletteEntry &entry,
+                                                  const MixedFilamentManager   &mixed_manager,
+                                                  size_t                        num_physical_filaments,
+                                                  size_t                        num_total_filaments)
+{
+    if (entry.mixed_filament_stable_id != 0) {
+        const std::optional<unsigned int> stable_id =
+            mixed_manager.filament_id_from_stable_id(entry.mixed_filament_stable_id, num_physical_filaments);
+        if (stable_id && *stable_id >= 1 && *stable_id <= num_total_filaments)
+            return *stable_id;
+    }
+    return entry.fallback_filament_id >= 1 && entry.fallback_filament_id <= num_total_filaments ?
+               entry.fallback_filament_id :
+               0u;
+}
+
+static ImageMap::ContinuousColorRecipe adaptive_explicit_recipe(unsigned int               filament_id,
+                                                                const MixedFilamentManager &mixed_manager,
+                                                                size_t                      num_physical_filaments)
+{
+    ImageMap::ContinuousColorRecipe recipe;
+    if (filament_id >= 1 && filament_id <= num_physical_filaments) {
+        recipe.component_indices  = {size_t(filament_id - 1)};
+        recipe.component_percents = {100};
+        recipe.layer_sequence     = recipe.component_indices;
+        return recipe;
+    }
+
+    const std::optional<MixedFilamentDefinition> definition =
+        mixed_manager.mixed_filament_definition_from_id(filament_id, num_physical_filaments);
+    if (!definition || !definition->behavior.surface_bias.perimeter_modulation || definition->recipe.manual_pattern)
+        return recipe;
+
+    for (const MixedFilamentWeightedComponent &component : definition->recipe.blend.components) {
+        if (component.filament.id < 1 || component.filament.id > num_physical_filaments || component.percent <= 0)
+            continue;
+        const size_t component_index = size_t(component.filament.id - 1);
+        if (std::find(recipe.component_indices.begin(), recipe.component_indices.end(), component_index) !=
+            recipe.component_indices.end())
+            continue;
+        recipe.component_indices.emplace_back(component_index);
+        recipe.component_percents.emplace_back(component.percent);
+    }
+    if (recipe.component_indices.empty() || recipe.component_indices.size() > 4) {
+        recipe = ImageMap::ContinuousColorRecipe{};
+        return recipe;
+    }
+    recipe.layer_sequence = recipe.component_indices;
+    return recipe;
+}
+
+static AdaptivePaintVolume::TextureRecipeMap build_adaptive_texture_recipe_map(
+    const ImageMap::VolumeData              &data,
+    uint32_t                                 zone_index,
+    int32_t                                  texture_asset_index,
+    const ImageMap::ContinuousColorRecipeSolver &recipe_solver,
+    size_t                                   component_count)
+{
+    AdaptivePaintVolume::TextureRecipeMap map;
+    map.zone_index          = zone_index;
+    map.texture_asset_index = texture_asset_index;
+    if (zone_index >= data.zones.size() || texture_asset_index < 0 || size_t(texture_asset_index) >= data.texture_assets.size())
+        return map;
+
+    const ImageMap::Zone         &zone  = data.zones[zone_index];
+    const ImageMap::TextureAsset &asset = data.texture_assets[size_t(texture_asset_index)];
+    if (!asset.valid())
+        return map;
+
+    // Material ownership is categorical even though modulation strength is
+    // continuous. Classifying a bounded source-texel field once prevents
+    // bilinear samples on successive layers from selecting different tool
+    // subsets at the same authored feature.
+    constexpr uint32_t maximum_map_dimension = 512;
+    const double scale = std::min(1.0,
+                                  double(maximum_map_dimension) /
+                                      double(std::max<uint32_t>(1, std::max(asset.width, asset.height))));
+    map.width  = std::max<uint32_t>(1, uint32_t(std::lround(double(asset.width) * scale)));
+    map.height = std::max<uint32_t>(1, uint32_t(std::lround(double(asset.height) * scale)));
+    map.labels.assign(size_t(map.width) * size_t(map.height), uint16_t(0));
+
+    std::unordered_map<uint32_t, ImageMap::ContinuousColorRecipe> recipes_by_color;
+    std::unordered_map<std::string, uint16_t>                      label_by_mask;
+    for (uint32_t y = 0; y < map.height; ++y) {
+        const uint32_t source_y = std::min(asset.height - 1,
+                                           uint32_t((uint64_t(2 * y + 1) * asset.height) / uint64_t(2 * map.height)));
+        for (uint32_t x = 0; x < map.width; ++x) {
+            const uint32_t source_x = std::min(asset.width - 1,
+                                               uint32_t((uint64_t(2 * x + 1) * asset.width) / uint64_t(2 * map.width)));
+            const size_t offset = (size_t(source_y) * size_t(asset.width) + size_t(source_x)) * 4;
+            const float  alpha  = float(asset.rgba[offset + 3]) / 255.f;
+            const RGBA source_color{float(asset.rgba[offset]) / 255.f * alpha + (1.f - alpha),
+                                              float(asset.rgba[offset + 1]) / 255.f * alpha + (1.f - alpha),
+                                              float(asset.rgba[offset + 2]) / 255.f * alpha + (1.f - alpha),
+                                              1.f};
+            const uint32_t color_key = adaptive_recipe_color_key(source_color);
+            auto           recipe_it = recipes_by_color.find(color_key);
+            if (recipe_it == recipes_by_color.end()) {
+                const RGBA quantized_color{float(color_key & 31u) / 31.f,
+                                                     float((color_key >> 5) & 31u) / 31.f,
+                                                     float((color_key >> 10) & 31u) / 31.f,
+                                                     1.f};
+                recipe_it = recipes_by_color.emplace(color_key,
+                                                     recipe_solver.solve(quantized_color, zone.minimum_component_percent)).first;
+            }
+            if (!recipe_it->second.valid())
+                continue;
+
+            const std::string mask = adaptive_recipe_component_mask(recipe_it->second, component_count);
+            auto              label_it = label_by_mask.find(mask);
+            if (label_it == label_by_mask.end()) {
+                if (map.recipes.size() >= size_t(std::numeric_limits<uint16_t>::max()))
+                    continue;
+                const uint16_t label = uint16_t(map.recipes.size());
+                map.recipes.emplace_back(recipe_it->second);
+                label_it = label_by_mask.emplace(mask, label).first;
+            }
+            map.labels[size_t(y) * size_t(map.width) + size_t(x)] = label_it->second;
+        }
+    }
+
+    // Only replace a texel when a strict local majority agrees. This removes
+    // sub-bead specks without eroding narrow, intentional recipe islands.
+    constexpr int radius = 2;
+    std::vector<uint16_t> filtered(map.labels.size(), 0);
+    std::vector<size_t>   counts(map.recipes.size(), 0);
+    for (int pass = 0; pass < 2; ++pass) {
+        for (uint32_t y = 0; y < map.height; ++y) {
+            for (uint32_t x = 0; x < map.width; ++x) {
+                std::fill(counts.begin(), counts.end(), size_t(0));
+                size_t sample_count = 0;
+                for (int dy = -radius; dy <= radius; ++dy) {
+                    const uint32_t sample_y = uint32_t(std::clamp<int>(int(y) + dy, 0, int(map.height) - 1));
+                    for (int dx = -radius; dx <= radius; ++dx) {
+                        const uint32_t sample_x = uint32_t(std::clamp<int>(int(x) + dx, 0, int(map.width) - 1));
+                        const uint16_t label = map.labels[size_t(sample_y) * size_t(map.width) + size_t(sample_x)];
+                        if (label < counts.size())
+                            ++counts[label];
+                        ++sample_count;
+                    }
+                }
+                const size_t   index  = size_t(y) * size_t(map.width) + size_t(x);
+                const uint16_t center = map.labels[index];
+                uint16_t       best   = center;
+                for (uint16_t label = 0; label < counts.size(); ++label)
+                    if (counts[label] > counts[best])
+                        best = label;
+                filtered[index] = best != center && counts[best] > sample_count / 2 ? best : center;
+            }
+        }
+        map.labels.swap(filtered);
+    }
+    return map;
+}
+
+static const ImageMap::ContinuousColorRecipe *adaptive_texture_recipe(
+    const AdaptivePaintVolume              &volume,
+    const ImageMap::LayerPlaneSample       &sample)
+{
+    if (sample.binding == nullptr || sample.binding->source.kind != ImageMap::SourceKind::Texture ||
+        sample.binding->source.texture_asset_index < 0)
+        return nullptr;
+
+    const auto map_it = std::find_if(volume.texture_recipe_maps.begin(), volume.texture_recipe_maps.end(), [&sample](const auto &map) {
+        return map.zone_index == sample.binding->zone_index &&
+               map.texture_asset_index == sample.binding->source.texture_asset_index;
+    });
+    if (map_it == volume.texture_recipe_maps.end() || map_it->labels.empty() || map_it->recipes.size() <= 1)
+        return nullptr;
+
+    Vec2f uv = sample.binding->source.uvs[0] * sample.barycentric.x() +
+               sample.binding->source.uvs[1] * sample.barycentric.y() +
+               sample.binding->source.uvs[2] * sample.barycentric.z();
+    auto wrap = [](float coordinate, ImageMap::WrapMode mode) {
+        if (!std::isfinite(coordinate))
+            return 0.f;
+        if (mode == ImageMap::WrapMode::Clamp)
+            return std::clamp(coordinate, 0.f, 1.f);
+        const float wrapped = coordinate - std::floor(coordinate);
+        return wrapped < 0.f ? wrapped + 1.f : wrapped;
+    };
+    uv.x() = wrap(uv.x(), sample.binding->source.wrap_u);
+    uv.y() = wrap(uv.y(), sample.binding->source.wrap_v);
+    const uint32_t x = std::min(map_it->width - 1, uint32_t(std::lround(uv.x() * float(map_it->width - 1))));
+    const uint32_t y = std::min(map_it->height - 1, uint32_t(std::lround(uv.y() * float(map_it->height - 1))));
+    const uint16_t label = map_it->labels[size_t(y) * size_t(map_it->width) + size_t(x)];
+    return label < map_it->recipes.size() ? &map_it->recipes[label] : nullptr;
+}
+
+// The contour sampler may see a different palette entry for just one or two
+// samples near a texel, UV seam, or triangle boundary. Turning that sample
+// directly into a material region creates a single extrusion needle after the
+// Local-Z masks are clipped. Collapse only runs shorter than a printable bead;
+// larger authored texture features remain untouched.
+static void stabilize_adaptive_paint_spans(std::vector<AdaptivePaintSpan> &spans, double minimum_run_mm)
+{
+    if (spans.size() < 3 || minimum_run_mm <= EPSILON)
+        return;
+
+    struct Run
+    {
+        size_t       begin { 0 };
+        size_t       end { 0 };
+        unsigned int color { 0 };
+        double       length_mm { 0. };
+    };
+
+    for (size_t pass = 0; pass < spans.size(); ++pass) {
+        const auto transition = std::adjacent_find(spans.begin(), spans.end(), [](const AdaptivePaintSpan &lhs, const AdaptivePaintSpan &rhs) {
+            return lhs.color != rhs.color;
+        });
+        if (transition == spans.end())
+            return;
+
+        // Start at a color transition so the first and last runs are distinct
+        // and can be treated as circular neighbours without special merging.
+        std::rotate(spans.begin(), std::next(transition), spans.end());
+
+        std::vector<Run> runs;
+        runs.reserve(spans.size());
+        for (size_t span_idx = 0; span_idx < spans.size(); ++span_idx) {
+            const AdaptivePaintSpan &span = spans[span_idx];
+            if (runs.empty() || runs.back().color != span.color)
+                runs.push_back(Run{span_idx, span_idx + 1, span.color, span.length_mm});
+            else {
+                runs.back().end = span_idx + 1;
+                runs.back().length_mm += span.length_mm;
+            }
+        }
+        if (runs.size() < 2)
+            return;
+
+        size_t       candidate             = runs.size();
+        unsigned int candidate_replacement = 0;
+        for (size_t run_idx = 0; run_idx < runs.size(); ++run_idx) {
+            const Run &run = runs[run_idx];
+            if (run.length_mm + EPSILON >= minimum_run_mm)
+                continue;
+            const Run &previous = runs[(run_idx + runs.size() - 1) % runs.size()];
+            const Run &next     = runs[(run_idx + 1) % runs.size()];
+            std::optional<unsigned int> replacement;
+            if (previous.color == next.color) {
+                replacement = previous.color;
+            } else if (run.color == 0) {
+                // Keep a real boundary between two differently colored adaptive
+                // zones. Only close a short unpainted pinhole when both sides agree.
+                continue;
+            } else if (previous.color == 0) {
+                replacement = next.color;
+            } else if (next.color == 0) {
+                replacement = previous.color;
+            } else {
+                replacement = previous.length_mm >= next.length_mm ? previous.color : next.color;
+            }
+            if (!replacement || *replacement == run.color)
+                continue;
+            if (candidate == runs.size() || run.length_mm < runs[candidate].length_mm) {
+                candidate             = run_idx;
+                candidate_replacement = *replacement;
+            }
+        }
+        if (candidate == runs.size())
+            return;
+
+        const Run &run = runs[candidate];
+        for (size_t span_idx = run.begin; span_idx < run.end; ++span_idx)
+            spans[span_idx].color = candidate_replacement;
+    }
+}
+
+static PaintedLineInjector make_adaptive_painted_line_injector(const PrintObject &print_object,
+                                                               size_t             num_physical_filaments,
+                                                               size_t             num_total_filaments)
+{
+    std::vector<AdaptivePaintVolume> volumes;
+    float                            sample_spacing_mm = 0.20f;
+    const Transform3d                object_to_print   = print_object.trafo_centered();
+    for (const ModelVolume *volume : print_object.model_object()->volumes) {
+        if (volume == nullptr || !volume->is_model_part())
+            continue;
+        const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
+        if (!data || !data->validate(volume->mesh()).valid)
+            continue;
+        bool has_adaptive_zone = false;
+        for (const ImageMap::Zone &zone : data->zones) {
+            if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles || zone.palette.empty())
+                continue;
+            has_adaptive_zone = true;
+            sample_spacing_mm = std::min(sample_spacing_mm, std::clamp(zone.modulation_sample_spacing_mm, 0.08f, 0.40f));
+        }
+        if (!has_adaptive_zone)
+            continue;
+        const Transform3d local_to_print = object_to_print * volume->get_matrix();
+        if (std::abs(local_to_print.linear().determinant()) <= EPSILON)
+            continue;
+        volumes.push_back({volume->mesh_ptr(), data, local_to_print});
+    }
+    if (volumes.empty())
+        return {};
+
+    const PrintConfig &print_config = print_object.print()->config();
+    std::vector<ImageMap::ContinuousColorComponent> physical_components;
+    physical_components.reserve(num_physical_filaments);
+    for (size_t component_index = 0; component_index < num_physical_filaments; ++component_index) {
+        ImageMap::ContinuousColorComponent component;
+        component.color_hex = print_config.filament_colour.values[component_index];
+        if (MixedFilamentManager::use_td_for_color_prediction() &&
+            component_index < print_config.filament_transmission_distance.values.size() &&
+            print_config.filament_transmission_distance.values[component_index] > EPSILON)
+            component.transmission_distance_mm = print_config.filament_transmission_distance.values[component_index];
+        if (component_index < print_config.filament_full_spectrum_material_id.values.size() &&
+            !print_config.filament_full_spectrum_material_id.values[component_index].empty())
+            component.material_id = print_config.filament_full_spectrum_material_id.values[component_index];
+        physical_components.emplace_back(std::move(component));
+    }
+    ImageMap::ContinuousColorRecipeSolver recipe_solver(physical_components, 4);
+    std::unordered_map<const ImageMap::PaletteEntry *, ImageMap::ContinuousColorRecipe> recipes;
+    std::unordered_map<const ImageMap::PaletteEntry *, unsigned int>                     palette_filament_ids;
+    const MixedFilamentManager *mixed_manager = &print_object.print()->mixed_filament_manager();
+    for (AdaptivePaintVolume &volume : volumes) {
+        for (const ImageMap::Zone &zone : volume.data->zones) {
+            if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles)
+                continue;
+            for (const ImageMap::PaletteEntry &entry : zone.palette) {
+                const unsigned int filament_id = adaptive_palette_filament_id(entry,
+                                                                               *mixed_manager,
+                                                                               num_physical_filaments,
+                                                                               num_total_filaments);
+                ImageMap::ContinuousColorRecipe recipe =
+                    adaptive_explicit_recipe(filament_id, *mixed_manager, num_physical_filaments);
+                if (!recipe.valid())
+                    recipe = recipe_solver.solve(entry.target_color, zone.minimum_component_percent);
+                if (recipe.valid())
+                    recipes.emplace(&entry, std::move(recipe));
+                if (filament_id != 0)
+                    palette_filament_ids.emplace(&entry, filament_id);
+            }
+        }
+
+        std::unordered_set<uint64_t> mapped_sources;
+        for (const ImageMap::TriangleBinding &binding : volume.data->triangle_bindings) {
+            if (binding.zone_index >= volume.data->zones.size() || binding.source.kind != ImageMap::SourceKind::Texture ||
+                binding.source.texture_asset_index < 0 ||
+                size_t(binding.source.texture_asset_index) >= volume.data->texture_assets.size())
+                continue;
+            const ImageMap::Zone &zone = volume.data->zones[binding.zone_index];
+            if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles)
+                continue;
+            const uint64_t source_key = (uint64_t(binding.zone_index) << 32) | uint32_t(binding.source.texture_asset_index);
+            if (!mapped_sources.emplace(source_key).second)
+                continue;
+            volume.texture_recipe_maps.emplace_back(build_adaptive_texture_recipe_map(*volume.data,
+                                                                                       binding.zone_index,
+                                                                                       binding.source.texture_asset_index,
+                                                                                       recipe_solver,
+                                                                                       num_physical_filaments));
+        }
+    }
+
+    double minimum_nozzle_mm = 0.4;
+    if (!print_object.print()->config().nozzle_diameter.values.empty()) {
+        minimum_nozzle_mm = std::numeric_limits<double>::max();
+        for (double diameter : print_object.print()->config().nozzle_diameter.values)
+            if (diameter > EPSILON)
+                minimum_nozzle_mm = std::min(minimum_nozzle_mm, diameter);
+        if (!std::isfinite(minimum_nozzle_mm) || minimum_nozzle_mm == std::numeric_limits<double>::max())
+            minimum_nozzle_mm = 0.4;
+    }
+    const double minimum_run_mm = std::max(1.25 * minimum_nozzle_mm, 2.5 * double(sample_spacing_mm));
+
+    return [volumes = std::move(volumes), recipes = std::move(recipes), palette_filament_ids = std::move(palette_filament_ids),
+            sample_spacing_mm, minimum_run_mm, mixed_manager,
+            num_physical_filaments, num_total_filaments](size_t,
+                                                        const Layer &layer,
+                                                        const EdgeGrid::Grid &grid,
+                                                        std::vector<PaintedLine> &painted_lines) {
+        std::vector<ImageMap::LayerPlaneSampler> samplers;
+        samplers.reserve(volumes.size());
+        for (const AdaptivePaintVolume &volume : volumes)
+            samplers.emplace_back(volume.mesh, volume.data, volume.local_to_print, double(layer.slice_z));
+
+        auto resolve_filament = [&volumes, &recipes, &palette_filament_ids, &layer, mixed_manager, num_physical_filaments,
+                                  num_total_filaments](size_t volume_index, const ImageMap::LayerPlaneSample &sample) {
+            if (sample.zone != nullptr &&
+                sample.zone->adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::LocalZHeight &&
+                sample.palette_entry != nullptr) {
+                const auto filament = palette_filament_ids.find(sample.palette_entry);
+                if (filament != palette_filament_ids.end() && filament->second >= 1 && filament->second <= num_total_filaments)
+                    return filament->second;
+            }
+            const ImageMap::ContinuousColorRecipe *selected_recipe = nullptr;
+            if (volume_index < volumes.size())
+                selected_recipe = adaptive_texture_recipe(volumes[volume_index], sample);
+            const ImageMap::ContinuousColorRecipe *palette_recipe = nullptr;
+            if (selected_recipe == nullptr && sample.palette_entry != nullptr) {
+                const auto recipe = recipes.find(sample.palette_entry);
+                if (recipe != recipes.end()) {
+                    palette_recipe  = &recipe->second;
+                    selected_recipe = palette_recipe;
+                }
+            } else if (sample.palette_entry != nullptr) {
+                const auto recipe = recipes.find(sample.palette_entry);
+                if (recipe != recipes.end())
+                    palette_recipe = &recipe->second;
+            }
+
+            // Keep an authored adaptive recipe in its virtual channel until
+            // perimeter generation. This preserves the boundary between two
+            // adjacent zones even on a layer where both recipes happen to
+            // select the same physical tool.
+            if (sample.palette_entry != nullptr && selected_recipe != nullptr && palette_recipe != nullptr &&
+                adaptive_recipe_component_mask(*selected_recipe, num_physical_filaments) ==
+                    adaptive_recipe_component_mask(*palette_recipe, num_physical_filaments)) {
+                const auto filament = palette_filament_ids.find(sample.palette_entry);
+                if (filament != palette_filament_ids.end() && filament->second >= 1 && filament->second <= num_total_filaments)
+                    return filament->second;
+            }
+            if (selected_recipe != nullptr) {
+                const std::optional<size_t> component_index = selected_recipe->component_index_for_layer(layer.id());
+                if (component_index && *component_index < num_physical_filaments)
+                    return unsigned(*component_index + 1);
+            }
+            if (sample.palette_entry == nullptr)
+                return 0u;
+            const auto filament = palette_filament_ids.find(sample.palette_entry);
+            const unsigned int filament_id = filament == palette_filament_ids.end() ? 0u : filament->second;
+            const unsigned int physical_id = mixed_manager->resolve(filament_id,
+                                                                     num_physical_filaments,
+                                                                     int(layer.id()),
+                                                                     float(layer.print_z),
+                                                                     float(layer.height));
+            return physical_id >= 1 && physical_id <= num_physical_filaments ? physical_id : 0u;
+        };
+
+        const double max_sample_distance_mm = 0.50;
+        const auto  &contours               = grid.contours();
+        for (size_t contour_idx = 0; contour_idx < contours.size(); ++contour_idx) {
+            const EdgeGrid::Contour &contour = contours[contour_idx];
+            std::vector<AdaptivePaintSpan> spans;
+            for (size_t line_idx = 0; line_idx < contour.num_segments(); ++line_idx) {
+                const Line  source_line   = contour.get_segment(line_idx);
+                const Vec2d start_scaled  = source_line.a.cast<double>();
+                const Vec2d delta_scaled  = (source_line.b - source_line.a).cast<double>();
+                const double length_mm    = unscale<double>(delta_scaled.norm());
+                if (!std::isfinite(length_mm) || length_mm <= EPSILON)
+                    continue;
+                const size_t steps = std::max<size_t>(1, size_t(std::ceil(length_mm / double(sample_spacing_mm))));
+                Vec2d outward(-delta_scaled.y(), delta_scaled.x());
+                outward.normalize();
+
+                for (size_t step = 0; step < steps; ++step) {
+                    const double t0 = double(step) / double(steps);
+                    const double t1 = double(step + 1) / double(steps);
+                    const Vec2d  midpoint_scaled = start_scaled + delta_scaled * (0.5 * (t0 + t1));
+                    const Vec2d  midpoint_mm(unscale<double>(midpoint_scaled.x()), unscale<double>(midpoint_scaled.y()));
+
+                    std::optional<ImageMap::LayerPlaneSample> selected;
+                    size_t                                    selected_volume_index = volumes.size();
+                    for (size_t volume_index = 0; volume_index < samplers.size(); ++volume_index) {
+                        const std::optional<ImageMap::LayerPlaneSample> candidate = samplers[volume_index].sample(
+                            midpoint_mm, outward, max_sample_distance_mm, ImageMap::RenderMode::AdaptiveLocalizedCycles);
+                        if (!candidate)
+                            continue;
+                        if (!selected || candidate->squared_distance < selected->squared_distance - 1e-9 ||
+                            (std::abs(candidate->squared_distance - selected->squared_distance) <= 1e-9 &&
+                             candidate->zone->priority > selected->zone->priority)) {
+                            selected = candidate;
+                            selected_volume_index = volume_index;
+                        }
+                    }
+                    const unsigned int color = selected ? resolve_filament(selected_volume_index, *selected) : 0u;
+                    const Vec2d        p0     = start_scaled + delta_scaled * t0;
+                    const Vec2d        p1     = start_scaled + delta_scaled * t1;
+                    const Point span_start(coord_t(std::llround(p0.x())), coord_t(std::llround(p0.y())));
+                    const Point span_end(coord_t(std::llround(p1.x())), coord_t(std::llround(p1.y())));
+                    if (span_start != span_end)
+                        spans.push_back({line_idx, Line{span_start, span_end}, color, length_mm / double(steps)});
+                }
+            }
+
+            stabilize_adaptive_paint_spans(spans, minimum_run_mm);
+            std::optional<PaintedLine> pending;
+            auto flush_pending = [&]() {
+                if (pending) {
+                    painted_lines.emplace_back(std::move(*pending));
+                    pending.reset();
+                }
+            };
+            for (const AdaptivePaintSpan &span : spans) {
+                if (span.color == 0) {
+                    flush_pending();
+                    continue;
+                }
+                if (pending && pending->line_idx == span.line_idx && pending->color == int(span.color) &&
+                    pending->projected_line.b == span.line.a) {
+                    pending->projected_line.b = span.line.b;
+                } else {
+                    flush_pending();
+                    pending = PaintedLine{contour_idx, span.line_idx, span.line, int(span.color)};
+                }
+            }
+            flush_pending();
+        }
+    };
 }
 
 static float surface_paint_shell_width(const PrintObject &print_object)
@@ -2229,9 +2894,12 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
     const size_t num_physical_filaments = print_object.print()->config().filament_colour.size();
     const size_t num_total_filaments    = print_object.print()->mixed_filament_manager().total_filaments(num_physical_filaments);
     const size_t num_facets_states      = num_total_filaments + 1;
-    const float  max_width          = print_object.config().fs_surface_paint_only.value
-                                         ? surface_paint_shell_width(print_object)
-                                         : float(print_object.config().mmu_segmented_region_max_width.value);
+    const bool   adaptive_perimeter      = has_adaptive_perimeter_mapping(print_object);
+    const float  max_width               = adaptive_perimeter
+                                               ? adaptive_perimeter_shell_width(print_object)
+                                               : (print_object.config().fs_surface_paint_only.value
+                                                      ? surface_paint_shell_width(print_object)
+                                                      : float(print_object.config().mmu_segmented_region_max_width.value));
     const float  interlocking_depth = float(print_object.config().mmu_segmented_region_interlocking_depth.value);
     const bool   interlocking_beam  = print_object.config().interlocking_beam.value;
 
@@ -2250,8 +2918,22 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
         snapshot.facets = mv->mmu_segmentation_facets.copy_for_slicing();
         if (const std::shared_ptr<const ImageMap::VolumeData> data = mv->image_map_data(); data && !data->empty()) {
             const unsigned int base_filament_id = unsigned(std::clamp(mv->extruder_id(), 1, int(num_total_filaments)));
+            // Adaptive zones are injected below as cadence-aware contour
+            // spans. Synchronized Simple PM is metadata on the already
+            // authored outer wall because its selected physical tool applies
+            // to every object extrusion on the layer. Rasterizing either case
+            // here creates a redundant region and a duplicate wall along the
+            // image boundary. Local-only Simple PM retains a separate owner so
+            // its wall can use a different tool from the structural core.
+            ImageMap::VolumeData facet_data = *data;
+            for (ImageMap::Zone &zone : facet_data.zones) {
+                if (zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles ||
+                    (zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2 &&
+                     zone.synchronize_whole_object_cadence))
+                    zone.enabled = false;
+            }
             const ImageMap::FacetRasterization rasterized = ImageMap::rasterize_facets(
-                mv->mesh(), *data, base_filament_id,
+                mv->mesh(), facet_data, base_filament_id,
                 [&mixed_manager, num_physical_filaments, num_total_filaments](const ImageMap::PaletteEntry &entry) {
                     if (entry.mixed_filament_stable_id != 0) {
                         const std::optional<unsigned int> stable_id =
@@ -2310,7 +2992,20 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
         return {facets, !facets.empty(), false};
     };
 
-    return segmentation_by_painting(print_object, extract_facets_info, num_facets_states, max_width, interlocking_depth, interlocking_beam, IncludeTopAndBottomLayers::Yes, throw_on_cancel_callback);
+    const PaintedLineInjector adaptive_painted_line_injector =
+        adaptive_perimeter ? make_adaptive_painted_line_injector(print_object, num_physical_filaments, num_total_filaments) :
+                             PaintedLineInjector{};
+
+    return segmentation_by_painting(print_object,
+                                    extract_facets_info,
+                                    num_facets_states,
+                                    max_width,
+                                    interlocking_depth,
+                                    interlocking_beam,
+                                    IncludeTopAndBottomLayers::Yes,
+                                    adaptive_perimeter ? num_physical_filaments + 1 : num_facets_states,
+                                    adaptive_painted_line_injector,
+                                    throw_on_cancel_callback);
 }
 
 // Returns fuzzy skin segmentation based on painting in fuzzy skin segmentation gizmo
@@ -2329,7 +3024,8 @@ std::vector<std::vector<ExPolygons>> fuzzy_skin_segmentation_by_painting(const P
         max_external_perimeter_width = std::max<float>(max_external_perimeter_width, region.flow(print_object, frExternalPerimeter, print_object.config().layer_height).width());
     }
 
-    return segmentation_by_painting(print_object, extract_facets_info, num_facets_states, max_external_perimeter_width, 0.f, false, IncludeTopAndBottomLayers::No, throw_on_cancel_callback);
+    return segmentation_by_painting(print_object, extract_facets_info, num_facets_states, max_external_perimeter_width, 0.f, false,
+                                    IncludeTopAndBottomLayers::No, num_facets_states, {}, throw_on_cancel_callback);
 }
 
 } // namespace Slic3r
