@@ -20,7 +20,7 @@ class TriangleMesh;
 
 namespace ImageMap {
 
-inline constexpr uint32_t VOLUME_DATA_SCHEMA_VERSION = 1;
+inline constexpr uint32_t VOLUME_DATA_SCHEMA_VERSION = 2;
 
 enum class SourceKind : uint8_t
 {
@@ -36,10 +36,28 @@ enum class RenderMode : uint8_t
     AdaptiveLocalizedCycles
 };
 
+enum class AdaptiveModulationMode : uint8_t
+{
+    Perimeter,
+    LocalZHeight
+};
+
+// Selects how printable component candidates are converted back into an
+// expected surface colour before the closest Oklab match is chosen.
+enum class ColorMixModel : uint8_t
+{
+    FullSpectrumKmKs,
+    FilamentMixer
+};
+
 enum class WrapMode : uint8_t
 {
     Repeat,
-    Clamp
+    Clamp,
+    // Preserve the source background whenever a generated UV falls outside
+    // the texture rectangle. This is used by image projections, whose border
+    // commonly cuts through a mesh triangle.
+    Transparent
 };
 
 struct TextureAsset
@@ -104,26 +122,34 @@ struct Zone
     bool                      enabled{true};
     int                       priority{0};
     RenderMode                render_mode{RenderMode::NormalMix};
+    AdaptiveModulationMode    adaptive_modulation_mode{AdaptiveModulationMode::Perimeter};
+    ColorMixModel             color_mix_model{ColorMixModel::FullSpectrumKmKs};
+    bool                      synchronize_whole_object_cadence{false};
     int                       minimum_component_percent{15};
     float                     target_sample_size_mm{0.4f};
     size_t                    max_facet_samples{200000};
-    float                     modulation_sample_spacing_mm{0.25f};
+    float                     modulation_sample_spacing_mm{0.16f};
     float                     corner_smoothing_radius_mm{0.6f};
+    bool                      disable_broad_path_smoothing{false};
+    float                     gaussian_smoothing_strength{1.f};
+    float                     first_path_smoothing_strength{1.f};
+    float                     second_path_smoothing_strength{1.f};
+    float                     tone_gamma{1.f};
+    float                     overhang_contrast_percent{100.f};
+    float                     image_exposure_ev{0.f};
+    float                     image_contrast_percent{100.f};
+    float                     image_saturation_percent{100.f};
+    float                     image_edge_boost_percent{0.f};
     std::vector<PaletteEntry> palette;
 
-    template<class Archive> void serialize(Archive &ar)
+    template<class Archive> void serialize(Archive& ar)
     {
-        ar(stable_id,
-           display_name,
-           enabled,
-           priority,
-           render_mode,
-           minimum_component_percent,
-           target_sample_size_mm,
-           max_facet_samples,
-           modulation_sample_spacing_mm,
-           corner_smoothing_radius_mm,
-           palette);
+        ar(stable_id, display_name, enabled, priority, render_mode, adaptive_modulation_mode, color_mix_model,
+           synchronize_whole_object_cadence,
+           minimum_component_percent, target_sample_size_mm, max_facet_samples, modulation_sample_spacing_mm, corner_smoothing_radius_mm,
+           disable_broad_path_smoothing, gaussian_smoothing_strength, first_path_smoothing_strength, second_path_smoothing_strength,
+           tone_gamma, overhang_contrast_percent, image_exposure_ev, image_contrast_percent, image_saturation_percent,
+           image_edge_boost_percent, palette);
     }
 };
 
@@ -161,6 +187,11 @@ struct VolumeData
 };
 
 uint64_t topology_fingerprint(const TriangleMesh &mesh);
+
+// Removes one independently-authored image-map zone and compacts its binding
+// and texture indices. Returns false without modifying data when the ID does
+// not exist.
+bool remove_zone(VolumeData &data, const std::string &stable_id);
 
 // Repairs small UV cracks across the internal diagonal of a coplanar textured
 // surface. Large gaps remain untouched because they represent authored UV

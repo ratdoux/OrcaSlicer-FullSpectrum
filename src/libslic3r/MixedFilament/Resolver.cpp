@@ -46,6 +46,20 @@ unsigned int MixedFilamentManager::resolve(unsigned int filament_id,
         return component_a;
     }
 
+    // Perimeter-modulated image-map recipes use their layer cadence only to
+    // choose which physical material owns the visible wall. The recipe
+    // weights control exposure (the perimeter inset / width), not how often a
+    // material owns a layer. Keep every selected component exactly once in
+    // the ownership cycle: pairs are 1:1, triples 1:1:1 and four-way recipes
+    // 1:1:1:1.
+    if (definition.behavior.surface_bias.perimeter_modulation) {
+        const std::vector<unsigned int> components = definition.recipe.blend.component_ids(num_physical);
+        if (!components.empty()) {
+            const size_t pos = size_t(safe_mod(layer_index, int(components.size())));
+            return components[pos];
+        }
+    }
+
     if (definition.recipe.blend.components.size() >= 3) {
         const std::vector<unsigned int> gradient_sequence = mixed_filament_weighted_blend_sequence(definition, num_physical);
         if (!gradient_sequence.empty()) {

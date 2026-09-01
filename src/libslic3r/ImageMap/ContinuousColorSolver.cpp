@@ -3,12 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include "ContinuousColorSolver.hpp"
+#include "SimplePmCalibration.hpp"
 
 #include "../FullSpectrumKSPairResidual.hpp"
 #include "../MixedFilament.hpp"
+#include "../filament_mixer_model.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -21,15 +24,12 @@ namespace {
 
 // Candidate enumeration, Oklab weighting and KD lookup are adapted from
 // OrcaSlicer-ImageMap's AGPLv3 ColorSolver at commit
-// 1ff08f86146450141cf18af14af884ebcaa68092 (sentientstardust, 2026).
+// 92548381056dbf72836b0a1bdc455f238218dbfb (sentientstardust, 2026).
 constexpr float  OKLAB_MIN_L_WEIGHT             = 1.f;
 constexpr float  OKLAB_MAX_AB_WEIGHT            = 4.f;
 constexpr float  DARK_PENALTY                   = 4.f;
 constexpr float  DARK_TOLERANCE                 = 0.04f;
 constexpr size_t MAX_CANDIDATES                 = 250000;
-constexpr int    MODULATION_LUT_CELLS           = 8;
-constexpr float  MODULATION_MIN_VARIANCE        = 0.0004f;
-constexpr float  MODULATION_OUT_OF_GAMUT_FACTOR = 0.4f;
 
 float clamp01(float value) { return std::isfinite(value) ? std::clamp(value, 0.f, 1.f) : 0.f; }
 
@@ -119,18 +119,83 @@ std::array<float, 3> decode_rgb(const std::string& color_hex)
     return {color.r(), color.g(), color.b()};
 }
 
+std::array<float, 3> mix_filament_mixer(const std::vector<std::array<float, 3>>& colors, const std::vector<int>& weights)
+{
+    size_t first = 0;
+    while (first < weights.size() && weights[first] <= 0)
+        ++first;
+    if (first >= colors.size())
+        return {0.f, 0.f, 0.f};
+
+    auto byte = [](float value) { return static_cast<unsigned char>(std::lround(clamp01(value) * 255.f)); };
+    unsigned char r = byte(colors[first][0]);
+    unsigned char g = byte(colors[first][1]);
+    unsigned char b = byte(colors[first][2]);
+    int accumulated = weights[first];
+    for (size_t index = first + 1; index < colors.size() && index < weights.size(); ++index) {
+        if (weights[index] <= 0)
+            continue;
+        const int total = accumulated + weights[index];
+        filament_mixer::lerp(r, g, b, byte(colors[index][0]), byte(colors[index][1]), byte(colors[index][2]),
+                             float(weights[index]) / float(total), &r, &g, &b);
+        accumulated = total;
+    }
+    return {float(r) / 255.f, float(g) / 255.f, float(b) / 255.f};
+}
+
+std::array<float, 3> predict_candidate_color(const std::vector<ContinuousColorComponent>& components,
+                                             const std::vector<std::array<float, 3>>&      component_colors,
+                                             const std::vector<int>&                       units,
+                                             ColorMixModel                                color_mix_model)
+{
+    std::vector<std::array<float, 3>> active_colors;
+    std::vector<int>                  active_units;
+    std::vector<FullSpectrumKSPairResidualColorInput> ks_inputs;
+    active_colors.reserve(components.size());
+    active_units.reserve(components.size());
+    ks_inputs.reserve(components.size());
+    for (size_t index = 0; index < components.size() && index < units.size(); ++index) {
+        if (units[index] <= 0)
+            continue;
+        active_colors.emplace_back(component_colors[index]);
+        active_units.emplace_back(units[index]);
+        ks_inputs.push_back({components[index].color_hex, units[index], components[index].transmission_distance_mm,
+                             components[index].material_id});
+    }
+    if (active_colors.empty())
+        return {0.f, 0.f, 0.f};
+    if (active_colors.size() == 1)
+        return active_colors.front();
+
+    switch (color_mix_model) {
+    case ColorMixModel::FilamentMixer:
+        return mix_filament_mixer(active_colors, active_units);
+    case ColorMixModel::FullSpectrumKmKs:
+    default:
+        if (const std::optional<std::string> predicted = full_spectrum_ks_blend_color_multi(ks_inputs))
+            return decode_rgb(*predicted);
+        // Keep malformed legacy colours from invalidating the candidate
+        // table without consulting the application's global display engine.
+        return mix_filament_mixer(active_colors, active_units);
+    }
+}
+
 } // namespace
 
 struct ContinuousColorSolver::Impl
 {
+    static constexpr size_t QUANTIZED_LOOKUP_SIZE = 32u * 32u * 32u;
+
     std::vector<ContinuousColorComponent> components;
     std::vector<float>                    predicted_colors;
     std::vector<float>                    perceptual_coordinates;
     std::vector<float>                    weights;
-    std::vector<float>                    modulation_lut_weights;
-    std::vector<float>                    modulation_lut_colors;
     std::vector<KdNode>                   kd_nodes;
+    ColorMixModel                         color_mix_model{ColorMixModel::FullSpectrumKmKs};
+    bool                                  apply_saved_calibration{true};
     int                                   kd_root{-1};
+    // Zero means unresolved; candidate indices are stored one-based.
+    std::unique_ptr<std::atomic<uint32_t>[]> quantized_candidate_indices;
 
     size_t nearest_candidate(const RGBA& target_color) const
     {
@@ -142,88 +207,33 @@ struct ContinuousColorSolver::Impl
         return best_index;
     }
 
-    void append_smooth_projection(const RGBA& target_color)
+    size_t nearest_quantized_candidate(const RGBA& target_color) const
     {
-        const std::array<float, 3> target       = oklab_from_srgb({target_color[0], target_color[1], target_color[2]});
-        const std::array<float, 3> axis_weights = perceptual_axis_weights(target);
-        size_t                     best_index   = size_t(-1);
-        float                      best_error   = std::numeric_limits<float>::max();
-        query(kd_root, target, axis_weights, best_index, best_error);
-        if (best_index >= perceptual_coordinates.size() / 3)
-            return;
+        auto quantize = [](float channel) {
+            return uint32_t(std::lround(std::clamp(channel, 0.f, 1.f) * 31.f));
+        };
+        const uint32_t red   = quantize(target_color[0]);
+        const uint32_t green = quantize(target_color[1]);
+        const uint32_t blue  = quantize(target_color[2]);
+        const uint32_t key   = (red << 10) | (green << 5) | blue;
+        if (!quantized_candidate_indices)
+            return nearest_candidate(target_color);
 
-        const float variance = std::max(1e-7f, MODULATION_MIN_VARIANCE + std::max(0.f, best_error) * MODULATION_OUT_OF_GAMUT_FACTOR);
-        std::vector<double>   projected_weights(components.size(), 0.0);
-        std::array<double, 3> projected_color{0.0, 0.0, 0.0};
-        double                total = 0.0;
-        for (size_t candidate_index = 0; candidate_index < perceptual_coordinates.size() / 3; ++candidate_index) {
-            const float exponent = -(candidate_error(candidate_index, target, axis_weights) - best_error) / variance;
-            if (exponent < -16.f)
-                continue;
-            const double contribution = std::exp(double(exponent));
-            const size_t weight_base  = candidate_index * components.size();
-            for (size_t component_index = 0; component_index < components.size(); ++component_index)
-                projected_weights[component_index] += contribution * double(weights[weight_base + component_index]);
-            const size_t color_base = candidate_index * 3;
-            for (size_t channel = 0; channel < 3; ++channel)
-                projected_color[channel] += contribution * double(predicted_colors[color_base + channel]);
-            total += contribution;
-        }
-        if (total <= std::numeric_limits<double>::epsilon())
-            return;
-        for (const double weight : projected_weights)
-            modulation_lut_weights.emplace_back(float(weight / total));
-        for (const double channel : projected_color)
-            modulation_lut_colors.emplace_back(float(channel / total));
-    }
+        const uint32_t cached = quantized_candidate_indices[key].load(std::memory_order_acquire);
+        if (cached != 0)
+            return size_t(cached - 1);
 
-    void build_modulation_lut()
-    {
-        const size_t side        = size_t(MODULATION_LUT_CELLS + 1);
-        const size_t point_count = side * side * side;
-        modulation_lut_weights.clear();
-        modulation_lut_colors.clear();
-        modulation_lut_weights.reserve(point_count * components.size());
-        modulation_lut_colors.reserve(point_count * 3);
-        for (int red = 0; red <= MODULATION_LUT_CELLS; ++red)
-            for (int green = 0; green <= MODULATION_LUT_CELLS; ++green)
-                for (int blue = 0; blue <= MODULATION_LUT_CELLS; ++blue)
-                    append_smooth_projection(RGBA{float(red) / float(MODULATION_LUT_CELLS), float(green) / float(MODULATION_LUT_CELLS),
-                                                  float(blue) / float(MODULATION_LUT_CELLS), 1.f});
-        if (modulation_lut_weights.size() != point_count * components.size() || modulation_lut_colors.size() != point_count * 3) {
-            modulation_lut_weights.clear();
-            modulation_lut_colors.clear();
-        }
-    }
+        const RGBA quantized_target{float(red) / 31.f, float(green) / 31.f, float(blue) / 31.f, target_color[3]};
+        const size_t candidate_index = nearest_candidate(quantized_target);
+        if (candidate_index >= perceptual_coordinates.size() / 3 || candidate_index >= uint32_t(-1) - 1u)
+            return candidate_index;
 
-    std::vector<double> interpolate_modulation_lut(const RGBA& target_color, const std::vector<float>& table, size_t value_count) const
-    {
-        const size_t side = size_t(MODULATION_LUT_CELLS + 1);
-        if (table.size() != side * side * side * value_count)
-            return {};
-
-        std::array<int, 3>   low{};
-        std::array<float, 3> fraction{};
-        for (size_t channel = 0; channel < 3; ++channel) {
-            const float scaled = clamp01(target_color[channel]) * float(MODULATION_LUT_CELLS);
-            low[channel]       = std::min(int(std::floor(scaled)), MODULATION_LUT_CELLS - 1);
-            fraction[channel]  = scaled - float(low[channel]);
-        }
-
-        std::vector<double> result(value_count, 0.0);
-        for (int corner = 0; corner < 8; ++corner) {
-            std::array<size_t, 3> coordinate{};
-            double                coefficient = 1.0;
-            for (size_t channel = 0; channel < 3; ++channel) {
-                const bool high     = (corner & (1 << channel)) != 0;
-                coordinate[channel] = size_t(low[channel] + (high ? 1 : 0));
-                coefficient *= high ? double(fraction[channel]) : double(1.f - fraction[channel]);
-            }
-            const size_t base = ((coordinate[0] * side + coordinate[1]) * side + coordinate[2]) * value_count;
-            for (size_t value_index = 0; value_index < value_count; ++value_index)
-                result[value_index] += coefficient * double(table[base + value_index]);
-        }
-        return result;
+        const uint32_t encoded = uint32_t(candidate_index) + 1u;
+        uint32_t       expected = 0;
+        if (!quantized_candidate_indices[key].compare_exchange_strong(expected, encoded, std::memory_order_release,
+                                                                       std::memory_order_acquire))
+            return size_t(expected - 1u);
+        return candidate_index;
     }
 
     float candidate_error(size_t candidate_index, const std::array<float, 3>& target, const std::array<float, 3>& axis_weights) const
@@ -299,10 +309,14 @@ size_t continuous_color_solver_max_component_count()
     return component_count;
 }
 
-ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponent> components, bool prepare_modulation)
+ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponent> components,
+                                             ColorMixModel color_mix_model,
+                                             bool apply_saved_calibration)
     : m_impl(std::make_unique<Impl>())
 {
-    m_impl->components = std::move(components);
+    m_impl->components      = std::move(components);
+    m_impl->color_mix_model = color_mix_model;
+    m_impl->apply_saved_calibration = apply_saved_calibration;
     if (m_impl->components.size() < 2)
         return;
 
@@ -314,32 +328,27 @@ ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponen
     m_impl->predicted_colors.reserve(expected * 3);
     m_impl->weights.reserve(expected * m_impl->components.size());
 
+    std::vector<std::array<float, 3>> component_colors;
+    component_colors.reserve(m_impl->components.size());
+    for (const ContinuousColorComponent& component : m_impl->components)
+        component_colors.emplace_back(decode_rgb(component.color_hex));
+
     std::vector<int>                 units(m_impl->components.size(), 0);
     std::function<void(size_t, int)> enumerate = [&](size_t component_index, int remaining_units) {
         if (component_index + 1 == units.size()) {
             units[component_index] = remaining_units;
-            std::vector<FullSpectrumKSPairResidualColorInput> ks_inputs;
-            std::vector<MixedFilamentColorInput>              fallback_inputs;
-            ks_inputs.reserve(units.size());
-            fallback_inputs.reserve(units.size());
-            for (size_t index = 0; index < units.size(); ++index) {
-                if (units[index] <= 0)
-                    continue;
-                const ContinuousColorComponent& component = m_impl->components[index];
-                ks_inputs.push_back({component.color_hex, units[index], component.transmission_distance_mm, component.material_id});
-                fallback_inputs.push_back({component.color_hex, units[index], component.transmission_distance_mm, component.material_id});
-            }
-            std::string mixed_hex;
-            if (ks_inputs.size() == 1) {
-                mixed_hex = ks_inputs.front().color_hex;
-            } else if (const std::optional<std::string> predicted = full_spectrum_ks_blend_color_multi(ks_inputs)) {
-                mixed_hex = *predicted;
-            } else {
-                // Retain a usable candidate table for malformed legacy colors.
-                // Valid physical colors always take the KM/K-S path above.
-                mixed_hex = MixedFilamentManager::blend_color_multi(fallback_inputs);
-            }
-            const std::array<float, 3> mixed      = decode_rgb(mixed_hex);
+            const std::array<float, 3> raw_mixed =
+                predict_candidate_color(m_impl->components, component_colors, units, m_impl->color_mix_model);
+            std::vector<double> normalized_weights;
+            normalized_weights.reserve(units.size());
+            for (const int unit : units)
+                normalized_weights.push_back(double(unit) / double(total_units));
+            const RGBA calibrated = m_impl->apply_saved_calibration ?
+                                        apply_simple_pm_calibration(m_impl->components, m_impl->color_mix_model,
+                                                                    normalized_weights,
+                                                                    RGBA{raw_mixed[0], raw_mixed[1], raw_mixed[2], 1.f}) :
+                                        RGBA{raw_mixed[0], raw_mixed[1], raw_mixed[2], 1.f};
+            const std::array<float, 3> mixed = {calibrated[0], calibrated[1], calibrated[2]};
             const std::array<float, 3> perceptual = oklab_from_srgb(mixed);
             m_impl->predicted_colors.insert(m_impl->predicted_colors.end(), mixed.begin(), mixed.end());
             m_impl->perceptual_coordinates.insert(m_impl->perceptual_coordinates.end(), perceptual.begin(), perceptual.end());
@@ -354,8 +363,11 @@ ContinuousColorSolver::ContinuousColorSolver(std::vector<ContinuousColorComponen
     };
     enumerate(0, total_units);
     m_impl->kd_root = build_kd_tree(m_impl->perceptual_coordinates, m_impl->kd_nodes);
-    if (prepare_modulation)
-        m_impl->build_modulation_lut();
+    if (m_impl->kd_root >= 0) {
+        m_impl->quantized_candidate_indices = std::make_unique<std::atomic<uint32_t>[]>(Impl::QUANTIZED_LOOKUP_SIZE);
+        for (size_t index = 0; index < Impl::QUANTIZED_LOOKUP_SIZE; ++index)
+            m_impl->quantized_candidate_indices[index].store(0, std::memory_order_relaxed);
+    }
 }
 
 ContinuousColorSolver::~ContinuousColorSolver()                                           = default;
@@ -372,6 +384,36 @@ size_t ContinuousColorSolver::component_count() const { return m_impl ? m_impl->
 
 size_t ContinuousColorSolver::candidate_count() const { return m_impl ? m_impl->perceptual_coordinates.size() / 3 : 0; }
 
+std::optional<ContinuousColorCandidate> ContinuousColorSolver::candidate(size_t candidate_index) const
+{
+    if (!valid() || candidate_index >= candidate_count())
+        return std::nullopt;
+
+    ContinuousColorCandidate candidate;
+    candidate.weights.resize(component_count());
+    const size_t weight_base = candidate_index * component_count();
+    for (size_t component_index = 0; component_index < component_count(); ++component_index)
+        candidate.weights[component_index] = m_impl->weights[weight_base + component_index];
+    const size_t color_base = candidate_index * 3;
+    candidate.predicted_color = RGBA{m_impl->predicted_colors[color_base], m_impl->predicted_colors[color_base + 1],
+                                     m_impl->predicted_colors[color_base + 2], 1.f};
+    return candidate;
+}
+
+std::vector<double> compact_modulation_weights(std::vector<double> weights)
+{
+    double maximum = 0.0;
+    for (const double weight : weights)
+        if (std::isfinite(weight))
+            maximum = std::max(maximum, weight);
+    if (maximum <= std::numeric_limits<double>::epsilon())
+        return weights;
+
+    for (double& weight : weights)
+        weight = std::isfinite(weight) ? std::clamp(weight / maximum, 0.0, 1.0) : 0.0;
+    return weights;
+}
+
 std::vector<double> ContinuousColorSolver::solve(const RGBA& target_color) const
 {
     if (!valid())
@@ -387,11 +429,24 @@ std::vector<double> ContinuousColorSolver::solve(const RGBA& target_color) const
     return result;
 }
 
-std::vector<double> ContinuousColorSolver::solve_modulation(const RGBA& target_color) const
+std::vector<double> ContinuousColorSolver::solve_quantized_5bit(const RGBA& target_color) const
 {
     if (!valid())
         return {};
-    return m_impl->interpolate_modulation_lut(target_color, m_impl->modulation_lut_weights, component_count());
+    const size_t best_index = m_impl->nearest_quantized_candidate(target_color);
+    if (best_index >= candidate_count())
+        return {};
+
+    std::vector<double> result(component_count());
+    const size_t        base = best_index * component_count();
+    for (size_t index = 0; index < result.size(); ++index)
+        result[index] = m_impl->weights[base + index];
+    return result;
+}
+
+std::vector<double> ContinuousColorSolver::solve_modulation(const RGBA& target_color) const
+{
+    return compact_modulation_weights(solve(target_color));
 }
 
 std::optional<RGBA> ContinuousColorSolver::predict_color(const RGBA& target_color) const
@@ -408,18 +463,251 @@ std::optional<RGBA> ContinuousColorSolver::predict_color(const RGBA& target_colo
 
 std::optional<RGBA> ContinuousColorSolver::predict_modulation_color(const RGBA& target_color) const
 {
+    return predict_color(target_color);
+}
+
+std::optional<RGBA> ContinuousColorSolver::predict_weights(const std::vector<double>& weights) const
+{
+    if (!valid() || weights.size() != component_count())
+        return std::nullopt;
+
+    const int total_units = continuous_color_solver_total_units(component_count());
+    double    sum         = 0.;
+    for (double weight : weights)
+        if (std::isfinite(weight) && weight > 0.)
+            sum += weight;
+    if (sum <= std::numeric_limits<double>::epsilon())
+        return std::nullopt;
+
+    std::vector<int>                       units(weights.size(), 0);
+    std::vector<std::pair<double, size_t>> remainders;
+    remainders.reserve(weights.size());
+    int assigned = 0;
+    for (size_t index = 0; index < weights.size(); ++index) {
+        const double exact = double(total_units) * std::max(0., weights[index]) / sum;
+        units[index]       = int(std::floor(exact));
+        assigned += units[index];
+        remainders.emplace_back(exact - double(units[index]), index);
+    }
+    std::stable_sort(remainders.begin(), remainders.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.first != rhs.first ? lhs.first > rhs.first : lhs.second < rhs.second;
+    });
+    for (int remaining = total_units - assigned; remaining > 0; --remaining)
+        ++units[remainders[size_t(total_units - assigned - remaining) % remainders.size()].second];
+
+    std::vector<std::array<float, 3>> component_colors;
+    component_colors.reserve(m_impl->components.size());
+    for (const ContinuousColorComponent& component : m_impl->components)
+        component_colors.emplace_back(decode_rgb(component.color_hex));
+    const std::array<float, 3> predicted =
+        predict_candidate_color(m_impl->components, component_colors, units, m_impl->color_mix_model);
+    std::vector<double> normalized_weights(units.size(), 0.0);
+    for (size_t index = 0; index < units.size(); ++index)
+        normalized_weights[index] = double(units[index]) / double(total_units);
+    const RGBA raw{predicted[0], predicted[1], predicted[2], 1.f};
+    return m_impl->apply_saved_calibration ?
+               apply_simple_pm_calibration(m_impl->components, m_impl->color_mix_model, normalized_weights, raw) :
+               raw;
+}
+
+namespace {
+
+float recipe_perceptual_error(const RGBA& target_color, const RGBA& predicted_color)
+{
+    const std::array<float, 3> target       = oklab_from_srgb({target_color[0], target_color[1], target_color[2]});
+    const std::array<float, 3> predicted    = oklab_from_srgb({predicted_color[0], predicted_color[1], predicted_color[2]});
+    const std::array<float, 3> axis_weights = perceptual_axis_weights(target);
+    float                      error        = 0.f;
+    for (size_t axis = 0; axis < 3; ++axis) {
+        const float delta = target[axis] - predicted[axis];
+        error += axis_weights[axis] * delta * delta;
+    }
+    const float under_l = std::max(0.f, target[0] - predicted[0] - DARK_TOLERANCE);
+    return error + DARK_PENALTY * chroma_factor(target) * under_l * under_l;
+}
+
+std::vector<size_t> build_recipe_layer_sequence(const std::vector<size_t>& component_indices)
+{
+    // Adaptive ownership is an equal cadence. The continuous solver weights
+    // describe how strongly each selected bead is exposed by path modulation;
+    // they must never be converted into repeated material layers (for example
+    // C,C,C,M). Every selected physical filament owns exactly one layer in a
+    // cycle, giving only 1:1, 1:1:1, or 1:1:1:1 multi-filament recipes.
+    return component_indices;
+}
+
+std::vector<int> recipe_percents(const std::vector<double>& weights)
+{
+    if (weights.empty())
+        return {};
+    const double sum = std::accumulate(weights.begin(), weights.end(), 0.0);
+    if (!(sum > 1e-12))
+        return {};
+
+    std::vector<int> percents(weights.size(), 0);
+    std::vector<std::pair<double, size_t>> remainders;
+    remainders.reserve(weights.size());
+    int assigned = 0;
+    for (size_t index = 0; index < weights.size(); ++index) {
+        const double exact = 100.0 * std::max(0.0, weights[index]) / sum;
+        percents[index]    = int(std::floor(exact));
+        assigned += percents[index];
+        remainders.emplace_back(exact - double(percents[index]), index);
+    }
+    std::stable_sort(remainders.begin(), remainders.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.first != rhs.first ? lhs.first > rhs.first : lhs.second < rhs.second;
+    });
+    for (int remaining = 100 - assigned; remaining > 0; --remaining)
+        ++percents[remainders[size_t(100 - assigned - remaining) % remainders.size()].second];
+    return percents;
+}
+
+} // namespace
+
+struct ContinuousColorRecipeSolver::Impl
+{
+    struct Subset
+    {
+        std::vector<size_t>                       component_indices;
+        std::optional<RGBA>                       single_color;
+        std::unique_ptr<ContinuousColorSolver> solver;
+    };
+
+    std::vector<ContinuousColorComponent> components;
+    std::vector<Subset>                   subsets;
+};
+
+bool ContinuousColorRecipe::valid() const
+{
+    return !component_indices.empty() && component_indices.size() == component_percents.size() && !layer_sequence.empty();
+}
+
+std::optional<size_t> ContinuousColorRecipe::component_index_for_layer(size_t layer_index) const
+{
+    return valid() ? std::optional<size_t>(layer_sequence[layer_index % layer_sequence.size()]) : std::nullopt;
+}
+
+ContinuousColorRecipeSolver::ContinuousColorRecipeSolver(std::vector<ContinuousColorComponent> components,
+                                                         size_t max_components,
+                                                         ColorMixModel color_mix_model)
+    : m_impl(std::make_unique<Impl>())
+{
+    m_impl->components = std::move(components);
+    max_components     = std::min({max_components, m_impl->components.size(), continuous_color_solver_max_component_count()});
+    for (size_t subset_size = 1; subset_size <= max_components; ++subset_size) {
+        std::vector<size_t> selection;
+        std::function<void(size_t)> enumerate = [&](size_t begin) {
+            if (selection.size() == subset_size) {
+                Impl::Subset subset;
+                subset.component_indices = selection;
+                if (subset_size == 1) {
+                    const std::array<float, 3> rgb = decode_rgb(m_impl->components[selection.front()].color_hex);
+                    subset.single_color           = RGBA{rgb[0], rgb[1], rgb[2], 1.f};
+                } else {
+                    std::vector<ContinuousColorComponent> selected_components;
+                    selected_components.reserve(selection.size());
+                    for (const size_t index : selection)
+                        selected_components.emplace_back(m_impl->components[index]);
+                    subset.solver = std::make_unique<ContinuousColorSolver>(std::move(selected_components), color_mix_model);
+                    if (!subset.solver->valid())
+                        return;
+                }
+                m_impl->subsets.emplace_back(std::move(subset));
+                return;
+            }
+            const size_t needed = subset_size - selection.size();
+            for (size_t index = begin; index + needed <= m_impl->components.size(); ++index) {
+                selection.emplace_back(index);
+                enumerate(index + 1);
+                selection.pop_back();
+            }
+        };
+        enumerate(0);
+    }
+}
+
+ContinuousColorRecipeSolver::~ContinuousColorRecipeSolver()                                              = default;
+ContinuousColorRecipeSolver::ContinuousColorRecipeSolver(ContinuousColorRecipeSolver&&) noexcept          = default;
+ContinuousColorRecipeSolver& ContinuousColorRecipeSolver::operator=(ContinuousColorRecipeSolver&&) noexcept = default;
+
+bool ContinuousColorRecipeSolver::valid() const { return m_impl && !m_impl->subsets.empty(); }
+
+ContinuousColorRecipe ContinuousColorRecipeSolver::solve(const RGBA& target_color, int minimum_component_percent) const
+{
+    ContinuousColorRecipe result;
     if (!valid())
-        return std::nullopt;
-    const std::vector<double> projected = m_impl->interpolate_modulation_lut(target_color, m_impl->modulation_lut_colors, 3);
-    if (projected.size() != 3)
-        return std::nullopt;
-    return RGBA{float(projected[0]), float(projected[1]), float(projected[2]), target_color[3]};
+        return result;
+
+    minimum_component_percent = std::clamp(minimum_component_percent, 0, 49);
+    struct Candidate
+    {
+        const Impl::Subset* subset{nullptr};
+        std::vector<double> weights;
+        RGBA                predicted{1.f, 1.f, 1.f, 1.f};
+        float               error{std::numeric_limits<float>::infinity()};
+    };
+    std::vector<std::optional<Candidate>> best_by_size(m_impl->components.size() + 1);
+    float best_error = std::numeric_limits<float>::infinity();
+    for (const Impl::Subset& subset : m_impl->subsets) {
+        Candidate candidate;
+        candidate.subset = &subset;
+        if (subset.single_color) {
+            candidate.weights   = {1.0};
+            candidate.predicted = *subset.single_color;
+        } else {
+            candidate.weights = subset.solver->solve(target_color);
+            const std::optional<RGBA> predicted = subset.solver->predict_color(target_color);
+            if (candidate.weights.size() != subset.component_indices.size() || !predicted)
+                continue;
+            candidate.predicted = *predicted;
+        }
+        if (candidate.weights.size() > 1 &&
+            std::any_of(candidate.weights.begin(), candidate.weights.end(), [minimum_component_percent](double weight) {
+                return weight * 100.0 + 1e-6 < double(minimum_component_percent);
+            }))
+            continue;
+        candidate.error = recipe_perceptual_error(target_color, candidate.predicted);
+        best_error      = std::min(best_error, candidate.error);
+        const size_t size = subset.component_indices.size();
+        if (size >= best_by_size.size())
+            continue;
+        if (!best_by_size[size] || candidate.error < best_by_size[size]->error)
+            best_by_size[size] = std::move(candidate);
+    }
+    if (!std::isfinite(best_error))
+        return result;
+
+    // Roughly 3.5 Oklab units. This accepts a smaller recipe only when its
+    // visual result is effectively indistinguishable from the best pair or
+    // ternary solution available to this physical palette.
+    constexpr float perceptual_slack = 0.00125f;
+    const Candidate* selected = nullptr;
+    for (size_t size = 1; size < best_by_size.size(); ++size) {
+        if (best_by_size[size] && best_by_size[size]->error <= best_error + perceptual_slack) {
+            selected = &*best_by_size[size];
+            break;
+        }
+    }
+    if (selected == nullptr) {
+        for (size_t size = 1; size < best_by_size.size(); ++size)
+            if (best_by_size[size] && (selected == nullptr || best_by_size[size]->error < selected->error))
+                selected = &*best_by_size[size];
+    }
+    if (selected == nullptr)
+        return result;
+
+    result.component_indices  = selected->subset->component_indices;
+    result.component_percents = recipe_percents(selected->weights);
+    result.layer_sequence     = build_recipe_layer_sequence(result.component_indices);
+    result.predicted_color    = selected->predicted;
+    result.perceptual_error   = selected->error;
+    return result;
 }
 
 std::vector<size_t> select_continuous_color_components(const std::vector<ContinuousColorComponent>& components,
                                                        const std::vector<RGBA>&                     representative_colors,
                                                        size_t                                       requested_count,
-                                                       double                                       minimum_component_weight)
+                                                       ColorMixModel                                color_mix_model)
 {
     if (components.empty())
         return {};
@@ -427,7 +715,8 @@ std::vector<size_t> select_continuous_color_components(const std::vector<Continu
         return {0};
 
     const size_t max_supported = std::min(components.size(), continuous_color_solver_max_component_count());
-    requested_count            = requested_count == 0 ? 0 : std::clamp(requested_count, size_t(2), max_supported);
+    const bool automatic = requested_count == 0;
+    requested_count      = automatic ? max_supported : std::clamp(requested_count, size_t(2), max_supported);
 
     // Very large physical palettes cannot be enumerated directly. Keep the
     // components closest to at least one representative source color, then run
@@ -459,12 +748,22 @@ std::vector<size_t> select_continuous_color_components(const std::vector<Continu
         pool.resize(max_supported);
     }
 
+    // A shared ImageMap cadence must retain neutral/black/white components
+    // even when their maximum fitted weight falls below the color-match
+    // threshold. Removing one changes the printable gamut: a neutral texture
+    // background then turns into visible CMY/RGB layer stripes. Explicit
+    // component counts still rank the palette by source relevance below.
+    if (automatic) {
+        std::sort(pool.begin(), pool.end());
+        return pool;
+    }
+
     std::vector<ContinuousColorComponent> solver_components;
     solver_components.reserve(pool.size());
     for (const size_t component_index : pool)
         solver_components.emplace_back(components[component_index]);
 
-    ContinuousColorSolver solver(std::move(solver_components));
+    ContinuousColorSolver solver(std::move(solver_components), color_mix_model);
     if (!solver.valid()) {
         pool.resize(requested_count == 0 ? std::min<size_t>(2, pool.size()) : std::min(requested_count, pool.size()));
         std::sort(pool.begin(), pool.end());
@@ -491,17 +790,9 @@ std::vector<size_t> select_continuous_color_components(const std::vector<Continu
         return pool[lhs] < pool[rhs];
     });
 
-    size_t selected_count = requested_count;
-    if (selected_count == 0) {
-        const double threshold = std::clamp(minimum_component_weight, 0.01, 0.5);
-        selected_count         = size_t(
-            std::count_if(ranked.begin(), ranked.end(), [&](size_t index) { return maximum_weights[index] + 1e-9 >= threshold; }));
-        selected_count = std::clamp(selected_count, size_t(2), pool.size());
-    }
-
     std::vector<size_t> selected;
-    selected.reserve(selected_count);
-    for (size_t rank = 0; rank < selected_count; ++rank)
+    selected.reserve(requested_count);
+    for (size_t rank = 0; rank < requested_count; ++rank)
         selected.emplace_back(pool[ranked[rank]]);
     std::sort(selected.begin(), selected.end());
     return selected;

@@ -38,7 +38,7 @@ bool report_progress(const ObjImageMapProgressFn& progress_fn,
 bool cancelled(std::string* warning)
 {
     if (warning != nullptr)
-        *warning = "OBJ image-map processing was cancelled.";
+        *warning = "Image-map processing was cancelled.";
     return false;
 }
 
@@ -48,6 +48,23 @@ struct LoadedTexture
     uint32_t             width{0};
     uint32_t             height{0};
 };
+
+boost::filesystem::path resolve_texture_path(const std::string& obj_directory, const std::string& texture_name);
+
+bool load_texture(const ObjInfo& obj_info, const std::string& texture_name, LoadedTexture& out_texture)
+{
+    const auto embedded = obj_info.embedded_textures.find(texture_name);
+    if (embedded != obj_info.embedded_textures.end()) {
+        out_texture.width  = embedded->second.width;
+        out_texture.height = embedded->second.height;
+        out_texture.rgba   = embedded->second.rgba;
+        return out_texture.width > 0 && out_texture.height > 0 &&
+               out_texture.rgba.size() >= size_t(out_texture.width) * size_t(out_texture.height) * 4;
+    }
+
+    const boost::filesystem::path path = resolve_texture_path(obj_info.obj_directory, texture_name);
+    return decode_imported_texture_rgba_from_file(path.string(), out_texture.rgba, out_texture.width, out_texture.height);
+}
 
 float wrap_uv(float value)
 {
@@ -215,9 +232,8 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
         if (!report_progress(progress_fn, ObjImageMapProgressStage::DecodeTextures,
                              triangle_count + texture_idx, triangle_count + texture_names.size()))
             return cancelled(warning);
-        const boost::filesystem::path path = resolve_texture_path(obj_info.obj_directory, texture_name);
-        LoadedTexture                 texture;
-        if (!decode_imported_texture_rgba_from_file(path.string(), texture.rgba, texture.width, texture.height)) {
+        LoadedTexture texture;
+        if (!load_texture(obj_info, texture_name, texture)) {
             failed.emplace(texture_name);
         } else {
             loaded.emplace(texture_name, std::move(texture));
@@ -293,7 +309,8 @@ bool build_obj_image_map_sample_plan(const TriangleMesh&    mesh,
 
     if (warning != nullptr && !failed.empty()) {
         std::ostringstream stream;
-        stream << "Unable to load " << failed.size() << " OBJ image texture" << (failed.size() == 1 ? "" : "s") << '.';
+        stream << "Unable to load " << failed.size() << ' ' << obj_info.source_format << " image texture"
+               << (failed.size() == 1 ? "" : "s") << '.';
         *warning = stream.str();
     }
     return !out_plan.empty();
@@ -319,7 +336,7 @@ bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
     if (obj_info.triangle_uvs.size() != triangle_count || obj_info.triangle_uvs_valid.size() != triangle_count) {
         out_plan = ObjImageMapSamplePlan{};
         if (warning != nullptr)
-            *warning = "The OBJ does not contain usable UV coordinates for the selected texture.";
+            *warning = "The mesh does not contain usable UV coordinates for the selected texture.";
         return false;
     }
 
@@ -337,13 +354,13 @@ bool build_obj_image_map_sample_plan_with_texture(const TriangleMesh&    mesh,
     if (!has_textured_triangle) {
         out_plan = ObjImageMapSamplePlan{};
         if (warning != nullptr)
-            *warning = "The OBJ does not contain usable UV coordinates for the selected texture.";
+            *warning = "The mesh does not contain usable UV coordinates for the selected texture.";
         return false;
     }
 
     const bool built = build_obj_image_map_sample_plan(mesh, texture_info, target_sample_size_mm, max_samples, out_plan, warning, progress_fn);
     if (!built && warning != nullptr && warning->empty())
-        *warning = "The selected image could not be used as an OBJ texture.";
+        *warning = "The selected image could not be used as a mesh texture.";
     return built;
 }
 
@@ -359,9 +376,9 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
     out_data = ImageMap::VolumeData{};
     out_data.topology_fingerprint = ImageMap::topology_fingerprint(mesh);
     if (zone.stable_id.empty())
-        zone.stable_id = "obj-image-map-zone";
+        zone.stable_id = obj_info.source_format == "OBJ" ? "obj-image-map-zone" : "mesh-image-map-zone";
     if (zone.display_name.empty())
-        zone.display_name = "OBJ image map";
+        zone.display_name = obj_info.source_format + " image map";
     out_data.zones.emplace_back(std::move(zone));
 
     const indexed_triangle_set& its = mesh.its;
@@ -376,16 +393,31 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
         if (existing != texture_indices.end())
             return existing->second;
 
-        const boost::filesystem::path path = selected_texture_file.empty() ?
-                                                  resolve_texture_path(obj_info.obj_directory, texture_file) :
-                                                  boost::filesystem::path(texture_file);
         LoadedTexture loaded;
-        if (!decode_imported_texture_rgba_from_file(path.string(), loaded.rgba, loaded.width, loaded.height))
-            return -1;
+        boost::filesystem::path path;
+        if (selected_texture_file.empty()) {
+            const auto embedded = obj_info.embedded_textures.find(texture_file);
+            if (embedded != obj_info.embedded_textures.end()) {
+                loaded.width  = embedded->second.width;
+                loaded.height = embedded->second.height;
+                loaded.rgba   = embedded->second.rgba;
+            } else {
+                path = resolve_texture_path(obj_info.obj_directory, texture_file);
+                if (!decode_imported_texture_rgba_from_file(path.string(), loaded.rgba, loaded.width, loaded.height))
+                    return -1;
+            }
+        } else {
+            path = boost::filesystem::path(texture_file);
+            if (!decode_imported_texture_rgba_from_file(path.string(), loaded.rgba, loaded.width, loaded.height))
+                return -1;
+        }
 
         ImageMap::TextureAsset asset;
-        asset.stable_id   = "obj-texture-" + std::to_string(out_data.texture_assets.size() + 1);
-        asset.display_name = path.filename().string();
+        asset.stable_id = (obj_info.source_format == "OBJ" ? "obj-texture-" : "mesh-texture-") +
+                          std::to_string(out_data.texture_assets.size() + 1);
+        const auto embedded = obj_info.embedded_textures.find(texture_file);
+        asset.display_name = path.empty() && embedded != obj_info.embedded_textures.end() ? embedded->second.display_name :
+                                                                                           path.filename().string();
         asset.width       = loaded.width;
         asset.height      = loaded.height;
         asset.rgba        = std::move(loaded.rgba);
@@ -435,7 +467,7 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
         } else if (source == ObjColorImportSource::VertexColors) {
             if (obj_info.vertex_colors.size() != its.vertices.size()) {
                 if (warning)
-                    *warning = "OBJ vertex colours no longer align with the imported mesh topology.";
+                    *warning = "Vertex colours no longer align with the imported mesh topology.";
                 return false;
             }
             binding.source.kind = ImageMap::SourceKind::VertexColors;
@@ -452,7 +484,7 @@ bool build_obj_image_map_volume_data(const TriangleMesh&       mesh,
     }
 
     if (warning && skipped > 0)
-        *warning = "Skipped " + std::to_string(skipped) + " OBJ triangles without a usable image-map source.";
+        *warning = "Skipped " + std::to_string(skipped) + " mesh triangles without a usable image-map source.";
     const bool valid = !out_data.empty() && out_data.validate(mesh).valid;
     if (!report_progress(progress_fn, ObjImageMapProgressStage::StoreSource, its.indices.size(), its.indices.size()))
         return cancelled(warning);

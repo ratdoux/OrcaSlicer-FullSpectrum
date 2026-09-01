@@ -54,6 +54,12 @@ struct SourceColorRasterizationOptions
 
 using PaletteFilamentResolver = std::function<unsigned int(const PaletteEntry &)>;
 
+// Removes isolated sub-cell assignments from an adaptive quadtree without
+// blurring established region boundaries. The first two leaf levels are
+// cleaned so a one-sample colour fluctuation cannot become its own material
+// island and perimeter seam.
+void stabilize_adaptive_region_ids(std::vector<unsigned int> &ids, unsigned int subdivision_depth, unsigned int base_filament_id);
+
 FacetRasterization rasterize_facets(const TriangleMesh             &mesh,
                                     const VolumeData               &data,
                                     unsigned int                    base_filament_id,

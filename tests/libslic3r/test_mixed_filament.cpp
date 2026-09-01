@@ -502,6 +502,29 @@ TEST_CASE("Local-Z upper height bound is retired as a legacy setting", "[MixedFi
     CHECK(key.empty());
 }
 
+TEST_CASE("Gradient overlap settings migrate to a middle-filament window", "[MixedFilament][LocalZ][Gradient]")
+{
+    CHECK_FALSE(print_config_def.has("dithering_local_z_gradient_overlap_window"));
+    const ConfigOptionDef *window_def = print_config_def.get("dithering_local_z_gradient_middle_filament_window");
+    REQUIRE(window_def != nullptr);
+    REQUIRE(bool(window_def->default_value));
+    CHECK(static_cast<const ConfigOptionPercent *>(window_def->default_value.get())->value == Approx(22.0));
+    CHECK(window_def->min == Approx(0.0));
+    CHECK(window_def->max == Approx(100.0));
+
+    std::string negative_key   = "dithering_local_z_gradient_overlap_window";
+    std::string negative_value = "-35%";
+    PrintConfigDef::handle_legacy(negative_key, negative_value);
+    CHECK(negative_key == "dithering_local_z_gradient_middle_filament_window");
+    CHECK(negative_value == "35%");
+
+    std::string positive_key   = "dithering_local_z_gradient_overlap_window";
+    std::string positive_value = "18%";
+    PrintConfigDef::handle_legacy(positive_key, positive_value);
+    CHECK(positive_key == "dithering_local_z_gradient_middle_filament_window");
+    CHECK(positive_value == "18%");
+}
+
 TEST_CASE("Local-Z can preserve the first Full-domain layer", "[MixedFilament][LocalZ]")
 {
     const ConfigOptionDef *option_def = print_config_def.get("dithering_local_z_preserve_first_layer");
@@ -1002,6 +1025,51 @@ TEST_CASE("Perimeter image-map definitions share one physical layer sequence and
     REQUIRE(canonical_definitions.size() == 2);
     CHECK(canonical_definitions[0].behavior.surface_bias.perimeter_modulation);
     CHECK(canonical_definitions[1].behavior.surface_bias.perimeter_modulation);
+}
+
+TEST_CASE("Perimeter-modulated recipes use strict equal layer cadence", "[MixedFilament][PerimeterModulation]")
+{
+    const std::vector<std::string> colors = {"#00FFFF", "#FF00FF", "#FFFF00", "#000000"};
+
+    auto add_recipe = [&colors](MixedFilamentManager &manager, std::vector<MixedFilamentWeightedComponent> components) {
+        MixedFilamentDefinition definition;
+        definition.source.kind                                = MixedFilamentSourceKind::Custom;
+        definition.recipe.kind                                = MixedFilamentRecipeKind::WeightedBlend;
+        definition.recipe.blend.components                    = std::move(components);
+        definition.behavior.distribution                      = MixedFilamentDistributionMode::LayerCycle;
+        definition.behavior.surface_bias.perimeter_modulation = true;
+        return manager.add_custom_filament_definition(std::move(definition), colors);
+    };
+
+    SECTION("pair is 1:1 even when exposure weights are unequal")
+    {
+        MixedFilamentManager manager;
+        REQUIRE(add_recipe(manager, {{{1}, 85}, {{2}, 15}}));
+        for (int layer = 0; layer < 8; ++layer) {
+            CHECK(manager.resolve(5, colors.size(), layer) == unsigned(layer % 2 + 1));
+            CHECK(manager.resolve_perimeter(5, colors.size(), layer, 0) == unsigned(layer % 2 + 1));
+        }
+    }
+
+    SECTION("triple is 1:1:1")
+    {
+        MixedFilamentManager manager;
+        REQUIRE(add_recipe(manager, {{{1}, 70}, {{2}, 20}, {{3}, 10}}));
+        for (int layer = 0; layer < 12; ++layer) {
+            CHECK(manager.resolve(5, colors.size(), layer) == unsigned(layer % 3 + 1));
+            CHECK(manager.resolve_perimeter(5, colors.size(), layer, 1) == unsigned(layer % 3 + 1));
+        }
+    }
+
+    SECTION("four-way is 1:1:1:1")
+    {
+        MixedFilamentManager manager;
+        REQUIRE(add_recipe(manager, {{{1}, 55}, {{2}, 25}, {{3}, 15}, {{4}, 5}}));
+        for (int layer = 0; layer < 16; ++layer) {
+            CHECK(manager.resolve(5, colors.size(), layer) == unsigned(layer % 4 + 1));
+            CHECK(manager.resolve_perimeter(5, colors.size(), layer, 2) == unsigned(layer % 4 + 1));
+        }
+    }
 }
 
 TEST_CASE("Mixed filament auto generation can be disabled without dropping custom rows", "[MixedFilament]")
@@ -1660,12 +1728,15 @@ TEST_CASE("FullSpectrum image maps persist authoritative sources and binary text
     zone.stable_id   = "zone-main";
     zone.display_name = "Main image";
     zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.synchronize_whole_object_cadence = true;
     zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
     data.zones.push_back(zone);
     ImageMap::Zone adaptive_zone = zone;
     adaptive_zone.stable_id      = "zone-adaptive";
     adaptive_zone.display_name   = "Adaptive local cycles";
     adaptive_zone.render_mode    = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+    adaptive_zone.adaptive_modulation_mode = ImageMap::AdaptiveModulationMode::LocalZHeight;
+    adaptive_zone.synchronize_whole_object_cadence = false;
     data.zones.push_back(std::move(adaptive_zone));
     ImageMap::TriangleBinding binding;
     binding.triangle_index                   = 0;
@@ -1697,7 +1768,10 @@ TEST_CASE("FullSpectrum image maps persist authoritative sources and binary text
     REQUIRE(canonical.volumes.front().zones.size() == 2);
     CHECK(canonical.volumes.front().stable_volume_id == "vol_image");
     CHECK(canonical.volumes.front().zones.front().render_mode == "perimeter_modulation_v2");
+    CHECK(canonical.volumes.front().zones.front().adaptive_modulation_mode == "perimeter");
+    CHECK(canonical.volumes.front().zones.front().synchronize_whole_object_cadence);
     CHECK(canonical.volumes.front().zones[1].render_mode == "adaptive_localized_cycles");
+    CHECK(canonical.volumes.front().zones[1].adaptive_modulation_mode == "local_z_height");
     const PackagePartPlan *asset_part = find_fullspectrum_part(plan, canonical.texture_assets.front().path);
     REQUIRE(asset_part != nullptr);
     CHECK(std::vector<uint8_t>(asset_part->bytes.begin(), asset_part->bytes.end()) == std::vector<uint8_t>{12, 34, 56, 255});
@@ -1720,7 +1794,10 @@ TEST_CASE("FullSpectrum image maps persist authoritative sources and binary text
     REQUIRE(imported->zones.size() == 2);
     CHECK(imported->texture_assets.front().rgba == std::vector<uint8_t>{12, 34, 56, 255});
     CHECK(imported->zones.front().render_mode == ImageMap::RenderMode::PerimeterModulationV2);
+    CHECK(imported->zones.front().synchronize_whole_object_cadence);
     CHECK(imported->zones[1].render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles);
+    CHECK(imported->zones.front().adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::Perimeter);
+    CHECK(imported->zones[1].adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::LocalZHeight);
     CHECK(imported->triangle_bindings.front().source.texture_asset_index == 0);
 }
 

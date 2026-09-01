@@ -252,11 +252,24 @@ struct ImageMapZone
     bool                              enabled = true;
     int                               priority = 0;
     std::string                       render_mode = "normal_mix";
+    std::string                       adaptive_modulation_mode = "perimeter";
+    std::string                       color_mix_model = "full_spectrum_km_ks";
+    bool                              synchronize_whole_object_cadence = false;
     int                               minimum_component_percent = 15;
     double                            target_sample_size_mm = 0.4;
     uint64_t                          max_facet_samples = 200000;
-    double                            modulation_sample_spacing_mm = 0.25;
+    double                            modulation_sample_spacing_mm = 0.16;
     double                            corner_smoothing_radius_mm = 0.6;
+    bool                              disable_broad_path_smoothing = false;
+    double                            gaussian_smoothing_strength = 1.0;
+    double                            first_path_smoothing_strength = 1.0;
+    double                            second_path_smoothing_strength = 1.0;
+    double                            tone_gamma = 1.0;
+    double                            overhang_contrast_percent = 100.0;
+    double                            image_exposure_ev = 0.0;
+    double                            image_contrast_percent = 100.0;
+    double                            image_saturation_percent = 100.0;
+    double                            image_edge_boost_percent = 0.0;
     std::vector<ImageMapPaletteEntry> palette;
 };
 

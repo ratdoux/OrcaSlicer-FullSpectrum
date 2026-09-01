@@ -2,13 +2,16 @@
 
 #include "libslic3r/Format/OBJImageMap.hpp"
 #include "libslic3r/Format/OBJ.hpp"
+#include "libslic3r/Format/Assimp.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/FullSpectrumKSPairResidual.hpp"
 #include "libslic3r/ImageMap/BoundaryModulation.hpp"
 #include "libslic3r/ImageMap/ContinuousColorSolver.hpp"
 #include "libslic3r/ImageMap/FacetRasterizer.hpp"
 #include "libslic3r/ImageMap/PerimeterEnvelopeRenderer.hpp"
+#include "libslic3r/ImageMap/Projection.hpp"
 #include "libslic3r/ImageMap/Sampling.hpp"
+#include "libslic3r/ImageMap/SimplePmCalibration.hpp"
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ObjColorUtils.hpp"
@@ -21,9 +24,453 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <numeric>
+#include <sstream>
 #include <set>
 
 using namespace Slic3r;
+
+namespace {
+
+void append_glb_u16(std::vector<uint8_t>& bytes, uint16_t value)
+{
+    bytes.push_back(uint8_t(value));
+    bytes.push_back(uint8_t(value >> 8));
+}
+
+void append_glb_u32(std::vector<uint8_t>& bytes, uint32_t value)
+{
+    bytes.push_back(uint8_t(value));
+    bytes.push_back(uint8_t(value >> 8));
+    bytes.push_back(uint8_t(value >> 16));
+    bytes.push_back(uint8_t(value >> 24));
+}
+
+void append_glb_float(std::vector<uint8_t>& bytes, float value)
+{
+    uint32_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value));
+    std::memcpy(&bits, &value, sizeof(bits));
+    append_glb_u32(bytes, bits);
+}
+
+bool write_textured_triangle_glb(const boost::filesystem::path& path, const std::vector<uint8_t>& png_bytes)
+{
+    std::vector<uint8_t> bin;
+    for (float value : std::array<float, 9>{0.f, 0.f, 0.f, 0.01f, 0.f, 0.f, 0.f, 0.01f, 0.f})
+        append_glb_float(bin, value);
+    for (float value : std::array<float, 6>{0.f, 0.f, 1.f, 0.f, 0.f, 1.f})
+        append_glb_float(bin, value);
+    append_glb_u16(bin, 0);
+    append_glb_u16(bin, 1);
+    append_glb_u16(bin, 2);
+    while (bin.size() % 4 != 0)
+        bin.push_back(0);
+    const size_t image_offset = bin.size();
+    bin.insert(bin.end(), png_bytes.begin(), png_bytes.end());
+    const size_t image_size = png_bytes.size();
+    while (bin.size() % 4 != 0)
+        bin.push_back(0);
+
+    std::ostringstream json_stream;
+    json_stream << "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":" << bin.size()
+                << "}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36,\"target\":34962},"
+                   "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24,\"target\":34962},"
+                   "{\"buffer\":0,\"byteOffset\":60,\"byteLength\":6,\"target\":34963},"
+                   "{\"buffer\":0,\"byteOffset\":"
+                << image_offset << ",\"byteLength\":" << image_size
+                << "}],\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                   "\"min\":[0,0,0],\"max\":[0.01,0.01,0]},"
+                   "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},"
+                   "{\"bufferView\":2,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}],"
+                   "\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\",\"name\":\"embedded.png\"}],"
+                   "\"textures\":[{\"source\":0}],\"materials\":[{\"pbrMetallicRoughness\":{"
+                   "\"baseColorFactor\":[1,1,1,1],\"baseColorTexture\":{\"index\":0}}}],"
+                   "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"TEXCOORD_0\":1},"
+                   "\"indices\":2,\"material\":0}]}],\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}],\"scene\":0}";
+    std::string json = json_stream.str();
+    while (json.size() % 4 != 0)
+        json.push_back(' ');
+
+    const uint32_t       total_length = uint32_t(12 + 8 + json.size() + 8 + bin.size());
+    std::vector<uint8_t> glb;
+    glb.reserve(total_length);
+    append_glb_u32(glb, 0x46546c67);
+    append_glb_u32(glb, 2);
+    append_glb_u32(glb, total_length);
+    append_glb_u32(glb, uint32_t(json.size()));
+    append_glb_u32(glb, 0x4e4f534a);
+    glb.insert(glb.end(), json.begin(), json.end());
+    append_glb_u32(glb, uint32_t(bin.size()));
+    append_glb_u32(glb, 0x004e4942);
+    glb.insert(glb.end(), bin.begin(), bin.end());
+
+    boost::nowide::ofstream output(path.string(), std::ios::binary);
+    output.write(reinterpret_cast<const char*>(glb.data()), std::streamsize(glb.size()));
+    return output.good();
+}
+
+} // namespace
+
+TEST_CASE("Simple perimeter modulation can synchronize the whole object cadence", "[ImageMap][PerimeterModulation]")
+{
+    const std::vector<std::string> physical_colors = {"#FF00FF", "#00AEEF"};
+    MixedFilamentDefinition       definition;
+    definition.identity.stable_id                         = 91001;
+    definition.source.kind                                = MixedFilamentSourceKind::Custom;
+    definition.recipe.kind                                = MixedFilamentRecipeKind::WeightedBlend;
+    definition.recipe.blend.components                    = {{{1}, 50}, {{2}, 50}};
+    definition.behavior.distribution                      = MixedFilamentDistributionMode::LayerCycle;
+    definition.behavior.surface_bias.perimeter_modulation = true;
+    MixedFilamentManager manager;
+    REQUIRE(manager.add_custom_filament_definition(definition, physical_colors));
+
+    Model        model;
+    ModelObject* object = model.add_object();
+    ModelVolume* volume = object->add_volume(make_cube(1., 1., 1.));
+    ImageMap::VolumeData data;
+    data.topology_fingerprint = ImageMap::topology_fingerprint(volume->mesh());
+    ImageMap::Zone zone;
+    zone.stable_id                        = "synchronized-simple-pm";
+    zone.render_mode                      = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.synchronize_whole_object_cadence = true;
+    zone.palette.push_back({RGBA{0.5f, 0.f, 0.5f, 1.f}, definition.identity.stable_id, 3});
+    data.zones.push_back(zone);
+    ImageMap::TriangleBinding binding;
+    binding.triangle_index = 0;
+    binding.zone_index     = 0;
+    binding.source.kind    = ImageMap::SourceKind::VertexColors;
+    data.triangle_bindings.push_back(binding);
+    REQUIRE(volume->set_image_map_data(std::move(data)));
+
+    CHECK(ImageMap::model_whole_object_cadence_filament(*object, manager, physical_colors.size(), 0, 0.2f, 0.2f) == 1);
+    CHECK(ImageMap::model_whole_object_cadence_filament(*object, manager, physical_colors.size(), 1, 0.4f, 0.2f) == 2);
+    CHECK(ImageMap::model_whole_object_cadence_filament(*object, manager, physical_colors.size(), 2, 0.6f, 0.2f) == 1);
+
+    ImageMap::VolumeData disabled = *volume->image_map_data();
+    disabled.zones.front().synchronize_whole_object_cadence = false;
+    REQUIRE(volume->set_image_map_data(std::move(disabled)));
+    CHECK_FALSE(ImageMap::model_whole_object_cadence_filament(*object, manager, physical_colors.size(), 0, 0.2f, 0.2f));
+}
+
+TEST_CASE("Orthographic image projection generates local UV bindings without a mesh unwrap", "[ImageMap][Projection]")
+{
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(-5.f, -5.f, 0.f), Vec3f(5.f, -5.f, 0.f), Vec3f(5.f, 5.f, 0.f), Vec3f(-5.f, 5.f, 0.f)};
+    its.indices.emplace_back(0, 1, 2);
+    its.indices.emplace_back(0, 2, 3);
+    TriangleMesh mesh(std::move(its));
+
+    ImageMap::TextureAsset texture{"projection", "projection.png", 2, 2,
+                                   {255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255}};
+    ImageMap::Zone zone;
+    zone.stable_id = "projected-zone";
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    zone.palette.push_back({RGBA{0.f, 1.f, 0.f, 1.f}, 0, 2});
+
+    ImageMap::OrthographicProjection projection;
+    projection.center        = Vec3d::Zero();
+    projection.normal        = Vec3d::UnitZ();
+    projection.up            = Vec3d::UnitY();
+    projection.width_mm      = 4.0;
+    projection.height_mm     = 4.0;
+    projection.max_depth_mm  = 1.0;
+    projection.seed_triangle = 0;
+
+    ImageMap::VolumeData data;
+    const ImageMap::ProjectionResult result =
+        ImageMap::append_orthographic_projection(mesh, std::move(texture), std::move(zone), projection, data);
+    REQUIRE(result);
+    CHECK(result.projected_triangle_count == 2);
+    REQUIRE(data.validate(mesh).valid);
+    REQUIRE(data.triangle_bindings.size() == 2);
+    CHECK(data.triangle_bindings.front().source.wrap_u == ImageMap::WrapMode::Transparent);
+    CHECK(data.triangle_bindings.front().source.wrap_v == ImageMap::WrapMode::Transparent);
+    CHECK(data.triangle_bindings.front().source.uvs[0].x() == Approx(-0.75f));
+    CHECK(data.triangle_bindings.front().source.uvs[0].y() == Approx(-0.75f));
+    CHECK(data.triangle_bindings.front().source.uvs[2].x() == Approx(1.75f));
+    CHECK(data.triangle_bindings.front().source.uvs[2].y() == Approx(1.75f));
+
+    ImageMap::TextureAsset second_texture{"projection-two", "second.png", 1, 1, {0, 0, 255, 255}};
+    ImageMap::Zone         second_zone;
+    second_zone.stable_id                = "projected-zone-two";
+    second_zone.display_name             = "second.png";
+    second_zone.render_mode              = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+    second_zone.adaptive_modulation_mode = ImageMap::AdaptiveModulationMode::LocalZHeight;
+    second_zone.palette.push_back({RGBA{0.f, 0.f, 1.f, 1.f}, 42, 5});
+    projection.flip_horizontal = true;
+    projection.flip_vertical   = true;
+    const ImageMap::ProjectionResult second_result =
+        ImageMap::append_orthographic_projection(mesh, std::move(second_texture), std::move(second_zone), projection, data);
+    REQUIRE(second_result);
+    REQUIRE(data.zones.size() == 2);
+    REQUIRE(data.texture_assets.size() == 2);
+    REQUIRE(data.triangle_bindings.size() == 4);
+    CHECK(data.triangle_bindings[2].source.uvs[0].x() == Approx(1.75f));
+    CHECK(data.triangle_bindings[2].source.uvs[0].y() == Approx(1.75f));
+
+    REQUIRE(ImageMap::remove_zone(data, "projected-zone"));
+    REQUIRE(data.validate(mesh).valid);
+    REQUIRE(data.zones.size() == 1);
+    CHECK(data.zones.front().stable_id == "projected-zone-two");
+    CHECK(data.zones.front().display_name == "second.png");
+    CHECK(data.zones.front().render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles);
+    CHECK(data.zones.front().adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::LocalZHeight);
+    REQUIRE(data.texture_assets.size() == 1);
+    CHECK(data.texture_assets.front().stable_id == "projection-two");
+    REQUIRE(data.triangle_bindings.size() == 2);
+    CHECK(std::all_of(data.triangle_bindings.begin(), data.triangle_bindings.end(), [](const ImageMap::TriangleBinding& binding) {
+        return binding.zone_index == 0 && binding.source.texture_asset_index == 0;
+    }));
+    CHECK_FALSE(ImageMap::remove_zone(data, "missing-zone"));
+}
+
+TEST_CASE("Projected texture borders preserve their background color", "[ImageMap][Projection][Sampling]")
+{
+    ImageMap::VolumeData data;
+    data.texture_assets.push_back({"projection", "projection.png", 1, 1, {255, 0, 0, 255}});
+    ImageMap::TriangleBinding binding;
+    binding.source.kind                = ImageMap::SourceKind::Texture;
+    binding.source.texture_asset_index = 0;
+    binding.source.wrap_u              = ImageMap::WrapMode::Transparent;
+    binding.source.wrap_v              = ImageMap::WrapMode::Transparent;
+    binding.source.uvs                 = {Vec2f(-1.f, 0.5f), Vec2f(-1.f, 0.5f), Vec2f(-1.f, 0.5f)};
+    binding.source.corner_colors       = {RGBA{0.f, 0.f, 1.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f}};
+
+    const RGBA outside = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(outside[0] == Approx(0.f));
+    CHECK(outside[1] == Approx(0.f));
+    CHECK(outside[2] == Approx(1.f));
+    CHECK(ImageMap::sample_source_opacity(data, binding, Vec3f(1.f, 0.f, 0.f)) == Approx(0.f));
+
+    binding.source.uvs = {Vec2f(1.f, 0.5f), Vec2f(1.f, 0.5f), Vec2f(1.f, 0.5f)};
+    const RGBA edge = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(edge[0] == Approx(1.f));
+    CHECK(edge[2] == Approx(0.f));
+    CHECK(ImageMap::sample_source_opacity(data, binding, Vec3f(1.f, 0.f, 0.f)) == Approx(1.f));
+}
+
+TEST_CASE("Per-image processing preserves neutral samples and boosts tones and edges", "[ImageMap][Sampling][ImageProcessing]")
+{
+    ImageMap::VolumeData data;
+    data.texture_assets.push_back({"processing", "processing.png", 3, 1,
+                                   {0, 0, 0, 255, 128, 128, 128, 255, 192, 192, 192, 255}});
+    data.zones.emplace_back();
+    ImageMap::TriangleBinding binding;
+    binding.zone_index                 = 0;
+    binding.source.kind                = ImageMap::SourceKind::Texture;
+    binding.source.texture_asset_index = 0;
+    binding.source.wrap_u              = ImageMap::WrapMode::Clamp;
+    binding.source.wrap_v              = ImageMap::WrapMode::Clamp;
+    binding.source.uvs                 = {Vec2f(0.5f, 0.5f), Vec2f(0.5f, 0.5f), Vec2f(0.5f, 0.5f)};
+
+    const RGBA neutral = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(neutral[0] == Approx(128.f / 255.f));
+    CHECK(neutral[1] == Approx(neutral[0]));
+    CHECK(neutral[2] == Approx(neutral[0]));
+
+    data.zones[0].image_edge_boost_percent = 100.f;
+    const RGBA sharpened = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(sharpened[0] > neutral[0] + 0.05f);
+
+    data.zones[0].image_edge_boost_percent = 0.f;
+    data.zones[0].image_exposure_ev        = 1.f;
+    const RGBA exposed = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(exposed[0] == Approx(1.f).margin(0.01f));
+
+    data.zones[0].image_exposure_ev       = 0.f;
+    data.zones[0].image_contrast_percent = 200.f;
+    binding.source.uvs = {Vec2f(1.f, 0.5f), Vec2f(1.f, 0.5f), Vec2f(1.f, 0.5f)};
+    const RGBA contrasted = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(contrasted[0] == Approx(1.f));
+
+    data.texture_assets[0].rgba = {0, 0, 0, 255, 128, 64, 32, 255, 192, 192, 192, 255};
+    data.zones[0].image_contrast_percent   = 100.f;
+    data.zones[0].image_saturation_percent = 0.f;
+    binding.source.uvs = {Vec2f(0.5f, 0.5f), Vec2f(0.5f, 0.5f), Vec2f(0.5f, 0.5f)};
+    const RGBA grayscale = ImageMap::sample_source(data, binding, Vec3f(1.f, 0.f, 0.f));
+    CHECK(grayscale[0] == Approx(grayscale[1]));
+    CHECK(grayscale[1] == Approx(grayscale[2]));
+
+    data.zones[0].tone_gamma                = 2.f;
+    data.zones[0].overhang_contrast_percent = 100.f;
+    const RGBA gamma_adjusted = ImageMap::adjusted_modulation_target_color(RGBA{0.25f, 0.25f, 0.25f, 1.f}, data.zones[0]);
+    CHECK(gamma_adjusted[0] == Approx(0.5f));
+
+    data.zones[0].overhang_contrast_percent = 200.f;
+    std::vector<double> component_weights{0.25, 0.75};
+    ImageMap::apply_modulation_component_contrast(component_weights, data.zones[0]);
+    CHECK(component_weights[0] == Approx(0.0));
+    CHECK(component_weights[1] == Approx(1.0));
+}
+
+TEST_CASE("Orthographic image projection stays on the clicked connected surface", "[ImageMap][Projection]")
+{
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(-1.f, -1.f, 0.f), Vec3f(1.f, -1.f, 0.f), Vec3f(0.f, 1.f, 0.f),
+                    Vec3f(-1.f, -1.f, -0.2f), Vec3f(1.f, -1.f, -0.2f), Vec3f(0.f, 1.f, -0.2f)};
+    its.indices.emplace_back(0, 1, 2);
+    its.indices.emplace_back(3, 4, 5);
+    TriangleMesh mesh(std::move(its));
+
+    ImageMap::TextureAsset texture{"projection", "projection.png", 1, 1, {255, 0, 0, 255}};
+    ImageMap::Zone         zone;
+    zone.stable_id = "projected-zone";
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+
+    ImageMap::OrthographicProjection projection;
+    projection.normal        = Vec3d::UnitZ();
+    projection.up            = Vec3d::UnitY();
+    projection.width_mm      = 4.0;
+    projection.height_mm     = 4.0;
+    projection.max_depth_mm  = 1.0;
+    projection.seed_triangle = 0;
+
+    ImageMap::VolumeData data;
+    const ImageMap::ProjectionResult result =
+        ImageMap::append_orthographic_projection(mesh, std::move(texture), std::move(zone), projection, data);
+    REQUIRE(result);
+    CHECK(result.projected_triangle_count == 1);
+    REQUIRE(data.triangle_bindings.size() == 1);
+    CHECK(data.triangle_bindings.front().triangle_index == 0);
+}
+
+TEST_CASE("GLB image-map import preserves embedded textures and printable units", "[ImageMap][Assimp][GLB]")
+{
+    const boost::filesystem::path directory = boost::filesystem::temp_directory_path() /
+                                              boost::filesystem::unique_path("fs-glb-image-map-%%%%-%%%%");
+    REQUIRE(boost::filesystem::create_directories(directory));
+    struct RemoveTemporaryDirectory
+    {
+        boost::filesystem::path path;
+        ~RemoveTemporaryDirectory() { boost::filesystem::remove_all(path); }
+    } remove_temporary_directory{directory};
+
+    const boost::filesystem::path texture_path = directory / "embedded.png";
+    REQUIRE(png::write_rgb_to_file(texture_path.string(), 1, 1, std::vector<uint8_t>{25, 125, 225}));
+    boost::nowide::ifstream    texture_input(texture_path.string(), std::ios::binary);
+    const std::vector<uint8_t> png_bytes((std::istreambuf_iterator<char>(texture_input)), std::istreambuf_iterator<char>());
+    REQUIRE_FALSE(png_bytes.empty());
+
+    const boost::filesystem::path glb_path = directory / "triangle.glb";
+    REQUIRE(write_textured_triangle_glb(glb_path, png_bytes));
+
+    Model       model;
+    ObjInfo     info;
+    std::string message;
+    REQUIRE(load_assimp_color_mesh(glb_path.string().c_str(), &model, info, message));
+    CHECK(message.empty());
+    CHECK(info.source_format == "GLB");
+    REQUIRE(model.objects.size() == 1);
+    REQUIRE(model.objects.front()->volumes.size() == 1);
+    const TriangleMesh& mesh = model.objects.front()->volumes.front()->mesh();
+    REQUIRE(mesh.its.vertices.size() == 3);
+    REQUIRE(mesh.its.indices.size() == 1);
+    const BoundingBoxf3 bounds = mesh.bounding_box();
+    CHECK(bounds.size().x() == Approx(10.f));
+    CHECK(bounds.size().z() == Approx(10.f));
+    CHECK(bounds.size().y() == Approx(0.f));
+    REQUIRE(info.triangle_uvs_valid == std::vector<uint8_t>{1});
+    REQUIRE(info.triangle_texture_files.size() == 1);
+    REQUIRE(info.embedded_textures.size() == 1);
+    const auto& texture = info.embedded_textures.begin()->second;
+    CHECK(texture.display_name == "embedded.png");
+    CHECK(texture.width == 1);
+    CHECK(texture.height == 1);
+    CHECK(texture.rgba == std::vector<uint8_t>{25, 125, 225, 255});
+
+    ObjImageMapSamplePlan plan;
+    REQUIRE(build_obj_image_map_sample_plan(mesh, info, 1.f, 32, plan));
+    CHECK(plan.loaded_texture_count == 1);
+    CHECK(plan.textured_triangle_count == 1);
+    REQUIRE_FALSE(plan.colors.empty());
+    CHECK(plan.colors.front()[0] == Approx(25.f / 255.f));
+    CHECK(plan.colors.front()[1] == Approx(125.f / 255.f));
+    CHECK(plan.colors.front()[2] == Approx(225.f / 255.f));
+
+    ImageMap::Zone zone;
+    zone.stable_id = "glb-test-zone";
+    zone.palette.push_back({plan.colors.front(), 0, 1});
+    ImageMap::VolumeData data;
+    REQUIRE(build_obj_image_map_volume_data(mesh, info, ObjColorImportSource::ImageTexture, {}, std::move(zone), data));
+    REQUIRE(data.texture_assets.size() == 1);
+    CHECK(data.texture_assets.front().rgba == std::vector<uint8_t>{25, 125, 225, 255});
+
+    bool             callback_called = false;
+    ObjImportColorFn color_callback  = [&callback_called](std::vector<RGBA>& colors, bool, std::vector<unsigned char>& filament_ids,
+                                                         unsigned char&, ObjColorImportContext& context) {
+        callback_called = true;
+        CHECK(context.source == ObjColorImportSource::ImageTexture);
+        CHECK(context.mode == ObjColorImportMode::ImageMap);
+        REQUIRE_FALSE(colors.empty());
+        filament_ids.assign(colors.size(), 1);
+        context.image_map_render_mode              = ObjImageMapRenderMode::PerimeterModulationV2;
+        context.image_map_palette_colors           = {colors.front()};
+        context.image_map_palette_filament_ids     = {1};
+        context.image_map_palette_mixed_stable_ids = {0};
+    };
+    Model routed_model = Model::read_from_file(glb_path.string(), nullptr, nullptr, LoadStrategy::AddDefaultInstances, nullptr, nullptr,
+                                               nullptr, nullptr, nullptr, nullptr, nullptr, 0, color_callback);
+    CHECK(callback_called);
+    REQUIRE(routed_model.objects.size() == 1);
+    REQUIRE(routed_model.objects.front()->volumes.size() == 1);
+    REQUIRE(routed_model.objects.front()->volumes.front()->has_image_map_data());
+    REQUIRE(routed_model.objects.front()->volumes.front()->image_map_data()->zones.size() == 1);
+    CHECK(routed_model.objects.front()->volumes.front()->image_map_data()->zones.front().render_mode ==
+          ImageMap::RenderMode::PerimeterModulationV2);
+}
+
+TEST_CASE("PLY vertex colors enter the shared image-map workflow without axis conversion", "[ImageMap][Assimp][PLY]")
+{
+    const boost::filesystem::path directory = boost::filesystem::temp_directory_path() /
+                                              boost::filesystem::unique_path("fs-ply-image-map-%%%%-%%%%");
+    REQUIRE(boost::filesystem::create_directories(directory));
+    struct RemoveTemporaryDirectory
+    {
+        boost::filesystem::path path;
+        ~RemoveTemporaryDirectory() { boost::filesystem::remove_all(path); }
+    } remove_temporary_directory{directory};
+
+    const boost::filesystem::path ply_path = directory / "triangle.ply";
+    boost::nowide::ofstream       output(ply_path.string(), std::ios::binary);
+    output << "ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar alpha\n"
+              "element face 1\nproperty list uchar int vertex_indices\nend_header\n"
+              "0 0 0 255 0 0 255\n10 0 0 0 255 0 255\n0 10 0 0 0 255 255\n3 0 1 2\n";
+    output.close();
+    REQUIRE(output.good());
+
+    Model       model;
+    ObjInfo     info;
+    std::string message;
+    REQUIRE(load_assimp_color_mesh(ply_path.string().c_str(), &model, info, message));
+    CHECK(message.empty());
+    CHECK(info.source_format == "PLY");
+    REQUIRE(model.objects.size() == 1);
+    REQUIRE(model.objects.front()->volumes.size() == 1);
+    const TriangleMesh& mesh   = model.objects.front()->volumes.front()->mesh();
+    const BoundingBoxf3 bounds = mesh.bounding_box();
+    CHECK(bounds.size().x() == Approx(10.f));
+    CHECK(bounds.size().y() == Approx(10.f));
+    CHECK(bounds.size().z() == Approx(0.f));
+    REQUIRE(info.vertex_colors.size() == 3);
+    CHECK(info.vertex_colors[0] == RGBA{1.f, 0.f, 0.f, 1.f});
+    CHECK(info.vertex_colors[1] == RGBA{0.f, 1.f, 0.f, 1.f});
+    CHECK(info.vertex_colors[2] == RGBA{0.f, 0.f, 1.f, 1.f});
+    CHECK(info.face_colors.empty());
+
+    ImageMap::Zone zone;
+    zone.stable_id = "ply-test-zone";
+    zone.palette.push_back({info.vertex_colors.front(), 0, 1});
+    ImageMap::VolumeData data;
+    REQUIRE(build_obj_image_map_volume_data(mesh, info, ObjColorImportSource::VertexColors, {}, std::move(zone), data));
+    REQUIRE(data.triangle_bindings.size() == 1);
+    CHECK(data.triangle_bindings.front().source.kind == ImageMap::SourceKind::VertexColors);
+    CHECK(data.triangle_bindings.front().source.corner_colors[0] == RGBA{1.f, 0.f, 0.f, 1.f});
+    CHECK(data.triangle_bindings.front().source.corner_colors[1] == RGBA{0.f, 1.f, 0.f, 1.f});
+    CHECK(data.triangle_bindings.front().source.corner_colors[2] == RGBA{0.f, 0.f, 1.f, 1.f});
+}
 
 TEST_CASE("BBS 3MF round trip restores image maps after creating model volumes", "[3mf][ImageMap]")
 {
@@ -50,6 +497,19 @@ TEST_CASE("BBS 3MF round trip restores image maps after creating model volumes",
     zone.stable_id   = "roundtrip-zone";
     zone.display_name = "Round-trip image map";
     zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.color_mix_model = ImageMap::ColorMixModel::FilamentMixer;
+    zone.synchronize_whole_object_cadence = true;
+    zone.modulation_sample_spacing_mm      = 0.02f;
+    zone.disable_broad_path_smoothing      = true;
+    zone.gaussian_smoothing_strength       = 0.75f;
+    zone.first_path_smoothing_strength     = 0.5f;
+    zone.second_path_smoothing_strength    = 0.25f;
+    zone.tone_gamma                        = 1.2f;
+    zone.overhang_contrast_percent         = 135.f;
+    zone.image_exposure_ev                 = 0.7f;
+    zone.image_contrast_percent            = 145.f;
+    zone.image_saturation_percent          = 80.f;
+    zone.image_edge_boost_percent          = 175.f;
     zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
     data.zones.push_back(std::move(zone));
     ImageMap::TriangleBinding binding;
@@ -57,6 +517,8 @@ TEST_CASE("BBS 3MF round trip restores image maps after creating model volumes",
     binding.zone_index                 = 0;
     binding.source.kind                = ImageMap::SourceKind::Texture;
     binding.source.texture_asset_index = 0;
+    binding.source.wrap_u              = ImageMap::WrapMode::Transparent;
+    binding.source.wrap_v              = ImageMap::WrapMode::Transparent;
     binding.source.uvs                 = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
     data.triangle_bindings.push_back(binding);
     REQUIRE(source_volume->set_image_map_data(std::move(data)));
@@ -87,10 +549,26 @@ TEST_CASE("BBS 3MF round trip restores image maps after creating model volumes",
     CHECK(imported_volume->image_map_data()->texture_assets.front().rgba ==
           std::vector<uint8_t>{12, 34, 56, 255, 210, 180, 90, 255});
     REQUIRE(imported_volume->image_map_data()->zones.size() == 1);
+    CHECK(imported_volume->image_map_data()->zones.front().display_name == "Round-trip image map");
     CHECK(imported_volume->image_map_data()->zones.front().render_mode == ImageMap::RenderMode::PerimeterModulationV2);
+    CHECK(imported_volume->image_map_data()->zones.front().color_mix_model == ImageMap::ColorMixModel::FilamentMixer);
+    CHECK(imported_volume->image_map_data()->zones.front().synchronize_whole_object_cadence);
+    CHECK(imported_volume->image_map_data()->zones.front().modulation_sample_spacing_mm == Approx(0.02f));
+    CHECK(imported_volume->image_map_data()->zones.front().disable_broad_path_smoothing);
+    CHECK(imported_volume->image_map_data()->zones.front().gaussian_smoothing_strength == Approx(0.75f));
+    CHECK(imported_volume->image_map_data()->zones.front().first_path_smoothing_strength == Approx(0.5f));
+    CHECK(imported_volume->image_map_data()->zones.front().second_path_smoothing_strength == Approx(0.25f));
+    CHECK(imported_volume->image_map_data()->zones.front().tone_gamma == Approx(1.2f));
+    CHECK(imported_volume->image_map_data()->zones.front().overhang_contrast_percent == Approx(135.f));
+    CHECK(imported_volume->image_map_data()->zones.front().image_exposure_ev == Approx(0.7f));
+    CHECK(imported_volume->image_map_data()->zones.front().image_contrast_percent == Approx(145.f));
+    CHECK(imported_volume->image_map_data()->zones.front().image_saturation_percent == Approx(80.f));
+    CHECK(imported_volume->image_map_data()->zones.front().image_edge_boost_percent == Approx(175.f));
     REQUIRE(imported_volume->image_map_data()->zones.front().palette.size() == 1);
     CHECK(imported_volume->image_map_data()->zones.front().palette.front().target_color == RGBA{1.f, 0.f, 0.f, 1.f});
     REQUIRE(imported_volume->image_map_data()->triangle_bindings.size() == 1);
+    CHECK(imported_volume->image_map_data()->triangle_bindings.front().source.wrap_u == ImageMap::WrapMode::Transparent);
+    CHECK(imported_volume->image_map_data()->triangle_bindings.front().source.wrap_v == ImageMap::WrapMode::Transparent);
     CHECK(imported_volume->image_map_data()->triangle_bindings.front().source.uvs ==
           std::array<Vec2f, 3>{Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)});
 }
@@ -171,42 +649,148 @@ TEST_CASE("Continuous image-map colors solve physical filament weights without a
     CHECK(blue[0] == Approx(0.0));
     CHECK(blue[1] == Approx(1.0));
 
+    const std::vector<double> red_exposure = solver.solve_modulation(RGBA{1.f, 0.f, 0.f, 1.f});
+    REQUIRE(red_exposure.size() == 2);
+    CHECK(red_exposure[0] == Approx(1.0));
+    CHECK(red_exposure[1] == Approx(0.0));
+
     const std::vector<double> purple = solver.solve(RGBA{0.5f, 0.f, 0.5f, 1.f});
     REQUIRE(purple.size() == 2);
     CHECK(purple[0] > 0.0);
     CHECK(purple[1] > 0.0);
     CHECK(purple[0] + purple[1] == Approx(1.0));
+    const std::optional<RGBA> reconstructed_purple = solver.predict_weights(purple);
+    REQUIRE(reconstructed_purple);
+
+    SECTION("five-bit texture lookups are stable and reusable")
+    {
+        const RGBA target{0.517f, 0.021f, 0.483f, 1.f};
+        const std::vector<double> first  = solver.solve_quantized_5bit(target);
+        const std::vector<double> second = solver.solve_quantized_5bit(target);
+        REQUIRE(first.size() == 2);
+        CHECK(second == first);
+        CHECK(first[0] + first[1] == Approx(1.0));
+    }
+
+    SECTION("candidate mixing model is selectable per image map")
+    {
+        const std::vector<ImageMap::ContinuousColorComponent> components{{"#E6007E", std::nullopt, std::nullopt},
+                                                                          {"#00AEEF", std::nullopt, std::nullopt},
+                                                                          {"#F4E842", std::nullopt, std::nullopt}};
+        ImageMap::ContinuousColorSolver ks_solver(components, ImageMap::ColorMixModel::FullSpectrumKmKs);
+        ImageMap::ContinuousColorSolver filament_mixer_solver(components, ImageMap::ColorMixModel::FilamentMixer);
+        REQUIRE(ks_solver.valid());
+        REQUIRE(filament_mixer_solver.valid());
+        CHECK(ks_solver.candidate_count() == filament_mixer_solver.candidate_count());
+
+        const RGBA target{0.38f, 0.22f, 0.62f, 1.f};
+        const std::optional<RGBA> ks_prediction             = ks_solver.predict_color(target);
+        const std::optional<RGBA> filament_mixer_prediction = filament_mixer_solver.predict_color(target);
+        REQUIRE(ks_prediction);
+        REQUIRE(filament_mixer_prediction);
+        auto distance = [](const RGBA& lhs, const RGBA& rhs) {
+            double squared = 0.0;
+            for (size_t channel = 0; channel < 3; ++channel)
+                squared += std::pow(double(lhs[channel]) - double(rhs[channel]), 2.0);
+            return std::sqrt(squared);
+        };
+        CHECK(distance(*ks_prediction, *filament_mixer_prediction) > 0.005);
+    }
+
+    SECTION("closest-mixture exposure preserves an exact neutral component")
+    {
+        ImageMap::ContinuousColorSolver cmy_gray_solver({{"#FF0080", std::nullopt, std::nullopt},
+                                                          {"#F9ED3D", std::nullopt, std::nullopt},
+                                                          {"#A3A3A3", std::nullopt, std::nullopt},
+                                                          {"#08ABFB", std::nullopt, std::nullopt}});
+        REQUIRE(cmy_gray_solver.valid());
+        const std::vector<double> gray = cmy_gray_solver.solve(RGBA{163.f / 255.f, 163.f / 255.f, 163.f / 255.f, 1.f});
+        REQUIRE(gray.size() == 4);
+        CHECK(gray[0] == Approx(0.0));
+        CHECK(gray[1] == Approx(0.0));
+        CHECK(gray[2] == Approx(1.0));
+        CHECK(gray[3] == Approx(0.0));
+    }
+
+    SECTION("adaptive recipes choose the smallest useful physical subset")
+    {
+        const std::vector<ImageMap::ContinuousColorComponent> components{{"#FF0080", std::nullopt, std::nullopt},
+                                                                          {"#F9ED3D", std::nullopt, std::nullopt},
+                                                                          {"#A3A3A3", std::nullopt, std::nullopt},
+                                                                          {"#08ABFB", std::nullopt, std::nullopt}};
+        ImageMap::ContinuousColorRecipeSolver recipe_solver(components, 4);
+        REQUIRE(recipe_solver.valid());
+
+        ColorRGB purple_rgb;
+        const std::optional<std::string> purple_hex = full_spectrum_ks_blend_color_multi(
+            std::vector<std::pair<std::string, int>>{{components[0].color_hex, 75}, {components[3].color_hex, 25}});
+        REQUIRE(purple_hex);
+        REQUIRE(decode_color(*purple_hex, purple_rgb));
+        const ImageMap::ContinuousColorRecipe purple =
+            recipe_solver.solve(RGBA{purple_rgb.r(), purple_rgb.g(), purple_rgb.b(), 1.f}, 15);
+        REQUIRE(purple.valid());
+        CHECK(purple.component_indices == std::vector<size_t>{0, 3});
+        CHECK(purple.component_percents.size() == 2);
+        CHECK(std::accumulate(purple.component_percents.begin(), purple.component_percents.end(), 0) == 100);
+        CHECK(purple.layer_sequence == purple.component_indices);
+        CHECK(purple.layer_sequence == std::vector<size_t>{0, 3});
+        CHECK(purple.component_percents[0] > purple.component_percents[1]);
+        for (size_t layer = 1; layer < 12; ++layer) {
+            const std::optional<size_t> previous = purple.component_index_for_layer(layer - 1);
+            const std::optional<size_t> current  = purple.component_index_for_layer(layer);
+            REQUIRE(previous);
+            REQUIRE(current);
+            CHECK(*previous != *current);
+        }
+
+        const ImageMap::ContinuousColorRecipe gray = recipe_solver.solve(RGBA{163.f / 255.f, 163.f / 255.f, 163.f / 255.f, 1.f}, 15);
+        REQUIRE(gray.valid());
+        CHECK(gray.component_indices == std::vector<size_t>{2});
+        CHECK(gray.layer_sequence == std::vector<size_t>{2});
+    }
 
     const std::optional<RGBA> predicted_purple = solver.predict_color(RGBA{0.5f, 0.f, 0.5f, 0.75f});
     REQUIRE(predicted_purple);
     CHECK((*predicted_purple)[3] == Approx(0.75f));
 
-    SECTION("perimeter projection does not amplify imperceptible texture changes")
+    SECTION("perimeter projection uses the closest compact physical recipe")
     {
+        const std::vector<double> reconstructed = ImageMap::compact_modulation_weights({0.55, 0.45, 0.0, 0.0});
+        REQUIRE(reconstructed.size() == 4);
+        CHECK(reconstructed[0] == Approx(1.0));
+        CHECK(reconstructed[1] == Approx(0.45 / 0.55));
+        CHECK(reconstructed[2] == Approx(0.0));
+        CHECK(reconstructed[3] == Approx(0.0));
+
         ImageMap::ContinuousColorSolver cmy_solver({{"#FF0080", std::nullopt, std::nullopt},
                                                      {"#F9ED3D", std::nullopt, std::nullopt},
-                                                     {"#08ABFB", std::nullopt, std::nullopt}}, true);
+                                                     {"#A3A3A3", std::nullopt, std::nullopt},
+                                                     {"#08ABFB", std::nullopt, std::nullopt}});
         REQUIRE(cmy_solver.valid());
-        const RGBA             first{0.961259f, 0.0602889f, 0.230826f, 1.f};
-        const RGBA             second{0.96146f, 0.0617287f, 0.233602f, 1.f};
-        const std::vector<int> base_percents{34, 33, 33};
-        const std::vector<float> nearest_first =
-            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve(first), 0.4f);
-        const std::vector<float> nearest_second =
-            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve(second), 0.4f);
-        const std::vector<float> modulation_first =
-            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve_modulation(first), 0.4f);
-        const std::vector<float> modulation_second =
-            mixed_filament_surface_offsets_for_apparent_weights(base_percents, cmy_solver.solve_modulation(second), 0.4f);
-        REQUIRE(nearest_first.size() == 3);
-        REQUIRE(nearest_second.size() == 3);
-        REQUIRE(modulation_first.size() == 3);
-        REQUIRE(modulation_second.size() == 3);
-        CHECK(std::abs(nearest_first[0] - nearest_second[0]) > 0.03f);
-        CHECK(std::abs(modulation_first[0] - modulation_second[0]) < 0.005f);
+        const std::optional<std::string> target_hex = full_spectrum_ks_blend_color_multi(
+            std::vector<std::pair<std::string, int>>{{"#FF0080", 65}, {"#F9ED3D", 20}, {"#A3A3A3", 10}, {"#08ABFB", 5}});
+        REQUIRE(target_hex);
+        ColorRGB target_rgb;
+        REQUIRE(decode_color(*target_hex, target_rgb));
+        const RGBA target{target_rgb.r(), target_rgb.g(), target_rgb.b(), 0.75f};
 
-        const std::optional<RGBA> modulation_preview = cmy_solver.predict_modulation_color(RGBA{first[0], first[1], first[2], 0.75f});
+        const std::vector<double> recipe = cmy_solver.solve(target);
+        const std::vector<double> exposure = cmy_solver.solve_modulation(target);
+        REQUIRE(recipe.size() == 4);
+        REQUIRE(exposure.size() == recipe.size());
+        const double strongest_recipe = *std::max_element(recipe.begin(), recipe.end());
+        REQUIRE(strongest_recipe > 0.0);
+        CHECK(*std::max_element(exposure.begin(), exposure.end()) == Approx(1.0));
+        for (size_t component_idx = 0; component_idx < recipe.size(); ++component_idx)
+            CHECK(exposure[component_idx] == Approx(recipe[component_idx] / strongest_recipe));
+
+        const std::optional<RGBA> nearest_preview    = cmy_solver.predict_color(target);
+        const std::optional<RGBA> modulation_preview = cmy_solver.predict_modulation_color(target);
+        REQUIRE(nearest_preview);
         REQUIRE(modulation_preview);
+        CHECK((*modulation_preview)[0] == Approx((*nearest_preview)[0]));
+        CHECK((*modulation_preview)[1] == Approx((*nearest_preview)[1]));
+        CHECK((*modulation_preview)[2] == Approx((*nearest_preview)[2]));
         CHECK((*modulation_preview)[3] == Approx(0.75f));
     }
 
@@ -225,7 +809,7 @@ TEST_CASE("Continuous image-map colors solve physical filament weights without a
     CHECK((*predicted_purple)[2] == Approx(expected_rgb.b()));
 }
 
-TEST_CASE("Simple perimeter modulation selects only source-relevant physical filaments", "[ImageMap][ColorSolver][PerimeterModulation]")
+TEST_CASE("Simple perimeter modulation preserves its automatic physical palette", "[ImageMap][ColorSolver][PerimeterModulation]")
 {
     struct ColorEngineRestore
     {
@@ -246,9 +830,14 @@ TEST_CASE("Simple perimeter modulation selects only source-relevant physical fil
         RGBA{0.f, 0.f, 1.f, 1.f},
     };
 
-    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 0, 0.15) == std::vector<size_t>{0, 2});
-    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 3, 0.15).size() == 3);
-    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 4, 0.15) == std::vector<size_t>{0, 1, 2, 3});
+    // Automatic mode deliberately retains the white component even though the
+    // representative colors use only red and blue. A texture may contain a
+    // large neutral/background region outside that bounded representative set,
+    // and dropping white would turn it into alternating RGB layer stripes.
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source) == std::vector<size_t>{0, 1, 2, 3});
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 2) == std::vector<size_t>{0, 2});
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 3).size() == 3);
+    CHECK(ImageMap::select_continuous_color_components(components, red_blue_source, 4) == std::vector<size_t>{0, 1, 2, 3});
     CHECK(ImageMap::continuous_color_solver_max_component_count() >= 4);
 }
 
@@ -670,6 +1259,103 @@ TEST_CASE("Image-map sources are sampled and rasterized only for the current sli
     CHECK_FALSE(rasterized.facets.front().encoded_states.empty());
 }
 
+TEST_CASE("Large low-poly image-map faces reach the configured spatial resolution", "[ImageMap][FacetRasterizer][Projection]")
+{
+    indexed_triangle_set its;
+    its.vertices = {Vec3f(0.f, 0.f, 0.f), Vec3f(100.f, 0.f, 0.f), Vec3f(0.f, 100.f, 0.f)};
+    its.indices.emplace_back(0, 1, 2);
+    TriangleMesh mesh(std::move(its));
+
+    ImageMap::VolumeData data;
+    data.topology_fingerprint = ImageMap::topology_fingerprint(mesh);
+    data.texture_assets.push_back({"large-face", "large-face", 1, 1, {0, 255, 0, 255}});
+    ImageMap::Zone zone;
+    zone.stable_id             = "large-face-zone";
+    zone.target_sample_size_mm = 0.4f;
+    zone.max_facet_samples     = 200'000;
+    zone.palette.push_back({RGBA{0.f, 1.f, 0.f, 1.f}, 0, 2});
+    data.zones.push_back(zone);
+    ImageMap::TriangleBinding binding;
+    binding.triangle_index             = 0;
+    binding.source.kind                = ImageMap::SourceKind::Texture;
+    binding.source.texture_asset_index = 0;
+    binding.source.uvs                 = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
+    data.triangle_bindings.push_back(binding);
+    REQUIRE(data.validate(mesh).valid);
+
+    const ImageMap::FacetRasterization rasterized =
+        ImageMap::rasterize_facets(mesh, data, 1, [](const ImageMap::PaletteEntry& entry) { return entry.fallback_filament_id; });
+    CHECK(rasterized.sampled_leaf_count == 65'536);
+    CHECK(rasterized.sampled_leaf_count <= zone.max_facet_samples);
+    REQUIRE(rasterized.facets.size() == 1);
+    CHECK_FALSE(rasterized.facets.front().encoded_states.empty());
+}
+
+TEST_CASE("Adaptive image-map regions suppress isolated material cells", "[ImageMap][FacetRasterizer][Adaptive]")
+{
+    SECTION("a single sibling outlier is merged into its surrounding region")
+    {
+        std::vector<unsigned int> ids{3, 3, 2, 3};
+        ImageMap::stabilize_adaptive_region_ids(ids, 1, 3);
+        CHECK(ids == std::vector<unsigned int>{3, 3, 3, 3});
+    }
+
+    SECTION("an established two-by-two boundary is preserved")
+    {
+        std::vector<unsigned int> ids{2, 2, 3, 3};
+        ImageMap::stabilize_adaptive_region_ids(ids, 1, 3);
+        CHECK(ids == std::vector<unsigned int>{2, 2, 3, 3});
+    }
+
+    SECTION("a one-cell-wide streak is removed at the next parent level")
+    {
+        std::vector<unsigned int> ids{2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3};
+        ImageMap::stabilize_adaptive_region_ids(ids, 2, 3);
+        CHECK(std::count(ids.begin(), ids.end(), 2u) == 0);
+        CHECK(std::count(ids.begin(), ids.end(), 3u) == 16);
+    }
+
+    SECTION("a balanced printable boundary is preserved")
+    {
+        std::vector<unsigned int> ids{2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3};
+        ImageMap::stabilize_adaptive_region_ids(ids, 2, 3);
+        CHECK(std::count(ids.begin(), ids.end(), 2u) == 8);
+        CHECK(std::count(ids.begin(), ids.end(), 3u) == 8);
+    }
+
+    SECTION("uniform adaptive facets do not retain a fully subdivided tree")
+    {
+        indexed_triangle_set its;
+        its.vertices = {Vec3f(0.f, 0.f, 0.f), Vec3f(4.f, 0.f, 0.f), Vec3f(0.f, 4.f, 0.f)};
+        its.indices.emplace_back(0, 1, 2);
+        TriangleMesh mesh(std::move(its));
+
+        ImageMap::VolumeData data;
+        data.topology_fingerprint = ImageMap::topology_fingerprint(mesh);
+        data.texture_assets.push_back({"green", "green", 1, 1, {0, 255, 0, 255}});
+        ImageMap::Zone zone;
+        zone.stable_id             = "adaptive-uniform-zone";
+        zone.render_mode           = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+        zone.target_sample_size_mm = 1.5f;
+        zone.max_facet_samples     = 128;
+        zone.palette.push_back({RGBA{0.f, 1.f, 0.f, 1.f}, 0, 2});
+        data.zones.push_back(zone);
+        ImageMap::TriangleBinding binding;
+        binding.triangle_index             = 0;
+        binding.source.kind                = ImageMap::SourceKind::Texture;
+        binding.source.texture_asset_index = 0;
+        binding.source.uvs                 = {Vec2f(0.f, 0.f), Vec2f(1.f, 0.f), Vec2f(0.f, 1.f)};
+        data.triangle_bindings.push_back(binding);
+        REQUIRE(data.validate(mesh).valid);
+
+        const ImageMap::FacetRasterization rasterized =
+            ImageMap::rasterize_facets(mesh, data, 1, [](const ImageMap::PaletteEntry& entry) { return entry.fallback_filament_id; });
+        REQUIRE(rasterized.facets.size() == 1);
+        CHECK(rasterized.sampled_leaf_count == 16);
+        CHECK(rasterized.facets.front().encoded_states == "8");
+    }
+}
+
 TEST_CASE("V2 source sampling retains raw colors independently of its display palette", "[ImageMap][Sampling]")
 {
     indexed_triangle_set its;
@@ -743,8 +1429,12 @@ TEST_CASE("V2 source sampling retains raw colors independently of its display pa
     }
 }
 
-TEST_CASE("Adaptive image maps participate in perimeter modulation ownership", "[ImageMap][PerimeterModulation]")
+TEST_CASE("Adaptive modulation routes only its perimeter mode through XY ownership", "[ImageMap][PerimeterModulation][LocalZ]")
 {
+    ImageMap::AdaptiveModulationMode adaptive_mode;
+    SECTION("perimeter modulation uses XY ownership") { adaptive_mode = ImageMap::AdaptiveModulationMode::Perimeter; }
+    SECTION("Local-Z height modulation bypasses XY ownership") { adaptive_mode = ImageMap::AdaptiveModulationMode::LocalZHeight; }
+
     Model        model;
     ModelObject* object = model.add_object();
     object->add_instance();
@@ -755,13 +1445,16 @@ TEST_CASE("Adaptive image maps participate in perimeter modulation ownership", "
     ImageMap::Zone zone;
     zone.stable_id   = "adaptive-perimeter-zone";
     zone.render_mode = ImageMap::RenderMode::AdaptiveLocalizedCycles;
+    zone.adaptive_modulation_mode = adaptive_mode;
     zone.palette.push_back({RGBA{0.4f, 0.2f, 0.7f, 1.f}, 4242, 5});
     data.zones.push_back(zone);
     data.triangle_bindings.push_back(ImageMap::TriangleBinding{});
     REQUIRE(volume->set_image_map_data(std::move(data)));
 
-    CHECK(ImageMap::model_has_perimeter_modulation(*object));
-    CHECK(ImageMap::model_uses_perimeter_modulation_filament(*object, 4242, 0));
+    CHECK(ImageMap::model_has_perimeter_modulation(*object) ==
+          (adaptive_mode == ImageMap::AdaptiveModulationMode::Perimeter));
+    CHECK(ImageMap::model_uses_perimeter_modulation_filament(*object, 4242, 0) ==
+          (adaptive_mode == ImageMap::AdaptiveModulationMode::Perimeter));
     CHECK_FALSE(ImageMap::model_uses_perimeter_modulation_filament(*object, 9999, 5));
 }
 
@@ -829,15 +1522,14 @@ TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[Image
         });
         REQUIRE(result.changed);
         REQUIRE(result.geometry.size() == 1);
-        const BoundingBox bounds = get_extents(result.geometry);
-        CHECK(unscale<double>(bounds.min.x()) == Approx(0.2).margin(0.01));
-        CHECK(unscale<double>(bounds.min.y()) == Approx(0.2).margin(0.01));
-        CHECK(unscale<double>(bounds.max.x()) == Approx(9.8).margin(0.01));
-        CHECK(unscale<double>(bounds.max.y()) == Approx(9.8).margin(0.01));
+        CHECK_FALSE(result.geometry.front().contains(Point(scale_(0.0), scale_(5.0)), true));
+        CHECK_FALSE(result.geometry.front().contains(Point(scale_(10.0), scale_(5.0)), true));
+        CHECK(result.geometry.front().contains(Point(scale_(0.2), scale_(5.0)), true));
+        CHECK(result.geometry.front().contains(Point(scale_(9.8), scale_(5.0)), true));
         CHECK(result.fallback_polygons == 0);
     }
 
-    SECTION("outward modulation cannot create an acute transition spike")
+    SECTION("negative offsets are clamped and modulation remains inside the authored envelope")
     {
         const ImageMap::BoundaryModulationResult result =
             ImageMap::modulate_boundary({square}, options, [](const Vec2d& point, const Vec2d&) {
@@ -846,13 +1538,195 @@ TEST_CASE("V2 image-map boundary modulation is bounded and corner safe", "[Image
         REQUIRE(result.changed);
         REQUIRE_FALSE(result.geometry.empty());
         const BoundingBox bounds = get_extents(result.geometry);
-        CHECK(unscale<double>(bounds.min.x()) >= -0.36);
-        CHECK(unscale<double>(bounds.min.y()) >= -0.36);
-        CHECK(unscale<double>(bounds.max.x()) <= 10.36);
-        CHECK(unscale<double>(bounds.max.y()) <= 10.36);
+        CHECK(unscale<double>(bounds.min.x()) >= -0.001);
+        CHECK(unscale<double>(bounds.min.y()) >= -0.001);
+        CHECK(unscale<double>(bounds.max.x()) <= 10.001);
+        CHECK(unscale<double>(bounds.max.y()) <= 10.001);
         CHECK(result.sampled_points >= 100);
         CHECK(result.fallback_polygons == 0);
         for (const ExPolygon& polygon : result.geometry)
             CHECK(polygon.is_valid());
     }
+
+    SECTION("ultra detail samples the complete boundary at 0.02 mm")
+    {
+        options.sample_spacing_mm = 0.02f;
+        const ImageMap::BoundaryModulationResult result =
+            ImageMap::modulate_boundary({square}, options, [](const Vec2d& point, const Vec2d&) {
+                return ImageMap::BoundaryDisplacement{point.x() < 5.0 ? 0.f : 0.35f, 0.6f, 0.f, 0.f};
+            });
+        REQUIRE(result.changed);
+        CHECK(result.sampled_points >= 1996);
+        CHECK(result.fallback_polygons == 0);
+    }
+
+    SECTION("centered modulation preserves a thin hollow wall across a hard color transition")
+    {
+        ExPolygon ring = square;
+        ring.holes.emplace_back(Points{Point(scale_(1.0), scale_(1.0)), Point(scale_(1.0), scale_(9.0)), Point(scale_(9.0), scale_(9.0)),
+                                       Point(scale_(9.0), scale_(1.0))});
+        options.max_abs_displacement_mm         = 0.63f;
+        options.center_displacement_on_boundary = true;
+
+        const ImageMap::BoundaryModulationResult result = ImageMap::modulate_boundary({ring}, options, [](const Vec2d& point, const Vec2d&) {
+            return ImageMap::BoundaryDisplacement{point.x() < 5.0 ? 0.f : 0.63f, 0.6f};
+        });
+
+        REQUIRE(result.changed);
+        REQUIRE(result.geometry.size() == 1);
+        REQUIRE(result.geometry.front().holes.size() == 1);
+        CHECK(result.geometry.front().is_valid());
+        const BoundingBox bounds = get_extents(result.geometry);
+        CHECK(unscale<double>(bounds.min.x()) < -0.25);
+        CHECK_FALSE(result.geometry.front().contains(Point(scale_(10.0), scale_(5.0)), true));
+        CHECK(result.geometry.front().contains(Point(scale_(9.6), scale_(5.0)), true));
+        CHECK(result.fallback_polygons == 0);
+    }
+}
+
+TEST_CASE("Layer-plane image-map sampling selects the outward-facing wall", "[ImageMap][Sampling][PerimeterModulation]")
+{
+    indexed_triangle_set its;
+    // X=0 wall, deliberately wound towards +X even though the queried model
+    // boundary faces -X. Real textured imports frequently mix winding this
+    // way and must not lose modulation on the reversed triangles.
+    its.vertices.emplace_back(0.f, 0.f, 0.f);
+    its.vertices.emplace_back(0.f, 0.f, 1.f);
+    its.vertices.emplace_back(0.f, 1.f, 0.f);
+    // Y=0 wall, wound towards -Y.
+    its.vertices.emplace_back(0.f, 0.f, 0.f);
+    its.vertices.emplace_back(1.f, 0.f, 0.f);
+    its.vertices.emplace_back(0.f, 0.f, 1.f);
+    its.indices.emplace_back(0, 2, 1);
+    its.indices.emplace_back(3, 4, 5);
+    auto mesh = std::make_shared<TriangleMesh>(std::move(its));
+
+    auto data                  = std::make_shared<ImageMap::VolumeData>();
+    data->topology_fingerprint = ImageMap::topology_fingerprint(*mesh);
+    ImageMap::Zone zone;
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.palette.push_back({RGBA{1.f, 0.f, 0.f, 1.f}, 0, 1});
+    zone.palette.push_back({RGBA{0.f, 0.f, 1.f, 1.f}, 0, 2});
+    data->zones.emplace_back(zone);
+
+    ImageMap::TriangleBinding x_wall;
+    x_wall.triangle_index       = 0;
+    x_wall.source.kind          = ImageMap::SourceKind::FaceColor;
+    x_wall.source.corner_colors = {RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{1.f, 0.f, 0.f, 1.f}, RGBA{1.f, 0.f, 0.f, 1.f}};
+    data->triangle_bindings.emplace_back(x_wall);
+    ImageMap::TriangleBinding y_wall;
+    y_wall.triangle_index       = 1;
+    y_wall.source.kind          = ImageMap::SourceKind::FaceColor;
+    y_wall.source.corner_colors = {RGBA{0.f, 0.f, 1.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f}, RGBA{0.f, 0.f, 1.f, 1.f}};
+    data->triangle_bindings.emplace_back(y_wall);
+
+    ImageMap::LayerPlaneSampler sampler(mesh, data, Transform3d::Identity(), 0.5);
+    REQUIRE(sampler.segment_count() == 2);
+    const std::optional<ImageMap::LayerPlaneSample> x_sample = sampler.sample(Vec2d(0., 0.), Vec2d(-1., 0.), 0.1,
+                                                                              ImageMap::RenderMode::PerimeterModulationV2);
+    const std::optional<ImageMap::LayerPlaneSample> y_sample = sampler.sample(Vec2d(0., 0.), Vec2d(0., -1.), 0.1,
+                                                                              ImageMap::RenderMode::PerimeterModulationV2);
+    REQUIRE(x_sample);
+    REQUIRE(y_sample);
+    CHECK(x_sample->triangle_index == 0);
+    CHECK(y_sample->triangle_index == 1);
+    CHECK(x_sample->color[0] == Approx(1.f));
+    CHECK(y_sample->color[2] == Approx(1.f));
+
+    const std::vector<ImageMap::LayerPlaneFieldSample> field_samples =
+        sampler.field_samples(0.1, ImageMap::RenderMode::PerimeterModulationV2);
+    REQUIRE(field_samples.size() == 10);
+    double x_wall_weight = 0.0;
+    double y_wall_weight = 0.0;
+    for (const ImageMap::LayerPlaneFieldSample& field_sample : field_samples) {
+        CHECK(field_sample.integration_weight_mm == Approx(0.1));
+        if (field_sample.sample.triangle_index == 0) {
+            CHECK(field_sample.print_point.x() == Approx(0.0));
+            CHECK(field_sample.sample.color[0] == Approx(1.f));
+            x_wall_weight += field_sample.integration_weight_mm;
+        } else if (field_sample.sample.triangle_index == 1) {
+            CHECK(field_sample.print_point.y() == Approx(0.0));
+            CHECK(field_sample.sample.color[2] == Approx(1.f));
+            y_wall_weight += field_sample.integration_weight_mm;
+        } else {
+            FAIL("Unexpected triangle in the layer component-weight field");
+        }
+    }
+    CHECK(x_wall_weight == Approx(0.5));
+    CHECK(y_wall_weight == Approx(0.5));
+}
+
+TEST_CASE("Simple PM calibration chart is one guarded recipe field", "[ImageMap][Calibration]")
+{
+    const std::vector<ImageMap::ContinuousColorComponent> components = {
+        {"#101010", 1.0, std::string("black")},
+        {"#f0f0f0", 4.0, std::string("white")},
+        {"#00a0d0", 2.0, std::string("cyan")},
+        {"#d02070", 1.5, std::string("magenta")}};
+    ImageMap::SimplePmCalibrationChartSettings settings;
+    settings.texture_width    = 640;
+    settings.texture_height   = 480;
+
+    const ImageMap::SimplePmCalibrationChart chart = ImageMap::make_simple_pm_calibration_chart(
+        components, ImageMap::ColorMixModel::FilamentMixer, settings);
+    REQUIRE(chart.valid());
+    CHECK(chart.texture.valid());
+    CHECK(chart.patches.size() <= chart.capacity);
+    CHECK(chart.columns == 19);
+    CHECK(chart.rows == 14);
+    CHECK(chart.capacity == 266);
+    CHECK(chart.patches.size() == 266);
+    CHECK(chart.patches.size() < chart.total_recipe_count);
+    CHECK(chart.columns > 1);
+    CHECK(chart.rows > 1);
+
+    std::set<std::vector<uint8_t>> recipes;
+    size_t solid_anchors = 0;
+    for (const ImageMap::SimplePmCalibrationPatch& patch : chart.patches) {
+        CHECK(recipes.insert(patch.component_units).second);
+        CHECK(std::accumulate(patch.component_units.begin(), patch.component_units.end(), 0) == chart.total_units);
+        solid_anchors += patch.solid_anchor ? 1u : 0u;
+    }
+    CHECK(solid_anchors == components.size());
+
+    // The physical separation is a guard-colored strip in the same texture,
+    // not empty space between independently printable swatch objects.
+    REQUIRE(chart.patches.size() >= 2);
+    const auto& first = chart.patches[0];
+    const auto& second = chart.patches[1];
+    REQUIRE(first.uv_rect[1] == Approx(second.uv_rect[1]));
+    const float gutter_u = 0.5f * (first.uv_rect[2] + second.uv_rect[0]);
+    const float center_v = 0.5f * (first.uv_rect[1] + first.uv_rect[3]);
+    const size_t x = std::min<size_t>(size_t(gutter_u * float(chart.texture.width)), chart.texture.width - 1);
+    const size_t y = std::min<size_t>(size_t(center_v * float(chart.texture.height)), chart.texture.height - 1);
+    const size_t offset = (y * chart.texture.width + x) * 4;
+    CHECK(float(chart.texture.rgba[offset]) / 255.f == Approx(chart.guard_color[0]).margin(1.f / 255.f));
+    CHECK(float(chart.texture.rgba[offset + 1]) / 255.f == Approx(chart.guard_color[1]).margin(1.f / 255.f));
+    CHECK(float(chart.texture.rgba[offset + 2]) / 255.f == Approx(chart.guard_color[2]).margin(1.f / 255.f));
+}
+
+TEST_CASE("Simple PM calibration photo reader registers its generated plaque", "[ImageMap][Calibration]")
+{
+    const std::vector<ImageMap::ContinuousColorComponent> components = {
+        {"#101010", std::nullopt, std::string("black")},
+        {"#f0f0f0", std::nullopt, std::string("white")},
+        {"#00a0d0", std::nullopt, std::string("cyan")}};
+    ImageMap::SimplePmCalibrationChartSettings settings;
+    settings.plaque_width_mm  = 64.f;
+    settings.plaque_height_mm = 48.f;
+    settings.texture_width    = 640;
+    settings.texture_height   = 480;
+    const ImageMap::SimplePmCalibrationChart chart = ImageMap::make_simple_pm_calibration_chart(
+        components, ImageMap::ColorMixModel::FilamentMixer, settings);
+    REQUIRE(chart.valid());
+
+    const ImageMap::SimplePmPhotoAnalysis analysis = ImageMap::analyze_simple_pm_calibration_photo(
+        chart.texture.rgba, chart.texture.width, chart.texture.height, components,
+        ImageMap::ColorMixModel::FilamentMixer, settings);
+    INFO(analysis.error);
+    REQUIRE(analysis.success);
+    CHECK(analysis.profile.signature == chart.signature);
+    CHECK(analysis.profile.components.size() == components.size());
+    CHECK(analysis.accepted_patch_count > chart.patches.size() / 2);
+    CHECK(analysis.profile.observations.size() == analysis.accepted_patch_count);
 }

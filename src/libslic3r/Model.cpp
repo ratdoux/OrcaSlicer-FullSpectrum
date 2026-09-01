@@ -11,6 +11,7 @@
 #include "TriangleSelector.hpp"
 
 #include "Format/AMF.hpp"
+#include "Format/Assimp.hpp"
 #include "Format/OBJImageMap.hpp"
 #include "Format/svg.hpp"
 // BBS
@@ -277,9 +278,11 @@ Model Model::read_from_file(const std::string&                                  
         result = load_stl(input_file.c_str(), &model, nullptr, stlFn);
     else if (boost::algorithm::iends_with(input_file, ".oltp"))
         result = load_stl(input_file.c_str(), &model, nullptr, stlFn, 256);
-    else if (boost::algorithm::iends_with(input_file, ".obj")) {
+    else if (boost::algorithm::iends_with(input_file, ".obj") || is_assimp_color_mesh_file(input_file)) {
         ObjInfo obj_info;
-        result = load_obj(input_file.c_str(), &model, obj_info, message, nullptr, image_map_progress_fn);
+        result = boost::algorithm::iends_with(input_file, ".obj") ?
+                     load_obj(input_file.c_str(), &model, obj_info, message, nullptr, image_map_progress_fn) :
+                     load_assimp_color_mesh(input_file.c_str(), &model, obj_info, message, nullptr, image_map_progress_fn);
         if (obj_image_map_cancelled)
             return Model{};
         if (result && objFn && !model.objects.empty() && !model.objects.front()->volumes.empty()) {
@@ -300,7 +303,7 @@ Model Model::read_from_file(const std::string&                                  
             if (obj_image_map_cancelled)
                 return Model{};
             if (!detected_image_map_warning.empty())
-                BOOST_LOG_TRIVIAL(warning) << "OBJ image-map import: " << detected_image_map_warning;
+                BOOST_LOG_TRIVIAL(warning) << obj_info.source_format << " image-map import: " << detected_image_map_warning;
 
             ObjColorImportSource  current_source = ObjColorImportSource::VertexColors;
             ObjColorImportMode    current_mode   = ObjColorImportMode::Colors;
@@ -371,7 +374,7 @@ Model Model::read_from_file(const std::string&                                  
                             switched  = true;
                             current_texture_file.clear();
                         } else {
-                            pending_warning = "No usable texture was detected. Select a PNG or JPEG image for the OBJ UV coordinates.";
+                            pending_warning = "No usable texture was detected. Select a PNG or JPEG image for the mesh UV coordinates.";
                         }
                         if (switched)
                             current_image_map_plan = std::move(next_plan);
@@ -380,13 +383,13 @@ Model Model::read_from_file(const std::string&                                  
                         if (switched)
                             current_texture_file.clear();
                         if (!switched)
-                            pending_warning = "This OBJ does not contain vertex colors.";
+                            pending_warning = "This mesh does not contain vertex colors.";
                     } else if (next_source == ObjColorImportSource::FaceColors) {
                         switched = face_colors_available;
                         if (switched)
                             current_texture_file.clear();
                         if (!switched)
-                            pending_warning = "This OBJ does not contain material colors.";
+                            pending_warning = "This mesh does not contain material colors.";
                     }
 
                     if (switched) {
@@ -401,8 +404,8 @@ Model Model::read_from_file(const std::string&                                  
                     break;
                 if (current_mode == ObjColorImportMode::ImageMap) {
                     ImageMap::Zone zone;
-                    zone.stable_id                   = "obj-image-map-zone";
-                    zone.display_name                = "OBJ image map";
+                    zone.stable_id = obj_info.source_format == "OBJ" ? "obj-image-map-zone" : "mesh-image-map-zone";
+                    zone.display_name                = obj_info.source_format + " image map";
                     switch (import_context.image_map_render_mode) {
                     case ObjImageMapRenderMode::PerimeterModulationV2:
                         zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
@@ -415,7 +418,36 @@ Model Model::read_from_file(const std::string&                                  
                         zone.render_mode = ImageMap::RenderMode::NormalMix;
                         break;
                     }
+                    zone.adaptive_modulation_mode =
+                        import_context.image_map_adaptive_modulation_mode == ObjAdaptiveModulationMode::LocalZHeight ?
+                            ImageMap::AdaptiveModulationMode::LocalZHeight :
+                            ImageMap::AdaptiveModulationMode::Perimeter;
+                    switch (import_context.image_map_color_mix_model) {
+                    case ObjImageMapColorMixModel::FullSpectrumKmKs:
+                        zone.color_mix_model = ImageMap::ColorMixModel::FullSpectrumKmKs;
+                        break;
+                    case ObjImageMapColorMixModel::FilamentMixer:
+                        zone.color_mix_model = ImageMap::ColorMixModel::FilamentMixer;
+                        break;
+                    default:
+                        zone.color_mix_model = ImageMap::ColorMixModel::FullSpectrumKmKs;
+                        break;
+                    }
+                    zone.synchronize_whole_object_cadence =
+                        zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2 &&
+                        import_context.image_map_synchronize_whole_object_cadence;
                     zone.minimum_component_percent  = import_context.image_map_minimum_component_percent;
+                    zone.modulation_sample_spacing_mm = import_context.image_map_modulation_sample_spacing_mm;
+                    zone.disable_broad_path_smoothing = import_context.image_map_disable_broad_path_smoothing;
+                    zone.gaussian_smoothing_strength  = import_context.image_map_gaussian_smoothing_strength;
+                    zone.first_path_smoothing_strength = import_context.image_map_first_path_smoothing_strength;
+                    zone.second_path_smoothing_strength = import_context.image_map_second_path_smoothing_strength;
+                    zone.tone_gamma                   = import_context.image_map_tone_gamma;
+                    zone.overhang_contrast_percent    = import_context.image_map_overhang_contrast_percent;
+                    zone.image_exposure_ev            = import_context.image_map_exposure_ev;
+                    zone.image_contrast_percent       = import_context.image_map_contrast_percent;
+                    zone.image_saturation_percent     = import_context.image_map_saturation_percent;
+                    zone.image_edge_boost_percent     = import_context.image_map_edge_boost_percent;
                     const size_t palette_size = std::min({import_context.image_map_palette_colors.size(),
                                                           import_context.image_map_palette_filament_ids.size(),
                                                           import_context.image_map_palette_mixed_stable_ids.size()});
@@ -440,7 +472,7 @@ Model Model::read_from_file(const std::string&                                  
                     if (obj_image_map_cancelled)
                         return Model{};
                     if (!image_map_warning.empty())
-                        BOOST_LOG_TRIVIAL(warning) << "OBJ image-map source: " << image_map_warning;
+                        BOOST_LOG_TRIVIAL(warning) << obj_info.source_format << " image-map source: " << image_map_warning;
                 } else if (current_source == ObjColorImportSource::ImageTexture)
                     result = obj_import_image_map_deal(filament_ids, current_image_map_plan, first_extruder_id, &model);
                 else if (current_source == ObjColorImportSource::VertexColors)
@@ -476,7 +508,8 @@ Model Model::read_from_file(const std::string&                                  
     }
 #endif
     else
-        throw Slic3r::RuntimeError(_L("Unknown file format. Input file must have .stl, .obj, .amf(.xml) extension."));
+        throw Slic3r::RuntimeError(
+            _L("Unknown file format. Supported mesh files include STL, OBJ, FBX, glTF/GLB, DAE, PLY, 3DS, AMF, and 3MF."));
 
     if (is_cb_cancel) {
         Model empty_model;

@@ -520,10 +520,24 @@ void from_json(const nlohmann::json &j, ImageMapPaletteEntry &v)
 void to_json(nlohmann::json &j, const ImageMapZone &v)
 {
     j = nlohmann::json{{"id", v.id}, {"display_name", v.display_name}, {"enabled", v.enabled}, {"priority", v.priority},
-                       {"render_mode", v.render_mode}, {"minimum_component_percent", v.minimum_component_percent},
+                       {"render_mode", v.render_mode}, {"adaptive_modulation_mode", v.adaptive_modulation_mode},
+                       {"color_mix_model", v.color_mix_model},
+                       {"synchronize_whole_object_cadence", v.synchronize_whole_object_cadence},
+                       {"minimum_component_percent", v.minimum_component_percent},
                        {"target_sample_size_mm", v.target_sample_size_mm}, {"max_facet_samples", v.max_facet_samples},
                        {"modulation_sample_spacing_mm", v.modulation_sample_spacing_mm},
-                       {"corner_smoothing_radius_mm", v.corner_smoothing_radius_mm}, {"palette", v.palette}};
+                       {"corner_smoothing_radius_mm", v.corner_smoothing_radius_mm},
+                       {"disable_broad_path_smoothing", v.disable_broad_path_smoothing},
+                       {"gaussian_smoothing_strength", v.gaussian_smoothing_strength},
+                       {"first_path_smoothing_strength", v.first_path_smoothing_strength},
+                       {"second_path_smoothing_strength", v.second_path_smoothing_strength},
+                       {"tone_gamma", v.tone_gamma},
+                       {"overhang_contrast_percent", v.overhang_contrast_percent},
+                       {"image_exposure_ev", v.image_exposure_ev},
+                       {"image_contrast_percent", v.image_contrast_percent},
+                       {"image_saturation_percent", v.image_saturation_percent},
+                       {"image_edge_boost_percent", v.image_edge_boost_percent},
+                       {"palette", v.palette}};
 }
 
 void from_json(const nlohmann::json &j, ImageMapZone &v)
@@ -533,11 +547,24 @@ void from_json(const nlohmann::json &j, ImageMapZone &v)
     get_if_present(j, "enabled", v.enabled);
     get_if_present(j, "priority", v.priority);
     get_if_present(j, "render_mode", v.render_mode);
+    get_if_present(j, "adaptive_modulation_mode", v.adaptive_modulation_mode);
+    get_if_present(j, "color_mix_model", v.color_mix_model);
+    get_if_present(j, "synchronize_whole_object_cadence", v.synchronize_whole_object_cadence);
     get_if_present(j, "minimum_component_percent", v.minimum_component_percent);
     get_if_present(j, "target_sample_size_mm", v.target_sample_size_mm);
     get_if_present(j, "max_facet_samples", v.max_facet_samples);
     get_if_present(j, "modulation_sample_spacing_mm", v.modulation_sample_spacing_mm);
     get_if_present(j, "corner_smoothing_radius_mm", v.corner_smoothing_radius_mm);
+    get_if_present(j, "disable_broad_path_smoothing", v.disable_broad_path_smoothing);
+    get_if_present(j, "gaussian_smoothing_strength", v.gaussian_smoothing_strength);
+    get_if_present(j, "first_path_smoothing_strength", v.first_path_smoothing_strength);
+    get_if_present(j, "second_path_smoothing_strength", v.second_path_smoothing_strength);
+    get_if_present(j, "tone_gamma", v.tone_gamma);
+    get_if_present(j, "overhang_contrast_percent", v.overhang_contrast_percent);
+    get_if_present(j, "image_exposure_ev", v.image_exposure_ev);
+    get_if_present(j, "image_contrast_percent", v.image_contrast_percent);
+    get_if_present(j, "image_saturation_percent", v.image_saturation_percent);
+    get_if_present(j, "image_edge_boost_percent", v.image_edge_boost_percent);
     get_if_present(j, "palette", v.palette);
 }
 

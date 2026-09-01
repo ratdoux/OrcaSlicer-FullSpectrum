@@ -114,7 +114,12 @@ const char *source_kind_name(ImageMap::SourceKind kind)
 
 const char *wrap_mode_name(ImageMap::WrapMode mode)
 {
-    return mode == ImageMap::WrapMode::Clamp ? "clamp" : "repeat";
+    switch (mode) {
+    case ImageMap::WrapMode::Clamp:       return "clamp";
+    case ImageMap::WrapMode::Transparent: return "transparent";
+    case ImageMap::WrapMode::Repeat:
+    default:                              return "repeat";
+    }
 }
 
 const char *render_mode_name(ImageMap::RenderMode mode)
@@ -124,6 +129,20 @@ const char *render_mode_name(ImageMap::RenderMode mode)
     case ImageMap::RenderMode::AdaptiveLocalizedCycles:   return "adaptive_localized_cycles";
     case ImageMap::RenderMode::NormalMix:
     default:                                              return "normal_mix";
+    }
+}
+
+const char *adaptive_modulation_mode_name(ImageMap::AdaptiveModulationMode mode)
+{
+    return mode == ImageMap::AdaptiveModulationMode::LocalZHeight ? "local_z_height" : "perimeter";
+}
+
+const char *color_mix_model_name(ImageMap::ColorMixModel model)
+{
+    switch (model) {
+    case ImageMap::ColorMixModel::FullSpectrumKmKs:        return "full_spectrum_km_ks";
+    case ImageMap::ColorMixModel::FilamentMixer:           return "filament_mixer";
+    default:                                               return "full_spectrum_km_ks";
     }
 }
 
@@ -183,11 +202,24 @@ std::optional<ImageMaps> image_maps_from_geometry(const GeometryBindingInput    
             zone.enabled                      = source_zone.enabled;
             zone.priority                     = source_zone.priority;
             zone.render_mode                  = render_mode_name(source_zone.render_mode);
+            zone.adaptive_modulation_mode      = adaptive_modulation_mode_name(source_zone.adaptive_modulation_mode);
+            zone.color_mix_model               = color_mix_model_name(source_zone.color_mix_model);
+            zone.synchronize_whole_object_cadence = source_zone.synchronize_whole_object_cadence;
             zone.minimum_component_percent    = source_zone.minimum_component_percent;
             zone.target_sample_size_mm        = source_zone.target_sample_size_mm;
             zone.max_facet_samples            = source_zone.max_facet_samples;
             zone.modulation_sample_spacing_mm = source_zone.modulation_sample_spacing_mm;
             zone.corner_smoothing_radius_mm   = source_zone.corner_smoothing_radius_mm;
+            zone.disable_broad_path_smoothing = source_zone.disable_broad_path_smoothing;
+            zone.gaussian_smoothing_strength  = source_zone.gaussian_smoothing_strength;
+            zone.first_path_smoothing_strength = source_zone.first_path_smoothing_strength;
+            zone.second_path_smoothing_strength = source_zone.second_path_smoothing_strength;
+            zone.tone_gamma                   = source_zone.tone_gamma;
+            zone.overhang_contrast_percent    = source_zone.overhang_contrast_percent;
+            zone.image_exposure_ev            = source_zone.image_exposure_ev;
+            zone.image_contrast_percent       = source_zone.image_contrast_percent;
+            zone.image_saturation_percent     = source_zone.image_saturation_percent;
+            zone.image_edge_boost_percent     = source_zone.image_edge_boost_percent;
             for (const ImageMap::PaletteEntry &source_entry : source_zone.palette) {
                 ImageMapPaletteEntry entry;
                 entry.target_rgba                  = rgba_values(source_entry.target_color);

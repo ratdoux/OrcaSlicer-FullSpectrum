@@ -21,6 +21,8 @@ enum class ObjColorImportSource : uint8_t { VertexColors, FaceColors, ImageTextu
 enum class ObjColorImportMode : uint8_t { Colors, ImageMap };
 
 enum class ObjImageMapRenderMode : uint8_t { NormalMix, PerimeterModulationV2, AdaptiveLocalizedCycles };
+enum class ObjAdaptiveModulationMode : uint8_t { Perimeter, LocalZHeight };
+enum class ObjImageMapColorMixModel : uint8_t { FullSpectrumKmKs, FilamentMixer };
 
 enum class ObjImageMapProgressStage : uint8_t
 {
@@ -50,11 +52,32 @@ struct ObjColorImportContext
     std::string          requested_texture_file;
     std::string          warning_message;
     ObjImageMapRenderMode image_map_render_mode{ObjImageMapRenderMode::NormalMix};
+    ObjAdaptiveModulationMode image_map_adaptive_modulation_mode{ObjAdaptiveModulationMode::Perimeter};
+    ObjImageMapColorMixModel image_map_color_mix_model{ObjImageMapColorMixModel::FullSpectrumKmKs};
     int                   image_map_minimum_component_percent{15};
+    bool                  image_map_synchronize_whole_object_cadence{false};
+    float                 image_map_modulation_sample_spacing_mm{0.16f};
+    bool                  image_map_disable_broad_path_smoothing{false};
+    float                 image_map_gaussian_smoothing_strength{1.f};
+    float                 image_map_first_path_smoothing_strength{1.f};
+    float                 image_map_second_path_smoothing_strength{1.f};
+    float                 image_map_tone_gamma{1.f};
+    float                 image_map_overhang_contrast_percent{100.f};
+    float                 image_map_exposure_ev{0.f};
+    float                 image_map_contrast_percent{100.f};
+    float                 image_map_saturation_percent{100.f};
+    float                 image_map_edge_boost_percent{0.f};
     std::vector<RGBA>      image_map_palette_colors;
     std::vector<unsigned char> image_map_palette_filament_ids;
     std::vector<uint64_t>  image_map_palette_mixed_stable_ids;
     ObjImageMapProgressFn   image_map_progress_fn;
+    // GUI-only, transient notification used to refresh the prepare-tab
+    // prediction while an image-map settings dialog is open.
+    std::function<void()>   image_map_preview_changed_fn;
+    // The modal settings window owns the active event loop, so the canvas's
+    // normal idle repaint is suspended. This callback explicitly presents a
+    // worker result and returns true while more repaint polling is required.
+    std::function<bool()>   image_map_preview_refresh_fn;
 };
 
 typedef std::function<void(std::vector<RGBA>&          input_colors,
@@ -63,6 +86,17 @@ typedef std::function<void(std::vector<RGBA>&          input_colors,
                            unsigned char&              first_extruder_id,
                            ObjColorImportContext&      context)>
     ObjImportColorFn;
+
+// Decoded texture pixels supplied by container formats such as GLB and FBX.
+// File-based formats leave this map empty and keep using triangle_texture_files.
+struct ObjEmbeddedTexture
+{
+    std::string          display_name;
+    uint32_t             width{0};
+    uint32_t             height{0};
+    std::vector<uint8_t> rgba;
+};
+
 // Load an OBJ file into a provided model.
 struct ObjInfo
 {
@@ -76,6 +110,8 @@ struct ObjInfo
     std::string                          obj_directory;
     std::map<std::string, bool>          pngs;
     std::unordered_map<int, std::string> uv_map_pngs;
+    std::unordered_map<std::string, ObjEmbeddedTexture> embedded_textures;
+    std::string                          source_format{"OBJ"};
     bool                                 has_uv_png{false};
 };
 extern bool load_obj(const char* path,

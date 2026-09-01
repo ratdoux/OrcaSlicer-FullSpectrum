@@ -14,7 +14,12 @@
 namespace Slic3r::ImageMap {
 namespace {
 
-constexpr unsigned int k_max_depth = 6;
+// Large CAD faces often consist of only one or two triangles. Depth 6 limits
+// those faces to 64 samples per edge regardless of target_sample_size_mm,
+// producing visibly blocky projections. Depth 10 can resolve a 0.4 mm target
+// across a 400 mm edge; limit_depths_to_budget() still enforces each zone's
+// bounded sample budget before any leaves are emitted.
+constexpr unsigned int k_max_depth = 10;
 
 size_t leaf_count(unsigned int depth)
 {
@@ -78,6 +83,15 @@ std::string encode_leaf(unsigned int filament_id, unsigned int base_filament_id)
 
 std::string encode_tree(const std::vector<unsigned int> &ids, size_t &cursor, unsigned int depth, unsigned int base_id)
 {
+    const size_t subtree_leaf_count = leaf_count(depth);
+    if (cursor + subtree_leaf_count <= ids.size()) {
+        const unsigned int uniform_id = ids[cursor];
+        if (std::all_of(ids.begin() + cursor, ids.begin() + cursor + subtree_leaf_count,
+                        [uniform_id](unsigned int id) { return id == uniform_id; })) {
+            cursor += subtree_leaf_count;
+            return encode_leaf(uniform_id, base_id);
+        }
+    }
     if (depth == 0)
         return cursor < ids.size() ? encode_leaf(ids[cursor++], base_id) : std::string();
     std::string encoded;
@@ -353,6 +367,44 @@ SourceColorRasterization rasterize_dense_source_lod(
 
 } // namespace
 
+void stabilize_adaptive_region_ids(std::vector<unsigned int> &ids, unsigned int subdivision_depth, unsigned int base_filament_id)
+{
+    if (ids.size() < 4 || subdivision_depth == 0)
+        return;
+
+    size_t group_size = 4;
+    // A depth-six image-map leaf is roughly one nozzle-scale cell on the
+    // common cube import. Clean through three parent levels so one-cell-wide
+    // streaks cannot survive merely because they cross several sibling
+    // quartets. The thresholds preserve balanced boundaries while removing
+    // printable-scale islands and slivers.
+    constexpr std::array<size_t, 3> allowed_outliers{1, 4, 8};
+    const unsigned int              cleanup_levels = std::min<unsigned int>(subdivision_depth, allowed_outliers.size());
+    for (unsigned int level = 0; level < cleanup_levels && group_size <= ids.size(); ++level) {
+        for (size_t begin = 0; begin + group_size <= ids.size(); begin += group_size) {
+            std::vector<std::pair<unsigned int, size_t>> counts;
+            counts.reserve(group_size);
+            for (size_t index = begin; index < begin + group_size; ++index) {
+                auto count = std::find_if(counts.begin(), counts.end(), [id = ids[index]](const auto &entry) { return entry.first == id; });
+                if (count == counts.end())
+                    counts.emplace_back(ids[index], 1);
+                else
+                    ++count->second;
+            }
+            const auto dominant = std::max_element(counts.begin(), counts.end(), [base_filament_id](const auto &lhs, const auto &rhs) {
+                if (lhs.second != rhs.second)
+                    return lhs.second < rhs.second;
+                return rhs.first == base_filament_id && lhs.first != base_filament_id;
+            });
+            if (dominant != counts.end() && dominant->second + allowed_outliers[level] >= group_size)
+                std::fill(ids.begin() + begin, ids.begin() + begin + group_size, dominant->first);
+        }
+        if (group_size > ids.size() / 4)
+            break;
+        group_size *= 4;
+    }
+}
+
 FacetRasterization rasterize_facets(const TriangleMesh            &mesh,
                                     const VolumeData              &data,
                                     unsigned int                   base_filament_id,
@@ -399,6 +451,8 @@ FacetRasterization rasterize_facets(const TriangleMesh            &mesh,
         sample_leaves(data, *binding, zone,
                       {Vec3f(1.f, 0.f, 0.f), Vec3f(0.f, 1.f, 0.f), Vec3f(0.f, 0.f, 1.f)},
                       depths[triangle_idx], resolve_filament, base_filament_id, ids, result.unresolved_palette_entries);
+        if (zone.render_mode == RenderMode::AdaptiveLocalizedCycles)
+            stabilize_adaptive_region_ids(ids, depths[triangle_idx], base_filament_id);
         result.sampled_leaf_count += ids.size();
         if (std::any_of(ids.begin(), ids.end(), [base_filament_id](unsigned int id) { return id != base_filament_id; })) {
             size_t cursor = 0;

@@ -66,9 +66,19 @@ bool VolumeData::content_equals(const VolumeData &other) const
         const Zone &rhs = other.zones[i];
         if (lhs.stable_id != rhs.stable_id || lhs.display_name != rhs.display_name || lhs.enabled != rhs.enabled ||
             lhs.priority != rhs.priority || lhs.render_mode != rhs.render_mode ||
+            lhs.adaptive_modulation_mode != rhs.adaptive_modulation_mode ||
+            lhs.color_mix_model != rhs.color_mix_model ||
+            lhs.synchronize_whole_object_cadence != rhs.synchronize_whole_object_cadence ||
             lhs.minimum_component_percent != rhs.minimum_component_percent || lhs.target_sample_size_mm != rhs.target_sample_size_mm ||
             lhs.max_facet_samples != rhs.max_facet_samples || lhs.modulation_sample_spacing_mm != rhs.modulation_sample_spacing_mm ||
-            lhs.corner_smoothing_radius_mm != rhs.corner_smoothing_radius_mm || lhs.palette.size() != rhs.palette.size())
+            lhs.corner_smoothing_radius_mm != rhs.corner_smoothing_radius_mm ||
+            lhs.disable_broad_path_smoothing != rhs.disable_broad_path_smoothing ||
+            lhs.gaussian_smoothing_strength != rhs.gaussian_smoothing_strength ||
+            lhs.first_path_smoothing_strength != rhs.first_path_smoothing_strength ||
+            lhs.second_path_smoothing_strength != rhs.second_path_smoothing_strength || lhs.tone_gamma != rhs.tone_gamma ||
+            lhs.overhang_contrast_percent != rhs.overhang_contrast_percent || lhs.image_exposure_ev != rhs.image_exposure_ev ||
+            lhs.image_contrast_percent != rhs.image_contrast_percent || lhs.image_saturation_percent != rhs.image_saturation_percent ||
+            lhs.image_edge_boost_percent != rhs.image_edge_boost_percent || lhs.palette.size() != rhs.palette.size())
             return false;
         for (size_t palette_idx = 0; palette_idx < lhs.palette.size(); ++palette_idx) {
             const PaletteEntry &lhs_entry = lhs.palette[palette_idx];
@@ -107,6 +117,48 @@ uint64_t topology_fingerprint(const TriangleMesh &mesh)
     for (const stl_triangle_vertex_indices &indices : its.indices)
         hash_bytes(hash, indices.data(), sizeof(indices[0]) * 3);
     return hash;
+}
+
+bool remove_zone(VolumeData &data, const std::string &stable_id)
+{
+    const auto zone_it = std::find_if(data.zones.begin(), data.zones.end(), [&stable_id](const Zone &zone) {
+        return zone.stable_id == stable_id;
+    });
+    if (zone_it == data.zones.end())
+        return false;
+
+    const uint32_t zone_index = uint32_t(zone_it - data.zones.begin());
+    data.triangle_bindings.erase(
+        std::remove_if(data.triangle_bindings.begin(), data.triangle_bindings.end(), [zone_index](const TriangleBinding &binding) {
+            return binding.zone_index == zone_index;
+        }),
+        data.triangle_bindings.end());
+    for (TriangleBinding &binding : data.triangle_bindings)
+        if (binding.zone_index > zone_index)
+            --binding.zone_index;
+    data.zones.erase(zone_it);
+
+    std::vector<bool> referenced_assets(data.texture_assets.size(), false);
+    for (const TriangleBinding &binding : data.triangle_bindings)
+        if (binding.source.kind == SourceKind::Texture && binding.source.texture_asset_index >= 0 &&
+            size_t(binding.source.texture_asset_index) < referenced_assets.size())
+            referenced_assets[size_t(binding.source.texture_asset_index)] = true;
+
+    std::vector<int32_t> compacted_indices(data.texture_assets.size(), -1);
+    std::vector<TextureAsset> compacted_assets;
+    compacted_assets.reserve(data.texture_assets.size());
+    for (size_t asset_index = 0; asset_index < data.texture_assets.size(); ++asset_index) {
+        if (!referenced_assets[asset_index])
+            continue;
+        compacted_indices[asset_index] = int32_t(compacted_assets.size());
+        compacted_assets.emplace_back(std::move(data.texture_assets[asset_index]));
+    }
+    for (TriangleBinding &binding : data.triangle_bindings)
+        if (binding.source.kind == SourceKind::Texture && binding.source.texture_asset_index >= 0 &&
+            size_t(binding.source.texture_asset_index) < compacted_indices.size())
+            binding.source.texture_asset_index = compacted_indices[size_t(binding.source.texture_asset_index)];
+    data.texture_assets = std::move(compacted_assets);
+    return true;
 }
 
 size_t stitch_perimeter_modulation_uv_cracks(const TriangleMesh &mesh, VolumeData &data)
@@ -228,11 +280,30 @@ ValidationResult VolumeData::validate(const TriangleMesh &mesh) const
             append_error(result, "Image-map zone IDs must be non-empty and unique.");
         if (zone.palette.empty())
             append_error(result, "Image-map zone has no printable palette.");
+        if (zone.color_mix_model < ColorMixModel::FullSpectrumKmKs || zone.color_mix_model > ColorMixModel::FilamentMixer)
+            append_error(result, "Image-map color mix model is invalid.");
         if (!std::isfinite(zone.target_sample_size_mm) || zone.target_sample_size_mm <= 0.f || zone.max_facet_samples == 0)
             append_error(result, "Image-map sampling limits are invalid.");
         if (!std::isfinite(zone.modulation_sample_spacing_mm) || zone.modulation_sample_spacing_mm <= 0.f ||
             !std::isfinite(zone.corner_smoothing_radius_mm) || zone.corner_smoothing_radius_mm < 0.f)
             append_error(result, "Image-map modulation limits are invalid.");
+        if (!std::isfinite(zone.gaussian_smoothing_strength) || zone.gaussian_smoothing_strength < 0.f ||
+            zone.gaussian_smoothing_strength > 4.f || !std::isfinite(zone.first_path_smoothing_strength) ||
+            zone.first_path_smoothing_strength < 0.f || zone.first_path_smoothing_strength > 4.f ||
+            !std::isfinite(zone.second_path_smoothing_strength) || zone.second_path_smoothing_strength < 0.f ||
+            zone.second_path_smoothing_strength > 4.f)
+            append_error(result, "Image-map smoothing strengths are invalid.");
+        if (!std::isfinite(zone.tone_gamma) || zone.tone_gamma < 0.5f || zone.tone_gamma > 3.f ||
+            !std::isfinite(zone.overhang_contrast_percent) || zone.overhang_contrast_percent < 25.f ||
+            zone.overhang_contrast_percent > 300.f)
+            append_error(result, "Image-map tone controls are invalid.");
+        if (!std::isfinite(zone.image_exposure_ev) || zone.image_exposure_ev < -3.f || zone.image_exposure_ev > 3.f ||
+            !std::isfinite(zone.image_contrast_percent) || zone.image_contrast_percent < 0.f ||
+            zone.image_contrast_percent > 300.f || !std::isfinite(zone.image_saturation_percent) ||
+            zone.image_saturation_percent < 0.f || zone.image_saturation_percent > 300.f ||
+            !std::isfinite(zone.image_edge_boost_percent) || zone.image_edge_boost_percent < 0.f ||
+            zone.image_edge_boost_percent > 300.f)
+            append_error(result, "Image-map source-image processing controls are invalid.");
         for (const PaletteEntry &entry : zone.palette) {
             if (!finite_color(entry.target_color) || entry.fallback_filament_id == 0)
                 append_error(result, "Image-map palette entry is invalid.");
