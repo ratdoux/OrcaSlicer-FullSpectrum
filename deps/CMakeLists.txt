@@ -284,6 +284,7 @@ include(Boost/Boost.cmake)
 
 # The order of includes respects the dependencies between libraries
 include(Cereal/Cereal.cmake)
+include(Assimp/Assimp.cmake)
 include(Qhull/Qhull.cmake)
 include(GLEW/GLEW.cmake)
 
