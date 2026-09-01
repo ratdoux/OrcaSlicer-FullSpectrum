@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include "MixedFilament/ColorNames.hpp"
 
 namespace Slic3r {
 
@@ -327,6 +328,7 @@ struct MixedFilamentDisplayContext
     bool                         component_bias_enabled { false };
     std::vector<double>          physical_tds;
     std::vector<std::string>     physical_material_ids;
+    std::vector<std::string>     physical_material_types;
 };
 
 struct MixedFilamentColorInput
@@ -392,6 +394,11 @@ std::vector<unsigned int> mixed_filament_manual_pattern_preview_sequence(const M
                                                                          size_t                         wall_loops);
 std::vector<unsigned int> mixed_filament_weighted_blend_sequence(const MixedFilamentDefinition &definition,
                                                                  size_t                         num_physical = 0);
+
+// Alphabetic indexing for mixed filaments: 0 -> "A", 1 -> "B", ..., 25 -> "Z", 26 -> "AA", 27 -> "AB", ...
+std::string           mixed_filament_index_to_letter(size_t mixed_index_0based);
+std::optional<size_t> mixed_filament_letter_to_index(const std::string &letter_str);
+std::string           filament_display_label(unsigned int filament_id_1based, size_t num_physical);
 
 // ---------------------------------------------------------------------------
 // MixedFilamentManager

@@ -216,16 +216,26 @@ wxString MFDRecommendationsAccordion::format_tooltip(
     const std::vector<double>& weights,
     const wxColor&             mixed_color) const
 {
-    wxString tooltip;
-    for (size_t i = 0; i < phys_indices.size(); ++i) {
-        if (i > 0)
-            tooltip += " + ";
-        int pct = static_cast<int>(std::round(weights[i] * 100.0));
-        tooltip += wxString::Format("%d%% Filament [%d]", pct, phys_indices[i] + 1);
-    }
-    tooltip += wxString::Format(" = #%02X%02X%02X",
-        mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
-    return tooltip;
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& f : m_physical_filaments)
+        physical_colors.emplace_back(f.first);
+    const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+
+    std::vector<int> pct_ints;
+    pct_ints.reserve(weights.size());
+    for (double w : weights)
+        pct_ints.push_back(static_cast<int>(std::round(w * 100.0)));
+
+    char hex_buf[16];
+    std::snprintf(hex_buf, sizeof(hex_buf), "#%02X%02X%02X", mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
+
+    ColorNames::DescriptionOptions opts;
+    opts.include_components = true;
+
+    std::string tip = ColorNames::mixed_filament_name(phys_indices, pct_ints, std::string(hex_buf), ctx.physical_material_types,
+                                                      ctx.physical_colors, opts);
+    return from_u8(tip);
 }
 
 wxColor MFDRecommendationsAccordion::get_mixed_color(
@@ -327,14 +337,17 @@ wxPanel* MFDRecommendationsAccordion::create_gradient_tile(
 
 wxString MFDRecommendationsAccordion::format_gradient_tooltip(const std::vector<int>& phys_indices) const
 {
-    wxString tooltip;
-    for (size_t i = 0; i < phys_indices.size(); ++i) {
-        if (i > 0)
-            tooltip += " -> ";
-        int idx = phys_indices[i];
-        tooltip += wxString::Format("Filament [%d] %s", idx + 1, m_physical_filaments[idx].first);
-    }
-    return tooltip;
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& f : m_physical_filaments)
+        physical_colors.emplace_back(f.first);
+    const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+
+    ColorNames::DescriptionOptions opts;
+    opts.include_components = true;
+
+    std::string tip = ColorNames::mixed_filament_name(phys_indices, {}, "", ctx.physical_material_types, ctx.physical_colors, opts);
+    return from_u8(tip);
 }
 
 bool MFDRecommendationsAccordion::is_color_in_between(const wxColor& c1, const wxColor& c2, const wxColor& c3, double max_dev)

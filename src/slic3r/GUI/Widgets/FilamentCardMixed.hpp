@@ -16,15 +16,35 @@ namespace Slic3r::GUI {
 class FilamentCardMixed : public wxPanel
 {
 public:
+    enum class CardType {
+        Mixed,
+        APM
+    };
+
     FilamentCardMixed(wxWindow*                                         parent,
                       MixedFilamentDefinition*                          definition,
-                      std::vector<std::pair<std::string, std::string>>& physical_filaments);
+                      std::vector<std::pair<std::string, std::string>>& physical_filaments,
+                      CardType                                          card_type = CardType::Mixed);
+
+    CardType card_type() const { return m_card_type; }
 
     void set_on_box_edit_callback(std::function<void(bool edit_by_color)> callback) { m_on_box_edit = std::move(callback); }
-
     void set_on_right_click_callback(std::function<void(const wxPoint& screen_pos)> callback) { m_on_right_click = std::move(callback); }
-
     void set_on_edit_btn_callback(std::function<void(wxWindow* anchor)> callback) { m_on_edit_btn = std::move(callback); }
+    void set_on_select_callback(std::function<void()> callback) { m_on_select = std::move(callback); }
+    void set_on_delete_callback(std::function<void()> callback) { m_on_delete = std::move(callback); }
+
+    void set_selected(bool selected);
+    bool is_selected() const { return m_selected; }
+
+    void set_gradient_preview_colors(std::vector<wxColor> colors)
+    {
+        m_gradient_preview_colors = std::move(colors);
+        if (m_clr_swatch_panel)
+            m_clr_swatch_panel->Refresh();
+        if (m_box_panel)
+            m_box_panel->Refresh();
+    }
 
     void set_dialog_open(bool open)
     {
@@ -34,6 +54,8 @@ public:
     }
 
     void update_state(MixedFilamentDefinition* definition, bool refresh);
+    void msw_rescale();
+    void sys_color_changed();
 
     static void paint_clr_swatch(
         wxDC& context, const wxSize& size, const wxColor& color, const wxString& index_text, bool is_dark, int padding = 0);
@@ -71,7 +93,8 @@ public:
                                    const wxSize&                    swatch_size);
 
 private:
-    MixedFilamentDefinition*                          m_definition;
+    CardType                                          m_card_type{CardType::Mixed};
+    MixedFilamentDefinition*                          m_definition{nullptr};
     std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
     wxString                                          m_tooltip = wxString();
 
@@ -85,7 +108,10 @@ private:
     std::function<void(bool edit_by_color)>        m_on_box_edit;
     std::function<void(const wxPoint& screen_pos)> m_on_right_click;
     std::function<void(wxWindow* anchor)>          m_on_edit_btn;
+    std::function<void()>                          m_on_select;
+    std::function<void()>                          m_on_delete;
     bool                                           m_is_dialog_open = false;
+    bool                                           m_selected = false;
 
     void                 build_ui();
     std::vector<wxColor> get_physical_filaments_colors(const std::vector<unsigned int>& filament_indices) const;
@@ -97,7 +123,7 @@ private:
 
     wxPanel*        m_clr_swatch_panel{nullptr};
     wxPanel*        m_box_panel{nullptr};
-    ScalableButton* m_filament_edit_btn{nullptr};
+    ScalableButton* m_action_btn{nullptr};
 
     bool m_is_box_panel_hovered = false;
 };

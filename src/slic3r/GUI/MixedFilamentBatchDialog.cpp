@@ -17,6 +17,14 @@
 
 namespace Slic3r::GUI {
 
+namespace {
+bool is_gradient_def(const MixedFilamentDefinition& definition)
+{
+    return definition.recipe.kind == MixedFilamentRecipeKind::WeightedBlend &&
+           definition.behavior.gradient.enabled && definition.recipe.blend.components.size() >= 2;
+}
+}
+
 MixedFilamentBatchDialog::MixedFilamentBatchDialog(
     wxWindow* parent,
     const std::vector<std::pair<std::string, std::string>>& physical_filaments)
@@ -110,7 +118,7 @@ void MixedFilamentBatchDialog::build_ui()
     m_footer_panel->SetSizer(footer_sizer);
 
     m_info_label = new wxStaticText(m_footer_panel, wxID_ANY, "");
-    m_info_label->SetFont(::Label::Body_14.Bold());
+    m_info_label->SetFont(::Label::Body_14);
     MFDTheme::apply_text(m_info_label, MFDTheme::primary_text(), m_footer_panel->GetBackgroundColour());
 
     Button* btn_cancel = new Button(m_footer_panel, _L("Cancel"), "", 0, 0, wxID_CANCEL);
@@ -152,12 +160,18 @@ void MixedFilamentBatchDialog::generate_items()
     auto &mgr = preset_bundle->mixed_filaments;
     std::vector<MixedFilamentDefinition> existing_definitions = mgr.mixed_filament_definitions(num_phys);
 
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(physical_colors);
+
     // Map existing recipes for lookup
     std::vector<std::pair<BatchMixKey, size_t>> existing_keys;
+    size_t visible_index = 0;
     for (size_t idx = 0; idx < existing_definitions.size(); ++idx) {
-        if (!existing_definitions[idx].visibility.tombstoned &&
-            !existing_definitions[idx].behavior.surface_bias.perimeter_modulation) {
-            existing_keys.push_back({make_mix_key(existing_definitions[idx]), idx});
+        if (!existing_definitions[idx].visibility.tombstoned) {
+            existing_keys.push_back({make_mix_key(existing_definitions[idx]), visible_index++});
         }
     }
 
@@ -190,6 +204,7 @@ void MixedFilamentBatchDialog::generate_items()
         if (exist_it != existing_keys.end()) {
             item.is_existing = true;
             item.is_deleted = false;
+            item.display_id = wxString(Slic3r::mixed_filament_index_to_letter(exist_it->second));
         }
 
         m_mix_items.push_back(item);
@@ -198,16 +213,109 @@ void MixedFilamentBatchDialog::generate_items()
     // 1. First register all non-tombstoned existing mixes
     for (size_t idx = 0; idx < existing_definitions.size(); ++idx) {
         auto& def = existing_definitions[idx];
-        if (def.visibility.tombstoned || def.behavior.surface_bias.perimeter_modulation)
+        if (def.visibility.tombstoned)
             continue;
 
-        std::vector<int> phys;
-        std::vector<int> weights;
-        for (const auto& comp : def.recipe.blend.components) {
-            phys.push_back((int)comp.filament.id - 1);
-            weights.push_back(comp.percent);
+        BatchMixKey key = make_mix_key(def);
+        BatchMixItem item;
+        item.key = key;
+        item.stable_id = def.identity.stable_id;
+        item.is_existing = true;
+        item.is_deleted = false;
+        item.is_recommended = false;
+
+        auto exist_it = std::find_if(existing_keys.begin(), existing_keys.end(), [&](const std::pair<BatchMixKey, size_t>& k) {
+            return k.first == key;
+        });
+        if (exist_it != existing_keys.end()) {
+            item.display_id = wxString(Slic3r::mixed_filament_index_to_letter(exist_it->second));
         }
-        register_item(phys, weights, false);
+
+        if (def.behavior.surface_bias.perimeter_modulation) {
+            item.is_apm = true;
+            item.is_gradient = true;
+            for (const auto& comp : def.recipe.blend.components) {
+                item.physical_indices.push_back((int)comp.filament.id - 1);
+                item.percentages.push_back(comp.percent);
+            }
+            std::vector<unsigned int> component_ids = def.recipe.blend.component_ids(num_phys);
+            const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(component_ids, {}, display_context);
+            item.gradient_colors = preview.sampled_colors;
+            if (item.gradient_colors.empty()) {
+                for (int p : item.physical_indices) {
+                    if (p >= 0 && p < int(m_physical_filaments.size()))
+                        item.gradient_colors.push_back(wxColor(m_physical_filaments[p].first));
+                }
+            }
+            if (item.gradient_colors.empty()) {
+                item.gradient_colors = {StateColor::darkModeColorFor(wxColour("#808080")),
+                                        StateColor::darkModeColorFor(wxColour("#B0B0B0"))};
+            }
+            if (!item.gradient_colors.empty())
+                item.color = item.gradient_colors.front();
+
+            wxString apm_prefix = "Adaptive Perimeter Modulation";
+            for (int p : item.physical_indices) {
+                apm_prefix += wxString::Format(" [%d]", p + 1);
+            }
+            item.tooltip = apm_prefix;
+
+            m_mix_items.push_back(item);
+        } else if (is_gradient_def(def)) {
+            item.is_gradient = true;
+            for (const auto& comp : def.recipe.blend.components) {
+                item.physical_indices.push_back((int)comp.filament.id - 1);
+                item.percentages.push_back(comp.percent);
+            }
+            const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(def, display_context);
+            item.gradient_colors = preview.sampled_colors;
+            if (item.gradient_colors.empty()) {
+                std::vector<unsigned int> component_ids = def.recipe.blend.component_ids(num_phys);
+                item.gradient_colors = build_mixed_filament_gradient_preview(component_ids, {}, display_context).sampled_colors;
+            }
+            if (item.gradient_colors.empty()) {
+                for (int p : item.physical_indices) {
+                    if (p >= 0 && p < int(m_physical_filaments.size()))
+                        item.gradient_colors.push_back(wxColor(m_physical_filaments[p].first));
+                }
+            }
+            if (!item.gradient_colors.empty())
+                item.color = item.gradient_colors.front();
+
+            ColorNames::DescriptionOptions options;
+            options.include_components = true;
+            options.include_hex        = true;
+            item.tooltip = wxString::FromUTF8(
+                ColorNames::mixed_filament_name(def, display_context.physical_material_types, display_context.physical_colors, options));
+
+            m_mix_items.push_back(item);
+        } else if (def.recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
+            item.is_pattern = true;
+            if (def.recipe.manual_pattern && !def.recipe.manual_pattern->groups.empty()) {
+                for (const auto& g : def.recipe.manual_pattern->groups[0]) {
+                    item.physical_indices.push_back((int)g.id - 1);
+                }
+            }
+            std::string hex = compute_mixed_filament_display_color(def, display_context);
+            item.color = parse_mixed_color(hex);
+
+            ColorNames::DescriptionOptions options;
+            options.include_components = true;
+            options.include_hex        = true;
+            item.tooltip = wxString::FromUTF8(
+                ColorNames::mixed_filament_name(def, display_context.physical_material_types, display_context.physical_colors, options));
+
+            m_mix_items.push_back(item);
+        } else {
+            for (const auto& comp : def.recipe.blend.components) {
+                item.physical_indices.push_back((int)comp.filament.id - 1);
+                item.percentages.push_back(comp.percent);
+            }
+            item.color = compute_mixed_color(item.physical_indices, item.percentages);
+            item.tooltip = format_tooltip(item.physical_indices, item.percentages, item.color);
+
+            m_mix_items.push_back(item);
+        }
     }
 
     // 2. Generate recommended combinations
@@ -279,6 +387,7 @@ void MixedFilamentBatchDialog::update_footer_info()
 BatchMixKey MixedFilamentBatchDialog::make_mix_key(const std::vector<int>& physical_indices, const std::vector<int>& percentages) const
 {
     BatchMixKey key;
+    key.kind = BatchItemKind::Blend;
     for (size_t idx = 0; idx < physical_indices.size(); ++idx) {
         key.components.push_back({physical_indices[idx] + 1, percentages[idx]});
     }
@@ -289,9 +398,32 @@ BatchMixKey MixedFilamentBatchDialog::make_mix_key(const std::vector<int>& physi
 BatchMixKey MixedFilamentBatchDialog::make_mix_key(const MixedFilamentDefinition& def) const
 {
     BatchMixKey key;
-    for (const auto& comp : def.recipe.blend.components) {
-        key.components.push_back({(int)comp.filament.id, comp.percent});
+    key.stable_id = def.identity.stable_id;
+
+    if (def.behavior.surface_bias.perimeter_modulation) {
+        key.kind = BatchItemKind::APM;
+        for (const auto& comp : def.recipe.blend.components) {
+            key.components.push_back({(int)comp.filament.id, comp.percent});
+        }
+    } else if (is_gradient_def(def)) {
+        key.kind = BatchItemKind::Gradient;
+        for (const auto& comp : def.recipe.blend.components) {
+            key.components.push_back({(int)comp.filament.id, comp.percent});
+        }
+    } else if (def.recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
+        key.kind = BatchItemKind::Pattern;
+        if (def.recipe.manual_pattern && !def.recipe.manual_pattern->groups.empty()) {
+            for (const auto& group : def.recipe.manual_pattern->groups[0]) {
+                key.components.push_back({(int)group.id, 0});
+            }
+        }
+    } else {
+        key.kind = BatchItemKind::Blend;
+        for (const auto& comp : def.recipe.blend.components) {
+            key.components.push_back({(int)comp.filament.id, comp.percent});
+        }
     }
+
     std::sort(key.components.begin(), key.components.end());
     return key;
 }
@@ -330,15 +462,21 @@ wxColor MixedFilamentBatchDialog::compute_mixed_color(const std::vector<int>& ph
 
 wxString MixedFilamentBatchDialog::format_tooltip(const std::vector<int>& physical_indices, const std::vector<int>& percentages, const wxColor& mixed_color) const
 {
-    wxString tooltip;
-    for (size_t i = 0; i < physical_indices.size(); ++i) {
-        if (i > 0)
-            tooltip += " + ";
-        tooltip += wxString::Format("%d%% Filament [%d]", percentages[i], physical_indices[i] + 1);
-    }
-    tooltip += wxString::Format(" = #%02X%02X%02X",
-        mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
-    return tooltip;
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& f : m_physical_filaments)
+        physical_colors.emplace_back(f.first);
+    const MixedFilamentDisplayContext ctx = build_mixed_filament_display_context(physical_colors);
+
+    char hex_buf[16];
+    std::snprintf(hex_buf, sizeof(hex_buf), "#%02X%02X%02X", mixed_color.Red(), mixed_color.Green(), mixed_color.Blue());
+
+    ColorNames::DescriptionOptions opts;
+    opts.include_components = true;
+
+    std::string tip = ColorNames::mixed_filament_name(physical_indices, percentages, std::string(hex_buf),
+                                                    ctx.physical_material_types, ctx.physical_colors, opts);
+    return from_u8(tip);
 }
 
 void MixedFilamentBatchDialog::apply_batch_changes()
@@ -362,9 +500,13 @@ void MixedFilamentBatchDialog::apply_batch_changes()
 
     // 1. Handle Deletions
     for (const auto& item : m_mix_items) {
-        if (item.is_existing && item.is_deleted) {
+        if (item.is_existing && item.is_deleted && !item.is_apm) {
             auto it = std::find_if(definitions.begin(), definitions.end(), [&](const MixedFilamentDefinition& d) {
-                return !d.behavior.surface_bias.perimeter_modulation && make_mix_key(d) == item.key;
+                if (d.behavior.surface_bias.perimeter_modulation)
+                    return false;
+                if (item.stable_id != 0 && d.identity.stable_id == item.stable_id)
+                    return true;
+                return make_mix_key(d) == item.key;
             });
             if (it != definitions.end()) {
                 size_t mixed_id = std::distance(definitions.begin(), it);
@@ -372,7 +514,9 @@ void MixedFilamentBatchDialog::apply_batch_changes()
                 auto& target = definitions[mixed_id];
                 const MixedFilamentPrimaryPairView target_pair_view = target.recipe.blend.primary_pair_or();
                 const std::pair<unsigned int, unsigned int> target_pair = canonical_pair(target_pair_view.component_a.id, target_pair_view.component_b.id);
-                const bool valid_auto_pair = target_pair.first >= 1 &&
+                const bool valid_auto_pair = target.recipe.kind == MixedFilamentRecipeKind::WeightedBlend &&
+                                             !target.behavior.gradient.enabled &&
+                                             target_pair.first >= 1 &&
                                              target_pair.second >= 1 &&
                                              target_pair.first <= num_physical &&
                                              target_pair.second <= num_physical &&
@@ -426,7 +570,7 @@ void MixedFilamentBatchDialog::apply_batch_changes()
     for (const auto& item : m_mix_items) {
         bool is_shown = true;
         for (int idx : item.physical_indices) {
-            if (idx >= 0 && idx < phys_enabled.size() && !phys_enabled[idx]) {
+            if (idx >= 0 && idx < (int)phys_enabled.size() && !phys_enabled[idx]) {
                 is_shown = false;
                 break;
             }
@@ -483,7 +627,7 @@ BatchSwatchTile::BatchSwatchTile(wxWindow* parent, BatchMixItem* item, std::func
 {
     SetMinSize(wxSize(FromDIP(28), FromDIP(28)));
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetCursor(wxCursor(wxCURSOR_HAND));
+    SetCursor(m_item->is_apm ? wxCursor(wxNullCursor) : wxCursor(wxCURSOR_HAND));
     SetDoubleBuffered(true);
     SetToolTip(m_item->tooltip);
 
@@ -503,18 +647,21 @@ void BatchSwatchTile::on_paint(wxPaintEvent&)
     dc.SetBackground(wxBrush(GetParent()->GetBackgroundColour()));
     dc.Clear();
 
-    wxColor color = m_item->color;
-    wxString text = "";
-    FilamentCardMixed::paint_clr_swatch(dc, s, color, text, wxGetApp().dark_mode(), padding);
+    wxString text = (m_item->is_existing && !m_item->is_deleted) ? m_item->display_id : "";
+
+    if (m_item->is_gradient) {
+        FilamentCardMixed::paint_clr_swatch_gradient(dc, s, m_item->gradient_colors, text, wxGetApp().dark_mode(), padding);
+    } else {
+        wxColor color = m_item->color;
+        FilamentCardMixed::paint_clr_swatch(dc, s, color, text, wxGetApp().dark_mode(), padding);
+    }
 
     // Antialiased overlays
-    dc.SetPen(wxPen(color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE, FromDIP(2)));
+    wxColor text_col = m_item->color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE;
+    dc.SetPen(wxPen(text_col, FromDIP(2)));
     if (m_item->is_existing) {
-        if (m_item->is_deleted) {
+        if (m_item->is_deleted && !m_item->is_apm) {
             dc.DrawLine(s.x * 0.3, s.y * 0.3, s.x * 0.7, s.y * 0.7);
-        } else {
-            dc.DrawLine(s.x * 0.3, s.y * 0.5, s.x * 0.45, s.y * 0.7);
-            dc.DrawLine(s.x * 0.45, s.y * 0.7, s.x * 0.75, s.y * 0.3);
         }
     } else {
         if (m_item->is_added) {
@@ -529,7 +676,8 @@ void BatchSwatchTile::on_paint(wxPaintEvent&)
 
 void BatchSwatchTile::on_enter(wxMouseEvent& event)
 {
-    m_hovered = true;
+    if (!m_item->is_apm)
+        m_hovered = true;
     Refresh();
     event.Skip();
 }
@@ -543,6 +691,10 @@ void BatchSwatchTile::on_leave(wxMouseEvent& event)
 
 void BatchSwatchTile::on_left_up(wxMouseEvent& event)
 {
+    if (m_item->is_apm) {
+        event.Skip();
+        return;
+    }
     if (m_item->is_existing) {
         m_item->is_deleted = !m_item->is_deleted;
     } else {
@@ -670,7 +822,7 @@ void BatchCheckBox::on_paint(wxPaintEvent&)
     wxGCDC dc(pdc);
     wxSize s = GetClientSize();
 
-    dc.SetBackground(wxBrush(StateColor::darkModeColorFor(*wxWHITE)));
+    dc.SetBackground(wxBrush(GetParent() ? GetParent()->GetBackgroundColour() : StateColor::darkModeColorFor(*wxWHITE)));
     dc.Clear();
 
     // Checkbox border (adaptive color on dark mode and hover)

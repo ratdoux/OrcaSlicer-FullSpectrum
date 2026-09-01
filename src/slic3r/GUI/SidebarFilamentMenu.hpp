@@ -93,6 +93,7 @@ private:
     std::vector<FilamentCardMixed*>      m_mixed_cards;
     std::vector<size_t>                  m_mixed_definition_indices;
     std::vector<FilamentCardImageMap*>   m_image_map_cards;
+    std::vector<FilamentCardMixed*>      m_adaptive_mixed_cards;
     std::vector<unsigned int>            m_image_map_adaptive_filament_ids;
     unsigned int                         m_selected_adaptive_filament_id{0};
     size_t                               m_image_map_entries_signature{0};
@@ -175,6 +176,7 @@ private:
     Button*         m_btn_flushing{nullptr};
 
     // Physical Title panel elements
+    wxPanel*        m_physical_title_chip{nullptr};
     wxStaticText*   m_lbl_physical_title{nullptr};
     wxStaticText*   m_lbl_physical_counter{nullptr};
     wxPanel*        m_physical_divider{nullptr};
@@ -183,6 +185,7 @@ private:
     ScalableButton* m_btn_ams{nullptr};
 
     // Mixed Title panel elements
+    wxPanel*        m_mixed_title_chip{nullptr};
     wxStaticText*   m_lbl_mixed_title{nullptr};
     wxStaticText*   m_lbl_mixed_counter{nullptr};
     wxPanel*        m_mixed_divider{nullptr};

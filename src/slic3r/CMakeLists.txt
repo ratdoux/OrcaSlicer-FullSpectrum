@@ -89,6 +89,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/CreatePresetsDialog.hpp
     GUI/DailyTips.cpp
     GUI/DailyTips.hpp
+    GUI/DeleteFilamentDialog.cpp
+    GUI/DeleteFilamentDialog.hpp
     GUI/DesktopIntegrationDialog.cpp
     GUI/DesktopIntegrationDialog.hpp
     GUI/DeviceManager.cpp

@@ -41,7 +41,9 @@ static std::map<wxColour, wxColour> gDarkColors{
     {"#D7E8DE", "#1F2B27"}, // rgb(215, 232, 222)  Not Used anymore // Leftover from BBS
     {"#2B3436", "#808080"}, // rgb(43, 52, 54)     Not Used anymore // Leftover from BBS. Was used as main fill color of icons
     {"#ABABAB", "#ABABAB"},
-    {"#D9D9D9", "#2D2D32"}, // rgb(217, 217, 217)  Sidebar > Toggle button track color
+    {"#D9D9D9", "#27272A"}, // rgb(217, 217, 217)  Sidebar > Toggle button track color
+    {"#FFFEFE", "#D9D9D9"}, // rgb(255, 254, 254)  Sidebar > Toggle button thumb color
+    {"#EBF9F0", "#293F34"},
     //{"#F0F0F0", "#4C4C54"},
     // ORCA
     {"#BFE1DE", "#223C3C"}, // rgb(191, 225, 222)  Dropdown checked item background color > ORCA color with %25 opacity
@@ -49,14 +51,13 @@ static std::map<wxColour, wxColour> gDarkColors{
     // MixedFilamentDialog dark mode
     {"#F8F7F7", "#2A2A2E"}, // rgb(248, 247, 247)  Dialog / scrolled content background
     {"#F5F5F5", "#242428"}, // rgb(245, 245, 245)  Dialog scrolled content gutter
-    {"#F0F0F0", "#3F3F46"}, // rgb(240, 240, 240)  Card borders, dividers
     {"#E0E0E0", "#52525B"}, // rgb(224, 224, 224)  Preview inner border
     {"#F3F4F6", "#3A3A3F"}, // rgb(243, 244, 246)  Internal card dividers
     {"#333333", "#E4E4E7"}, // rgb(51, 51, 51)     Primary text
-    {"#1A1A1A", "#FFFFFF"}, // rgb(26, 26, 26)     Hovered/active primary text
-    {"#242424", "#E4E4E7"}, // rgb(36, 36, 36)    Primary text (hex input, cancel btn)
+    {"#1A1A1A", "#FFFFFD"}, // rgb(26, 26, 26)     Hovered/active primary text (must not be #FFFFFF)
+    {"#242424", "#E4E4E6"}, // rgb(36, 36, 36)    Primary text (hex input, cancel btn)
     {"#4A4A4A", "#A1A1AA"}, // rgb(74, 74, 74)    Secondary text (segmented btns)
-    {"#7E7E7E", "#A1A1AA"}, // rgb(126, 126, 126)  Recommendation section labels
+    {"#7E7E7E", "#A1A1AB"}, // rgb(126, 126, 126)  Recommendation section labels
     {"#8F8F8F", "#8A8A95"}, // rgb(143, 143, 143) Label text (Hex:, Preview, percentages)
     {"#EBEBEB", "#45454B"}, // rgb(235, 235, 235)  Slider track background
     {"#FDE8E8", "#4D2020"}, // rgb(253, 232, 232)  Error banner background
@@ -64,10 +65,10 @@ static std::map<wxColour, wxColour> gDarkColors{
     {"#FFF3EB", "#452A1A"}, // rgb(255, 243, 235)  Warning banner background
     {"#FF842D", "#FF9F43"}, // rgb(255, 132, 45)   Warning text
     {"#B4B4B4", "#73737D"}, // rgb(180, 180, 180)  Preview/strip border
-    {"#D1D5DC", "#52525B"}, // rgb(209, 213, 220)  Cancel button border
+    {"#D1D5DC", "#52525C"}, // rgb(209, 213, 220)  Cancel button border
     {"#FF0000", "#FF5252"}, // rgb(255, 0, 0)      Hex input error border
-    {"#019687", "#00675B"}, // rgb(1, 150, 135)    Confirm button bg (near #009688)
-    {"#26A69A", "#00675B"}, // rgb(38, 166, 154)   Default target/match color
+    {"#019687", "#00675C"}, // rgb(1, 150, 135)    Confirm button bg (near #009688)
+    {"#26A69A", "#008172"}, // rgb(38, 166, 154)   Default target/match color
     {"#FEFEFE", "#FEFEFE"}, // rgb(254, 254, 254)   Near-white text (segment btn selected, confirm btn)
 };
 
@@ -220,15 +221,20 @@ inline wxColour darkModeColorFor2(wxColour const &color)
 std::map<wxColour, wxColour> revert(std::map<wxColour, wxColour> const & map)
 {
     std::map<wxColour, wxColour> map2;
-    for (auto &p : map) map2.emplace(p.second, p.first);
+    for (auto &p : map) {
+        if (p.second == *wxWHITE || p.second == wxColour("#FFFFFF"))
+            continue;
+        map2.emplace(p.second, p.first);
+    }
     return map2;
 }
 
 wxColour StateColor::lightModeColorFor(wxColour const &color)
 {
+    if (color == *wxWHITE || color == wxColour("#FFFFFF"))
+        return color;
     static std::map<wxColour, wxColour> gLightColors = revert(gDarkColors);
     auto iter = gLightColors.find(color);
-    wxASSERT(iter != gLightColors.end());
     if (iter != gLightColors.end()) return iter->second;
     return color;
 }

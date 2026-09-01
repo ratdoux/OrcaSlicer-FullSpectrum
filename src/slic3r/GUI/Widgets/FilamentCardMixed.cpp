@@ -26,13 +26,30 @@ bool is_gradient_definition(const MixedFilamentDefinition* definition)
 
 FilamentCardMixed::FilamentCardMixed(wxWindow*                                         parent,
                                      MixedFilamentDefinition*                          definition,
-                                     std::vector<std::pair<std::string, std::string>>& physical_filaments)
-    : ::wxPanel(parent, wxID_ANY), m_definition{definition}, m_physical_filaments{physical_filaments}
+                                     std::vector<std::pair<std::string, std::string>>& physical_filaments,
+                                     CardType                                          card_type)
+    : ::wxPanel(parent, wxID_ANY)
+    , m_card_type{card_type}
+    , m_definition{definition}
+    , m_physical_filaments{physical_filaments}
 {
     SetBackgroundColour(parent ? parent->GetBackgroundColour() : StateColor::darkModeColorFor(*wxWHITE));
-    update_state(definition, false);
-
     build_ui();
+    update_state(definition, false);
+}
+
+void FilamentCardMixed::set_selected(bool selected)
+{
+    if (m_selected == selected)
+        return;
+    m_selected = selected;
+    if (m_box_panel)
+        m_box_panel->Refresh();
+    if (m_action_btn && m_card_type == CardType::APM) {
+        m_action_btn->SetBitmap_(selected ? "im_visible" : "im_visible_off");
+        m_action_btn->Refresh();
+    }
+    Refresh();
 }
 
 FilamentCardImageMap::FilamentCardImageMap(wxWindow*             parent,
@@ -200,7 +217,7 @@ void FilamentCardMixed::build_ui()
     m_clr_swatch_panel->SetBackgroundColour(GetBackgroundColour());
     m_clr_swatch_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_clr_swatch_panel->Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
-        if (!m_definition) {
+        if (!m_definition && m_gradient_preview_colors.empty()) {
             wxPaintDC context(m_clr_swatch_panel);
             return;
         }
@@ -231,17 +248,22 @@ void FilamentCardMixed::build_ui()
         wxPaintDC    context(m_clr_swatch_panel);
         const wxSize size = m_clr_swatch_panel->GetClientSize();
 
-        if (is_gradient_definition(m_definition)) {
+        if (m_card_type == CardType::APM || is_gradient_definition(m_definition)) {
             paint_clr_swatch_gradient(context, size, m_gradient_preview_colors, display_id_text(), wxGetApp().dark_mode());
-        } else {
+        } else if (m_definition) {
             paint_clr_swatch(context, size, hex_string_to_wx_color(m_definition->presentation.display_color), display_id_text(),
                              wxGetApp().dark_mode());
         }
     });
 
     m_clr_swatch_panel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
-        if (m_on_box_edit)
-            m_on_box_edit(true); // true means edit on Mix by color tab
+        if (m_card_type == CardType::APM) {
+            if (m_on_select)
+                m_on_select();
+        } else {
+            if (m_on_box_edit)
+                m_on_box_edit(true); // true means edit on Mix by color tab
+        }
         event.Skip();
     });
 
@@ -259,9 +281,13 @@ void FilamentCardMixed::build_ui()
     m_box_panel->SetBackgroundColour(GetBackgroundColour());
 
     m_box_panel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
-        if (m_on_box_edit)
-            m_on_box_edit(false); // false means edit on default tab
-
+        if (m_card_type == CardType::APM) {
+            if (m_on_select)
+                m_on_select();
+        } else {
+            if (m_on_box_edit)
+                m_on_box_edit(false); // false means edit on default tab
+        }
         event.Skip();
     });
 
@@ -280,7 +306,7 @@ void FilamentCardMixed::build_ui()
 
     m_box_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_box_panel->Bind(wxEVT_PAINT, [this, swatch_size](wxPaintEvent& event) {
-        if (!m_definition) {
+        if (!m_definition && m_gradient_preview_colors.empty()) {
             wxPaintDC context(m_box_panel);
             return;
         }
@@ -290,26 +316,63 @@ void FilamentCardMixed::build_ui()
         const wxSize  size             = m_box_panel->GetClientSize();
         const wxColor background_color = GetBackgroundColour();
 
-        const bool highlight = m_is_box_panel_hovered || m_is_dialog_open;
+        const bool highlight = m_is_box_panel_hovered || m_is_dialog_open || m_selected;
 
-        if (is_gradient_definition(m_definition)) {
+        if (m_card_type == CardType::APM || is_gradient_definition(m_definition)) {
             paint_box_gradient(context, size, background_color, m_gradient_preview_colors, m_gradient_component_positions,
                                m_gradient_component_ids, wxGetApp().dark_mode(), highlight, wxSize(swatch_size, swatch_size));
-        } else if (m_definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) {
+            if (m_card_type == CardType::APM) {
+                context.SetFont(::Label::Body_14.Bold());
+                wxString apm_text = "APM";
+                for (unsigned int id : m_physical_filaments_indices) {
+                    apm_text += wxString::Format(" [%u]", id);
+                }
+                const wxSize   text_size = context.GetTextExtent(apm_text);
+                const wxPoint  text_pos((size.x - text_size.x) / 2, (size.y - text_size.y) / 2);
+                context.SetTextForeground(wxColour(0, 0, 0, 180));
+                context.DrawText(apm_text, text_pos.x + 1, text_pos.y + 1);
+                context.SetTextForeground(*wxWHITE);
+                context.DrawText(apm_text, text_pos);
+            }
+        } else if (m_definition && m_definition->recipe.kind == MixedFilamentRecipeKind::WeightedBlend) {
             paint_box_mix(context, size, background_color, m_physical_filaments_indices, m_physical_filaments_percentages,
                           m_physical_filaments_colors, wxGetApp().dark_mode(), highlight, wxSize(swatch_size, swatch_size));
-        } else if (m_definition->recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
+        } else if (m_definition && m_definition->recipe.kind == MixedFilamentRecipeKind::ManualPattern) {
             paint_box_pattern(context, size, background_color, m_physical_filaments_indices, m_physical_filaments_colors,
                               wxGetApp().dark_mode(), highlight, wxSize(swatch_size, swatch_size));
         }
     });
 
-    m_filament_edit_btn = new ScalableButton(this, wxID_ANY, "menu_filament");
-    m_filament_edit_btn->SetToolTip(_L("Click to edit preset"));
-    m_filament_edit_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        if (m_on_edit_btn)
-            m_on_edit_btn(m_filament_edit_btn);
-    });
+    if (m_card_type == CardType::APM) {
+        if (m_on_delete) {
+            m_action_btn = new ScalableButton(this, wxID_ANY, "delete_filament");
+            m_action_btn->SetToolTip(_L("Remove image colors from this object"));
+            m_action_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+                if (m_on_delete)
+                    m_on_delete();
+            });
+        } else {
+            m_action_btn = new ScalableButton(this, wxID_ANY, m_selected ? "im_visible" : "im_visible_off");
+            m_action_btn->SetToolTip(m_tooltip.empty() ? _L("Toggle adaptive cycle highlight") : m_tooltip);
+            m_action_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+                if (m_on_select)
+                    m_on_select();
+            });
+        }
+
+        Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
+            if (m_on_select)
+                m_on_select();
+            event.Skip();
+        });
+    } else {
+        m_action_btn = new ScalableButton(this, wxID_ANY, "menu_filament");
+        m_action_btn->SetToolTip(_L("Click to edit preset"));
+        m_action_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+            if (m_on_edit_btn)
+                m_on_edit_btn(m_action_btn);
+        });
+    }
 
     auto right_click_handler = [this](wxMouseEvent& event) {
         if (m_on_right_click) {
@@ -324,17 +387,53 @@ void FilamentCardMixed::build_ui()
     Bind(wxEVT_RIGHT_DOWN, right_click_handler);
     m_clr_swatch_panel->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
     m_box_panel->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
-    m_filament_edit_btn->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
+    if (m_action_btn)
+        m_action_btn->Bind(wxEVT_RIGHT_DOWN, right_click_handler);
 
     SetSizer(m_main_sizer);
     m_main_sizer->Add(m_clr_swatch_panel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
     m_main_sizer->Add(m_box_panel, 1, wxEXPAND | wxALL, FromDIP(2));
-    m_main_sizer->Add(m_filament_edit_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+    m_main_sizer->Add(m_action_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(4));
+}
+
+void FilamentCardMixed::msw_rescale()
+{
+    if (m_action_btn != nullptr)
+        m_action_btn->msw_rescale();
+
+    if (m_clr_swatch_panel != nullptr)
+        m_clr_swatch_panel->Refresh();
+
+    if (m_box_panel != nullptr)
+        m_box_panel->Refresh();
+
+    Refresh();
+}
+
+void FilamentCardMixed::sys_color_changed()
+{
+    msw_rescale();
 }
 
 wxString FilamentCardMixed::display_id_text() const
 {
-    return m_definition ? wxString(std::to_string(m_definition->identity.stable_id)) : wxString();
+    if (!m_definition)
+        return wxString();
+
+    const auto* pb = wxGetApp().preset_bundle;
+    if (pb != nullptr) {
+        const auto &mfs = pb->mixed_filaments.mixed_filaments();
+        size_t visible_idx = 0;
+        for (const auto &mf : mfs) {
+            if (mf.deleted || !mf.enabled) continue;
+            if (mf.stable_id == m_definition->identity.stable_id) {
+                return wxString(Slic3r::mixed_filament_index_to_letter(visible_idx));
+            }
+            ++visible_idx;
+        }
+    }
+
+    return wxString(Slic3r::mixed_filament_index_to_letter(0));
 }
 
 wxSize FilamentCardMixed::color_swatch_size_for_text(const wxString& text) const
@@ -412,7 +511,7 @@ void FilamentCardMixed::paint_clr_swatch(
     }
 
     // text
-    context.SetFont(::Label::Body_14);
+    context.SetFont(::Label::Body_12);
     context.SetTextForeground(color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
 
     const wxSize  text_size = context.GetTextExtent(text);
@@ -428,24 +527,23 @@ void FilamentCardMixed::paint_clr_swatch_gradient(
     int w = size.x - 2 * padding;
     int h = size.y - 2 * padding;
 
-    if (w <= 0 || h <= 0 || colors.empty())
+    if (w <= 0 || h <= 0)
         return;
 
-    wxWindow*     window     = context.GetWindow();
-    const wxColor background = window ? window->GetBackgroundColour() : StateColor::darkModeColorFor(*wxWHITE);
-    context.SetPen(*wxTRANSPARENT_PEN);
-    context.SetBrush(wxBrush(background));
-    context.DrawRectangle(0, 0, size.x, size.y);
+    if (colors.empty()) {
+        paint_clr_swatch(context, size, wxColour("#26A69A"), text, is_dark, padding);
+        return;
+    }
+
+    if (colors.size() == 1) {
+        paint_clr_swatch(context, size, colors[0], text, is_dark, padding);
+        return;
+    }
 
     wxUnusedVar(is_dark);
-    const wxColor border_color(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar());
-    wxBitmap*     gradient_bitmap = get_color_block_bitmap_cached(colors, true, w, h, text, wxColour(130, 130, 128), {}, true);
+    wxBitmap* gradient_bitmap = get_color_block_bitmap_cached(colors, true, w, h, text, wxColour(130, 130, 128), {}, true);
     if (gradient_bitmap != nullptr)
         context.DrawBitmap(*gradient_bitmap, x, y, true);
-
-    context.SetPen(wxPen(border_color, 1));
-    context.SetBrush(*wxTRANSPARENT_BRUSH);
-    context.DrawRectangle(x, y, w, h);
 }
 
 // static
@@ -535,7 +633,7 @@ void FilamentCardMixed::paint_box_mix(wxDC&                            context,
         }
 
         // text
-        context.SetFont(::Label::Body_14);
+        context.SetFont(::Label::Body_12);
         context.SetTextForeground(colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
 
         const wxString text      = is_hovered ? wxString(std::to_string(percentages[i]) + "%") : wxString(std::to_string(indices[i]));
@@ -615,7 +713,7 @@ void FilamentCardMixed::paint_box_pattern(wxDC&                            conte
         }
 
         // text
-        context.SetFont(::Label::Body_14);
+        context.SetFont(::Label::Body_12);
         context.SetTextForeground(colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
 
         const wxString text      = wxString(std::to_string(indices[i]));
@@ -658,6 +756,61 @@ void FilamentCardMixed::paint_box_pattern(wxDC&                            conte
 
 void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool refresh)
 {
+    if (m_card_type == CardType::APM) {
+        m_definition = definition;
+        if (definition != nullptr) {
+            m_physical_filaments_indices     = definition->recipe.blend.component_ids();
+            m_physical_filaments_colors      = get_physical_filaments_colors(m_physical_filaments_indices);
+            m_physical_filaments_percentages = definition->recipe.blend.component_percents();
+        }
+
+        std::vector<std::string> physical_colors;
+        physical_colors.reserve(m_physical_filaments.size());
+        for (const auto& filament : m_physical_filaments)
+            physical_colors.emplace_back(filament.first);
+        const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(physical_colors);
+
+        if (m_gradient_preview_colors.empty()) {
+            if (definition != nullptr) {
+                std::vector<unsigned int> component_ids = definition->recipe.blend.component_ids();
+                const MixedFilamentGradientPreview preview =
+                    build_mixed_filament_gradient_preview(component_ids, {}, display_context);
+                m_gradient_preview_colors      = preview.sampled_colors;
+                m_gradient_component_positions = preview.component_positions;
+                m_gradient_component_ids       = preview.component_ids;
+            }
+            if (m_gradient_preview_colors.empty()) {
+                for (unsigned int id : m_physical_filaments_indices) {
+                    if (id >= 1 && id <= m_physical_filaments.size())
+                        m_gradient_preview_colors.push_back(wxColor(m_physical_filaments[id - 1].first));
+                }
+            }
+            if (m_gradient_preview_colors.empty()) {
+                m_gradient_preview_colors = {StateColor::darkModeColorFor(wxColour("#808080")),
+                                             StateColor::darkModeColorFor(wxColour("#B0B0B0"))};
+            }
+        }
+
+        wxString apm_prefix = "Adaptive Perimeter Modulation";
+        for (unsigned int id : m_physical_filaments_indices) {
+            apm_prefix += wxString::Format(" [%u]", id);
+        }
+        m_tooltip = apm_prefix + " - " +
+                    _L("KM/K-S-predicted attainable colors. Click to highlight the object regions assigned to this adaptive localized cycle");
+        SetToolTip(m_tooltip);
+        if (m_clr_swatch_panel)
+            m_clr_swatch_panel->SetToolTip(m_tooltip);
+        if (m_box_panel)
+            m_box_panel->SetToolTip(m_tooltip);
+        if (m_action_btn)
+            m_action_btn->SetToolTip(m_tooltip);
+
+        update_color_swatch_size();
+        if (refresh)
+            Refresh();
+        return;
+    }
+
     m_gradient_preview_colors.clear();
     m_gradient_component_positions.clear();
     m_gradient_component_ids.clear();
@@ -692,19 +845,27 @@ void FilamentCardMixed::update_state(MixedFilamentDefinition* definition, bool r
         m_physical_filaments_percentages.clear();
     }
 
-    m_definition = definition;
+    std::vector<std::string> physical_colors;
+    physical_colors.reserve(m_physical_filaments.size());
+    for (const auto& filament : m_physical_filaments)
+        physical_colors.emplace_back(filament.first);
+    const MixedFilamentDisplayContext display_context = build_mixed_filament_display_context(physical_colors);
 
     if (is_gradient_definition(definition)) {
-        std::vector<std::string> physical_colors;
-        physical_colors.reserve(m_physical_filaments.size());
-        for (const auto& filament : m_physical_filaments)
-            physical_colors.emplace_back(filament.first);
-        const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(*definition, build_mixed_filament_display_context(
-                                                                                                            physical_colors));
+        const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(*definition, display_context);
         m_gradient_preview_colors      = preview.sampled_colors;
         m_gradient_component_positions = preview.component_positions;
         m_gradient_component_ids       = preview.component_ids;
     }
+
+    ColorNames::DescriptionOptions options;
+    options.include_components = true;
+    options.include_hex        = true;
+    m_tooltip                  = wxString::FromUTF8(
+        ColorNames::mixed_filament_name(*definition, display_context.physical_material_types, display_context.physical_colors, options));
+    SetToolTip(m_tooltip);
+    m_clr_swatch_panel->SetToolTip(_L("Edit Color - ") + m_tooltip);
+    m_box_panel->SetToolTip(_L("Edit - ") + m_tooltip);
 
     update_color_swatch_size();
 
@@ -729,11 +890,17 @@ void FilamentCardMixed::paint_box_gradient(wxDC&                            cont
     context.SetPen(*wxTRANSPARENT_PEN);
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 
-    if (colors.size() < 2 || indices.size() < 2 || component_positions.size() != (2 * indices.size() - 1)) {
+    if (colors.empty()) {
+        const int     border_width = 1;
+        const wxColor border_color = is_hovered ?
+                                         wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1) :
+                                         StateColor::darkModeColorFor(wxColour("#CECECE"));
+        context.SetBrush(*wxTRANSPARENT_BRUSH);
+        context.SetPen(wxPen(border_color, border_width));
+        context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
         return;
     }
 
-    const int    count   = static_cast<int>(indices.size());
     const int    padding = (size.y - swatch_size.y) / 2;
     const double w       = std::max(1.0, (double) size.x - 2.0 * padding);
     const double h       = swatch_size.y;
@@ -742,94 +909,96 @@ void FilamentCardMixed::paint_box_gradient(wxDC&                            cont
 
     // Use wxGraphicsContext for smooth gradient drawing
     std::unique_ptr<wxGraphicsContext> gc(wxGraphicsContext::CreateFromUnknownDC(context));
-    if (!gc)
-        return;
-
-    // Draw the uniformly sampled, engine-aware preview. The samples already
-    // encode the user stop curve, including asymmetric midpoint placement.
-    const int sample_segments = int(colors.size()) - 1;
-    for (int index = 0; index < sample_segments; ++index) {
-        const double    x_start = sx + w * double(index) / double(sample_segments);
-        const double    x_end   = sx + w * double(index + 1) / double(sample_segments);
-        wxGraphicsBrush brush   = gc->CreateLinearGradientBrush(x_start, sy, x_end, sy, colors[size_t(index)], colors[size_t(index + 1)]);
-        gc->SetBrush(brush);
-        gc->SetPen(*wxTRANSPARENT_PEN);
-        gc->DrawRectangle(x_start, sy, x_end - x_start + 0.5, h);
+    if (gc) {
+        if (colors.size() == 1) {
+            gc->SetBrush(wxBrush(colors.front()));
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRectangle(sx, sy, w, h);
+        } else {
+            const int sample_segments = int(colors.size()) - 1;
+            for (int index = 0; index < sample_segments; ++index) {
+                const double    x_start = sx + w * double(index) / double(sample_segments);
+                const double    x_end   = sx + w * double(index + 1) / double(sample_segments);
+                wxGraphicsBrush brush   = gc->CreateLinearGradientBrush(x_start, sy, x_end, sy, colors[size_t(index)], colors[size_t(index + 1)]);
+                gc->SetBrush(brush);
+                gc->SetPen(*wxTRANSPARENT_PEN);
+                gc->DrawRectangle(x_start, sy, x_end - x_start + 0.5, h);
+            }
+        }
     }
 
-    // Now draw the filament numbers over their positions.
-    std::vector<double>   x_pos(count);
-    std::vector<wxString> labels(count);
-    std::vector<double>   text_widths(count);
-    double                min_gap      = wxWindow::FromDIP(4, context.GetWindow()); // minimal gap between text labels
-    double                side_padding = wxWindow::FromDIP(4, context.GetWindow());
+    // Now draw the filament numbers over their positions if applicable
+    const int count = static_cast<int>(indices.size());
+    if (count >= 2 && component_positions.size() == size_t(2 * count - 1) && colors.size() >= 2) {
+        std::vector<double>   x_pos(count);
+        std::vector<wxString> labels(count);
+        std::vector<double>   text_widths(count);
+        double                min_gap      = wxWindow::FromDIP(4, context.GetWindow()); // minimal gap between text labels
+        double                side_padding = wxWindow::FromDIP(4, context.GetWindow());
 
-    context.SetFont(::Label::Body_14);
+        context.SetFont(::Label::Body_12);
 
-    for (int i = 0; i < count; ++i) {
-        x_pos[i]         = sx + component_positions[2 * i] * w;
-        labels[i]        = wxString::Format("%u", indices[i]);
-        wxSize text_size = context.GetTextExtent(labels[i]);
-        text_widths[i]   = text_size.x;
-    }
+        for (int i = 0; i < count; ++i) {
+            x_pos[i]         = sx + component_positions[2 * i] * w;
+            labels[i]        = wxString::Format("%u", indices[i]);
+            wxSize text_size = context.GetTextExtent(labels[i]);
+            text_widths[i]   = text_size.x;
+        }
 
-    std::vector<double> left_bounds(count);
-    std::vector<double> right_bounds(count);
+        std::vector<double> left_bounds(count);
+        std::vector<double> right_bounds(count);
 
-    // Initial positioning: center each label at its filament's X coordinate
-    for (int i = 0; i < count; ++i) {
-        left_bounds[i]  = x_pos[i] - text_widths[i] / 2.0;
-        right_bounds[i] = left_bounds[i] + text_widths[i];
-    }
-
-    // Clamp to boundaries first (including side padding)
-    left_bounds[0]  = std::max(sx + side_padding, left_bounds[0]);
-    right_bounds[0] = left_bounds[0] + text_widths[0];
-
-    right_bounds[count - 1] = std::min(sx + w - side_padding, right_bounds[count - 1]);
-    left_bounds[count - 1]  = right_bounds[count - 1] - text_widths[count - 1];
-
-    // Forward pass: push overlapping labels rightwards
-    for (int i = 1; i < count; ++i) {
-        if (left_bounds[i] < right_bounds[i - 1] + min_gap) {
-            left_bounds[i]  = right_bounds[i - 1] + min_gap;
+        // Initial positioning: center each label at its filament's X coordinate
+        for (int i = 0; i < count; ++i) {
+            left_bounds[i]  = x_pos[i] - text_widths[i] / 2.0;
             right_bounds[i] = left_bounds[i] + text_widths[i];
         }
-    }
 
-    // Backward pass: push overlapping labels leftwards
-    if (right_bounds[count - 1] > sx + w - side_padding) {
-        right_bounds[count - 1] = sx + w - side_padding;
-        left_bounds[count - 1]  = right_bounds[count - 1] - text_widths[count - 1];
-    }
-    for (int i = count - 2; i >= 0; --i) {
-        if (right_bounds[i] > left_bounds[i + 1] - min_gap) {
-            right_bounds[i] = left_bounds[i + 1] - min_gap;
-            left_bounds[i]  = right_bounds[i] - text_widths[i];
-        }
-    }
-
-    // Double check boundary violation after backward pass
-    if (left_bounds[0] < sx + side_padding) {
-        left_bounds[0]  = sx + side_padding;
+        // Clamp to boundaries first (including side padding)
+        left_bounds[0]  = std::max(sx + side_padding, left_bounds[0]);
         right_bounds[0] = left_bounds[0] + text_widths[0];
+
+        right_bounds[count - 1] = std::min(sx + w - side_padding, right_bounds[count - 1]);
+        left_bounds[count - 1]  = right_bounds[count - 1] - text_widths[count - 1];
+
+        // Forward pass: push overlapping labels rightwards
         for (int i = 1; i < count; ++i) {
             if (left_bounds[i] < right_bounds[i - 1] + min_gap) {
                 left_bounds[i]  = right_bounds[i - 1] + min_gap;
                 right_bounds[i] = left_bounds[i] + text_widths[i];
             }
         }
-    }
 
-    // Draw the text
-    for (int i = 0; i < count; ++i) {
-        wxColor fill_color = interpolate_color(colors, component_positions[2 * i]);
-        wxColor text_color = fill_color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE;
+        // Backward pass: push overlapping labels leftwards
+        for (int i = count - 2; i >= 0; --i) {
+            if (right_bounds[i] > left_bounds[i + 1] - min_gap) {
+                right_bounds[i] = left_bounds[i + 1] - min_gap;
+                left_bounds[i]  = right_bounds[i] - text_widths[i];
+            }
+        }
 
-        context.SetTextForeground(text_color);
-        wxSize text_size = context.GetTextExtent(labels[i]);
-        int    text_y    = sy + (h - text_size.y) / 2;
-        context.DrawText(labels[i], (int) left_bounds[i], text_y);
+        // Double check boundary violation after backward pass
+        if (left_bounds[0] < sx + side_padding) {
+            left_bounds[0]  = sx + side_padding;
+            right_bounds[0] = left_bounds[0] + text_widths[0];
+            for (int i = 1; i < count; ++i) {
+                if (left_bounds[i] < right_bounds[i - 1] + min_gap) {
+                    left_bounds[i]  = right_bounds[i - 1] + min_gap;
+                    right_bounds[i] = left_bounds[i] + text_widths[i];
+                }
+            }
+        }
+
+        // Draw the text
+        for (int i = 0; i < count; ++i) {
+            wxColor fill_color = interpolate_color(colors, component_positions[2 * i]);
+            wxColor text_color = fill_color.GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE;
+
+            context.SetTextForeground(text_color);
+            wxSize text_size = context.GetTextExtent(labels[i]);
+            int    text_y    = sy + (h - text_size.y) / 2;
+            context.DrawText(labels[i], (int) left_bounds[i], text_y);
+        }
     }
 
     // border (draw last, so its on top)

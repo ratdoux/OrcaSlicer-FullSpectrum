@@ -11,6 +11,7 @@
 #include "MixedFilamentBatchDialog.hpp"
 #include "Widgets/FilamentCard.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
+#include "MixedFilamentBadge.hpp"
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ImageMap/Sampling.hpp"
@@ -302,12 +303,13 @@ void SidebarFilamentMenu::on_mixed_change(std::vector<MixedFilamentDefinition>& 
 
 void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDefinition>& mixed_filaments)
 {
-    const int previous_count = int(m_mixed_cards.size() + m_image_map_cards.size());
+    const int previous_count = int(m_mixed_cards.size() + m_image_map_cards.size() + m_adaptive_mixed_cards.size());
     m_mixed_filaments        = mixed_filaments;
 
     m_image_map_sizer->Clear(true);
     m_mixed_sizer->Clear(true);
     m_image_map_cards.clear();
+    m_adaptive_mixed_cards.clear();
     m_image_map_adaptive_filament_ids.clear();
     m_mixed_cards.clear();
     m_mixed_definition_indices.clear();
@@ -423,7 +425,6 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
                     end_mixed_card_callback();
                 });
                 m_image_map_cards.push_back(card);
-                m_image_map_adaptive_filament_ids.push_back(0);
                 m_image_map_sizer->Add(card, 0, wxEXPAND);
             }
         }
@@ -437,16 +438,15 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
 
     for (auto& [filament_id, source_colors] : adaptive_cycle_colors) {
         const std::vector<RGBA> representative = ImageMap::representative_source_colors(source_colors, 64, 512);
-        std::vector<FilamentCardImageMap::ComponentFilament> component_filaments;
-        std::vector<unsigned int>                            component_ids;
+        std::vector<unsigned int> component_ids;
+        MixedFilamentDefinition* def_ptr = nullptr;
         const auto definition_it = definition_by_filament_id.find(filament_id);
         if (definition_it != definition_by_filament_id.end()) {
-            for (const MixedFilamentWeightedComponent& component : definition_it->second->recipe.blend.components) {
+            def_ptr = const_cast<MixedFilamentDefinition*>(definition_it->second);
+            for (const MixedFilamentWeightedComponent& component : def_ptr->recipe.blend.components) {
                 const unsigned int component_id = component.filament.id;
                 if (component.percent <= 0 || component_id < 1 || component_id > m_physical_filaments.size())
                     continue;
-                const wxColour component_color(m_physical_filaments[component_id - 1].first);
-                component_filaments.emplace_back(component_id, component_color.IsOk() ? component_color : *wxBLACK);
                 component_ids.emplace_back(component_id);
             }
         }
@@ -454,17 +454,17 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
             build_adaptive_cycle_attainable_colors(component_ids, representative, display_context);
         if (attainable_colors.empty())
             attainable_colors = wx_spectrum_colors(representative);
-        auto*                   card = new FilamentCardImageMap(m_mixed_panel, wxString::Format(_L("Mixed filament %u"), filament_id),
-                                                                 std::move(attainable_colors), false,
-                                                                 _L("KM/K-S-predicted attainable colors. Click to highlight the object regions assigned to this adaptive localized cycle"),
-                                                                 std::move(component_filaments));
+
+        auto* card = new FilamentCardMixed(m_mixed_panel, def_ptr, m_physical_filaments, FilamentCardMixed::CardType::APM);
+        if (!attainable_colors.empty())
+            card->set_gradient_preview_colors(std::move(attainable_colors));
         card->set_selected(m_selected_adaptive_filament_id == filament_id);
         card->set_on_select_callback([this, filament_id]() {
             set_adaptive_cycle_highlight(m_selected_adaptive_filament_id == filament_id ? 0u : filament_id);
         });
-        m_image_map_cards.push_back(card);
+        m_adaptive_mixed_cards.push_back(card);
         m_image_map_adaptive_filament_ids.push_back(filament_id);
-        m_image_map_sizer->Add(card, 0, wxEXPAND);
+        m_mixed_sizer->Add(card, 0, wxEXPAND);
     }
 
     if (m_selected_adaptive_filament_id != 0 && adaptive_cycle_colors.count(m_selected_adaptive_filament_id) == 0)
@@ -488,12 +488,13 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
         m_mixed_sizer->Add(card, 0, wxEXPAND);
     }
 
-    if (m_mixed_cards.size() <= 1)
+    const int mixed_grid_card_count = int(m_mixed_cards.size() + m_adaptive_mixed_cards.size());
+    const int new_count = mixed_grid_card_count + int(m_image_map_cards.size());
+
+    if (mixed_grid_card_count <= 1)
         m_mixed_sizer->SetCols(1);
     else
         m_mixed_sizer->SetCols(2);
-
-    const int new_count = int(m_mixed_cards.size() + m_image_map_cards.size());
 
     // Counter logic
     if (m_lbl_mixed_counter) {
@@ -583,10 +584,10 @@ void SidebarFilamentMenu::schedule_pending_mixed_rebuild()
 void SidebarFilamentMenu::set_adaptive_cycle_highlight(unsigned int filament_id)
 {
     m_selected_adaptive_filament_id = filament_id;
-    for (size_t card_index = 0; card_index < m_image_map_cards.size(); ++card_index) {
+    for (size_t card_index = 0; card_index < m_adaptive_mixed_cards.size(); ++card_index) {
         const bool selected = card_index < m_image_map_adaptive_filament_ids.size() &&
                               m_image_map_adaptive_filament_ids[card_index] == filament_id && filament_id != 0;
-        m_image_map_cards[card_index]->set_selected(selected);
+        m_adaptive_mixed_cards[card_index]->set_selected(selected);
     }
 
     Plater* plater = wxGetApp().plater();
@@ -648,7 +649,111 @@ void SidebarFilamentMenu::show_mixed_filament_menu(int index, const wxPoint& scr
     // Edit item
     append_menu_item(&menu, wxID_ANY, _L("Edit"), "", [this, index](wxCommandEvent&) { edit_mixed_filament(index, false); });
 
-    // Delete item
+    PresetBundle* preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle) {
+        const size_t num_physical = m_physical_filaments.size();
+        auto& mixed_mgr = preset_bundle->mixed_filaments;
+        const auto& mfs = mixed_mgr.mixed_filaments();
+
+        // Resolve visible card index and virtual ID for this mixed filament
+        const auto card_it = std::find(m_mixed_definition_indices.begin(), m_mixed_definition_indices.end(), size_t(index));
+        const size_t visible_card_idx = (card_it != m_mixed_definition_indices.end()) ?
+            size_t(std::distance(m_mixed_definition_indices.begin(), card_it)) : size_t(index);
+        const size_t mixed_virtual_id = num_physical + visible_card_idx;
+        const unsigned int mixed_virtual_1based = static_cast<unsigned int>(mixed_virtual_id + 1);
+
+        wxMenu* transfer_sub_menu = new wxMenu();
+        wxMenu* merge_sub_menu    = new wxMenu();
+
+        // 1. Add physical filaments
+        std::vector<wxBitmap*> icons = get_extruder_color_icons(true);
+        const auto& filament_presets = preset_bundle->filament_presets;
+        int filaments_cnt = std::min((int)icons.size(), (int)filament_presets.size());
+        filaments_cnt = std::min(filaments_cnt, std::max(wxGetApp().filaments_cnt(), 0));
+
+        for (int i = 0; i < filaments_cnt; ++i) {
+            auto preset = preset_bundle->filaments.find_preset(filament_presets[i]);
+            wxString item_name = preset ? from_u8(preset->label(false)) : wxString::Format(_L("Filament %d"), i + 1);
+
+            append_menu_item(
+                transfer_sub_menu, wxID_ANY, item_name, "", [mixed_virtual_id, i](wxCommandEvent&) {
+                    wxGetApp().plater()->sidebar().transfer_filament(mixed_virtual_id, size_t(i));
+                }, *icons[i], &menu, []() { return true; }, this);
+
+            append_menu_item(
+                merge_sub_menu, wxID_ANY, item_name, "", [mixed_virtual_id, i](wxCommandEvent&) {
+                    wxGetApp().plater()->sidebar().change_filament(mixed_virtual_id, size_t(i));
+                }, *icons[i], &menu, []() { return true; }, this);
+        }
+
+        // 2. Add other mixed filaments
+        const double em = Slic3r::GUI::wxGetApp().em_unit();
+        const int icon_width = lround(2 * em);
+        const int icon_height = lround(2 * em);
+
+        std::vector<std::string> physical_colors;
+        if (auto* co2 = preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour"))
+            physical_colors = co2->values;
+        const MixedFilamentDisplayContext menu_ctx = build_mixed_filament_display_context(physical_colors);
+
+        size_t visible_target_cnt = 0;
+        size_t running_idx = 0;
+        for (size_t j = 0; j < mfs.size(); ++j) {
+            if (mfs[j].deleted || !mfs[j].enabled) continue;
+
+            size_t target_virtual_id = num_physical + running_idx;
+            running_idx++;
+
+            if (target_virtual_id == mixed_virtual_id)
+                continue;
+
+            const size_t mixed_idx = running_idx - 1;
+            const std::string letter = mixed_filament_index_to_letter(mixed_idx);
+            ColorNames::DescriptionOptions options;
+            const std::string desc = ColorNames::mixed_filament_name(mfs[j], menu_ctx.physical_material_types, menu_ctx.physical_colors,
+                                                                     options);
+            wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
+            item_name.Replace("&", "&&");
+
+            const MixedFilamentDefinition def   = mixed_filament_definition_from_legacy_row(mfs[j], menu_ctx.physical_colors.size());
+            const std::string             extra = ColorNames::mf_components(def);
+            if (!extra.empty()) {
+                item_name << "\t" << from_u8(extra);
+            }
+
+            wxBitmap* mixed_bmp = create_mixed_filament_menu_bitmap(
+                mfs[j], menu_ctx, icon_width, icon_height, wxString(letter));
+
+            size_t captured_target = target_virtual_id;
+
+            append_menu_item(
+                transfer_sub_menu, wxID_ANY, item_name, "", [mixed_virtual_id, captured_target](wxCommandEvent&) {
+                    wxGetApp().plater()->sidebar().transfer_filament(mixed_virtual_id, captured_target);
+                }, *mixed_bmp, &menu, []() { return true; }, this);
+
+            append_menu_item(
+                merge_sub_menu, wxID_ANY, item_name, "", [mixed_virtual_id, captured_target](wxCommandEvent&) {
+                    wxGetApp().plater()->sidebar().change_filament(mixed_virtual_id, captured_target);
+                }, *mixed_bmp, &menu, []() { return true; }, this);
+
+            visible_target_cnt++;
+        }
+
+        bool in_use = wxGetApp().plater()->sidebar().is_filament_in_use(mixed_virtual_1based);
+        size_t total_targets = filaments_cnt + visible_target_cnt;
+
+        append_submenu(
+            &menu, transfer_sub_menu, wxID_ANY, _L("Transfer to"), "", "", [total_targets, in_use]() {
+                return in_use && total_targets >= 1;
+            }, this);
+
+        append_submenu(
+            &menu, merge_sub_menu, wxID_ANY, _L("Merge with"), "", "", [total_targets]() {
+                return total_targets >= 1;
+            }, this);
+    }
+
+    // Delete item (after Merge with)
     append_menu_item(
         &menu, wxID_ANY, _L("Delete"), _L("Delete this mixed filament"), [this, index](wxCommandEvent&) { delete_mixed_filament(index); },
         "", nullptr, [this]() { return m_mixed_cards.size() > 0; });
@@ -678,8 +783,10 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
 {
     const wxColour material_bg            = StateColor::darkModeColorFor(*wxWHITE);
     const wxColour material_divider       = StateColor::darkModeColorFor(wxColour("#CECECE"));
-    const wxColour material_title_chip_bg = StateColor::darkModeColorFor(wxColour("#F0F0F1"));
+    const wxColour material_title_chip_bg = material_bg;
     const wxColour material_title_fg      = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
+
+    SetBackgroundColour(material_bg);
 
     m_main_sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -687,6 +794,8 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // 1. Title Bar
     // ####################################
     m_title_panel = new StaticBox(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_NONE);
+    m_title_panel->SetCornerRadius(0);
+    m_title_panel->SetBorderWidth(0);
     m_title_panel->SetBackgroundColor(title_bg);
     m_title_panel->SetBackgroundColor2(0xF1F1F1);
     m_title_panel->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent& e) {
@@ -766,26 +875,21 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     // nested sizer enables following shrink order: divider->title->buttons
     wxBoxSizer* physical_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
-    auto make_title_chip = [this, material_bg, material_title_chip_bg, material_title_fg](wxWindow* parent, wxStaticText*& title_label,
-                                                                                          wxStaticText*&  counter_label,
-                                                                                          const wxString& title) {
-        StaticBox* chip = new StaticBox(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    auto make_title_chip = [this, material_bg, material_title_fg](wxWindow* parent, wxStaticText*& title_label,
+                                                                  wxStaticText*&  counter_label,
+                                                                  const wxString& title) -> wxPanel* {
+        wxPanel* chip = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
         chip->SetBackgroundColour(material_bg);
-        chip->SetBackgroundColor(material_title_chip_bg);
-        chip->SetBorderWidth(0);
-        chip->SetCornerRadius(FromDIP(4));
 
         wxBoxSizer* chip_sizer = new wxBoxSizer(wxHORIZONTAL);
         chip->SetSizer(chip_sizer);
 
         title_label = new wxStaticText(chip, wxID_ANY, title, wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
         title_label->SetForegroundColour(material_title_fg);
-        title_label->SetBackgroundColour(material_title_chip_bg);
         title_label->SetFont(::Label::Body_14);
 
         counter_label = new wxStaticText(chip, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
         counter_label->SetForegroundColour(material_title_fg);
-        counter_label->SetBackgroundColour(material_title_chip_bg);
         counter_label->SetFont(::Label::Body_14);
 
         chip_sizer->AddSpacer(FromDIP(4));
@@ -796,9 +900,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     };
 
     // Physical title
-    wxWindow* physical_title_chip = make_title_chip(m_physical_title_panel, m_lbl_physical_title, m_lbl_physical_counter, _L("Filament"));
+    m_physical_title_chip = make_title_chip(m_physical_title_panel, m_lbl_physical_title, m_lbl_physical_counter, _L("Filament"));
 
-    physical_title_and_divider_sizer->Add(physical_title_chip, 0, wxALIGN_CENTER);
+    physical_title_and_divider_sizer->Add(m_physical_title_chip, 0, wxALIGN_CENTER);
     physical_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Physical title divider
@@ -951,9 +1055,9 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     wxBoxSizer* mixed_title_and_divider_sizer = new wxBoxSizer(wxHORIZONTAL);
 
     // Mixed title
-    wxWindow* mixed_title_chip = make_title_chip(m_mixed_title_panel, m_lbl_mixed_title, m_lbl_mixed_counter, _L("Mixed Filament"));
+    m_mixed_title_chip = make_title_chip(m_mixed_title_panel, m_lbl_mixed_title, m_lbl_mixed_counter, _L("Mixed Filament"));
 
-    mixed_title_and_divider_sizer->Add(mixed_title_chip, 0, wxALIGN_CENTER);
+    mixed_title_and_divider_sizer->Add(m_mixed_title_chip, 0, wxALIGN_CENTER);
     mixed_title_and_divider_sizer->AddSpacer(FromDIP(SidebarProps::IconSpacing()));
 
     // Mixed title divider
@@ -987,7 +1091,6 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
             auto&                                mgr          = preset_bundle->mixed_filaments;
             const size_t                         num_physical = m_physical_filaments.size();
             std::vector<MixedFilamentDefinition> definitions  = mgr.mixed_filament_definitions(num_physical);
-            std::vector<MixedFilamentDefinition> old_mixed    = definitions;
 
             int last_visible_idx = -1;
             for (int i = static_cast<int>(definitions.size()) - 1; i >= 0; --i) {
@@ -998,72 +1101,7 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
             }
 
             if (last_visible_idx >= 0) {
-                auto& target         = definitions[last_visible_idx];
-                auto  canonical_pair = [](unsigned int a, unsigned int b) { return std::make_pair(std::min(a, b), std::max(a, b)); };
-                const MixedFilamentPrimaryPairView          target_pair_view = target.recipe.blend.primary_pair_or();
-                const std::pair<unsigned int, unsigned int> target_pair      = canonical_pair(target_pair_view.component_a.id,
-                                                                                              target_pair_view.component_b.id);
-                const bool valid_auto_pair = target_pair.first >= 1 && target_pair.second >= 1 && target_pair.first <= num_physical &&
-                                             target_pair.second <= num_physical && target_pair.first != target_pair.second;
-
-                if (target.source.kind == MixedFilamentSourceKind::Custom && target.source.origin_auto && valid_auto_pair) {
-                    bool tombstoned_existing_auto = false;
-                    for (size_t idx = 0; idx < definitions.size(); ++idx) {
-                        if (idx == static_cast<size_t>(last_visible_idx))
-                            continue;
-                        MixedFilamentDefinition& candidate = definitions[idx];
-                        if (candidate.source.kind == MixedFilamentSourceKind::Custom)
-                            continue;
-                        const MixedFilamentPrimaryPairView candidate_pair = candidate.recipe.blend.primary_pair_or();
-                        if (canonical_pair(candidate_pair.component_a.id, candidate_pair.component_b.id) != target_pair)
-                            continue;
-                        candidate.visibility.tombstoned = true;
-                        tombstoned_existing_auto        = true;
-                        break;
-                    }
-
-                    if (tombstoned_existing_auto) {
-                        definitions.erase(definitions.begin() + last_visible_idx);
-                    } else {
-                        target.recipe.kind             = MixedFilamentRecipeKind::WeightedBlend;
-                        target.recipe.blend.components = {{MixedFilamentPhysicalRef{target_pair.first}, 50},
-                                                          {MixedFilamentPhysicalRef{target_pair.second}, 50}};
-                        target.recipe.manual_pattern.reset();
-                        target.behavior.layer_cadence.component_a_layers = 1;
-                        target.behavior.layer_cadence.component_b_layers = 1;
-                        target.behavior.distribution                     = MixedFilamentDistributionMode::Simple;
-                        target.source.kind                               = MixedFilamentSourceKind::AutoGenerated;
-                        target.source.origin_auto                        = true;
-                        target.visibility.tombstoned                     = true;
-                    }
-                } else if (target.source.kind == MixedFilamentSourceKind::Custom) {
-                    definitions.erase(definitions.begin() + last_visible_idx);
-                } else {
-                    target.visibility.tombstoned = true;
-                }
-
-                std::vector<std::string> physical_colors;
-                for (const auto& p : m_physical_filaments) {
-                    physical_colors.push_back(p.first);
-                }
-
-                mgr.set_mixed_filament_definitions(definitions, physical_colors);
-
-                const std::string serialized = mgr.serialize_custom_entries();
-                if (ConfigOptionString* opt = preset_bundle->project_config.option<ConfigOptionString>("mixed_filament_definitions"))
-                    opt->value = serialized;
-                else
-                    preset_bundle->project_config.set_key_value("mixed_filament_definitions", new ConfigOptionString(serialized));
-
-                preset_bundle->update_mixed_filament_id_remap(old_mixed, num_physical, num_physical);
-
-                if (auto* print_tab = wxGetApp().get_tab(Preset::TYPE_PRINT))
-                    print_tab->update_dirty();
-                if (wxGetApp().mainframe)
-                    wxGetApp().mainframe->on_config_changed(&preset_bundle->project_config);
-
-                wxGetApp().plater()->update_project_dirty_from_presets();
-                wxGetApp().plater()->on_filaments_change(num_physical);
+                delete_mixed_filament(last_visible_idx);
             }
         }
     });
@@ -1251,10 +1289,38 @@ void SidebarFilamentMenu::msw_rescale()
     for (auto* card : m_physical_cards) {
         card->m_filament_combo_box->msw_rescale();
     }
+
+    for (auto* card : m_mixed_cards) {
+        card->msw_rescale();
+    }
+
+    for (auto* card : m_adaptive_mixed_cards) {
+        card->msw_rescale();
+    }
 }
 
 void SidebarFilamentMenu::sys_color_changed()
 {
+    const wxColour material_bg       = StateColor::darkModeColorFor(*wxWHITE);
+    const wxColour material_divider  = StateColor::darkModeColorFor(wxColour("#CECECE"));
+    const wxColour material_title_fg = StateColor::darkModeColorFor(wxColour("#7E7E7E"));
+
+    SetBackgroundColour(material_bg);
+
+    m_physical_title_panel->SetBackgroundColour(material_bg);
+    m_mixed_title_panel->SetBackgroundColour(material_bg);
+
+    m_physical_title_chip->SetBackgroundColour(material_bg);
+    m_mixed_title_chip->SetBackgroundColour(material_bg);
+
+    m_physical_divider->SetBackgroundColour(material_divider);
+    m_mixed_divider->SetBackgroundColour(material_divider);
+
+    m_lbl_physical_title->SetForegroundColour(material_title_fg);
+    m_lbl_physical_counter->SetForegroundColour(material_title_fg);
+    m_lbl_mixed_title->SetForegroundColour(material_title_fg);
+    m_lbl_mixed_counter->SetForegroundColour(material_title_fg);
+
     m_btn_icon->msw_rescale();
     m_btn_physical_add->msw_rescale();
     m_btn_physical_del->msw_rescale();
@@ -1267,6 +1333,16 @@ void SidebarFilamentMenu::sys_color_changed()
     for (auto* card : m_physical_cards) {
         card->m_filament_combo_box->sys_color_changed();
     }
+
+    for (auto* card : m_mixed_cards) {
+        card->sys_color_changed();
+    }
+
+    for (auto* card : m_adaptive_mixed_cards) {
+        card->sys_color_changed();
+    }
+
+    Refresh();
 }
 
 void SidebarFilamentMenu::toggle_collapse(bool only_open = false)

@@ -485,8 +485,10 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
     const float minimal_slider_width = m_imgui->scaled(4.f);
     const float color_button_width = m_imgui->calc_text_size(std::string_view{""}).x + m_imgui->scaled(1.75f);
     const size_t total_filament_count = m_extruders_colors.size();
-    const std::string max_filament_label = std::to_string(std::max<size_t>(total_filament_count, 1));
-    const ImVec2 max_filament_label_size = ImGui::CalcTextSize(max_filament_label.c_str(), NULL, true);
+    const size_t num_physical = m_mixed_display_context.num_physical;
+    const float  font_size = ImGui::GetFontSize() * 0.85f;
+    const std::string max_filament_label = (total_filament_count > num_physical) ? "WW" : std::to_string(std::max<size_t>(total_filament_count, 1));
+    const ImVec2 max_filament_label_size = ImGui::GetFont()->CalcTextSizeA(font_size, FLT_MAX, 0.0f, max_filament_label.c_str());
 
     float caption_max = 0.f;
     float total_text_max = 0.f;
@@ -506,11 +508,14 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
     float window_width = minimal_slider_width + sliders_left_width + slider_icon_width;
     const int max_filament_items_per_line = 8;
     const float empty_button_width = m_imgui->calc_button_size("").x;
-    const float filament_item_width = std::max(empty_button_width, max_filament_label_size.x + m_imgui->scaled(1.4f)) + m_imgui->scaled(1.5f);
+    const float filament_button_h = std::round(ImGui::GetFrameHeight() + m_imgui->scaled(0.2f));
+    const float filament_button_w = filament_button_h;
+    const float filament_item_spacing = m_imgui->scaled(0.75f);
+    const float filament_item_width = filament_button_w + filament_item_spacing;
 
     window_width = std::max(window_width, total_text_max);
     window_width = std::max(window_width, buttons_width);
-    window_width = std::max(window_width, max_filament_items_per_line * filament_item_width + +m_imgui->scaled(0.5f));
+    window_width = std::max(window_width, max_filament_items_per_line * filament_item_width + m_imgui->scaled(0.5f));
 
     const float sliders_width = m_imgui->scaled(7.0f);
     const float drag_left_width = ImGui::GetStyle().WindowPadding.x + sliders_width - space_size;
@@ -527,21 +532,32 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
 
     float start_pos_x = ImGui::GetCursorPos().x;
     size_t n_extruder_colors = std::min(GLGizmoMmuSegmentation::EXTRUDERS_LIMIT, m_display_filament_ids.size());
+    const bool separate_mixed_row = (n_extruder_colors > 10);
+    int current_col = 0;
+    bool prev_was_physical = false;
+
     for (size_t extruder_idx = 0; extruder_idx < n_extruder_colors; ++extruder_idx) {
         const unsigned int actual_filament_id = m_display_filament_ids[extruder_idx];
         if (actual_filament_id == 0 || actual_filament_id > m_extruders_colors.size())
             continue;
+        const bool is_mixed = (actual_filament_id > num_physical);
+
+        if (separate_mixed_row && is_mixed && prev_was_physical && current_col > 0) {
+            current_col = 0;
+        }
+        prev_was_physical = !is_mixed;
+
         const ColorRGBA &extruder_color = m_extruders_colors[actual_filament_id - 1];
         ImVec4           color_vec      = ImGuiWrapper::to_ImVec4(extruder_color);
         std::string color_label = std::string("##extruder color ") + std::to_string(extruder_idx);
-        std::string item_text = std::to_string(extruder_idx + 1);
-        const ImVec2 label_size = ImGui::CalcTextSize(item_text.c_str(), NULL, true);
+        std::string item_text = (!is_mixed)
+                                    ? std::to_string(actual_filament_id)
+                                    : Slic3r::mixed_filament_index_to_letter(actual_filament_id - num_physical - 1);
 
-        const ImVec2 button_size(max_filament_label_size.x + m_imgui->scaled(0.5f), 0.f);
+        const ImVec2 button_size(filament_button_w, filament_button_h);
 
-        float button_offset = start_pos_x;
-        if (extruder_idx % max_filament_items_per_line != 0) {
-            button_offset += filament_item_width * (extruder_idx % max_filament_items_per_line);
+        if (current_col > 0) {
+            float button_offset = start_pos_x + filament_item_width * current_col;
             ImGui::SameLine(button_offset);
         }
 
@@ -622,8 +638,10 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             if (ImGui::IsItemHovered()) {
                 if (extruder_idx < 9)
                     m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+                else if (actual_filament_id <= num_physical)
+                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
                 else
-                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(extruder_idx + 1)), max_tooltip_width);
+                    m_imgui->tooltip(wxString::Format(_L("Mixed Filament %s"), item_text), max_tooltip_width);
             }
 
             // Number text centered on button
@@ -632,51 +650,58 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
                 lum_avg += bT601_luminance(stop);
             lum_avg /= float(stop_count);
             ImU32 text_col = (lum_avg < 0.51f) ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255);
-            float text_w = ImGui::CalcTextSize(item_text.c_str()).x;
-            draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+            float text_w = ImGui::GetFont()->CalcTextSizeA(font_size, FLT_MAX, 0.0f, item_text.c_str()).x;
+            draw_list->AddText(ImGui::GetFont(), font_size,
                 ImVec2(btn_min.x + (btn_max.x - btn_min.x - text_w) / 2.f,
-                       btn_min.y + (btn_max.y - btn_min.y - ImGui::GetFontSize()) / 2.f),
+                       btn_min.y + (btn_max.y - btn_min.y - font_size) / 2.f),
                 text_col, item_text.c_str());
 
         } else {
-        // draw filament background
-        ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoTooltip;
-        if (m_selected_extruder_idx != extruder_idx) flags |= ImGuiColorEditFlags_NoBorder;
-        #ifdef __APPLE__
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGuiWrapper::COL_ORCA); // ORCA use orca color for selected filament border
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0);
-            bool color_picked = ImGui::ColorButton(color_label.c_str(), color_vec, flags, button_size);
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(1);
-        #else
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGuiWrapper::COL_ORCA); // ORCA use orca color for selected filament border
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0);
-            bool color_picked = ImGui::ColorButton(color_label.c_str(), color_vec, flags, button_size);
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(1);
-        #endif
-        color_button_high = ImGui::GetCursorPos().y - color_button - 2.0;
-        if (color_picked) { m_selected_extruder_idx = extruder_idx; }
+            // draw filament background
+            ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoTooltip;
+            if (m_selected_extruder_idx != extruder_idx) flags |= ImGuiColorEditFlags_NoBorder;
+            #ifdef __APPLE__
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGuiWrapper::COL_ORCA); // ORCA use orca color for selected filament border
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0);
+                bool color_picked = ImGui::ColorButton(color_label.c_str(), color_vec, flags, button_size);
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor(1);
+            #else
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGuiWrapper::COL_ORCA); // ORCA use orca color for selected filament border
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0);
+                bool color_picked = ImGui::ColorButton(color_label.c_str(), color_vec, flags, button_size);
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor(1);
+            #endif
+            color_button_high = ImGui::GetCursorPos().y - color_button - 2.0;
+            if (color_picked) { m_selected_extruder_idx = extruder_idx; }
 
-        if (ImGui::IsItemHovered()) {
-            if (extruder_idx < 9)
-                m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
-            else
-                m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(extruder_idx + 1)), max_tooltip_width);
+            if (ImGui::IsItemHovered()) {
+                if (extruder_idx < 9)
+                    m_imgui->tooltip(_L("Shortcut Key ") + std::to_string(extruder_idx + 1), max_tooltip_width);
+                else if (actual_filament_id <= num_physical)
+                    m_imgui->tooltip(wxString::Format(_L("Filament %d"), int(actual_filament_id)), max_tooltip_width);
+                else
+                    m_imgui->tooltip(wxString::Format(_L("Mixed Filament %s"), item_text), max_tooltip_width);
+            }
+
+            // draw filament id centered on button
+            ImVec2 btn_min = ImGui::GetItemRectMin();
+            ImVec2 btn_max = ImGui::GetItemRectMax();
+            float gray = 0.299f * extruder_color.r() + 0.587f * extruder_color.g() + 0.114f * extruder_color.b();
+            ImU32 text_col = (gray * 255.f < 130.f) ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255);
+            float text_w = ImGui::GetFont()->CalcTextSizeA(font_size, FLT_MAX, 0.0f, item_text.c_str()).x;
+            draw_list->AddText(ImGui::GetFont(), font_size,
+                ImVec2(btn_min.x + (btn_max.x - btn_min.x - text_w) / 2.f,
+                       btn_min.y + (btn_max.y - btn_min.y - font_size) / 2.f),
+                text_col, item_text.c_str());
         }
 
-        // draw filament id
-        float gray = 0.299 * extruder_color.r() + 0.587 * extruder_color.g() + 0.114 * extruder_color.b();
-        ImGui::SameLine(button_offset + (button_size.x - label_size.x) / 2.f);
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {10.0,15.0});
-        if (gray * 255.f < 80.f)
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", item_text.c_str());
-        else
-            ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "%s", item_text.c_str());
-
-        ImGui::PopStyleVar();
+        current_col++;
+        if (current_col >= max_filament_items_per_line) {
+            current_col = 0;
         }
     }
     //ImGui::NewLine();
@@ -1321,7 +1346,10 @@ void GLGizmoMmuSegmentation::render_filament_remap_ui(float window_width, float 
         #endif
 
         // overlay destination number with proper contrast calculation
-        std::string dst_txt = std::to_string(m_extruder_remap[src] + 1);
+        const size_t num_physical = m_mixed_display_context.num_physical;
+        std::string dst_txt = (dst_filament_id <= num_physical)
+                                  ? std::to_string(dst_filament_id)
+                                  : Slic3r::mixed_filament_index_to_letter(dst_filament_id - num_physical - 1);
         float gray = 0.299f * dst_col.r() + 0.587f * dst_col.g() + 0.114f * dst_col.b();
         ImVec2 txt_sz = ImGui::CalcTextSize(dst_txt.c_str());
         ImVec2 pos = ImGui::GetItemRectMin();
@@ -1393,7 +1421,9 @@ void GLGizmoMmuSegmentation::render_filament_remap_ui(float window_width, float 
                 #endif
                 
                 // overlay destination number on popup buttons
-                std::string dst_num_txt = std::to_string(dst + 1);
+                std::string dst_num_txt = (popup_filament_id <= num_physical)
+                                              ? std::to_string(popup_filament_id)
+                                              : Slic3r::mixed_filament_index_to_letter(popup_filament_id - num_physical - 1);
                 float dst_gray = 0.299f * dst_col_popup.r() + 0.587f * dst_col_popup.g() + 0.114f * dst_col_popup.b();
                 ImVec2 dst_txt_sz = ImGui::CalcTextSize(dst_num_txt.c_str());
                 ImVec2 dst_pos = ImGui::GetItemRectMin();

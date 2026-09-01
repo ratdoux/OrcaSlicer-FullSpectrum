@@ -334,6 +334,8 @@ set(lisbslic3r_sources
     FullSpectrumMaterialDatabaseProfile.h
     FullSpectrumMaterialHigherOrderProfile.h
     MixedFilament.cpp
+    MixedFilament/ColorNames.cpp
+    MixedFilament/ColorNames.hpp
     MixedFilament/Common.cpp
     MixedFilament/Definition.cpp
     MixedFilament/Display.cpp
