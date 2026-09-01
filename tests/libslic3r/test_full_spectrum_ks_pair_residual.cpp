@@ -201,8 +201,50 @@ TEST_CASE("KM/K-S profile exposes the embedded four-profile database", "[MixedFi
           "fullspectrum_material_database_4profiles_lh0p08_sce_black_d65_10_20260701");
     CHECK(full_spectrum_ks_profile_material_count() == 16);
     CHECK(full_spectrum_ks_profile_pair_count() == 24);
+    CHECK(full_spectrum_ks_profile_triple_count() == 12);
+    CHECK(full_spectrum_ks_profile_quadruple_count() == 3);
+    CHECK(full_spectrum_ks_profile_higher_order_sample_count() == 229);
+    CHECK(full_spectrum_ks_profile_mixture_sample_count() == 391);
     CHECK(std::string(full_spectrum_ks_profile_specular_mode()) == "SCE");
     CHECK(std::string(full_spectrum_ks_profile_backing_condition()) == "black_backing");
+}
+
+TEST_CASE("KM/K-S higher-order calibration is independent of component input order",
+          "[MixedFilament][Color][FullSpectrumKS][HigherOrder]")
+{
+    const std::vector<FullSpectrumKSPairResidualColorInput> triple_forward {
+        {"#008BB3", 20, 6.4, std::nullopt},
+        {"#AD4A76", 60, 5.0, std::nullopt},
+        {"#EBBE00", 20, 9.7, std::nullopt},
+    };
+    const std::vector<FullSpectrumKSPairResidualColorInput> triple_reverse {
+        {"#EBBE00", 20, 9.7, std::nullopt},
+        {"#AD4A76", 60, 5.0, std::nullopt},
+        {"#008BB3", 20, 6.4, std::nullopt},
+    };
+    const std::vector<FullSpectrumKSPairResidualColorInput> quadruple_forward {
+        {"#0091B8", 20, 6.4, std::nullopt},
+        {"#C64D7A", 20, 5.0, std::nullopt},
+        {"#FFB81B", 40, 4.5, std::nullopt},
+        {"#494340", 20, 9.5, std::nullopt},
+    };
+    const std::vector<FullSpectrumKSPairResidualColorInput> quadruple_reverse {
+        {"#494340", 20, 9.5, std::nullopt},
+        {"#FFB81B", 40, 4.5, std::nullopt},
+        {"#C64D7A", 20, 5.0, std::nullopt},
+        {"#0091B8", 20, 6.4, std::nullopt},
+    };
+
+    const std::optional<std::string> triple_a = full_spectrum_ks_blend_color_multi(triple_forward);
+    const std::optional<std::string> triple_b = full_spectrum_ks_blend_color_multi(triple_reverse);
+    const std::optional<std::string> quadruple_a = full_spectrum_ks_blend_color_multi(quadruple_forward);
+    const std::optional<std::string> quadruple_b = full_spectrum_ks_blend_color_multi(quadruple_reverse);
+    REQUIRE(triple_a.has_value());
+    REQUIRE(triple_b.has_value());
+    REQUIRE(quadruple_a.has_value());
+    REQUIRE(quadruple_b.has_value());
+    CHECK(*triple_a == *triple_b);
+    CHECK(*quadruple_a == *quadruple_b);
 }
 
 TEST_CASE("KM/K-S profile recognizes all measured materials and their native TD", "[MixedFilament][Color][FullSpectrumKS]")

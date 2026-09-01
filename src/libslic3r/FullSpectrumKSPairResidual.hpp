@@ -47,6 +47,10 @@ std::optional<double> full_spectrum_ks_profile_td_mm_for_color(const std::string
 const char* full_spectrum_ks_profile_id();
 std::size_t full_spectrum_ks_profile_material_count();
 std::size_t full_spectrum_ks_profile_pair_count();
+std::size_t full_spectrum_ks_profile_triple_count();
+std::size_t full_spectrum_ks_profile_quadruple_count();
+std::size_t full_spectrum_ks_profile_higher_order_sample_count();
+std::size_t full_spectrum_ks_profile_mixture_sample_count();
 const char* full_spectrum_ks_profile_specular_mode();
 const char* full_spectrum_ks_profile_backing_condition();
 

@@ -1,6 +1,7 @@
 #include "FullSpectrumKSPairResidual.hpp"
 #include "FullSpectrumICCPolynomialEstimator.hpp"
 #include "FullSpectrumMaterialDatabaseProfile.h"
+#include "FullSpectrumMaterialHigherOrderProfile.h"
 
 #include <algorithm>
 #include <array>
@@ -15,6 +16,7 @@ namespace Slic3r {
 namespace {
 
 namespace MaterialDatabaseData = FullSpectrumMaterialDatabaseProfileData;
+namespace HigherOrderData     = FullSpectrumMaterialHigherOrderProfileData;
 
 using Spectrum = std::array<double, MaterialDatabaseData::SPECTRUM_SIZE>;
 
@@ -32,6 +34,7 @@ constexpr bool material_database_grid_matches_estimator()
 }
 
 static_assert(material_database_grid_matches_estimator());
+static_assert(HigherOrderData::SPECTRUM_SIZE == MaterialDatabaseData::SPECTRUM_SIZE);
 
 constexpr double EPSILON                        = 1e-9;
 constexpr double DEFAULT_REFERENCE_TD_MM        = 6.0;
@@ -253,6 +256,60 @@ static void apply_pair_residuals(const PairResiduals &pair_residuals,
     }
 }
 
+static void apply_triple_residuals(
+    const std::array<double, MaterialDatabaseData::MATERIAL_COUNT> &composition,
+    Spectrum &ks)
+{
+    for (const HigherOrderData::TripleResidualCoefficients &triple : HigherOrderData::TRIPLE_RESIDUALS) {
+        const double pa = composition[triple.materials[0]];
+        const double pb = composition[triple.materials[1]];
+        const double pc = composition[triple.materials[2]];
+        if (pa <= EPSILON || pb <= EPSILON || pc <= EPSILON)
+            continue;
+
+        const std::array<double, HigherOrderData::TRIPLE_BASIS_SIZE> basis {{
+            pa,
+            pb,
+            pc
+        }};
+        const double product = pa * pb * pc;
+        for (size_t wave = 0; wave < ks.size(); ++wave) {
+            double residual = 0.0;
+            for (size_t term = 0; term < basis.size(); ++term)
+                residual += basis[term] * triple.coefficients[term][wave];
+            ks[wave] += product * residual;
+        }
+    }
+}
+
+static void apply_quadruple_residuals(
+    const std::array<double, MaterialDatabaseData::MATERIAL_COUNT> &composition,
+    Spectrum &ks)
+{
+    for (const HigherOrderData::QuadrupleResidualCoefficients &quadruple : HigherOrderData::QUADRUPLE_RESIDUALS) {
+        const double pa = composition[quadruple.materials[0]];
+        const double pb = composition[quadruple.materials[1]];
+        const double pc = composition[quadruple.materials[2]];
+        const double pd = composition[quadruple.materials[3]];
+        if (pa <= EPSILON || pb <= EPSILON || pc <= EPSILON || pd <= EPSILON)
+            continue;
+
+        const std::array<double, HigherOrderData::QUADRUPLE_BASIS_SIZE> basis {{
+            pa,
+            pb,
+            pc,
+            pd
+        }};
+        const double product = pa * pb * pc * pd;
+        for (size_t wave = 0; wave < ks.size(); ++wave) {
+            double residual = 0.0;
+            for (size_t term = 0; term < basis.size(); ++term)
+                residual += basis[term] * quadruple.coefficients[term][wave];
+            ks[wave] += product * residual;
+        }
+    }
+}
+
 static Spectrum predict_reflectance_spectrum(const std::vector<MaterialKS> &materials)
 {
     Spectrum ks {};
@@ -268,6 +325,8 @@ static Spectrum predict_reflectance_spectrum(const std::vector<MaterialKS> &mate
     }
 
     apply_pair_residuals(MaterialDatabaseData::PAIR_RESIDUALS, material_composition, ks);
+    apply_triple_residuals(material_composition, ks);
+    apply_quadruple_residuals(material_composition, ks);
 
     Spectrum reflectance {};
     for (size_t wave = 0; wave < reflectance.size(); ++wave)
@@ -470,6 +529,26 @@ std::size_t full_spectrum_ks_profile_material_count()
 std::size_t full_spectrum_ks_profile_pair_count()
 {
     return MaterialDatabaseData::PAIR_COUNT;
+}
+
+std::size_t full_spectrum_ks_profile_triple_count()
+{
+    return HigherOrderData::TRIPLE_COUNT;
+}
+
+std::size_t full_spectrum_ks_profile_quadruple_count()
+{
+    return HigherOrderData::QUADRUPLE_COUNT;
+}
+
+std::size_t full_spectrum_ks_profile_higher_order_sample_count()
+{
+    return HigherOrderData::TRIPLE_SAMPLE_COUNT + HigherOrderData::QUADRUPLE_SAMPLE_COUNT;
+}
+
+std::size_t full_spectrum_ks_profile_mixture_sample_count()
+{
+    return HigherOrderData::TOTAL_MIXTURE_SAMPLE_COUNT;
 }
 
 const char* full_spectrum_ks_profile_specular_mode()
