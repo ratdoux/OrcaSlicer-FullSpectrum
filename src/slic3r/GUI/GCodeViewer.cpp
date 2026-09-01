@@ -2074,6 +2074,16 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
             last_path.sub_paths.back().last = { ibuffer_id, indices.size() - 1, move_id, curr.position };
     };
 
+    auto extrusion_moves_are_contiguous = [](const GCodeProcessorResult::MoveVertex& previous,
+                                              const GCodeProcessorResult::MoveVertex& next) {
+        // MoveVertex stores the end of a move, so two adjacent extrusion
+        // records share previous.position implicitly. A retraction, travel,
+        // tool change or seam marker appears as an intervening record and
+        // therefore correctly breaks continuity here.
+        return previous.type == EMoveType::Extrude && next.type == EMoveType::Extrude &&
+               previous.extruder_id == next.extruder_id;
+    };
+
     // format data into the buffers to be rendered as solid.
     auto add_vertices_as_solid = [](const GCodeProcessorResult::MoveVertex& prev, const GCodeProcessorResult::MoveVertex& curr, TBuffer& buffer, unsigned int vbuffer_id, VertexBuffer& vertices, size_t move_id) {
         auto store_vertex = [](VertexBuffer& vertices, const Vec3f& position, const Vec3f& normal) {
@@ -2177,7 +2187,10 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
                 store_triangle(indices, v_offsets[4], v_offsets[5], v_offsets[6]);
             };
 
-            if (buffer.paths.empty() || prev.type != curr.type || !buffer.paths.back().matches(curr)) {
+            const bool starts_new_path = buffer.paths.empty() || prev.type != curr.type || !buffer.paths.back().matches(curr);
+            const bool connects_to_previous_path = starts_new_path && !buffer.paths.empty() &&
+                                                   extrusion_moves_are_contiguous(prev, curr);
+            if (starts_new_path) {
                 buffer.add_path(curr, ibuffer_id, indices.size(), move_id - 1);
                 buffer.paths.back().sub_paths.back().first.position = prev.position;
             }
@@ -2199,9 +2212,17 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
                 const float sq_length = (curr_position - prev_position).squaredNorm();
 
                 if ((is_first_segment || vbuffer_size == 0) && i == 0) {
-                    if (is_first_segment && i == 0)
-                        // starting cap triangles
-                        append_starting_cap_triangles(indices, first_seg_v_offsets);
+                    if (is_first_segment && i == 0) {
+                        if (connects_to_previous_path)
+                            // This display path starts where the preceding
+                            // extrusion path ended. Their rings are stitched
+                            // after vertex generation; a cap here would leave
+                            // the square-ended cracks visible in the preview.
+                            append_dummy_cap(indices, vbuffer_size);
+                        else
+                            // starting cap triangles
+                            append_starting_cap_triangles(indices, first_seg_v_offsets);
+                    }
                     // dummy triangles outer corner cap
                     append_dummy_cap(indices, vbuffer_size);
                     // stem triangles
@@ -2264,9 +2285,16 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
                 sq_prev_length = sq_length;
             }
 
-            if (next != nullptr && (curr.type != next->type || !last_path.matches(*next)))
-                // ending cap triangles
-                append_ending_cap_triangles(indices, (is_first_segment && !curr.is_arc_move_with_interpolation_points()) ? first_seg_v_offsets : non_first_seg_v_offsets);
+            if (next != nullptr && (curr.type != next->type || !last_path.matches(*next))) {
+                const auto cap_offsets = (is_first_segment && !curr.is_arc_move_with_interpolation_points()) ?
+                                             first_seg_v_offsets :
+                                             non_first_seg_v_offsets;
+                if (extrusion_moves_are_contiguous(curr, *next))
+                    append_dummy_cap(indices, cap_offsets[4]);
+                else
+                    // ending cap triangles
+                    append_ending_cap_triangles(indices, cap_offsets);
+            }
 
             last_path.sub_paths.back().last = { ibuffer_id, indices.size() - 1, move_id, curr.position };
     };
@@ -2735,6 +2763,108 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
         }
     };
 
+    auto stitch_contiguous_triangle_paths = [](const TBuffer& t_buffer, MultiVertexBuffer& v_multibuffer) {
+        if (t_buffer.paths.size() < 2)
+            return;
+
+        const size_t vertex_size_floats = t_buffer.vertices.vertex_size_floats();
+        auto extract_position_at = [](const VertexBuffer& vertices, size_t offset) {
+            return Vec3f(vertices[offset], vertices[offset + 1], vertices[offset + 2]);
+        };
+        auto extract_normal_at = [](const VertexBuffer& vertices, size_t offset) {
+            return Vec3f(vertices[offset + 3], vertices[offset + 4], vertices[offset + 5]);
+        };
+        auto update_position_at = [](VertexBuffer& vertices, size_t offset, const Vec3f& position) {
+            vertices[offset]     = position.x();
+            vertices[offset + 1] = position.y();
+            vertices[offset + 2] = position.z();
+        };
+        auto cross_2d = [](const Vec2f& lhs, const Vec2f& rhs) {
+            return lhs.x() * rhs.y() - lhs.y() * rhs.x();
+        };
+
+        for (size_t path_idx = 1; path_idx < t_buffer.paths.size(); ++path_idx) {
+            const Path& previous_path = t_buffer.paths[path_idx - 1];
+            const Path& next_path     = t_buffer.paths[path_idx];
+            if (previous_path.type != EMoveType::Extrude || next_path.type != EMoveType::Extrude ||
+                previous_path.extruder_id != next_path.extruder_id || previous_path.sub_paths.empty() ||
+                next_path.sub_paths.empty())
+                continue;
+
+            const Path::Endpoint& previous_end = previous_path.sub_paths.back().last;
+            const Path::Endpoint& next_start   = next_path.sub_paths.front().first;
+            if (previous_end.s_id != next_start.s_id ||
+                (previous_end.position - next_start.position).squaredNorm() > sqr(1e-5f) ||
+                previous_end.b_id >= v_multibuffer.size() || next_start.b_id >= v_multibuffer.size())
+                continue;
+
+            VertexBuffer& previous_vertices = v_multibuffer[previous_end.b_id];
+            VertexBuffer& next_vertices     = v_multibuffer[next_start.b_id];
+            if (previous_end.i_id < 4 * vertex_size_floats ||
+                previous_end.i_id > previous_vertices.size() ||
+                next_start.i_id + 4 * vertex_size_floats > next_vertices.size())
+                continue;
+
+            const size_t previous_ring = previous_end.i_id - 4 * vertex_size_floats;
+            const size_t next_ring     = next_start.i_id;
+            std::array<Vec3f, 4> previous_positions;
+            std::array<Vec3f, 4> next_positions;
+            for (size_t ring_vertex = 0; ring_vertex < 4; ++ring_vertex) {
+                previous_positions[ring_vertex] =
+                    extract_position_at(previous_vertices, previous_ring + ring_vertex * vertex_size_floats);
+                next_positions[ring_vertex] =
+                    extract_position_at(next_vertices, next_ring + ring_vertex * vertex_size_floats);
+            }
+
+            std::array<Vec3f, 4> shared_positions;
+            for (size_t ring_vertex = 0; ring_vertex < 4; ++ring_vertex)
+                shared_positions[ring_vertex] = 0.5f * (previous_positions[ring_vertex] + next_positions[ring_vertex]);
+
+            // Right and left are offset line intersections. Using their true
+            // miter where it remains local avoids pinching shallow corners;
+            // sharp or nearly parallel turns retain the bounded bevel above.
+            const Vec2f joint(previous_end.position.x(), previous_end.position.y());
+            for (const size_t side_vertex : {size_t(1), size_t(3)}) {
+                const size_t previous_offset = previous_ring + side_vertex * vertex_size_floats;
+                const size_t next_offset     = next_ring + side_vertex * vertex_size_floats;
+                const Vec3f  previous_normal = extract_normal_at(previous_vertices, previous_offset);
+                const Vec3f  next_normal     = extract_normal_at(next_vertices, next_offset);
+                Vec2f        previous_dir(-previous_normal.y(), previous_normal.x());
+                Vec2f        next_dir(-next_normal.y(), next_normal.x());
+                const float  previous_length = previous_dir.norm();
+                const float  next_length     = next_dir.norm();
+                if (previous_length <= EPSILON || next_length <= EPSILON)
+                    continue;
+                previous_dir /= previous_length;
+                next_dir /= next_length;
+
+                const Vec2f previous_side(previous_positions[side_vertex].x(), previous_positions[side_vertex].y());
+                const Vec2f next_side(next_positions[side_vertex].x(), next_positions[side_vertex].y());
+                const float denominator = cross_2d(previous_dir, next_dir);
+                if (std::abs(denominator) <= 1e-4f)
+                    continue;
+                const float distance = cross_2d(next_side - previous_side, next_dir) / denominator;
+                const Vec2f candidate = previous_side + distance * previous_dir;
+                const float half_extent = std::max((previous_side - joint).norm(), (next_side - joint).norm());
+                const float miter_limit = std::max(0.05f, 2.5f * half_extent);
+                if (!candidate.allFinite() || (candidate - previous_side).norm() > miter_limit ||
+                    (candidate - next_side).norm() > miter_limit)
+                    continue;
+                shared_positions[side_vertex].x() = candidate.x();
+                shared_positions[side_vertex].y() = candidate.y();
+            }
+
+            for (size_t ring_vertex = 0; ring_vertex < 4; ++ring_vertex) {
+                update_position_at(previous_vertices,
+                                   previous_ring + ring_vertex * vertex_size_floats,
+                                   shared_positions[ring_vertex]);
+                update_position_at(next_vertices,
+                                   next_ring + ring_vertex * vertex_size_floats,
+                                   shared_positions[ring_vertex]);
+            }
+        }
+    };
+
 #if ENABLE_GCODE_VIEWER_STATISTICS
     auto load_vertices_time = std::chrono::high_resolution_clock::now();
     m_statistics.load_vertices = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time).count();
@@ -2745,6 +2875,7 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
         const TBuffer& t_buffer = m_buffers[i];
         if (t_buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::Triangle) {
             smooth_triangle_toolpaths_corners(t_buffer, vertices[i]);
+            stitch_contiguous_triangle_paths(t_buffer, vertices[i]);
         }
     }
 

@@ -11,6 +11,7 @@
 #include "ObjectDataViewModel.hpp"
 
 #include "OptionsGroup.hpp"
+#include "3DScene.hpp"
 #include "GLCanvas3D.hpp"
 #include "Selection.hpp"
 #include "format.hpp"
@@ -27,6 +28,8 @@
 #include "MixedFilamentBadge.hpp"
 #include "MsgDialog.hpp"
 #include "wx/utils.h"
+
+#include <algorithm>
 
 namespace Slic3r
 {
@@ -368,6 +371,22 @@ static ObjectDataViewModel* list_model()
 static const Selection& get_selection()
 {
     return plater()->get_current_canvas3D(true)->get_selection();
+}
+
+static bool selection_has_image_map_data()
+{
+    Plater* current_plater = plater();
+    if (current_plater == nullptr)
+        return false;
+    GLCanvas3D* canvas = current_plater->get_current_canvas3D(true);
+    if (canvas == nullptr)
+        return false;
+    const int    object_idx = canvas->get_selection().get_object_idx();
+    const Model& model      = current_plater->model();
+    if (object_idx < 0 || size_t(object_idx) >= model.objects.size() || model.objects[size_t(object_idx)] == nullptr)
+        return false;
+    return std::any_of(model.objects[size_t(object_idx)]->volumes.begin(), model.objects[size_t(object_idx)]->volumes.end(),
+                       [](const ModelVolume* volume) { return volume != nullptr && volume->has_image_map_data(); });
 }
 
 //				  category ->		vector 			 ( option	;  label )
@@ -1379,6 +1398,7 @@ void MenuFactory::create_extra_object_menu()
     append_menu_item_per_object_process(&m_object_menu);
     // Enter per object parameters
     append_menu_item_per_object_settings(&m_object_menu);
+    append_menu_items_image_map_preview(&m_object_menu);
     m_object_menu.AppendSeparator();
     append_menu_item_reload_from_disk(&m_object_menu);
     append_menu_item_replace_with_stl(&m_object_menu);
@@ -1489,6 +1509,7 @@ void MenuFactory::create_bbl_part_menu()
         []() { return plater()->can_split(true); }, m_parent);
     menu->AppendSeparator();
     append_menu_item_per_object_settings(menu);
+    append_menu_items_image_map_preview(menu);
     append_menu_item_change_type(menu);
     append_menu_item_reload_from_disk(menu);
     append_menu_item_replace_with_stl(menu);
@@ -2039,6 +2060,36 @@ void MenuFactory::append_menu_item_per_object_settings(wxMenu* menu)
             Selection& selection = plater()->canvas3D()->get_selection();
             return selection.is_single_full_object() || selection.is_single_full_instance() || selection.is_single_volume();
         }, m_parent);
+}
+
+void MenuFactory::append_menu_items_image_map_preview(wxMenu* menu)
+{
+    auto* preview_menu = new wxMenu();
+    auto  select_mode  = [](bool predicted) {
+        set_image_map_preview_predicted_colors(predicted);
+        if (Plater* current_plater = plater(); current_plater != nullptr)
+            current_plater->set_current_canvas_as_dirty();
+    };
+
+    wxMenuItem* original_item = append_menu_radio_item(
+        preview_menu, wxID_ANY, _L("Original texture"), _L("Show the authored image-map texture without filament simulation"),
+        [select_mode](wxCommandEvent&) { select_mode(false); }, preview_menu);
+    wxMenuItem* predicted_item = append_menu_radio_item(
+        preview_menu, wxID_ANY, _L("Predicted colors"), _L("Show the texture as predicted from the configured filaments"),
+        [select_mode](wxCommandEvent&) { select_mode(true); }, preview_menu);
+
+    m_parent->Bind(wxEVT_UPDATE_UI, [](wxUpdateUIEvent& evt) {
+        evt.Enable(selection_has_image_map_data());
+        evt.Check(!image_map_preview_predicted_colors());
+    }, original_item->GetId());
+    m_parent->Bind(wxEVT_UPDATE_UI, [](wxUpdateUIEvent& evt) {
+        evt.Enable(selection_has_image_map_data());
+        evt.Check(image_map_preview_predicted_colors());
+    }, predicted_item->GetId());
+
+    append_submenu(menu, preview_menu, wxID_ANY, _L("Image-map preview"),
+                   _L("Choose whether the viewport shows the original texture or predicted filament colors"), "",
+                   []() { return selection_has_image_map_data(); }, m_parent);
 }
 
 void MenuFactory::append_menu_item_change_filament(wxMenu* menu)

@@ -226,7 +226,7 @@ Info IMSlider::GetTicksValues() const
     return custom_gcode_per_print_z;
 }
 
-void IMSlider::SetTicksValues(const Info &custom_gcode_per_print_z)
+void IMSlider::SetTicksValues(const Info &custom_gcode_per_print_z, bool notify_cleanup)
 {
     if (m_values.empty()) {
         m_ticks.mode = m_mode;
@@ -248,7 +248,8 @@ void IMSlider::SetTicksValues(const Info &custom_gcode_per_print_z)
         if (!wxGetApp().plater()->only_gcode_mode() && !wxGetApp().plater()->using_exported_file())
         {
             m_ticks.erase_all_ticks_with_code(ToolChange);
-            post_ticks_changed_event();
+            if (notify_cleanup)
+                post_ticks_changed_event();
         }
     }
 
@@ -256,7 +257,8 @@ void IMSlider::SetTicksValues(const Info &custom_gcode_per_print_z)
         last_spiral_vase_status = m_is_spiral_vase;
         if (!m_ticks.empty()) {
             m_ticks.ticks.clear();
-            post_ticks_changed_event();
+            if (notify_cleanup)
+                post_ticks_changed_event();
         }
     }
 
@@ -273,7 +275,8 @@ void IMSlider::SetTicksValues(const Info &custom_gcode_per_print_z)
             else
                 ++it;
         }
-        post_ticks_changed_event();
+        if (notify_cleanup)
+            post_ticks_changed_event();
     }
 
     if (custom_gcode_per_print_z.mode && !custom_gcode_per_print_z.gcodes.empty()) m_ticks.mode = custom_gcode_per_print_z.mode;

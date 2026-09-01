@@ -1973,6 +1973,11 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "mixed_color_layer_height_b" ||
          opt_key == "mixed_filament_advanced_dithering" ||
          opt_key == "mixed_filament_component_bias_enabled" ||
+         opt_key == "texture_mapping_outer_wall_gradient_global_strength" ||
+         opt_key == "texture_mapping_outer_wall_gradient_max_line_width" ||
+         opt_key == "texture_mapping_outer_wall_gradient_min_line_width" ||
+         opt_key == "image_map_perimeter_modulation_mode" ||
+         opt_key == "image_map_perimeter_printable_width" ||
          opt_key == "mixed_filament_surface_indentation" ||
          opt_key == "mixed_filament_region_collapse" ||
          opt_key == "dithering_z_step_size" ||
@@ -1982,7 +1987,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "dithering_local_z_direct_multicolor" ||
          opt_key == "dithering_local_z_independent_layer_height" ||
          opt_key == "dithering_local_z_gradient_layer_height" ||
-         opt_key == "dithering_local_z_gradient_overlap_window" ||
+         opt_key == "dithering_local_z_gradient_middle_filament_window" ||
          opt_key == "dithering_step_painted_zones_only" ||
          opt_key == "mixed_filament_definitions")) {
         DynamicPrintConfig &project_cfg = wxGetApp().preset_bundle->project_config;
@@ -2784,6 +2789,11 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("mixed_filament_height_lower_bound");
         optgroup->append_single_option_line("mixed_filament_advanced_dithering");
         optgroup->append_single_option_line("mixed_filament_component_bias_enabled");
+        optgroup->append_single_option_line("texture_mapping_outer_wall_gradient_global_strength");
+        optgroup->append_single_option_line("texture_mapping_outer_wall_gradient_max_line_width");
+        optgroup->append_single_option_line("texture_mapping_outer_wall_gradient_min_line_width");
+        optgroup->append_single_option_line("image_map_perimeter_modulation_mode");
+        optgroup->append_single_option_line("image_map_perimeter_printable_width");
         optgroup->append_single_option_line("mixed_filament_surface_indentation");
         optgroup->append_single_option_line("mixed_filament_region_collapse");
         optgroup->append_single_option_line("dithering_z_step_size");
@@ -2793,7 +2803,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
         optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
-        optgroup->append_single_option_line("dithering_local_z_gradient_overlap_window");
+        optgroup->append_single_option_line("dithering_local_z_gradient_middle_filament_window");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");
 
         optgroup = page->new_optgroup(L("Fuzzy Skin"), L"fuzzy_skin");

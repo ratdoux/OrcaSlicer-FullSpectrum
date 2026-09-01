@@ -1842,6 +1842,27 @@ void GLCanvas3D::set_image_map_highlight_filament_id(unsigned int filament_id)
     set_as_dirty();
 }
 
+void GLCanvas3D::set_image_map_preview_override(int object_index,
+                                                int volume_index,
+                                                std::shared_ptr<const ImageMap::VolumeData> preview_data)
+{
+    for (GLVolume* volume : m_volumes.volumes) {
+        if (volume == nullptr || volume->object_idx() != object_index || volume->volume_idx() != volume_index)
+            continue;
+        volume->image_map_preview_override_data = preview_data;
+        // Do not let a completed texture generated for a previous settings
+        // snapshot satisfy the next render before its replacement job starts.
+        volume->image_map_source_preview_data.reset();
+        volume->image_map_source_preview_signature = 0;
+    }
+    set_as_dirty();
+}
+
+bool GLCanvas3D::image_map_preview_update_pending() const
+{
+    return m_volumes.source_color_preview_progress().has_value();
+}
+
 bool GLCanvas3D::is_collapse_toolbar_on_left() const
 {
     auto state = wxGetApp().plater()->get_sidebar_docking_state();

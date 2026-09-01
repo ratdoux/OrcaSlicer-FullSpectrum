@@ -9,6 +9,8 @@
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/slider.h>
+#include <wx/timer.h>
 #include <wx/tglbtn.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
@@ -54,6 +56,17 @@ public:
     };
 
 private:
+    struct SliderSettingControl
+    {
+        wxSlider*   slider{nullptr};
+        wxTextCtrl* input{nullptr};
+        double      minimum{0.0};
+        double      step{1.0};
+
+        double value() const;
+        void   enable(bool enabled) const;
+    };
+
     // -----------------------------------------------------------------------
     // UI construction helpers
     // -----------------------------------------------------------------------
@@ -61,6 +74,16 @@ private:
     void        build_method_section(wxWindow* parent, wxBoxSizer* parent_sizer);
     void        build_standard_body(wxWindow* settings_parent, wxBoxSizer* settings_sizer,
                                     wxWindow* mapping_parent, wxBoxSizer* mapping_sizer);
+    SliderSettingControl create_slider_setting_row(wxWindow* parent,
+                                                    wxBoxSizer* parent_sizer,
+                                                    const wxString& label,
+                                                    double minimum,
+                                                    double maximum,
+                                                    double initial,
+                                                    double step,
+                                                    int digits,
+                                                    const wxString& suffix,
+                                                    const wxString& tooltip);
     void        rebuild_color_table();
     wxPanel*    create_help_icon(wxWindow* parent, const wxString& tooltip);
 
@@ -98,6 +121,13 @@ private:
     int                       min_component_percent() const;
     bool                      uses_layer_sequence_image_map() const;
     bool                      uses_adaptive_local_cycles_image_map() const;
+    bool                      uses_adaptive_local_z_height_modulation() const;
+    Slic3r::ObjImageMapColorMixModel selected_image_map_color_mix_model() const;
+    float                     simple_pm_sample_spacing_mm() const;
+    void                      store_simple_pm_quality_settings();
+    void                      store_image_processing_settings();
+    void                      schedule_image_map_preview_update();
+    void                      update_simple_pm_quality_ui();
     bool                      simple_pm_uses_manual_filaments() const;
     int                       simple_pm_requested_filament_count() const;
     std::vector<unsigned int> simple_pm_component_ids() const;
@@ -153,10 +183,26 @@ private:
     wxRadioButton* m_method_standard_radio{nullptr};
     wxRadioButton* m_method_simple_pm_radio{nullptr};
     wxRadioButton* m_method_adaptive_radio{nullptr};
+    ComboBox*      m_adaptive_modulation_choice{nullptr};
+    ComboBox*      m_image_map_color_mix_model_choice{nullptr};
+    ComboBox*      m_simple_pm_detail_choice{nullptr};
+    wxCheckBox*    m_simple_pm_whole_object_cadence_checkbox{nullptr};
+    wxCheckBox*    m_simple_pm_maximum_detail_checkbox{nullptr};
+    SliderSettingControl m_simple_pm_gaussian_smoothing_ctrl;
+    SliderSettingControl m_simple_pm_first_path_smoothing_ctrl;
+    SliderSettingControl m_simple_pm_second_path_smoothing_ctrl;
+    SliderSettingControl m_simple_pm_tone_gamma_ctrl;
+    SliderSettingControl m_simple_pm_overhang_contrast_ctrl;
+    SliderSettingControl m_image_exposure_ctrl;
+    SliderSettingControl m_image_contrast_ctrl;
+    SliderSettingControl m_image_saturation_ctrl;
+    SliderSettingControl m_image_edge_boost_ctrl;
+    wxTimer           m_image_map_preview_refresh_timer;
+    int               m_image_map_preview_refresh_grace_ticks{0};
 
     // Simple perimeter modulation uses one shared cadence built from an
     // automatically selected subset, an explicit count, or a manual subset.
-    wxChoice*                          m_simple_pm_filament_count_choice{nullptr};
+    ComboBox*                          m_simple_pm_filament_count_choice{nullptr};
     wxStaticText*                      m_simple_pm_filament_selection_hint{nullptr};
     std::vector<wxBitmapToggleButton*> m_simple_pm_filament_buttons;
     std::vector<bool>                  m_simple_pm_manual_filament_selected;
@@ -249,7 +295,8 @@ public:
                    const std::vector<std::string>& extruder_colours,
                    std::vector<unsigned char>&     filament_ids,
                    unsigned char&                  first_extruder_id,
-                   const std::string&              obj_filename = {});
+                   const std::string&              obj_filename = {},
+                   const wxString&                 dialog_title = wxString());
     wxBoxSizer* create_btn_sizer(long flags);
     void        on_dpi_changed(const wxRect& suggested_rect) override;
 

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <set>
 
 namespace Slic3r::GUI {
 
@@ -35,21 +36,77 @@ std::vector<wxColour> wx_spectrum_colors(const std::vector<RGBA>& representative
     return colors;
 }
 
-std::vector<wxColour> image_map_spectrum_colors(const ModelObject& object)
+std::vector<wxColour> image_map_spectrum_colors(const ImageMap::VolumeData& data, size_t zone_index)
 {
-    std::vector<RGBA> representative;
-    for (const ModelVolume* volume : object.volumes) {
-        if (volume == nullptr)
+    std::vector<RGBA> source_colors;
+    std::vector<bool> referenced_textures(data.texture_assets.size(), false);
+    for (const ImageMap::TriangleBinding& binding : data.triangle_bindings) {
+        if (binding.zone_index != zone_index)
             continue;
-        const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
-        if (!data)
-            continue;
-        std::vector<RGBA> volume_colors = ImageMap::representative_source_colors(*data, ImageMap::RenderMode::PerimeterModulationV2);
-        representative.insert(representative.end(), volume_colors.begin(), volume_colors.end());
+        if (binding.source.kind == ImageMap::SourceKind::Texture && binding.source.texture_asset_index >= 0 &&
+            size_t(binding.source.texture_asset_index) < referenced_textures.size()) {
+            referenced_textures[size_t(binding.source.texture_asset_index)] = true;
+        } else {
+            source_colors.insert(source_colors.end(), binding.source.corner_colors.begin(), binding.source.corner_colors.end());
+        }
     }
-    representative = ImageMap::representative_source_colors(representative, 8, 256);
-
+    const size_t texture_count = size_t(std::count(referenced_textures.begin(), referenced_textures.end(), true));
+    const size_t per_texture_budget = std::max<size_t>(1, 8192 / std::max<size_t>(texture_count, 1));
+    for (size_t texture_index = 0; texture_index < data.texture_assets.size(); ++texture_index) {
+        if (!referenced_textures[texture_index])
+            continue;
+        const ImageMap::TextureAsset& asset = data.texture_assets[texture_index];
+        if (!asset.valid())
+            continue;
+        const size_t pixel_count  = size_t(asset.width) * size_t(asset.height);
+        const size_t sample_count = std::min(pixel_count, per_texture_budget);
+        for (size_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+            const size_t offset = (sample_index * pixel_count / sample_count) * 4;
+            source_colors.push_back({float(asset.rgba[offset]) / 255.f, float(asset.rgba[offset + 1]) / 255.f,
+                                     float(asset.rgba[offset + 2]) / 255.f, float(asset.rgba[offset + 3]) / 255.f});
+        }
+    }
+    if (source_colors.empty() && zone_index < data.zones.size())
+        for (const ImageMap::PaletteEntry& entry : data.zones[zone_index].palette)
+            source_colors.push_back(entry.target_color);
+    const std::vector<RGBA> representative = ImageMap::representative_source_colors(source_colors, 8, 8192);
     return wx_spectrum_colors(representative);
+}
+
+wxString image_map_mode_label(const ImageMap::Zone& zone)
+{
+    switch (zone.render_mode) {
+    case ImageMap::RenderMode::NormalMix: return _L("Standard mapping");
+    case ImageMap::RenderMode::PerimeterModulationV2: return _L("Perimeter modulation");
+    case ImageMap::RenderMode::AdaptiveLocalizedCycles:
+        return zone.adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::LocalZHeight ?
+                   _L("Adaptive / Local-Z height modulation") :
+                   _L("Adaptive / Perimeter modulation");
+    }
+    return _L("Image mapping");
+}
+
+wxString image_map_display_name(const ModelObject& object,
+                                const ModelVolume& volume,
+                                const ImageMap::VolumeData& data,
+                                size_t zone_index)
+{
+    if (zone_index >= data.zones.size())
+        return _L("Image map");
+    const ImageMap::Zone& zone = data.zones[zone_index];
+    if (!zone.display_name.empty())
+        return wxString::FromUTF8(zone.display_name);
+    for (const ImageMap::TriangleBinding& binding : data.triangle_bindings) {
+        if (binding.zone_index != zone_index || binding.source.kind != ImageMap::SourceKind::Texture ||
+            binding.source.texture_asset_index < 0 || size_t(binding.source.texture_asset_index) >= data.texture_assets.size())
+            continue;
+        const std::string& display_name = data.texture_assets[size_t(binding.source.texture_asset_index)].display_name;
+        if (!display_name.empty())
+            return wxString::FromUTF8(display_name);
+    }
+    if (!volume.name.empty())
+        return wxString::FromUTF8(volume.name);
+    return object.name.empty() ? _L("Image map") : wxString::FromUTF8(object.name);
 }
 
 size_t image_map_entries_signature()
@@ -65,7 +122,8 @@ size_t image_map_entries_signature()
         if (object == nullptr)
             continue;
         bool object_added = false;
-        for (const ModelVolume* volume : object->volumes) {
+        for (size_t volume_index = 0; volume_index < object->volumes.size(); ++volume_index) {
+            const ModelVolume* volume = object->volumes[volume_index];
             if (volume == nullptr)
                 continue;
             const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
@@ -275,6 +333,15 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
         return definition_by_filament_id.count(entry.fallback_filament_id) != 0 ? entry.fallback_filament_id : 0u;
     };
 
+    auto resolve_palette_filament_id = [&](const ImageMap::PaletteEntry& entry) {
+        if (entry.mixed_filament_stable_id != 0) {
+            const auto stable_it = filament_id_by_stable_id.find(entry.mixed_filament_stable_id);
+            if (stable_it != filament_id_by_stable_id.end())
+                return stable_it->second;
+        }
+        return entry.fallback_filament_id;
+    };
+
     std::map<unsigned int, std::vector<RGBA>> adaptive_cycle_colors;
 
     const ModelObjectPtrs& objects = wxGetApp().model().objects;
@@ -283,7 +350,8 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
         if (object == nullptr)
             continue;
 
-        for (const ModelVolume* volume : object->volumes) {
+        for (size_t volume_index = 0; volume_index < object->volumes.size(); ++volume_index) {
+            const ModelVolume* volume = object->volumes[volume_index];
             if (volume == nullptr)
                 continue;
             const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
@@ -291,48 +359,74 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
                 continue;
             for (size_t zone_index = 0; zone_index < data->zones.size(); ++zone_index) {
                 const ImageMap::Zone& zone = data->zones[zone_index];
-                if (!zone.enabled || zone.render_mode != ImageMap::RenderMode::AdaptiveLocalizedCycles)
+                if (!zone.enabled)
                     continue;
-                const std::vector<std::vector<RGBA>> palette_spectra = ImageMap::representative_palette_source_colors(*data, zone_index, 8,
-                                                                                                                      512);
-                for (size_t palette_index = 0; palette_index < zone.palette.size(); ++palette_index) {
-                    const unsigned int filament_id   = resolve_adaptive_filament_id(zone.palette[palette_index]);
-                    const auto         definition_it = definition_by_filament_id.find(filament_id);
-                    if (definition_it == definition_by_filament_id.end() ||
-                        !definition_it->second->behavior.surface_bias.perimeter_modulation)
-                        continue;
-                    std::vector<RGBA>& colors = adaptive_cycle_colors[filament_id];
-                    if (palette_index < palette_spectra.size())
-                        colors.insert(colors.end(), palette_spectra[palette_index].begin(), palette_spectra[palette_index].end());
-                    else
-                        colors.push_back(zone.palette[palette_index].target_color);
+
+                const std::vector<std::vector<RGBA>> palette_spectra =
+                    ImageMap::representative_palette_source_colors(*data, zone_index, 8, 512);
+                if (zone.render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles) {
+                    for (size_t palette_index = 0; palette_index < zone.palette.size(); ++palette_index) {
+                        const unsigned int filament_id   = resolve_adaptive_filament_id(zone.palette[palette_index]);
+                        const auto         definition_it = definition_by_filament_id.find(filament_id);
+                        if (definition_it == definition_by_filament_id.end() ||
+                            !definition_it->second->behavior.surface_bias.perimeter_modulation)
+                            continue;
+                        std::vector<RGBA>& colors = adaptive_cycle_colors[filament_id];
+                        if (palette_index < palette_spectra.size())
+                            colors.insert(colors.end(), palette_spectra[palette_index].begin(), palette_spectra[palette_index].end());
+                        else
+                            colors.push_back(zone.palette[palette_index].target_color);
+                    }
                 }
+
+                std::set<unsigned int> component_ids;
+                for (const ImageMap::PaletteEntry& entry : zone.palette) {
+                    const unsigned int filament_id = resolve_palette_filament_id(entry);
+                    if (filament_id >= 1 && filament_id <= m_physical_filaments.size()) {
+                        component_ids.insert(filament_id);
+                        continue;
+                    }
+                    const auto definition_it = definition_by_filament_id.find(filament_id);
+                    if (definition_it == definition_by_filament_id.end())
+                        continue;
+                    for (const MixedFilamentWeightedComponent& component : definition_it->second->recipe.blend.components)
+                        if (component.percent > 0 && component.filament.id >= 1 &&
+                            component.filament.id <= m_physical_filaments.size())
+                            component_ids.insert(component.filament.id);
+                }
+
+                std::vector<FilamentCardImageMap::ComponentFilament> component_filaments;
+                component_filaments.reserve(component_ids.size());
+                for (unsigned int component_id : component_ids) {
+                    const wxColour color(m_physical_filaments[component_id - 1].first);
+                    component_filaments.emplace_back(component_id, color.IsOk() ? color : *wxBLACK);
+                }
+
+                const wxString object_name = object->name.empty() ? wxString::Format(_L("Object %d"), int(object_index + 1)) :
+                                                                    wxString::FromUTF8(object->name);
+                const wxString tooltip = wxString::Format(_L("%s on %s\nContinuous source-color range for this image\nClick to edit mapping settings"),
+                                                           image_map_mode_label(zone), object_name);
+                auto* card = new FilamentCardImageMap(m_mixed_panel, image_map_display_name(*object, *volume, *data, zone_index),
+                                                       image_map_spectrum_colors(*data, zone_index), true, tooltip,
+                                                       std::move(component_filaments), image_map_mode_label(zone));
+                const std::string zone_stable_id = zone.stable_id;
+                card->set_on_select_callback([this, object_index, volume_index, zone_stable_id]() {
+                    begin_mixed_card_callback();
+                    if (m_on_edit_image_map)
+                        m_on_edit_image_map(int(object_index), int(volume_index), zone_stable_id);
+                    end_mixed_card_callback();
+                });
+                card->set_on_delete_callback([this, object_index, volume_index, zone_stable_id]() {
+                    begin_mixed_card_callback();
+                    if (m_on_delete_image_map)
+                        m_on_delete_image_map(int(object_index), int(volume_index), zone_stable_id);
+                    end_mixed_card_callback();
+                });
+                m_image_map_cards.push_back(card);
+                m_image_map_adaptive_filament_ids.push_back(0);
+                m_image_map_sizer->Add(card, 0, wxEXPAND);
             }
         }
-
-        const bool has_perimeter_image_map = std::any_of(object->volumes.begin(), object->volumes.end(), [](const ModelVolume* volume) {
-            if (volume == nullptr)
-                return false;
-            const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
-            return data && std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone& zone) {
-                       return zone.enabled && zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2;
-                   });
-        });
-        if (!has_perimeter_image_map)
-            continue;
-
-        const wxString object_name = object->name.empty() ? wxString::Format(_L("Object %d"), int(object_index + 1)) :
-                                                            wxString::FromUTF8(object->name);
-        auto*          card        = new FilamentCardImageMap(m_mixed_panel, object_name, image_map_spectrum_colors(*object));
-        card->set_on_delete_callback([this, object_index]() {
-            begin_mixed_card_callback();
-            if (m_on_delete_image_map)
-                m_on_delete_image_map(int(object_index));
-            end_mixed_card_callback();
-        });
-        m_image_map_cards.push_back(card);
-        m_image_map_adaptive_filament_ids.push_back(0);
-        m_image_map_sizer->Add(card, 0, wxEXPAND);
     }
 
     std::vector<std::string> physical_colors;

@@ -874,6 +874,10 @@ public:
 
     void update_volumes_colors_by_extruder();
     void set_image_map_highlight_filament_id(unsigned int filament_id);
+    void set_image_map_preview_override(int object_index,
+                                        int volume_index,
+                                        std::shared_ptr<const ImageMap::VolumeData> preview_data);
+    bool image_map_preview_update_pending() const;
 
     bool is_dragging() const { return m_gizmos.is_dragging() || m_moving; }
 

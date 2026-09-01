@@ -35,17 +35,19 @@ std::pair<bool, std::string> GLShadersManager::init()
 
     const std::string prefix = GUI::wxGetApp().is_gl_version_greater_or_equal_to(3, 1) ? "140/" : "110/";
     // imgui shader
-    valid &= append_shader("imgui", { prefix + "imgui.vs", prefix + "imgui.fs" });
+    valid &= append_shader("imgui", {prefix + "imgui.vs", prefix + "imgui.fs"});
     // basic shader, used to render all what was previously rendered using the immediate mode
-    valid &= append_shader("flat", { prefix + "flat.vs", prefix + "flat.fs" });
+    valid &= append_shader("flat", {prefix + "flat.vs", prefix + "flat.fs"});
     // basic shader with plane clipping, used to render volumes in picking pass
-    valid &= append_shader("flat_clip", { prefix + "flat_clip.vs", prefix + "flat_clip.fs" });
+    valid &= append_shader("flat_clip", {prefix + "flat_clip.vs", prefix + "flat_clip.fs"});
     // basic shader for textures, used to render textures
-    valid &= append_shader("flat_texture", { prefix + "flat_texture.vs", prefix + "flat_texture.fs" });
+    valid &= append_shader("flat_texture", {prefix + "flat_texture.vs", prefix + "flat_texture.fs"});
+    // High-resolution image-map preview on the source mesh UVs.
+    valid &= append_shader("image_map_texture_preview", {prefix + "image_map_texture_preview.vs", prefix + "image_map_texture_preview.fs"});
     // used to render 3D scene background
-    valid &= append_shader("background", { prefix + "background.vs", prefix + "background.fs" });
+    valid &= append_shader("background", {prefix + "background.vs", prefix + "background.fs"});
     // used to render bed axes and model, selection hints, gcode sequential view marker model, preview shells, options in gcode preview
-    valid &= append_shader("gouraud_light", { prefix + "gouraud_light.vs", prefix + "gouraud_light.fs" });
+    valid &= append_shader("gouraud_light", {prefix + "gouraud_light.vs", prefix + "gouraud_light.fs"});
     //used to render thumbnail
     valid &= append_shader("thumbnail", { prefix + "thumbnail.vs", prefix + "thumbnail.fs"});
     // used to render printbed

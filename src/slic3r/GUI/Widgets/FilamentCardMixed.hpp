@@ -112,7 +112,8 @@ public:
                          std::vector<wxColour> spectrum_colors  = {},
                          bool                  show_delete      = true,
                          const wxString&       spectrum_tooltip = wxString(),
-                         std::vector<ComponentFilament> component_filaments = {});
+                         std::vector<ComponentFilament> component_filaments = {},
+                         const wxString&       mode_label       = wxString());
 
     void set_on_delete_callback(std::function<void()> callback) { m_on_delete = std::move(callback); }
     void set_on_select_callback(std::function<void()> callback);
@@ -120,6 +121,7 @@ public:
 
 private:
     wxString              m_object_name;
+    wxString              m_mode_label;
     wxString              m_spectrum_tooltip;
     std::vector<wxColour> m_spectrum_colors;
     std::vector<ComponentFilament> m_component_filaments;

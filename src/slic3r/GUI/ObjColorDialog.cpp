@@ -9,6 +9,7 @@
 #include "GUI_App.hpp"
 #include "MsgDialog.hpp"
 #include "Widgets/Button.hpp"
+#include "Widgets/Accordion.hpp"
 #include "Widgets/FilamentCardMixed.hpp"
 #include "slic3r/Utils/ColorSpaceConvert.hpp"
 #include "MainFrame.hpp"
@@ -52,6 +53,102 @@ const int COLOR_LABEL_WIDTH = 140;
 #define BTN_SIZE                  wxSize(FromDIP(58), FromDIP(24))
 #define BTN_GAP                   FromDIP(20)
 
+double ObjColorPanel::SliderSettingControl::value() const
+{
+    return slider != nullptr ? minimum + double(slider->GetValue()) * step : minimum;
+}
+
+void ObjColorPanel::SliderSettingControl::enable(bool enabled) const
+{
+    if (slider != nullptr)
+        slider->Enable(enabled);
+    if (input != nullptr)
+        input->Enable(enabled);
+}
+
+ObjColorPanel::SliderSettingControl ObjColorPanel::create_slider_setting_row(wxWindow* parent,
+                                                                              wxBoxSizer* parent_sizer,
+                                                                              const wxString& label,
+                                                                              double minimum,
+                                                                              double maximum,
+                                                                              double initial,
+                                                                              double step,
+                                                                              int digits,
+                                                                              const wxString& suffix,
+                                                                              const wxString& tooltip)
+{
+    SliderSettingControl result;
+    result.minimum = minimum;
+    result.step    = step;
+
+    auto* row = new wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    row->SetBackgroundColour(MFDTheme::card_background());
+    auto* row_sizer = new wxBoxSizer(wxHORIZONTAL);
+    row->SetSizer(row_sizer);
+
+    auto* text = new wxStaticText(row, wxID_ANY, label);
+    text->SetFont(Label::Body_14);
+    text->SetToolTip(tooltip);
+    MFDTheme::apply_text(text, MFDTheme::primary_text(), row->GetBackgroundColour());
+
+    const int slider_maximum = std::max(1, int(std::lround((maximum - minimum) / step)));
+    const int slider_value   = std::clamp(int(std::lround((std::clamp(initial, minimum, maximum) - minimum) / step)),
+                                        0, slider_maximum);
+    result.slider = new wxSlider(row, wxID_ANY, slider_value, 0, slider_maximum);
+    result.slider->SetMinSize(wxSize(FromDIP(72), -1));
+    result.slider->SetTickFreq(std::max(1, slider_maximum / 6));
+    result.slider->SetToolTip(tooltip);
+
+    auto format_value = [digits](double value) {
+        if (digits <= 0)
+            return wxString::Format("%.0f", value);
+        if (digits == 1)
+            return wxString::Format("%.1f", value);
+        return wxString::Format("%.2f", value);
+    };
+    result.input = new wxTextCtrl(row, wxID_ANY, result.slider != nullptr ? format_value(result.value()) : wxString(),
+                                  wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER | wxTE_RIGHT);
+    result.input->SetFont(Label::Body_14);
+    result.input->SetMinSize(wxSize(FromDIP(digits > 0 ? 54 : 46), -1));
+    result.input->SetToolTip(tooltip);
+    MFDTheme::apply_input(result.input);
+
+    auto* unit = new wxStaticText(row, wxID_ANY, suffix);
+    unit->SetFont(Label::Body_14);
+    unit->SetToolTip(tooltip);
+    MFDTheme::apply_text(unit, MFDTheme::primary_text(), row->GetBackgroundColour());
+
+    row_sizer->Add(text, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+    row_sizer->Add(result.slider, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+    row_sizer->Add(result.input, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, suffix.empty() ? 0 : FromDIP(6));
+    if (!suffix.empty())
+        row_sizer->Add(unit, 0, wxALIGN_CENTER_VERTICAL);
+    parent_sizer->Add(row, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(6));
+
+    wxSlider*   slider = result.slider;
+    wxTextCtrl* input  = result.input;
+    slider->Bind(wxEVT_SLIDER, [this, slider, input, minimum, step, format_value](wxCommandEvent&) {
+        input->ChangeValue(format_value(minimum + double(slider->GetValue()) * step));
+        schedule_image_map_preview_update();
+    });
+    input->Bind(wxEVT_TEXT, [this, slider, input, minimum, maximum, step](wxCommandEvent&) {
+        double parsed = 0.0;
+        if (!input->GetValue().ToDouble(&parsed))
+            return;
+        const int encoded = std::clamp(int(std::lround((std::clamp(parsed, minimum, maximum) - minimum) / step)),
+                                       0, slider->GetMax());
+        slider->SetValue(encoded);
+        schedule_image_map_preview_update();
+    });
+    auto normalize_input = [slider, input, minimum, step, format_value](wxEvent& event) {
+        input->ChangeValue(format_value(minimum + double(slider->GetValue()) * step));
+        event.Skip();
+    };
+    input->Bind(wxEVT_TEXT_ENTER, normalize_input);
+    input->Bind(wxEVT_KILL_FOCUS, normalize_input);
+    return result;
+}
+
 static void update_ui(wxWindow* window)
 {
     Slic3r::GUI::wxGetApp().UpdateDarkUI(window);
@@ -80,6 +177,15 @@ static constexpr int k_max_quantized_color_count     = 256;
 static constexpr int k_max_printable_filament_id     = int(MAXIMUM_FILAMENT_NUMBER);
 static constexpr int k_simple_pm_automatic_choice    = 0;
 static constexpr int k_simple_pm_manual_choice       = 1;
+
+static ImageMap::ColorMixModel color_mix_model(ObjImageMapColorMixModel model)
+{
+    switch (model) {
+    case ObjImageMapColorMixModel::FullSpectrumKmKs: return ImageMap::ColorMixModel::FullSpectrumKmKs;
+    case ObjImageMapColorMixModel::FilamentMixer: return ImageMap::ColorMixModel::FilamentMixer;
+    default: return ImageMap::ColorMixModel::FullSpectrumKmKs;
+    }
+}
 
 // Button StateColor presets
 const StateColor ok_btn_bg(std::pair<wxColour, int>(wxColour(0, 137, 123), StateColor::Pressed),
@@ -255,10 +361,13 @@ ObjColorDialog::ObjColorDialog(wxWindow*                       parent,
                                const std::vector<std::string>& extruder_colours,
                                std::vector<unsigned char>&     filament_ids,
                                unsigned char&                  first_extruder_id,
-                               const std::string&              obj_filename)
+                               const std::string&              obj_filename,
+                               const wxString&                 dialog_title)
     : DPIDialog(parent ? parent : static_cast<wxWindow*>(wxGetApp().mainframe),
                 wxID_ANY,
-                import_context.mode == ObjColorImportMode::ImageMap ? _(L("Import OBJ Image Map")) : _(L("Import OBJ Colors")),
+                dialog_title.empty() ?
+                    (import_context.mode == ObjColorImportMode::ImageMap ? _(L("Import Mesh Image Map")) : _(L("Import Mesh Colors"))) :
+                    dialog_title,
                 wxDefaultPosition,
                 wxDefaultSize,
                 wxDEFAULT_DIALOG_STYLE)
@@ -333,6 +442,7 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
                              unsigned char&                  first_extruder_id,
                              const std::string&              obj_filename)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize)
+    , m_image_map_preview_refresh_timer(this)
     , m_obj_filename(obj_filename)
     , m_input_colors(input_colors)
     , m_is_image_map(import_context.mode == ObjColorImportMode::ImageMap)
@@ -344,6 +454,17 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
 
     if (input_colors.empty())
         return;
+
+    Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+        const bool pending = m_import_context.image_map_preview_refresh_fn && m_import_context.image_map_preview_refresh_fn();
+        if (pending) {
+            m_image_map_preview_refresh_grace_ticks = 4;
+        } else if (m_image_map_preview_refresh_grace_ticks > 0) {
+            --m_image_map_preview_refresh_grace_ticks;
+        } else {
+            m_image_map_preview_refresh_timer.Stop();
+        }
+    }, m_image_map_preview_refresh_timer.GetId());
 
     for (const std::string& color : extruder_colours)
         m_colours.push_back(wxColor(color));
@@ -446,30 +567,21 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
         auto* pm_sizer = new wxBoxSizer(wxVERTICAL);
         m_simple_pm_sub_panel->SetSizer(pm_sizer);
 
-        // Title outside card
-        auto* phys_title_sizer = new wxBoxSizer(wxHORIZONTAL);
-        auto* phys_title       = new wxStaticText(m_simple_pm_sub_panel, wxID_ANY, _L("Physical filament"));
-        phys_title->SetFont(Label::Body_14);
-        MFDTheme::apply_text(phys_title, MFDTheme::secondary_text(), m_simple_pm_sub_panel->GetBackgroundColour());
-        phys_title_sizer->Add(phys_title, 0, wxALIGN_CENTER_VERTICAL);
-        phys_title_sizer->AddSpacer(FromDIP(4));
-        phys_title_sizer->Add(create_help_icon(m_simple_pm_sub_panel,
-                                               _L("Physical filaments dictate how good mixed filaments can match the colors")),
-                              0, wxALIGN_CENTER_VERTICAL);
-        pm_sizer->Add(phys_title_sizer, 0, wxEXPAND | wxBOTTOM, FromDIP(6));
-
         // Physical filament card. These swatches become retained selections in
         // Manual mode; clicking one directly also switches to Manual mode.
-        auto* phys_card = new wxPanel(m_simple_pm_sub_panel, wxID_ANY);
-        phys_card->SetBackgroundColour(MFDTheme::content_background());
-        auto* phys_card_sizer = new wxBoxSizer(wxVERTICAL);
-        phys_card->SetSizer(phys_card_sizer);
+        auto* phys_card       = new Accordion(m_simple_pm_sub_panel, _L("Physical Filaments"));
+        auto* phys_card_body  = phys_card->get_body_panel();
+        auto* phys_card_sizer = phys_card->get_body_sizer();
+        phys_card->add_header_control(
+            create_help_icon(phys_card->get_header_panel(),
+                             _L("Physical filaments dictate how well mixed filaments can match the image colors")),
+            true);
 
         wxBoxSizer* phys_colors_sizer = new wxBoxSizer(wxHORIZONTAL);
         phys_colors_sizer->AddSpacer(FromDIP(4));
         m_simple_pm_manual_filament_selected.assign(m_colours.size(), false);
         for (size_t i = 0; i < m_colours.size(); i++) {
-            auto* icon = new wxBitmapToggleButton(phys_card, wxID_ANY,
+            auto* icon = new wxBitmapToggleButton(phys_card_body, wxID_ANY,
                                                   *get_extruder_color_icon(m_colours[i].GetAsString(wxC2S_HTML_SYNTAX).ToStdString(),
                                                                            std::to_string(i + 1), FromDIP(16), FromDIP(16)),
                                                   wxDefaultPosition, wxSize(FromDIP(24), FromDIP(24)));
@@ -505,16 +617,17 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
             m_simple_pm_filament_buttons.emplace_back(icon);
             phys_colors_sizer->Add(icon, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(5));
         }
-        phys_card_sizer->Add(phys_colors_sizer, 0, wxEXPAND | wxALL, FromDIP(8));
-        pm_sizer->Add(phys_card, 0, wxEXPAND | wxBOTTOM, FromDIP(10));
+        phys_card_sizer->Add(phys_colors_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(6));
 
         auto* count_row   = new wxBoxSizer(wxHORIZONTAL);
-        auto* count_label = new wxStaticText(m_simple_pm_sub_panel, wxID_ANY, _L("Filaments used"));
+        auto* count_label = new wxStaticText(phys_card_body, wxID_ANY, _L("Filaments used"));
         count_label->SetFont(Label::Body_14);
-        MFDTheme::apply_text(count_label, MFDTheme::secondary_text(), m_simple_pm_sub_panel->GetBackgroundColour());
+        MFDTheme::apply_text(count_label, MFDTheme::primary_text(), phys_card_body->GetBackgroundColour());
         count_row->Add(count_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
 
-        m_simple_pm_filament_count_choice = new wxChoice(m_simple_pm_sub_panel, wxID_ANY);
+        m_simple_pm_filament_count_choice = new ComboBox(phys_card_body, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                                          wxSize(-1, FromDIP(30)), 0, nullptr, wxCB_READONLY);
+        m_simple_pm_filament_count_choice->SetKeepDropArrow(true);
         m_simple_pm_filament_count_choice->Append(_L("Automatic"));
         m_simple_pm_filament_count_choice->Append(_L("Manual selection"));
         const size_t maximum_component_count = std::min(m_colours.size(), ImageMap::continuous_color_solver_max_component_count());
@@ -522,19 +635,112 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
             m_simple_pm_filament_count_choice->Append(wxString::Format(_L("%d filaments"), int(count)));
         m_simple_pm_filament_count_choice->SetSelection(k_simple_pm_automatic_choice);
         m_simple_pm_filament_count_choice->SetToolTip(
-            _L("Automatic chooses the useful filaments and their count. Manual selection uses exactly the physical-filament swatches you "
-               "select. Choosing a number selects that many filaments automatically."));
+            _L("Automatic keeps every physical filament supported by Simple PM so the complete texture gamut remains printable. Manual "
+               "selection uses exactly the swatches you select. Choosing a number selects that many filaments automatically."));
         count_row->Add(m_simple_pm_filament_count_choice, 1, wxALIGN_CENTER_VERTICAL);
-        pm_sizer->Add(count_row, 0, wxEXPAND | wxBOTTOM, FromDIP(5));
+        phys_card_sizer->Add(count_row, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(6));
 
-        m_simple_pm_filament_selection_hint = new wxStaticText(m_simple_pm_sub_panel, wxID_ANY, "");
-        MFDTheme::apply_text(m_simple_pm_filament_selection_hint, MFDTheme::muted_text(), m_simple_pm_sub_panel->GetBackgroundColour());
-        pm_sizer->Add(m_simple_pm_filament_selection_hint, 0, wxEXPAND | wxBOTTOM, FromDIP(10));
-        m_simple_pm_filament_count_choice->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+        m_simple_pm_filament_selection_hint = new wxStaticText(phys_card_body, wxID_ANY, "");
+        MFDTheme::apply_text(m_simple_pm_filament_selection_hint, MFDTheme::muted_text(), phys_card_body->GetBackgroundColour());
+        phys_card_sizer->Add(m_simple_pm_filament_selection_hint, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(6));
+        m_simple_pm_filament_count_choice->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent&) {
             update_simple_pm_filament_selection_hint();
             if (m_simple_pm_sub_panel)
                 m_simple_pm_sub_panel->Layout();
         });
+        phys_card->set_on_toggle([this](bool) {
+            if (m_simple_pm_sub_panel)
+                m_simple_pm_sub_panel->Layout();
+        });
+        pm_sizer->Add(phys_card, 0, wxEXPAND | wxBOTTOM, FromDIP(10));
+
+        auto* quality_card  = new Accordion(m_simple_pm_sub_panel, _L("Perimeter Quality"));
+        auto* quality_body  = quality_card->get_body_panel();
+        auto* quality_sizer = quality_card->get_body_sizer();
+
+        auto* detail_row   = new wxBoxSizer(wxHORIZONTAL);
+        auto* detail_label = new wxStaticText(quality_body, wxID_ANY, _L("Perimeter detail"));
+        detail_label->SetFont(Label::Body_14);
+        MFDTheme::apply_text(detail_label, MFDTheme::primary_text(), quality_body->GetBackgroundColour());
+        detail_row->Add(detail_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+        m_simple_pm_detail_choice = new ComboBox(quality_body, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                                  wxSize(-1, FromDIP(30)), 0, nullptr, wxCB_READONLY);
+        m_simple_pm_detail_choice->SetKeepDropArrow(true);
+        m_simple_pm_detail_choice->Append(_L("Standard (0.16 mm)"));
+        m_simple_pm_detail_choice->Append(_L("Fine (0.08 mm)"));
+        m_simple_pm_detail_choice->Append(_L("Maximum (0.04 mm)"));
+        m_simple_pm_detail_choice->Append(_L("Ultra (0.02 mm)"));
+        const float initial_spacing = m_import_context.image_map_modulation_sample_spacing_mm;
+        m_simple_pm_detail_choice->SetSelection(initial_spacing <= 0.03f ? 3 :
+                                                initial_spacing <= 0.06f ? 2 :
+                                                initial_spacing <= 0.12f ? 1 :
+                                                                           0);
+        m_simple_pm_detail_choice->SetToolTip(
+            _L("Controls how closely the image is sampled along the perimeter. Finer settings preserve smaller horizontal details but "
+               "increase slicing time and toolpath complexity. Vertical image resolution is controlled by the print layer height."));
+        detail_row->Add(m_simple_pm_detail_choice, 1, wxALIGN_CENTER_VERTICAL);
+        quality_sizer->Add(detail_row, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+        m_simple_pm_detail_choice->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent&) { schedule_image_map_preview_update(); });
+
+        m_simple_pm_maximum_detail_checkbox = new wxCheckBox(quality_body, wxID_ANY,
+                                                             _L("Maximum detail (disable broad path smoothing)"));
+        m_simple_pm_maximum_detail_checkbox->SetFont(Label::Body_14);
+        m_simple_pm_maximum_detail_checkbox->SetValue(m_import_context.image_map_disable_broad_path_smoothing);
+        MFDTheme::apply_text(m_simple_pm_maximum_detail_checkbox, MFDTheme::primary_text(), quality_body->GetBackgroundColour());
+        m_simple_pm_maximum_detail_checkbox->SetToolTip(
+            _L("Bypasses both broad perimeter smoothing passes so fine texture changes remain visible. The Gaussian reconstruction filter "
+               "and printable slope limiter remain active."));
+        quality_sizer->Add(m_simple_pm_maximum_detail_checkbox, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+
+        m_simple_pm_gaussian_smoothing_ctrl = create_slider_setting_row(
+            quality_body, quality_sizer, _L("Gaussian reconstruction"), 0.0, 400.0,
+            double(m_import_context.image_map_gaussian_smoothing_strength) * 100.0, 5.0, 0, _L("%"),
+            _L("Scales the local Gaussian reconstruction radius and sigma. At Maximum 0.04 mm detail, 100% samples approximately 0.12 mm "
+               "to either side. Set to 0% to use only the center sample."));
+        m_simple_pm_first_path_smoothing_ctrl = create_slider_setting_row(
+            quality_body, quality_sizer, _L("Broad smoothing pass 1"), 0.0, 400.0,
+            double(m_import_context.image_map_first_path_smoothing_strength) * 100.0, 5.0, 0, _L("%"),
+            _L("Scales the first path-smoothing radius. At 100%, its radius is max(0.30 mm, 1.15 x carrier width)."));
+        m_simple_pm_second_path_smoothing_ctrl = create_slider_setting_row(
+            quality_body, quality_sizer, _L("Broad smoothing pass 2"), 0.0, 400.0,
+            double(m_import_context.image_map_second_path_smoothing_strength) * 100.0, 5.0, 0, _L("%"),
+            _L("Scales the second path-smoothing radius. At 100%, its radius is max(0.20 mm, 0.45 x carrier width)."));
+        m_simple_pm_tone_gamma_ctrl = create_slider_setting_row(
+            quality_body, quality_sizer, _L("Tone gamma"), 0.5, 3.0, m_import_context.image_map_tone_gamma, 0.05, 2, wxEmptyString,
+            _L("Adjusts source-image tones before filament weights are solved. Values above 1 brighten midtones; values below 1 darken them."));
+        m_simple_pm_overhang_contrast_ctrl = create_slider_setting_row(
+            quality_body, quality_sizer, _L("Overhang contrast"), 25.0, 300.0,
+            m_import_context.image_map_overhang_contrast_percent, 5.0, 0, _L("%"),
+            _L("Increases or reduces separation between filament contributions. Higher values produce more decisive color exposure."));
+
+        m_simple_pm_maximum_detail_checkbox->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) {
+            update_simple_pm_quality_ui();
+            schedule_image_map_preview_update();
+        });
+        update_simple_pm_quality_ui();
+        quality_card->set_on_toggle([this](bool) {
+            if (m_simple_pm_sub_panel)
+                m_simple_pm_sub_panel->Layout();
+        });
+        pm_sizer->Add(quality_card, 0, wxEXPAND | wxBOTTOM, FromDIP(10));
+
+        auto* cadence_card  = new Accordion(m_simple_pm_sub_panel, _L("Object Cadence"));
+        auto* cadence_body  = cadence_card->get_body_panel();
+        auto* cadence_sizer = cadence_card->get_body_sizer();
+        m_simple_pm_whole_object_cadence_checkbox = new wxCheckBox(cadence_body, wxID_ANY,
+                                                                   _L("Apply image cadence to the whole object"));
+        m_simple_pm_whole_object_cadence_checkbox->SetFont(Label::Body_14);
+        m_simple_pm_whole_object_cadence_checkbox->SetValue(m_import_context.image_map_synchronize_whole_object_cadence);
+        MFDTheme::apply_text(m_simple_pm_whole_object_cadence_checkbox, MFDTheme::primary_text(), cadence_body->GetBackgroundColour());
+        m_simple_pm_whole_object_cadence_checkbox->SetToolTip(_L(
+            "Prints every model wall, top/bottom surface, and infill with the same physical filament selected by this image's strict "
+            "layer cadence. This keeps the model on one physical filament per layer; supports and purge structures remain independent."));
+        cadence_sizer->Add(m_simple_pm_whole_object_cadence_checkbox, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(6));
+        cadence_card->set_on_toggle([this](bool) {
+            if (m_simple_pm_sub_panel)
+                m_simple_pm_sub_panel->Layout();
+        });
+        pm_sizer->Add(cadence_card, 0, wxEXPAND | wxBOTTOM, FromDIP(10));
 
         // Spectrum/details span the full dialog below Method and Color settings.
         auto* spec_title = new wxStaticText(m_simple_pm_mapping_panel, wxID_ANY, _L("Spectrum"));
@@ -653,6 +859,47 @@ ObjColorPanel::ObjColorPanel(wxWindow*                       parent,
     Layout();
 
     deal_default_strategy_new();
+    // Existing Simple PM zones store their strict component selection in the
+    // cadence mixed filament. Restore that selection when this dialog is
+    // reopened from the Mixed Filament sidebar so accepting an unrelated
+    // detail/cadence change does not silently choose a different component set.
+    if (uses_layer_sequence_image_map() && !m_import_context.image_map_palette_filament_ids.empty() &&
+        wxGetApp().preset_bundle != nullptr) {
+        const size_t num_physical = m_colours.size();
+        std::optional<MixedFilamentDefinition> cadence_definition;
+        const unsigned int cadence_filament_id = m_import_context.image_map_palette_filament_ids.front();
+        if (cadence_filament_id > num_physical) {
+            cadence_definition =
+                wxGetApp().preset_bundle->mixed_filaments.mixed_filament_definition_from_id(cadence_filament_id, num_physical);
+        }
+        if (!cadence_definition && !m_import_context.image_map_palette_mixed_stable_ids.empty() &&
+            m_import_context.image_map_palette_mixed_stable_ids.front() != 0) {
+            const uint64_t stable_id = m_import_context.image_map_palette_mixed_stable_ids.front();
+            const std::vector<MixedFilamentDefinition> definitions =
+                wxGetApp().preset_bundle->mixed_filaments.mixed_filament_definitions(num_physical);
+            const auto definition_it = std::find_if(definitions.begin(), definitions.end(), [stable_id](const MixedFilamentDefinition& definition) {
+                return !definition.visibility.tombstoned && definition.identity.stable_id == stable_id;
+            });
+            if (definition_it != definitions.end())
+                cadence_definition = *definition_it;
+        }
+        if (cadence_definition) {
+            std::vector<unsigned int> component_ids;
+            for (const MixedFilamentWeightedComponent& component : cadence_definition->recipe.blend.components) {
+                if (component.percent > 0 && component.filament.id >= 1 && component.filament.id <= num_physical)
+                    component_ids.push_back(component.filament.id);
+            }
+            std::sort(component_ids.begin(), component_ids.end());
+            component_ids.erase(std::unique(component_ids.begin(), component_ids.end()), component_ids.end());
+            const size_t maximum_component_count = std::min(num_physical, ImageMap::continuous_color_solver_max_component_count());
+            if (component_ids.size() >= 2 && component_ids.size() <= maximum_component_count) {
+                m_simple_pm_filament_count_choice->SetSelection(k_simple_pm_manual_choice);
+                m_simple_pm_manual_filament_selected.assign(num_physical, false);
+                for (const unsigned int component_id : component_ids)
+                    m_simple_pm_manual_filament_selected[component_id - 1] = true;
+            }
+        }
+    }
     rebuild_adaptive_cycle_spectrum_table();
     const std::vector<unsigned int> initial_simple_pm_component_ids = simple_pm_component_ids();
     for (const unsigned int component_id : initial_simple_pm_component_ids)
@@ -861,9 +1108,77 @@ void ObjColorPanel::build_method_section(wxWindow* parent, wxBoxSizer* parent_si
         _L("Uses one shared physical filament sequence per layer. Color variations are created by modulating perimeter width and exposure."),
         1);
     m_method_adaptive_radio = make_radio_row(
-        _L("Adaptive Perimeter Modulation"),
-        _L("Clusters localized color regions and assigns a specialized mixed-filament cycle to each region for enhanced local color fidelity."),
+        _L("Adaptive Modulation"),
+        _L("Clusters localized color regions and assigns a specialized mixed-filament cycle to each region. Choose whether exposure is "
+           "controlled in the XY perimeter or by varying the nozzle Z along the perimeter."),
         2);
+
+    auto* color_model_row   = new wxBoxSizer(wxHORIZONTAL);
+    auto* color_model_label = new wxStaticText(parent, wxID_ANY, _L("Color model:"));
+    color_model_label->SetFont(Label::Body_14);
+    MFDTheme::apply_text(color_model_label, MFDTheme::secondary_text(), parent->GetBackgroundColour());
+    m_image_map_color_mix_model_choice = new ComboBox(parent, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                                       wxSize(-1, FromDIP(30)), 0, nullptr, wxCB_READONLY);
+    m_image_map_color_mix_model_choice->SetKeepDropArrow(true);
+    m_image_map_color_mix_model_choice->Append(_L("KM/K-S physical mixing"));
+    m_image_map_color_mix_model_choice->Append(_L("FilamentMixer"));
+    m_image_map_color_mix_model_choice->SetSelection(
+        m_import_context.image_map_color_mix_model == ObjImageMapColorMixModel::FilamentMixer ? 1 : 0);
+    m_image_map_color_mix_model_choice->SetToolTip(
+        _L("KM/K-S uses FullSpectrum's calibrated physical model. FilamentMixer uses the legacy polynomial pigment mixer. "
+           "Both choices use the same closest-mix Oklab SoftCap4Dark4 score."));
+    color_model_row->Add(color_model_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
+    color_model_row->Add(m_image_map_color_mix_model_choice, 1, wxALIGN_CENTER_VERTICAL);
+    parent_sizer->Add(color_model_row, 0, wxEXPAND | wxLEFT | wxBOTTOM, FromDIP(12));
+
+    auto* adaptive_mode_row = new wxBoxSizer(wxHORIZONTAL);
+    auto* adaptive_mode_label = new wxStaticText(parent, wxID_ANY, _L("Modulation:"));
+    adaptive_mode_label->SetFont(Label::Body_14);
+    MFDTheme::apply_text(adaptive_mode_label, MFDTheme::secondary_text(), parent->GetBackgroundColour());
+    m_adaptive_modulation_choice = new ComboBox(parent, wxID_ANY, wxEmptyString, wxDefaultPosition,
+                                                 wxSize(-1, FromDIP(30)), 0, nullptr, wxCB_READONLY);
+    m_adaptive_modulation_choice->SetKeepDropArrow(true);
+    m_adaptive_modulation_choice->Append(_L("Perimeter modulation"));
+    m_adaptive_modulation_choice->Append(_L("Local-Z height modulation"));
+    m_adaptive_modulation_choice->SetSelection(
+        m_import_context.image_map_adaptive_modulation_mode == ObjAdaptiveModulationMode::LocalZHeight ? 1 : 0);
+    m_adaptive_modulation_choice->SetToolTip(
+        _L("Perimeter modulation changes the XY exposure width. Local-Z height modulation keeps the perimeter centerline fixed and "
+           "converts the continuously sampled blend ratio into smooth nozzle-Z and bead-height changes along that perimeter. Each "
+           "component prints once on successive nominal layers, and the complete strict cadence keeps a fixed total height. "
+           "Local component thickness is capped at 0.32 mm and redistributed within the cadence."));
+    adaptive_mode_row->Add(adaptive_mode_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
+    adaptive_mode_row->Add(m_adaptive_modulation_choice, 1, wxALIGN_CENTER_VERTICAL);
+    parent_sizer->Add(adaptive_mode_row, 0, wxEXPAND | wxLEFT | wxBOTTOM, FromDIP(12));
+
+    if (m_import_context.source == ObjColorImportSource::ImageTexture) {
+        auto* processing_card  = new Accordion(parent, _L("Image Processing"));
+        auto* processing_body  = processing_card->get_body_panel();
+        auto* processing_sizer = processing_card->get_body_sizer();
+        m_image_exposure_ctrl = create_slider_setting_row(
+            processing_body, processing_sizer,
+            _L("Exposure"), -3.0, 3.0, m_import_context.image_map_exposure_ev, 0.1, 1, _L("EV"),
+            _L("Brightens or darkens the sampled image before color matching. One EV doubles or halves RGB intensity."));
+        m_image_contrast_ctrl = create_slider_setting_row(
+            processing_body, processing_sizer,
+            _L("Image contrast"), 0.0, 300.0, m_import_context.image_map_contrast_percent, 5.0, 0, _L("%"),
+            _L("Expands or compresses image tones around mid-gray. 100% preserves the source image."));
+        m_image_saturation_ctrl = create_slider_setting_row(
+            processing_body, processing_sizer,
+            _L("Saturation"), 0.0, 300.0, m_import_context.image_map_saturation_percent, 5.0, 0, _L("%"),
+            _L("Adjusts color intensity while preserving luminance. 0% is grayscale and 100% preserves the source image."));
+        m_image_edge_boost_ctrl = create_slider_setting_row(
+            processing_body, processing_sizer,
+            _L("Edge boost"), 0.0, 300.0, m_import_context.image_map_edge_boost_percent, 5.0, 0, _L("%"),
+            _L("Applies a one-pixel Gaussian unsharp mask before color matching. Higher values improve text and local edge separation but can "
+               "amplify compression noise."));
+        processing_card->set_on_toggle([parent](bool) {
+            parent->Layout();
+            if (parent->GetParent())
+                parent->GetParent()->Layout();
+        });
+        parent_sizer->Add(processing_card, 0, wxEXPAND | wxLEFT | wxBOTTOM, FromDIP(10));
+    }
 
     auto on_method_change = [this](wxCommandEvent&) {
         Freeze();
@@ -880,6 +1195,21 @@ void ObjColorPanel::build_method_section(wxWindow* parent, wxBoxSizer* parent_si
     m_method_standard_radio->Bind(wxEVT_RADIOBUTTON, on_method_change);
     m_method_simple_pm_radio->Bind(wxEVT_RADIOBUTTON, on_method_change);
     m_method_adaptive_radio->Bind(wxEVT_RADIOBUTTON, on_method_change);
+    m_adaptive_modulation_choice->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent&) {
+        m_import_context.image_map_adaptive_modulation_mode =
+            uses_adaptive_local_z_height_modulation() ? ObjAdaptiveModulationMode::LocalZHeight :
+                                                        ObjAdaptiveModulationMode::Perimeter;
+        update_image_map_mode_ui();
+    });
+    m_image_map_color_mix_model_choice->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent&) {
+        m_import_context.image_map_color_mix_model = selected_image_map_color_mix_model();
+        if (uses_adaptive_local_cycles_image_map())
+            deal_add_btn();
+        update_simple_pm_filament_selection_hint();
+        rebuild_adaptive_cycle_spectrum_table();
+        update_image_map_mode_ui();
+        schedule_image_map_preview_update();
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1768,7 +2098,8 @@ bool ObjColorPanel::update_filament_ids()
         const wxColour cadence_color = m_cluster_colours.empty() ? m_source_spectrum_colours.front() : m_cluster_colours.front();
         const MixedColorMatchCreationResult match =
             create_mixed_filament_color_match(cadence_color, physical_colors, min_component_percent(), k_max_printable_filament_id,
-                                              MixedColorMatchEncoding::PerimeterModulatedLayerSequence, component_ids);
+                                              MixedColorMatchEncoding::PerimeterModulatedLayerSequence, component_ids,
+                                              color_mix_model(selected_image_map_color_mix_model()));
         if (!report_progress(1, 1))
             return false;
         if (!match.valid || match.filament_id == 0 || match.filament_id > unsigned(k_max_printable_filament_id)) {
@@ -1836,6 +2167,10 @@ bool ObjColorPanel::update_filament_ids()
             if (!report_progress(++step, total_steps)) return false;
         }
     } else if (m_is_image_map && uses_adaptive_local_cycles_image_map()) {
+        // Apply the shell-only contract before resolving cycles. A palette can
+        // legitimately contain only direct physical matches, in which case no
+        // mixed-filament creation call would otherwise configure this mode.
+        configure_adaptive_perimeter_color_match_mode();
         std::map<int, int> resolved_cycle_ids;
         std::vector<int>   logical_cycle_ids;
         for (int mapped_filament_id : m_cluster_map_filaments)
@@ -1850,7 +2185,8 @@ bool ObjColorPanel::update_filament_ids()
                 return false;
             const MixedColorMatchCreationResult match = create_mixed_filament_color_match(
                 m_new_add_colors[size_t(color_index)], physical_colors, min_component_percent(),
-                k_max_printable_filament_id, MixedColorMatchEncoding::AdaptiveLocalizedCycles);
+                k_max_printable_filament_id, MixedColorMatchEncoding::AdaptiveLocalizedCycles, {},
+                color_mix_model(selected_image_map_color_mix_model()));
             if (!match.valid || match.filament_id == 0 || match.filament_id > unsigned(k_max_printable_filament_id)) {
                 if (m_warning_text)
                     m_warning_text->SetLabelText(_L("Unable to create a printable mixed color for one or more adaptive cycles."));
@@ -1881,7 +2217,7 @@ bool ObjColorPanel::update_filament_ids()
                     k_max_printable_filament_id, MixedColorMatchEncoding::LayerRatio);
                 if (!match.valid || match.filament_id == 0 || match.filament_id > unsigned(k_max_printable_filament_id)) {
                     if (m_warning_text)
-                        m_warning_text->SetLabelText(_L("Unable to create a printable mixed color for one or more OBJ colors."));
+                        m_warning_text->SetLabelText(_L("Unable to create a printable mixed color for one or more mesh colors."));
                     return false;
                 }
                 cluster_filament_ids[row] = static_cast<unsigned char>(match.filament_id);
@@ -1899,6 +2235,19 @@ bool ObjColorPanel::update_filament_ids()
         if (!report_progress(++step, total_steps)) return false;
     }
     m_first_extruder_id = cluster_filament_ids.empty() ? 1 : cluster_filament_ids[0];
+    if (m_is_image_map && uses_adaptive_local_cycles_image_map() && !cluster_filament_ids.empty()) {
+        // The largest source cluster is the image background in the common
+        // case. Use its resolved physical/cycle filament as the volume base so
+        // unmapped shell and top/bottom fallback areas do not inherit palette
+        // row zero merely because clustering happened to return it first.
+        std::vector<size_t> cluster_population(cluster_filament_ids.size(), 0);
+        for (const int label : m_cluster_labels_from_algo)
+            if (label >= 0 && size_t(label) < cluster_population.size())
+                ++cluster_population[size_t(label)];
+        const auto dominant = std::max_element(cluster_population.begin(), cluster_population.end());
+        if (dominant != cluster_population.end() && *dominant > 0)
+            m_first_extruder_id = cluster_filament_ids[size_t(dominant - cluster_population.begin())];
+    }
 
     if (m_is_image_map)
         store_image_map_palette(cluster_filament_ids);
@@ -1983,6 +2332,10 @@ void ObjColorPanel::update_image_map_mode_ui()
     if (m_standard_mapping_panel)  m_standard_mapping_panel->Show(is_standard);
     if (m_simple_pm_mapping_panel) m_simple_pm_mapping_panel->Show(is_simple_pm);
     if (m_adaptive_mapping_panel)  m_adaptive_mapping_panel->Show(is_adaptive);
+    if (m_adaptive_modulation_choice && m_adaptive_modulation_choice->GetContainingSizer())
+        m_adaptive_modulation_choice->GetContainingSizer()->ShowItems(is_adaptive);
+    if (m_image_map_color_mix_model_choice && m_image_map_color_mix_model_choice->GetContainingSizer())
+        m_image_map_color_mix_model_choice->GetContainingSizer()->ShowItems(is_simple_pm || is_adaptive);
 
     if (m_color_cluster_title)
         m_color_cluster_title->SetLabelText(is_adaptive ? _L("Adaptive color regions") : _L("Quantized colors"));
@@ -2042,6 +2395,93 @@ bool ObjColorPanel::uses_adaptive_local_cycles_image_map() const
     return m_method_adaptive_radio != nullptr && m_method_adaptive_radio->GetValue();
 }
 
+bool ObjColorPanel::uses_adaptive_local_z_height_modulation() const
+{
+    return m_adaptive_modulation_choice != nullptr && m_adaptive_modulation_choice->GetSelection() == 1;
+}
+
+ObjImageMapColorMixModel ObjColorPanel::selected_image_map_color_mix_model() const
+{
+    if (m_image_map_color_mix_model_choice == nullptr)
+        return m_import_context.image_map_color_mix_model;
+    switch (m_image_map_color_mix_model_choice->GetSelection()) {
+    case 1: return ObjImageMapColorMixModel::FilamentMixer;
+    default: return ObjImageMapColorMixModel::FullSpectrumKmKs;
+    }
+}
+
+float ObjColorPanel::simple_pm_sample_spacing_mm() const
+{
+    if (m_simple_pm_detail_choice == nullptr)
+        return 0.16f;
+    switch (m_simple_pm_detail_choice->GetSelection()) {
+    case 3: return 0.02f;
+    case 2: return 0.04f;
+    case 1: return 0.08f;
+    default: return 0.16f;
+    }
+}
+
+void ObjColorPanel::store_simple_pm_quality_settings()
+{
+    m_import_context.image_map_modulation_sample_spacing_mm = simple_pm_sample_spacing_mm();
+    m_import_context.image_map_disable_broad_path_smoothing = m_simple_pm_maximum_detail_checkbox != nullptr &&
+                                                              m_simple_pm_maximum_detail_checkbox->GetValue();
+    if (m_simple_pm_gaussian_smoothing_ctrl.slider != nullptr)
+        m_import_context.image_map_gaussian_smoothing_strength = float(
+            std::clamp(m_simple_pm_gaussian_smoothing_ctrl.value() / 100.0, 0.0, 4.0));
+    if (m_simple_pm_first_path_smoothing_ctrl.slider != nullptr)
+        m_import_context.image_map_first_path_smoothing_strength = float(
+            std::clamp(m_simple_pm_first_path_smoothing_ctrl.value() / 100.0, 0.0, 4.0));
+    if (m_simple_pm_second_path_smoothing_ctrl.slider != nullptr)
+        m_import_context.image_map_second_path_smoothing_strength = float(
+            std::clamp(m_simple_pm_second_path_smoothing_ctrl.value() / 100.0, 0.0, 4.0));
+    if (m_simple_pm_tone_gamma_ctrl.slider != nullptr)
+        m_import_context.image_map_tone_gamma = float(std::clamp(m_simple_pm_tone_gamma_ctrl.value(), 0.5, 3.0));
+    if (m_simple_pm_overhang_contrast_ctrl.slider != nullptr)
+        m_import_context.image_map_overhang_contrast_percent = float(
+            std::clamp(m_simple_pm_overhang_contrast_ctrl.value(), 25.0, 300.0));
+}
+
+void ObjColorPanel::store_image_processing_settings()
+{
+    if (m_image_exposure_ctrl.slider != nullptr)
+        m_import_context.image_map_exposure_ev = float(std::clamp(m_image_exposure_ctrl.value(), -3.0, 3.0));
+    if (m_image_contrast_ctrl.slider != nullptr)
+        m_import_context.image_map_contrast_percent = float(std::clamp(m_image_contrast_ctrl.value(), 0.0, 300.0));
+    if (m_image_saturation_ctrl.slider != nullptr)
+        m_import_context.image_map_saturation_percent = float(std::clamp(m_image_saturation_ctrl.value(), 0.0, 300.0));
+    if (m_image_edge_boost_ctrl.slider != nullptr)
+        m_import_context.image_map_edge_boost_percent = float(std::clamp(m_image_edge_boost_ctrl.value(), 0.0, 300.0));
+}
+
+void ObjColorPanel::schedule_image_map_preview_update()
+{
+    if (!m_is_image_map || !m_import_context.image_map_preview_changed_fn)
+        return;
+    // Store and publish the control values synchronously. Relying on a
+    // dialog-owned debounce timer meant the modal event loop could leave the
+    // viewport override unchanged until the window closed.
+    store_simple_pm_quality_settings();
+    store_image_processing_settings();
+    m_import_context.image_map_preview_changed_fn();
+
+    // The worker is asynchronous, but the disabled canvas behind a modal
+    // dialog does not receive its normal idle repaints. Present one frame now
+    // and keep polling until the replacement texture has been uploaded.
+    m_image_map_preview_refresh_grace_ticks = 4;
+    if (m_import_context.image_map_preview_refresh_fn)
+        m_import_context.image_map_preview_refresh_fn();
+    m_image_map_preview_refresh_timer.Start(50);
+}
+
+void ObjColorPanel::update_simple_pm_quality_ui()
+{
+    const bool broad_smoothing_enabled = m_simple_pm_maximum_detail_checkbox == nullptr || !m_simple_pm_maximum_detail_checkbox->GetValue();
+    m_simple_pm_first_path_smoothing_ctrl.enable(broad_smoothing_enabled);
+    m_simple_pm_second_path_smoothing_ctrl.enable(broad_smoothing_enabled);
+}
+
 bool ObjColorPanel::simple_pm_uses_manual_filaments() const
 {
     return m_simple_pm_filament_count_choice != nullptr && m_simple_pm_filament_count_choice->GetSelection() == k_simple_pm_manual_choice;
@@ -2095,7 +2535,7 @@ std::vector<unsigned int> ObjColorPanel::simple_pm_component_ids() const
 
     const std::vector<size_t> selected =
         ImageMap::select_continuous_color_components(components, targets, size_t(std::max(0, simple_pm_requested_filament_count())),
-                                                     double(min_component_percent()) / 100.0);
+                                                     color_mix_model(selected_image_map_color_mix_model()));
     std::vector<unsigned int> component_ids;
     component_ids.reserve(selected.size());
     for (const size_t component_index : selected)
@@ -2185,6 +2625,8 @@ wxBoxSizer* ObjColorPanel::create_image_map_btn_sizer(wxWindow* parent)
 
 void ObjColorPanel::store_image_map_palette(const std::vector<unsigned char>& cluster_filament_ids)
 {
+    store_image_processing_settings();
+    m_import_context.image_map_color_mix_model = selected_image_map_color_mix_model();
     if (uses_layer_sequence_image_map())
         m_import_context.image_map_render_mode = ObjImageMapRenderMode::PerimeterModulationV2;
     else if (uses_adaptive_local_cycles_image_map())
@@ -2192,7 +2634,16 @@ void ObjColorPanel::store_image_map_palette(const std::vector<unsigned char>& cl
     else
         m_import_context.image_map_render_mode = ObjImageMapRenderMode::NormalMix;
 
+    m_import_context.image_map_adaptive_modulation_mode =
+        uses_adaptive_local_z_height_modulation() ? ObjAdaptiveModulationMode::LocalZHeight :
+                                                   ObjAdaptiveModulationMode::Perimeter;
+
     m_import_context.image_map_minimum_component_percent = min_component_percent();
+    m_import_context.image_map_synchronize_whole_object_cadence =
+        uses_layer_sequence_image_map() && m_simple_pm_whole_object_cadence_checkbox != nullptr &&
+        m_simple_pm_whole_object_cadence_checkbox->GetValue();
+    if (uses_layer_sequence_image_map())
+        store_simple_pm_quality_settings();
     m_import_context.image_map_palette_colors.clear();
     m_import_context.image_map_palette_filament_ids.clear();
     m_import_context.image_map_palette_mixed_stable_ids.clear();
@@ -2220,8 +2671,13 @@ void ObjColorPanel::store_image_map_palette(const std::vector<unsigned char>& cl
 
 void ObjColorPanel::store_layer_sequence_image_map_palette(unsigned char filament_id, const wxColour& representative_color)
 {
+    store_image_processing_settings();
+    m_import_context.image_map_color_mix_model           = selected_image_map_color_mix_model();
     m_import_context.image_map_render_mode               = ObjImageMapRenderMode::PerimeterModulationV2;
     m_import_context.image_map_minimum_component_percent = min_component_percent();
+    m_import_context.image_map_synchronize_whole_object_cadence =
+        m_simple_pm_whole_object_cadence_checkbox != nullptr && m_simple_pm_whole_object_cadence_checkbox->GetValue();
+    store_simple_pm_quality_settings();
     m_import_context.image_map_palette_colors.assign(1, convert_to_rgba(representative_color));
     m_import_context.image_map_palette_filament_ids.assign(1, filament_id);
 
@@ -2245,18 +2701,18 @@ void ObjColorPanel::choose_image_map_source()
 
     std::vector<ImageSourceChoice> source_choices;
     if (m_import_context.detected_texture_available)
-        source_choices.push_back({_L("Use the detected OBJ texture"), ObjColorImportSource::ImageTexture, false});
+        source_choices.push_back({_L("Use the detected mesh texture"), ObjColorImportSource::ImageTexture, false});
     if (m_import_context.texture_coordinates_available)
         source_choices.push_back({_L("Select a PNG or JPEG texture\u2026"), ObjColorImportSource::ImageTexture, true});
     if (m_import_context.vertex_colors_available)
-        source_choices.push_back({_L("Use OBJ vertex colors"), ObjColorImportSource::VertexColors, false});
+        source_choices.push_back({_L("Use mesh vertex colors"), ObjColorImportSource::VertexColors, false});
     if (m_import_context.face_colors_available)
-        source_choices.push_back({_L("Use OBJ material colors"), ObjColorImportSource::FaceColors, false});
+        source_choices.push_back({_L("Use mesh material colors"), ObjColorImportSource::FaceColors, false});
 
     if (source_choices.empty()) {
         MessageDialog dialog(this,
-            _L("This OBJ has no UV coordinates, vertex colors, or material colors that can be used for image mapping."),
-            _L("OBJ image map"), wxOK | wxICON_INFORMATION);
+            _L("This mesh has no UV coordinates, vertex colors, or material colors that can be used for image mapping."),
+            _L("Mesh image map"), wxOK | wxICON_INFORMATION);
         dialog.ShowModal();
         return;
     }
@@ -2271,7 +2727,7 @@ void ObjColorPanel::choose_image_map_source()
     }
 
     wxSingleChoiceDialog source_dialog(this, _L("Choose the surface color source for image mapping."),
-                                       _L("OBJ image map source"), labels);
+                                       _L("Mesh image map source"), labels);
     source_dialog.SetSelection(default_selection);
     if (source_dialog.ShowModal() != wxID_OK) return;
 
@@ -2388,7 +2844,8 @@ void ObjColorPanel::deal_add_btn()
             target_colors.emplace_back(convert_to_wxColour(t));
 
         const AdaptiveColorMatchPreviewResult preview = preview_adaptive_localized_color_matches(
-            target_colors, physical_colors, min_component_percent(), k_max_printable_filament_id);
+            target_colors, physical_colors, min_component_percent(), k_max_printable_filament_id,
+            color_mix_model(selected_image_map_color_mix_model()));
         if (!preview.valid) {
             update_adaptive_cycle_spectra(&preview);
             if (m_warning_text) m_warning_text->SetLabelText(_L("Unable to generate the adaptive region-to-cycle mapping."));
@@ -2524,40 +2981,72 @@ void ObjColorPanel::update_adaptive_cycle_spectra(const AdaptiveColorMatchPrevie
     AdaptiveColorMatchPreviewResult computed_preview;
     if (supplied_preview == nullptr) {
         computed_preview = preview_adaptive_localized_color_matches(
-            target_colors, physical_colors, min_component_percent(), k_max_printable_filament_id);
+            target_colors, physical_colors, min_component_percent(), k_max_printable_filament_id,
+            color_mix_model(selected_image_map_color_mix_model()));
         supplied_preview = &computed_preview;
     }
     const AdaptiveColorMatchPreviewResult& preview = *supplied_preview;
     if (!preview.valid) return;
 
-    m_adaptive_cycle_preview_valid          = true;
-    m_adaptive_direct_physical_region_count = preview.direct_physical_target_count;
-    m_adaptive_cycle_spectrum_colours.reserve(preview.mixed_cycles.size());
-    m_adaptive_cycle_display_component_filament_ids.reserve(preview.mixed_cycles.size());
-    m_adaptive_cycle_display_filament_ids.reserve(preview.mixed_cycles.size());
-    m_adaptive_cycle_display_region_counts.reserve(preview.mixed_cycles.size());
+    struct AdaptiveCycleDisplayGroup
+    {
+        unsigned int              filament_id{0};
+        std::vector<unsigned int> component_filament_ids;
+        std::vector<size_t>       target_indices;
+    };
 
+    // Adaptive recipes may retain different exposure offsets for their color zones, but strict cadence makes their physical component set
+    // the cycle identity presented to the user. Combine those recipes into one mapping row without discarding their zone-specific
+    // modulation data.
+    std::vector<AdaptiveCycleDisplayGroup> display_groups;
+    display_groups.reserve(preview.mixed_cycles.size());
     for (const AdaptiveColorMatchPreviewCycle& cycle : preview.mixed_cycles) {
         std::vector<unsigned int> component_filament_ids;
         for (const MixedFilamentWeightedComponent& comp : cycle.definition.recipe.blend.components) {
             if (comp.percent > 0 && comp.filament.id >= 1 && comp.filament.id <= m_colours.size())
                 component_filament_ids.emplace_back(comp.filament.id);
         }
+        std::sort(component_filament_ids.begin(), component_filament_ids.end());
+        component_filament_ids.erase(std::unique(component_filament_ids.begin(), component_filament_ids.end()),
+                                     component_filament_ids.end());
+        if (component_filament_ids.empty())
+            continue;
+
+        auto group = std::find_if(display_groups.begin(), display_groups.end(),
+                                  [&component_filament_ids](const AdaptiveCycleDisplayGroup& item) {
+                                      return item.component_filament_ids == component_filament_ids;
+                                  });
+        if (group == display_groups.end()) {
+            display_groups.push_back({cycle.filament_id, std::move(component_filament_ids), cycle.target_indices});
+        } else {
+            group->target_indices.insert(group->target_indices.end(), cycle.target_indices.begin(), cycle.target_indices.end());
+        }
+    }
+
+    m_adaptive_cycle_preview_valid          = true;
+    m_adaptive_direct_physical_region_count = preview.direct_physical_target_count;
+    m_adaptive_cycle_spectrum_colours.reserve(display_groups.size());
+    m_adaptive_cycle_display_component_filament_ids.reserve(display_groups.size());
+    m_adaptive_cycle_display_filament_ids.reserve(display_groups.size());
+    m_adaptive_cycle_display_region_counts.reserve(display_groups.size());
+
+    for (AdaptiveCycleDisplayGroup& group : display_groups) {
         std::vector<RGBA> represented_colors;
-        for (const size_t target_index : cycle.target_indices) {
+        for (const size_t target_index : group.target_indices) {
             if (target_index >= representative.size()) continue;
             represented_colors.insert(represented_colors.end(),
                                       representative[target_index].begin(), representative[target_index].end());
         }
         represented_colors = ImageMap::representative_source_colors(represented_colors, 64, 512);
         std::vector<wxColour> attainable =
-            build_adaptive_cycle_attainable_colors(component_filament_ids, represented_colors, context);
+            build_adaptive_cycle_attainable_colors(group.component_filament_ids, represented_colors, context, 17,
+                                                   color_mix_model(selected_image_map_color_mix_model()));
 
         m_adaptive_cycle_spectrum_colours.emplace_back(
             attainable.empty() ? wx_spectrum_colors(represented_colors) : std::move(attainable));
-        m_adaptive_cycle_display_component_filament_ids.emplace_back(std::move(component_filament_ids));
-        m_adaptive_cycle_display_filament_ids.emplace_back(cycle.filament_id);
-        m_adaptive_cycle_display_region_counts.emplace_back(cycle.target_indices.size());
+        m_adaptive_cycle_display_component_filament_ids.emplace_back(std::move(group.component_filament_ids));
+        m_adaptive_cycle_display_filament_ids.emplace_back(group.filament_id);
+        m_adaptive_cycle_display_region_counts.emplace_back(group.target_indices.size());
     }
 }
 

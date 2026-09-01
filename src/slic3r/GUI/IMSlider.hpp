@@ -82,7 +82,7 @@ public:
     void SetSliderAlternateValues(const std::vector<double> &values) { m_alternate_values = values; }
 
     Info GetTicksValues() const;
-    void SetTicksValues(const Info &custom_gcode_per_print_z);
+    void SetTicksValues(const Info &custom_gcode_per_print_z, bool notify_cleanup = true);
     void SetLayersTimes(const std::vector<float> &layers_times, float total_time);
     void SetLayersTimes(const std::vector<double> &layers_times);
 

@@ -13,6 +13,7 @@
 
 #include "GLModel.hpp"
 #include "GLShader.hpp"
+#include "GLTexture.hpp"
 #include "MeshUtils.hpp"
 
 #include <functional>
@@ -23,10 +24,17 @@
 #endif // NDEBUG
 
 #ifdef HAS_GLSAFE
-    extern void glAssertRecentCallImpl(const char *file_name, unsigned int line, const char *function_name);
-    inline void glAssertRecentCall() { glAssertRecentCallImpl(__FILE__, __LINE__, __FUNCTION__); }
-    #define glsafe(cmd) do { cmd; glAssertRecentCallImpl(__FILE__, __LINE__, __FUNCTION__); } while (false)
-    #define glcheck() do { glAssertRecentCallImpl(__FILE__, __LINE__, __FUNCTION__); } while (false)
+extern void glAssertRecentCallImpl(const char* file_name, unsigned int line, const char* function_name);
+inline void glAssertRecentCall() { glAssertRecentCallImpl(__FILE__, __LINE__, __FUNCTION__); }
+#define glsafe(cmd) \
+    do { \
+        cmd; \
+        glAssertRecentCallImpl(__FILE__, __LINE__, __FUNCTION__); \
+    } while (false)
+#define glcheck() \
+    do { \
+        glAssertRecentCallImpl(__FILE__, __LINE__, __FUNCTION__); \
+    } while (false)
 #else // HAS_GLSAFE
     inline void glAssertRecentCall() { }
     #define glsafe(cmd) cmd
@@ -41,6 +49,12 @@ extern Slic3r::ColorRGBA              adjust_color_for_rendering(const Slic3r::C
 namespace Slic3r {
 namespace GUI {
     class Size;
+
+    // Image-map colour preview is a viewport-only preference. Original texture
+    // matches the authored asset; predicted colours apply the active filament
+    // solver without changing the model or its slicing configuration.
+    bool image_map_preview_predicted_colors();
+    void set_image_map_preview_predicted_colors(bool enabled);
 }
 
 class SLAPrintObject;
@@ -217,35 +231,44 @@ public:
     };
 
     // Is mouse or rectangle selection over this object to select/deselect it ?
-    EHoverState         	hover;
+    EHoverState hover;
 
-    GUI::GLModel            model;
+    GUI::GLModel model;
     // raycaster used for picking
     std::unique_ptr<GUI::MeshRaycaster> mesh_raycaster;
     // BBS
     mutable std::vector<GUI::GLModel> mmuseg_models;
-    mutable ObjectBase::Timestamp       mmuseg_ts;
+    mutable ObjectBase::Timestamp     mmuseg_ts;
     // Persistent image maps stay authoritative on ModelVolume. The viewport
     // retains only the immutable source snapshot and its resolved palette key
     // so display meshes can be rebuilt without writing legacy facet paint.
     mutable std::shared_ptr<const ImageMap::VolumeData> image_map_preview_data;
+    // Transient prepare-tab settings preview. It never touches ModelVolume, so
+    // dragging image controls cannot invalidate an otherwise valid slice.
+    mutable std::shared_ptr<const ImageMap::VolumeData> image_map_preview_override_data;
     mutable size_t                                      image_map_preview_palette_signature{0};
     mutable GUI::GLModel                                image_map_source_model;
-    mutable std::shared_ptr<const ImageMap::VolumeData> image_map_source_preview_data;
-    mutable size_t                                      image_map_source_preview_signature{0};
-    mutable std::shared_ptr<SourceColorPreviewJob>      image_map_source_preview_job;
-    unsigned int                                        image_map_highlight_filament_id{0};
+    // Complete UV-mapped image maps use the original mesh and a GPU texture,
+    // matching the reference ImageMap preview. The tessellated vertex-colour
+    // model above remains the fallback for partial/non-texture sources.
+    mutable std::vector<GUI::GLModel>                    image_map_source_texture_models;
+    mutable std::vector<std::unique_ptr<GUI::GLTexture>> image_map_source_textures;
+    mutable std::vector<std::array<bool, 2>>               image_map_source_texture_transparent_wraps;
+    mutable std::shared_ptr<const ImageMap::VolumeData>  image_map_source_preview_data;
+    mutable size_t                                       image_map_source_preview_signature{0};
+    mutable std::shared_ptr<SourceColorPreviewJob>       image_map_source_preview_job;
+    unsigned int                                         image_map_highlight_filament_id{0};
 
     // Returns progress in [0, 1] while the source-colour display mesh is being
     // prepared on a worker thread, or no value when no preview is pending.
     std::optional<float> source_color_preview_progress() const;
 
     // Ranges of triangle and quad indices to be rendered.
-    std::pair<size_t, size_t>   tverts_range;
+    std::pair<size_t, size_t> tverts_range;
 
     // If the qverts or tverts contain thick extrusions, then offsets keeps pointers of the starts
     // of the extrusions per layer.
-    std::vector<coordf_t>       print_zs;
+    std::vector<coordf_t> print_zs;
     // Offset into qverts & tverts, or offsets into indices stored into an OpenGL name_index_buffer.
     std::vector<size_t>         offsets;
 

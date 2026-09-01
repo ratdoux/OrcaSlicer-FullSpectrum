@@ -58,9 +58,13 @@ public:
     {
         m_on_delete_mixed = std::move(cb);
     }
-    void set_on_delete_image_map(std::function<void(int)> cb)
+    void set_on_delete_image_map(std::function<void(int, int, const std::string&)> cb)
     {
         m_on_delete_image_map = std::move(cb);
+    }
+    void set_on_edit_image_map(std::function<void(int, int, const std::string&)> cb)
+    {
+        m_on_edit_image_map = std::move(cb);
     }
     void set_get_physical_filaments(std::function<std::vector<std::pair<std::string, std::string>>()> cb)
     {
@@ -119,7 +123,8 @@ private:
     std::function<void(int, const wxPoint&)>    m_on_right_click_physical; // Callback for right-click in physical filament card
     std::function<void(int, bool)>              m_on_edit_mixed;
     std::function<void(int)>                    m_on_delete_mixed;
-    std::function<void(int)>                    m_on_delete_image_map;
+    std::function<void(int, int, const std::string&)> m_on_edit_image_map;
+    std::function<void(int, int, const std::string&)> m_on_delete_image_map;
 
     // Drag handling for physical and mixed panels
     struct DragState

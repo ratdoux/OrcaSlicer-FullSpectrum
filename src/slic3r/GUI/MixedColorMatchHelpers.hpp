@@ -6,6 +6,7 @@
 
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Color.hpp"
+#include "libslic3r/ImageMap/VolumeData.hpp"
 #include "libslic3r/libslic3r.h"
 
 #include <wx/wx.h>
@@ -186,7 +187,14 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour& 
                                                                 int                             min_component_percent = 15,
                                                                 size_t                  max_total_filaments = MAXIMUM_FILAMENT_NUMBER,
                                                                 MixedColorMatchEncoding encoding = MixedColorMatchEncoding::LayerRatio,
-                                                                const std::vector<unsigned int>& perimeter_component_ids = {});
+                                                                const std::vector<unsigned int>& perimeter_component_ids = {},
+                                                                ImageMap::ColorMixModel color_mix_model =
+                                                                    ImageMap::ColorMixModel::FullSpectrumKmKs);
+
+// Adaptive image maps are rendered only on the visible shell. Configure the
+// active project even when every palette entry resolves directly to a physical
+// filament and no virtual mixed-filament definition needs to be created.
+void configure_adaptive_perimeter_color_match_mode();
 
 NormalColorMatchPlan preview_normal_color_matches(const std::vector<wxColour>&    target_colors,
                                                   const std::vector<std::string>& physical_colors,
@@ -214,7 +222,8 @@ AdaptiveColorMatchPreviewResult preview_adaptive_localized_color_matches(
     const std::vector<wxColour>    &target_colors,
     const std::vector<std::string> &physical_colors,
     int                             min_component_percent = 15,
-    size_t                          max_total_filaments = MAXIMUM_FILAMENT_NUMBER);
+    size_t                          max_total_filaments = MAXIMUM_FILAMENT_NUMBER,
+    ImageMap::ColorMixModel         color_mix_model = ImageMap::ColorMixModel::FullSpectrumKmKs);
 
 // ---- display context helpers ----
 MixedFilamentDisplayContext build_mixed_filament_display_context(
@@ -256,7 +265,8 @@ std::vector<wxColour> build_adaptive_cycle_attainable_colors(
     const std::vector<unsigned int>     &component_ids,
     const std::vector<RGBA>             &requested_colors,
     const MixedFilamentDisplayContext   &context,
-    size_t                               sample_count = 17);
+    size_t                               sample_count = 17,
+    ImageMap::ColorMixModel              color_mix_model = ImageMap::ColorMixModel::FullSpectrumKmKs);
 
 wxColour compute_color_match_recipe_display_color(
     const MixedColorMatchRecipeResult  &recipe,

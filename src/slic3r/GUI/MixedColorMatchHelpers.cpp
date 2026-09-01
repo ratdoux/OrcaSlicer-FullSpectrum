@@ -941,6 +941,24 @@ static void configure_surface_bias_color_match_mode(PresetBundle &preset_bundle)
     set_color_match_config_bool(preset_bundle, "dithering_local_z_mode", false);
 }
 
+void configure_adaptive_perimeter_color_match_mode()
+{
+    PresetBundle* preset_bundle = wxGetApp().preset_bundle;
+    if (preset_bundle == nullptr)
+        return;
+
+    configure_surface_bias_color_match_mode(*preset_bundle);
+    // Adaptive image-map rows are selected for Local-Z by their object-zone
+    // ownership, not by the global "subdivide all mixes" override. Keep the
+    // direct, independent solver visible in the project settings so its
+    // cadence policy is explicit and survives a 3MF round trip.
+    set_color_match_config_bool(*preset_bundle, "dithering_local_z_direct_multicolor", true);
+    set_color_match_config_bool(*preset_bundle, "dithering_local_z_independent_layer_height", true);
+    set_color_match_config_bool(*preset_bundle, "dithering_local_z_whole_objects", false);
+    set_color_match_config_bool(*preset_bundle, "dithering_local_z_infill", false);
+    set_color_match_config_bool(*preset_bundle, "fs_surface_paint_only", true);
+}
+
 static std::pair<unsigned int, double> closest_physical_color_match(
     const wxColour& target_color, const std::vector<std::string>& physical_colors)
 {
@@ -953,6 +971,62 @@ static std::pair<unsigned int, double> closest_physical_color_match(
     return closest;
 }
 
+static MixedColorMatchRecipeResult build_image_map_color_match_recipe(
+    const std::vector<std::string>&    physical_colors,
+    const wxColour&                    target_color,
+    int                                min_component_percent,
+    const MixedFilamentDisplayContext& context,
+    ImageMap::ColorMixModel            color_mix_model)
+{
+    MixedColorMatchRecipeResult result;
+    if (!target_color.IsOk() || physical_colors.size() < 2)
+        return result;
+
+    std::vector<ImageMap::ContinuousColorComponent> components;
+    components.reserve(physical_colors.size());
+    for (size_t index = 0; index < physical_colors.size(); ++index) {
+        ImageMap::ContinuousColorComponent component;
+        component.color_hex = physical_colors[index];
+        if (index < context.physical_tds.size() && std::isfinite(context.physical_tds[index]) && context.physical_tds[index] > 0.0)
+            component.transmission_distance_mm = context.physical_tds[index];
+        if (index < context.physical_material_ids.size() && !context.physical_material_ids[index].empty())
+            component.material_id = context.physical_material_ids[index];
+        components.emplace_back(std::move(component));
+    }
+
+    ImageMap::ContinuousColorRecipeSolver solver(std::move(components), 4, color_mix_model);
+    const RGBA target{float(target_color.Red()) / 255.f, float(target_color.Green()) / 255.f,
+                      float(target_color.Blue()) / 255.f, 1.f};
+    const ImageMap::ContinuousColorRecipe recipe = solver.solve(target, min_component_percent);
+    if (!recipe.valid() || recipe.component_indices.size() < 2 || !recipe.predicted_color)
+        return result;
+
+    std::vector<unsigned int> component_ids;
+    component_ids.reserve(recipe.component_indices.size());
+    for (size_t component_index : recipe.component_indices)
+        component_ids.emplace_back(unsigned(component_index + 1));
+
+    result.valid         = true;
+    result.component_a   = component_ids[0];
+    result.component_b   = component_ids[1];
+    result.mix_b_percent = recipe.component_percents.size() >= 2 ? recipe.component_percents[1] : 50;
+    result.preview_color = wxColour(std::clamp(int(std::lround((*recipe.predicted_color)[0] * 255.f)), 0, 255),
+                                    std::clamp(int(std::lround((*recipe.predicted_color)[1] * 255.f)), 0, 255),
+                                    std::clamp(int(std::lround((*recipe.predicted_color)[2] * 255.f)), 0, 255));
+    result.delta_e = color_delta_e00(target_color, result.preview_color);
+    if (component_ids.size() > 2) {
+        result.gradient_component_ids = MixedFilamentManager::encode_gradient_component_ids(component_ids);
+        std::ostringstream weights;
+        for (size_t index = 0; index < recipe.component_percents.size(); ++index) {
+            if (index > 0)
+                weights << '/';
+            weights << recipe.component_percents[index];
+        }
+        result.gradient_component_weights = weights.str();
+    }
+    return result;
+}
+
 static MixedColorMatchCreationResult create_adaptive_localized_color_match(
     const wxColour&                    target_color,
     const std::vector<std::string>&    physical_colors,
@@ -960,8 +1034,28 @@ static MixedColorMatchCreationResult create_adaptive_localized_color_match(
     size_t                             max_total_filaments,
     const MixedFilamentDisplayContext& context,
     MixedFilamentManager&              manager,
-    MixedColorMatchCreationResult      result)
+    MixedColorMatchCreationResult      result,
+    ImageMap::ColorMixModel            color_mix_model)
 {
+    // Adaptive cycles are a structural/tool-change decision, not merely a
+    // colour-search result. Keep near matches on a physical filament and only
+    // introduce a local cycle when its perceptual improvement is large enough
+    // to justify another material boundary on the model.
+    constexpr double k_direct_filament_lock_delta_e = 3.0;
+    constexpr double k_minimum_cycle_gain_delta_e    = 1.5;
+    constexpr double k_relative_cycle_gain           = 0.15;
+    constexpr double k_maximum_required_gain_delta_e = 4.0;
+
+    const double direct_delta_e = result.delta_e;
+    if (!std::isfinite(direct_delta_e) || direct_delta_e <= k_direct_filament_lock_delta_e)
+        return result;
+    const double required_gain = std::clamp(direct_delta_e * k_relative_cycle_gain,
+                                            k_minimum_cycle_gain_delta_e,
+                                            k_maximum_required_gain_delta_e);
+    auto meaningfully_better_than_direct = [direct_delta_e, required_gain](double candidate_delta_e) {
+        return std::isfinite(candidate_delta_e) && candidate_delta_e + required_gain < direct_delta_e;
+    };
+
     size_t visible_idx = 0;
     for (const MixedFilamentDefinition& definition : manager.mixed_filament_definitions(physical_colors.size())) {
         if (definition.visibility.tombstoned)
@@ -971,26 +1065,44 @@ static MixedColorMatchCreationResult create_adaptive_localized_color_match(
         if (!definition_has_adaptive_perimeter_cycle(definition, physical_colors.size()))
             continue;
 
-        const wxColour existing_color = parse_mixed_color(compute_mixed_filament_display_color(definition, context));
+        wxColour existing_color = parse_mixed_color(compute_mixed_filament_display_color(definition, context));
+        const std::vector<unsigned int> component_ids = definition.recipe.blend.component_ids(physical_colors.size());
+        if (component_ids.size() >= 2) {
+            std::vector<ImageMap::ContinuousColorComponent> components;
+            components.reserve(component_ids.size());
+            for (unsigned int component_id : component_ids) {
+                if (component_id < 1 || component_id > physical_colors.size())
+                    continue;
+                ImageMap::ContinuousColorComponent component;
+                component.color_hex = physical_colors[component_id - 1];
+                if (component_id <= context.physical_tds.size() && std::isfinite(context.physical_tds[component_id - 1]) &&
+                    context.physical_tds[component_id - 1] > 0.0)
+                    component.transmission_distance_mm = context.physical_tds[component_id - 1];
+                if (component_id <= context.physical_material_ids.size() && !context.physical_material_ids[component_id - 1].empty())
+                    component.material_id = context.physical_material_ids[component_id - 1];
+                components.emplace_back(std::move(component));
+            }
+            ImageMap::ContinuousColorSolver solver(std::move(components), color_mix_model);
+            const RGBA target{float(target_color.Red()) / 255.f, float(target_color.Green()) / 255.f,
+                              float(target_color.Blue()) / 255.f, 1.f};
+            if (const std::optional<RGBA> predicted = solver.predict_color(target))
+                existing_color = wxColour(std::clamp(int(std::lround((*predicted)[0] * 255.f)), 0, 255),
+                                          std::clamp(int(std::lround((*predicted)[1] * 255.f)), 0, 255),
+                                          std::clamp(int(std::lround((*predicted)[2] * 255.f)), 0, 255));
+        }
         const double   delta          = color_delta_e00(target_color, existing_color);
-        if (delta + 1e-6 < result.delta_e) {
+        if (meaningfully_better_than_direct(delta) && delta + 1e-6 < result.delta_e) {
             result.valid                = true;
             result.filament_id          = filament_id;
             result.delta_e              = delta;
             result.used_surface_bias    = true;
         }
-        if (delta <= 0.5)
+        if (result.filament_id == filament_id && delta <= 0.5)
             return result;
     }
 
-    MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(
-        physical_colors,
-        target_color,
-        min_component_percent,
-        context.physical_tds,
-        context.physical_material_ids,
-        MixedFilamentManager::color_engine(),
-        MixedFilamentManager::use_td_for_color_prediction());
+    MixedColorMatchRecipeResult recipe =
+        build_image_map_color_match_recipe(physical_colors, target_color, min_component_percent, context, color_mix_model);
     float  reference_width_mm = 0.4f;
     double nozzle_sum         = 0.0;
     size_t nozzle_count       = 0;
@@ -1000,9 +1112,9 @@ static MixedColorMatchCreationResult create_adaptive_localized_color_match(
     }
     if (nozzle_count > 0)
         reference_width_mm = float(nozzle_sum / double(nozzle_count));
-    if (recipe.valid)
+    if (recipe.valid && color_mix_model == ImageMap::ColorMixModel::FullSpectrumKmKs)
         refine_color_match_recipe_with_surface_bias(recipe, target_color, physical_colors.size(), context, reference_width_mm);
-    if (!recipe.valid || recipe.delta_e >= result.delta_e - 1e-6)
+    if (!recipe.valid || !meaningfully_better_than_direct(recipe.delta_e) || recipe.delta_e >= result.delta_e - 1e-6)
         return result;
 
     const size_t visible_before = manager.visible_count();
@@ -1146,7 +1258,8 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour& 
                                                                 int                              min_component_percent,
                                                                 size_t                           max_total_filaments,
                                                                 MixedColorMatchEncoding          encoding,
-                                                                const std::vector<unsigned int>& perimeter_component_ids)
+                                                                const std::vector<unsigned int>& perimeter_component_ids,
+                                                                ImageMap::ColorMixModel          color_mix_model)
 {
     MixedColorMatchCreationResult result;
     if (!target_color.IsOk() || physical_colors.empty())
@@ -1221,11 +1334,8 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour& 
         const auto         closest_selected           = closest_physical_color_match(target_color, selected_physical_colors);
         const unsigned int closest_selected_component = selected_component_ids[closest_selected.first - 1];
 
-        MixedColorMatchRecipeResult recipe = build_best_color_match_recipe(selected_physical_colors, target_color, min_component_percent,
-                                                                           selected_context.physical_tds,
-                                                                           selected_context.physical_material_ids,
-                                                                           MixedFilamentManager::color_engine(),
-                                                                           MixedFilamentManager::use_td_for_color_prediction());
+        MixedColorMatchRecipeResult recipe = build_image_map_color_match_recipe(
+            selected_physical_colors, target_color, min_component_percent, selected_context, color_mix_model);
         if (!recipe.valid || closest_selected.second + 1e-6 < recipe.delta_e) {
             recipe               = MixedColorMatchRecipeResult{};
             recipe.valid         = true;
@@ -1296,9 +1406,8 @@ MixedColorMatchCreationResult create_mixed_filament_color_match(const wxColour& 
 
     if (adaptive_perimeter_cycles) {
         result = create_adaptive_localized_color_match(target_color, physical_colors, min_component_percent, max_total_filaments, context,
-                                                       manager, result);
-        if (result.used_surface_bias)
-            configure_surface_bias_color_match_mode(*preset_bundle);
+                                                       manager, result, color_mix_model);
+        configure_adaptive_perimeter_color_match_mode();
         if (result.created)
             preset_bundle->sync_mixed_filament_definitions_to_project_config();
         return result;
@@ -1474,7 +1583,8 @@ AdaptiveColorMatchPreviewResult preview_adaptive_localized_color_matches(
     const std::vector<wxColour>& target_colors,
     const std::vector<std::string>& physical_colors,
     int min_component_percent,
-    size_t max_total_filaments)
+    size_t max_total_filaments,
+    ImageMap::ColorMixModel color_mix_model)
 {
     AdaptiveColorMatchPreviewResult preview;
     if (target_colors.empty() || physical_colors.size() < 2 || wxGetApp().preset_bundle == nullptr)
@@ -1500,7 +1610,8 @@ AdaptiveColorMatchPreviewResult preview_adaptive_localized_color_matches(
                                                        max_total_filaments,
                                                        context,
                                                        simulated_manager,
-                                                       result);
+                                                       result,
+                                                       color_mix_model);
         if (!result.valid)
             return AdaptiveColorMatchPreviewResult{};
         preview.target_filament_ids.emplace_back(result.filament_id);
@@ -1894,7 +2005,8 @@ MixedFilamentGradientPreview build_mixed_filament_gradient_preview(const MixedFi
 std::vector<wxColour> build_adaptive_cycle_attainable_colors(const std::vector<unsigned int>&   component_ids,
                                                              const std::vector<RGBA>&           requested_colors,
                                                              const MixedFilamentDisplayContext& context,
-                                                             size_t                             sample_count)
+                                                             size_t                             sample_count,
+                                                             ImageMap::ColorMixModel             color_mix_model)
 {
     std::vector<unsigned int> valid_component_ids;
     valid_component_ids.reserve(component_ids.size());
@@ -1923,7 +2035,7 @@ std::vector<wxColour> build_adaptive_cycle_attainable_colors(const std::vector<u
     }
 
     sample_count = std::max<size_t>(2, sample_count);
-    ImageMap::ContinuousColorSolver solver(std::move(solver_components));
+    ImageMap::ContinuousColorSolver solver(std::move(solver_components), color_mix_model);
     if (!solver.valid()) {
         std::vector<wxColour> fallback;
         fallback.reserve(physical_colors.size());

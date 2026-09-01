@@ -40,9 +40,11 @@ FilamentCardImageMap::FilamentCardImageMap(wxWindow*             parent,
                                            std::vector<wxColour> spectrum_colors,
                                            bool                  show_delete,
                                            const wxString&       spectrum_tooltip,
-                                           std::vector<ComponentFilament> component_filaments)
+                                           std::vector<ComponentFilament> component_filaments,
+                                           const wxString&       mode_label)
     : wxPanel(parent, wxID_ANY)
     , m_object_name(object_name)
+    , m_mode_label(mode_label)
     , m_spectrum_tooltip(spectrum_tooltip)
     , m_spectrum_colors(std::move(spectrum_colors))
     , m_component_filaments(std::move(component_filaments))
@@ -72,8 +74,9 @@ void FilamentCardImageMap::build_ui()
         sizer->Add(swatch, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(3));
     }
 
-    m_spectrum_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, FromDIP(30)));
-    m_spectrum_panel->SetMinSize(wxSize(-1, FromDIP(30)));
+    const int spectrum_height = m_mode_label.empty() ? FromDIP(30) : FromDIP(42);
+    m_spectrum_panel = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, spectrum_height));
+    m_spectrum_panel->SetMinSize(wxSize(-1, spectrum_height));
     m_spectrum_panel->SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_spectrum_panel->SetToolTip(
         m_spectrum_tooltip.empty() ? _L("Continuous source colors for this object's perimeter-modulated image map") : m_spectrum_tooltip);
@@ -87,7 +90,7 @@ void FilamentCardImageMap::build_ui()
     sizer->Add(m_spectrum_panel, 1, wxEXPAND | wxALL, FromDIP(2));
     if (m_show_delete) {
         m_delete_btn = new ScalableButton(this, wxID_ANY, "delete_filament");
-        m_delete_btn->SetToolTip(_L("Remove image colors from this object"));
+        m_delete_btn->SetToolTip(_L("Remove this image map"));
         m_delete_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
             if (m_on_delete)
                 m_on_delete();
@@ -151,7 +154,7 @@ void FilamentCardImageMap::paint_spectrum(wxPaintEvent&)
     dc.DrawRectangle(border_inset, border_inset, size.x - 2 * border_inset, size.y - 2 * border_inset);
 
     wxString label = m_object_name.empty() ? _L("Image map") : m_object_name;
-    dc.SetFont(::Label::Body_14.Bold());
+    dc.SetFont((m_mode_label.empty() ? ::Label::Body_14 : ::Label::Body_13).Bold());
     const int available_width = std::max(0, size.x - FromDIP(16));
     while (label.length() > 1 && dc.GetTextExtent(label + wxString::FromUTF8("\xE2\x80\xA6")).x > available_width)
         label.RemoveLast();
@@ -159,11 +162,29 @@ void FilamentCardImageMap::paint_spectrum(wxPaintEvent&)
         label += wxString::FromUTF8("\xE2\x80\xA6");
 
     const wxSize  text_size = dc.GetTextExtent(label);
-    const wxPoint text_position((size.x - text_size.x) / 2, (size.y - text_size.y) / 2);
+    const int     title_y   = m_mode_label.empty() ? (size.y - text_size.y) / 2 : FromDIP(4);
+    const wxPoint text_position((size.x - text_size.x) / 2, title_y);
     dc.SetTextForeground(wxColour(0, 0, 0, 180));
     dc.DrawText(label, text_position.x + 1, text_position.y + 1);
     dc.SetTextForeground(*wxWHITE);
     dc.DrawText(label, text_position);
+
+    if (!m_mode_label.empty()) {
+        wxFont mode_font = ::Label::Body_13;
+        mode_font.SetPointSize(std::max(7, mode_font.GetPointSize() - 1));
+        dc.SetFont(mode_font);
+        wxString mode = m_mode_label;
+        while (mode.length() > 1 && dc.GetTextExtent(mode + wxString::FromUTF8("\xE2\x80\xA6")).x > available_width)
+            mode.RemoveLast();
+        if (mode != m_mode_label && !mode.empty())
+            mode += wxString::FromUTF8("\xE2\x80\xA6");
+        const wxSize mode_size = dc.GetTextExtent(mode);
+        const wxPoint mode_position((size.x - mode_size.x) / 2, size.y - mode_size.y - FromDIP(4));
+        dc.SetTextForeground(wxColour(0, 0, 0, 180));
+        dc.DrawText(mode, mode_position.x + 1, mode_position.y + 1);
+        dc.SetTextForeground(*wxWHITE);
+        dc.DrawText(mode, mode_position);
+    }
 }
 
 void FilamentCardMixed::build_ui()

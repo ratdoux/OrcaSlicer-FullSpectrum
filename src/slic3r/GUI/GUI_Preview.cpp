@@ -452,7 +452,6 @@ void Preview::check_layers_slider_values(std::vector<CustomGCode::Item>& ticks_f
     // All ticks that would end up outside the slider range should be erased.
     // TODO: this should be placed into more appropriate part of code,
     // this function is e.g. not called when the last object is deleted
-    unsigned int old_size = ticks_from_model.size();
     ticks_from_model.erase(std::remove_if(ticks_from_model.begin(), ticks_from_model.end(),
                      [layers_z](CustomGCode::Item val)
         {
@@ -460,8 +459,6 @@ void Preview::check_layers_slider_values(std::vector<CustomGCode::Item>& ticks_f
             return it == layers_z.end();
         }),
         ticks_from_model.end());
-    if (ticks_from_model.size() != old_size)
-        m_schedule_background_process();
 }
 
 // Find an index of a value in a sorted vector, which is in <z-eps, z+eps>.
@@ -609,7 +606,11 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool kee
     bool sequential_print = (curr_print_seq == PrintSequence::ByObject);
     m_layers_slider->SetDrawMode(sequential_print);
     
-    m_layers_slider->SetTicksValues(ticks_info_from_curr_plate);
+    // Loading or restoring Preview is a read-only UI operation. Slider-mode
+    // normalization must not emit a synthetic tick edit, otherwise returning
+    // to Prepare marks an otherwise reusable slice as invalid.
+    m_layers_slider->SetTicksValues(ticks_info_from_curr_plate, false);
+    m_layers_slider->reset_post_tick_event();
 
     auto print_mode_stat = m_gcode_result->print_statistics.modes.front();
     m_layers_slider->SetLayersTimes(print_mode_stat.layers_times, print_mode_stat.time);

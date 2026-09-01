@@ -681,11 +681,13 @@ static const FileWildcards file_wildcards_by_type[FT_SIZE] = {
 #ifdef __APPLE__
     /* FT_MODEL */
     {"Supported files"sv,
-     {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv, ".usd"sv, ".usda"sv, ".usdc"sv, ".usdz"sv, ".abc"sv,
-      ".ply"sv}},
+     {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv, ".fbx"sv, ".gltf"sv, ".glb"sv, ".dae"sv, ".ply"sv,
+      ".3ds"sv, ".usd"sv, ".usda"sv, ".usdc"sv, ".usdz"sv, ".abc"sv}},
 #else
     /* FT_MODEL */
-    {"Supported files"sv, {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv}},
+    {"Supported files"sv,
+     {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv, ".fbx"sv, ".gltf"sv, ".glb"sv, ".dae"sv, ".ply"sv,
+      ".3ds"sv}},
 #endif
     /* FT_ZIP */ {"ZIP files"sv, {".zip"sv}},
     /* FT_PROJECT */ {"Project files"sv, {".3mf"sv}},
@@ -3154,7 +3156,7 @@ void GUI_App::machine_find()
 
                                                     // wcp订阅
                                                     json data = this->app_config->get_devices();
-                                                    wxGetApp().device_card_notify(data);
+                                                     wxGetApp().device_card_notify(data);
                                                     
                                                 });
                                             }
@@ -6452,6 +6454,11 @@ void GUI_App::load_current_presets(bool active_preset_combox/*= false*/, bool ch
             "mixed_filament_height_lower_bound",
             "mixed_filament_advanced_dithering",
             "mixed_filament_component_bias_enabled",
+            "texture_mapping_outer_wall_gradient_global_strength",
+            "texture_mapping_outer_wall_gradient_max_line_width",
+            "texture_mapping_outer_wall_gradient_min_line_width",
+            "image_map_perimeter_modulation_mode",
+            "image_map_perimeter_printable_width",
             "mixed_filament_surface_indentation",
             "mixed_filament_region_collapse",
             "mixed_color_layer_height_a",

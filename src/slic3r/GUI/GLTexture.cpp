@@ -163,10 +163,10 @@ bool GLTexture::load_from_svg_file(const std::string& filename, bool use_mipmaps
         return false;
 }
 
-bool GLTexture::load_from_raw_data(std::vector<unsigned char> data, unsigned int w, unsigned int h, bool apply_anisotropy)
+bool GLTexture::load_from_raw_data(std::vector<unsigned char> data, unsigned int w, unsigned int h, bool apply_anisotropy, bool use_mipmaps)
 {
-    m_width = w;
-    m_height = h;
+    m_width      = w;
+    m_height     = h;
     int n_pixels = m_width * m_height;
     if (n_pixels <= 0) {
         reset();
@@ -184,27 +184,26 @@ bool GLTexture::load_from_raw_data(std::vector<unsigned char> data, unsigned int
             glsafe(::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, max_anisotropy));
     }
 
+    glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei) m_width, (GLsizei) m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                          (const void*) data.data()));
 
-    glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)m_width, (GLsizei)m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, (const void*)data.data()));
-
-    bool use_mipmaps = true;
     if (use_mipmaps) {
         // we manually generate mipmaps because glGenerateMipmap() function is not reliable on all graphics cards
-        int lod_w = m_width;
-        int lod_h = m_height;
+        int   lod_w = m_width;
+        int   lod_h = m_height;
         GLint level = 0;
         while (lod_w > 1 || lod_h > 1) {
             ++level;
-            lod_w = std::max(lod_w / 2, 1);
-            lod_h = std::max(lod_h / 2, 1);
+            lod_w    = std::max(lod_w / 2, 1);
+            lod_h    = std::max(lod_h / 2, 1);
             n_pixels = lod_w * lod_h;
-            glsafe(::glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, (GLsizei)lod_w, (GLsizei)lod_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, (const void*)data.data()));
+            glsafe(::glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, (GLsizei) lod_w, (GLsizei) lod_h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                                  (const void*) data.data()));
         }
 
         glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level));
         glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
-    }
-    else {
+    } else {
         glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
         glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
     }
@@ -235,7 +234,6 @@ bool GLTexture::load_from_raw_data(std::vector<unsigned char> data, unsigned int
 #endif // 0
     return true;
 }
-
 
 bool GLTexture::load_from_svg_files_as_sprites_array(const std::vector<std::string>& filenames, const std::vector<std::pair<int, bool>>& states, unsigned int sprite_size_px, bool compress)
 {
