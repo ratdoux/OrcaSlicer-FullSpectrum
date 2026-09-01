@@ -2880,6 +2880,17 @@ void MainFrame::init_menubar_as_editor()
 
     // SoftFever calibrations
 
+    auto fullspectrum_color_menu = new wxMenu();
+    append_menu_item(fullspectrum_color_menu, wxID_ANY, _L("Generate calibration rectangle"),
+        _L("Create one Simple Perimeter Modulation plaque containing guarded color-mix cells"),
+        [this](wxCommandEvent&) { if (m_plater) m_plater->calib_full_spectrum_color(); }, "", nullptr,
+        [this]() { return m_plater->is_view3D_shown(); }, this);
+    append_menu_item(fullspectrum_color_menu, wxID_ANY, _L("Import calibration photo"),
+        _L("Measure a photographed FullSpectrum color calibration plaque"),
+        [this](wxCommandEvent&) { if (m_plater) m_plater->import_full_spectrum_color_calibration(); }, "", nullptr,
+        [this]() { return m_plater->is_view3D_shown(); }, this);
+    m_topbar->GetCalibMenu()->AppendSubMenu(fullspectrum_color_menu, _L("FullSpectrum color"));
+
     // Temperature
     append_menu_item(m_topbar->GetCalibMenu(), wxID_ANY, _L("Temperature"), _L("Temperature Calibration"),
         [this](wxCommandEvent&) {
@@ -3001,6 +3012,17 @@ void MainFrame::init_menubar_as_editor()
 
     // SoftFever calibrations
     auto calib_menu = new wxMenu();
+
+    auto fullspectrum_color_menu = new wxMenu();
+    append_menu_item(fullspectrum_color_menu, wxID_ANY, _L("Generate calibration rectangle"),
+        _L("Create one Simple Perimeter Modulation plaque containing guarded color-mix cells"),
+        [this](wxCommandEvent&) { if (m_plater) m_plater->calib_full_spectrum_color(); }, "", nullptr,
+        [this]() { return m_plater->is_view3D_shown(); }, this);
+    append_menu_item(fullspectrum_color_menu, wxID_ANY, _L("Import calibration photo"),
+        _L("Measure a photographed FullSpectrum color calibration plaque"),
+        [this](wxCommandEvent&) { if (m_plater) m_plater->import_full_spectrum_color_calibration(); }, "", nullptr,
+        [this]() { return m_plater->is_view3D_shown(); }, this);
+    calib_menu->AppendSubMenu(fullspectrum_color_menu, _L("FullSpectrum color"));
 
     // Temperature
     append_menu_item(calib_menu, wxID_ANY, _L("Temperature"), _L("Temperature"),

@@ -78,6 +78,8 @@
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Format/STEP.hpp"
 #include "libslic3r/Format/AMF.hpp"
+#include "libslic3r/Format/Assimp.hpp"
+#include "libslic3r/Format/ImportedTexture.hpp"
 //#include "libslic3r/Format/3mf.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/GCode/ThumbnailData.hpp"
@@ -91,6 +93,9 @@
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/ImageMap/Sampling.hpp"
+#include "libslic3r/ImageMap/Projection.hpp"
+#include "libslic3r/ImageMap/SimplePmCalibration.hpp"
 #include "libslic3r/ImageMap/VolumeData.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/FilamentHotBedNozzleRules.hpp"
@@ -224,6 +229,110 @@ static std::string filament_temp_mixing_error_text()
                 "nozzle damage, or layer adhesion issues. "
                 "To continue printing, enable \"Allow mixed printing "
                 "of high and low temperature materials\" in Preferences.");
+}
+
+static std::vector<RGBA> image_map_zone_input_colors(const ImageMap::VolumeData& data, size_t zone_index)
+{
+    constexpr size_t max_dialog_samples = 65'536;
+
+    std::set<size_t> referenced_textures;
+    size_t           non_texture_sample_count = 0;
+    for (const ImageMap::TriangleBinding& binding : data.triangle_bindings) {
+        if (binding.zone_index != zone_index)
+            continue;
+        if (binding.source.kind == ImageMap::SourceKind::Texture && binding.source.texture_asset_index >= 0 &&
+            size_t(binding.source.texture_asset_index) < data.texture_assets.size()) {
+            referenced_textures.insert(size_t(binding.source.texture_asset_index));
+        } else {
+            non_texture_sample_count += binding.source.corner_colors.size();
+        }
+    }
+
+    const size_t source_count = referenced_textures.size() + (non_texture_sample_count > 0 ? 1 : 0);
+    const size_t source_budget = std::max<size_t>(1, max_dialog_samples / std::max<size_t>(source_count, 1));
+    std::vector<RGBA> input_colors;
+    input_colors.reserve(std::min(max_dialog_samples, source_budget * source_count));
+
+    if (non_texture_sample_count > 0) {
+        const size_t stride = std::max<size_t>(1, non_texture_sample_count / source_budget);
+        size_t       sample_index = 0;
+        for (const ImageMap::TriangleBinding& binding : data.triangle_bindings) {
+            if (binding.zone_index != zone_index || binding.source.kind == ImageMap::SourceKind::Texture)
+                continue;
+            for (const RGBA& color : binding.source.corner_colors) {
+                if (sample_index % stride == 0 && color[3] > 0.02f && input_colors.size() < source_budget)
+                    input_colors.push_back(color);
+                ++sample_index;
+            }
+        }
+    }
+
+    for (const size_t texture_index : referenced_textures) {
+        const ImageMap::TextureAsset& asset = data.texture_assets[texture_index];
+        if (!asset.valid())
+            continue;
+        const size_t pixel_count  = size_t(asset.width) * size_t(asset.height);
+        const size_t sample_count = std::min(pixel_count, source_budget);
+        for (size_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+            const size_t offset = (sample_index * pixel_count / sample_count) * 4;
+            if (asset.rgba[offset + 3] <= 5)
+                continue;
+            input_colors.push_back({float(asset.rgba[offset]) / 255.f, float(asset.rgba[offset + 1]) / 255.f,
+                                    float(asset.rgba[offset + 2]) / 255.f, float(asset.rgba[offset + 3]) / 255.f});
+        }
+    }
+
+    return input_colors;
+}
+
+static std::string image_map_zone_display_name(const ModelObject& object,
+                                               const ModelVolume& volume,
+                                               const ImageMap::VolumeData& data,
+                                               size_t zone_index)
+{
+    if (zone_index < data.zones.size() && !data.zones[zone_index].display_name.empty())
+        return data.zones[zone_index].display_name;
+    for (const ImageMap::TriangleBinding& binding : data.triangle_bindings) {
+        if (binding.zone_index != zone_index || binding.source.kind != ImageMap::SourceKind::Texture ||
+            binding.source.texture_asset_index < 0 || size_t(binding.source.texture_asset_index) >= data.texture_assets.size())
+            continue;
+        const std::string& name = data.texture_assets[size_t(binding.source.texture_asset_index)].display_name;
+        if (!name.empty())
+            return name;
+    }
+    if (!volume.name.empty())
+        return volume.name;
+    return object.name;
+}
+
+static void apply_image_map_context_to_zone(ImageMap::Zone& zone, const ObjColorImportContext& context)
+{
+    zone.render_mode = context.image_map_render_mode == ObjImageMapRenderMode::PerimeterModulationV2 ?
+                           ImageMap::RenderMode::PerimeterModulationV2 :
+                       context.image_map_render_mode == ObjImageMapRenderMode::AdaptiveLocalizedCycles ?
+                           ImageMap::RenderMode::AdaptiveLocalizedCycles :
+                           ImageMap::RenderMode::NormalMix;
+    zone.adaptive_modulation_mode =
+        context.image_map_adaptive_modulation_mode == ObjAdaptiveModulationMode::LocalZHeight ?
+            ImageMap::AdaptiveModulationMode::LocalZHeight :
+            ImageMap::AdaptiveModulationMode::Perimeter;
+    zone.color_mix_model = context.image_map_color_mix_model == ObjImageMapColorMixModel::FilamentMixer ?
+                               ImageMap::ColorMixModel::FilamentMixer :
+                               ImageMap::ColorMixModel::FullSpectrumKmKs;
+    zone.minimum_component_percent       = context.image_map_minimum_component_percent;
+    zone.synchronize_whole_object_cadence = zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2 &&
+                                             context.image_map_synchronize_whole_object_cadence;
+    zone.modulation_sample_spacing_mm      = context.image_map_modulation_sample_spacing_mm;
+    zone.disable_broad_path_smoothing      = context.image_map_disable_broad_path_smoothing;
+    zone.gaussian_smoothing_strength       = context.image_map_gaussian_smoothing_strength;
+    zone.first_path_smoothing_strength     = context.image_map_first_path_smoothing_strength;
+    zone.second_path_smoothing_strength    = context.image_map_second_path_smoothing_strength;
+    zone.tone_gamma                        = context.image_map_tone_gamma;
+    zone.overhang_contrast_percent         = context.image_map_overhang_contrast_percent;
+    zone.image_exposure_ev                 = context.image_map_exposure_ev;
+    zone.image_contrast_percent            = context.image_map_contrast_percent;
+    zone.image_saturation_percent          = context.image_map_saturation_percent;
+    zone.image_edge_boost_percent          = context.image_map_edge_boost_percent;
 }
 
 static bool model_object_is_on_plate(PartPlate* plate, size_t obj_idx, const ModelObject* model_object)
@@ -1924,13 +2033,182 @@ Sidebar::Sidebar(Plater *parent)
             }
         });
 
-        p->m_sidebar_filament_menu->set_on_delete_image_map([this](int object_index) {
+        p->m_sidebar_filament_menu->set_on_edit_image_map([this](int object_index, int volume_index, const std::string& zone_stable_id) {
+            if (wxGetApp().preset_bundle == nullptr || object_index < 0 || size_t(object_index) >= wxGetApp().model().objects.size())
+                return;
+
+            ModelObject* target_object = wxGetApp().model().objects[size_t(object_index)];
+            if (target_object == nullptr || volume_index < 0 || size_t(volume_index) >= target_object->volumes.size())
+                return;
+            ModelVolume* target_volume = target_object->volumes[size_t(volume_index)];
+            if (target_volume == nullptr || !target_volume->has_image_map_data())
+                return;
+
+            const std::shared_ptr<const ImageMap::VolumeData> source_data = target_volume->image_map_data();
+            const auto zone_it = std::find_if(source_data->zones.begin(), source_data->zones.end(), [&zone_stable_id](const ImageMap::Zone& zone) {
+                return zone.stable_id == zone_stable_id;
+            });
+            if (zone_it == source_data->zones.end())
+                return;
+            const size_t zone_index = size_t(zone_it - source_data->zones.begin());
+
+            std::vector<RGBA> input_colors = image_map_zone_input_colors(*source_data, zone_index);
+            if (input_colors.empty()) {
+                MessageDialog error(p->m_sidebar_filament_menu, _L("This image map has no readable source colors."),
+                                    _L("Image Map Settings"), wxOK | wxICON_ERROR);
+                error.ShowModal();
+                return;
+            }
+
+            ObjColorImportContext context;
+            context.mode = ObjColorImportMode::ImageMap;
+            for (const ImageMap::TriangleBinding& binding : source_data->triangle_bindings) {
+                if (binding.zone_index != zone_index)
+                    continue;
+                switch (binding.source.kind) {
+                case ImageMap::SourceKind::Texture:
+                    context.detected_texture_available = true;
+                    context.source                     = ObjColorImportSource::ImageTexture;
+                    break;
+                case ImageMap::SourceKind::VertexColors:
+                    context.vertex_colors_available = true;
+                    if (!context.detected_texture_available)
+                        context.source = ObjColorImportSource::VertexColors;
+                    break;
+                case ImageMap::SourceKind::FaceColor:
+                    context.face_colors_available = true;
+                    if (!context.detected_texture_available && !context.vertex_colors_available)
+                        context.source = ObjColorImportSource::FaceColors;
+                    break;
+                }
+            }
+            context.image_map_render_mode = zone_it->render_mode == ImageMap::RenderMode::PerimeterModulationV2 ?
+                                                ObjImageMapRenderMode::PerimeterModulationV2 :
+                                            zone_it->render_mode == ImageMap::RenderMode::AdaptiveLocalizedCycles ?
+                                                ObjImageMapRenderMode::AdaptiveLocalizedCycles :
+                                                ObjImageMapRenderMode::NormalMix;
+            context.image_map_adaptive_modulation_mode =
+                zone_it->adaptive_modulation_mode == ImageMap::AdaptiveModulationMode::LocalZHeight ?
+                    ObjAdaptiveModulationMode::LocalZHeight :
+                    ObjAdaptiveModulationMode::Perimeter;
+            context.image_map_color_mix_model = zone_it->color_mix_model == ImageMap::ColorMixModel::FilamentMixer ?
+                                                    ObjImageMapColorMixModel::FilamentMixer :
+                                                    ObjImageMapColorMixModel::FullSpectrumKmKs;
+            context.image_map_minimum_component_percent       = zone_it->minimum_component_percent;
+            context.image_map_synchronize_whole_object_cadence = zone_it->synchronize_whole_object_cadence;
+            context.image_map_modulation_sample_spacing_mm      = zone_it->modulation_sample_spacing_mm;
+            context.image_map_disable_broad_path_smoothing      = zone_it->disable_broad_path_smoothing;
+            context.image_map_gaussian_smoothing_strength       = zone_it->gaussian_smoothing_strength;
+            context.image_map_first_path_smoothing_strength     = zone_it->first_path_smoothing_strength;
+            context.image_map_second_path_smoothing_strength    = zone_it->second_path_smoothing_strength;
+            context.image_map_tone_gamma                        = zone_it->tone_gamma;
+            context.image_map_overhang_contrast_percent         = zone_it->overhang_contrast_percent;
+            context.image_map_exposure_ev                       = zone_it->image_exposure_ev;
+            context.image_map_contrast_percent                  = zone_it->image_contrast_percent;
+            context.image_map_saturation_percent                = zone_it->image_saturation_percent;
+            context.image_map_edge_boost_percent                = zone_it->image_edge_boost_percent;
+            context.image_map_palette_colors.reserve(zone_it->palette.size());
+            context.image_map_palette_filament_ids.reserve(zone_it->palette.size());
+            context.image_map_palette_mixed_stable_ids.reserve(zone_it->palette.size());
+            for (const ImageMap::PaletteEntry& entry : zone_it->palette) {
+                context.image_map_palette_colors.push_back(entry.target_color);
+                context.image_map_palette_filament_ids.push_back(
+                    static_cast<unsigned char>(std::clamp(entry.fallback_filament_id, 1u, 255u)));
+                context.image_map_palette_mixed_stable_ids.push_back(entry.mixed_filament_stable_id);
+            }
+
+            const bool is_single_color = ImageMap::representative_source_colors(input_colors, 2, 65'536).size() <= 1;
+            std::vector<unsigned char> filament_ids;
+            unsigned char first_extruder_id = static_cast<unsigned char>(std::clamp(target_volume->extruder_id(), 1, 255));
+            if (!zone_it->palette.empty())
+                first_extruder_id = static_cast<unsigned char>(std::clamp(zone_it->palette.front().fallback_filament_id, 1u, 255u));
+            const std::vector<std::string> extruder_colors =
+                p->plater->get_extruder_colors_from_plater_config(nullptr, false);
+            const std::string display_name = image_map_zone_display_name(*target_object, *target_volume, *source_data, zone_index);
+            GLCanvas3D*       preview_canvas = p->plater->get_view3D_canvas3D();
+            context.image_map_preview_changed_fn = [preview_canvas, object_index, volume_index, zone_index, source_data, &context]() {
+                if (preview_canvas == nullptr || zone_index >= source_data->zones.size())
+                    return;
+                auto preview_data = std::make_shared<ImageMap::VolumeData>(*source_data);
+                apply_image_map_context_to_zone(preview_data->zones[zone_index], context);
+                preview_canvas->set_image_map_preview_override(object_index, volume_index, std::move(preview_data));
+            };
+            context.image_map_preview_refresh_fn = [preview_canvas]() {
+                if (preview_canvas == nullptr || !preview_canvas->is_initialized())
+                    return false;
+                // ShowModal runs a nested event loop and disables the canvas,
+                // including its idle-driven repaint path. Rendering from the
+                // dialog-owned timer lets progress and the completed texture
+                // appear without closing the settings window.
+                preview_canvas->render();
+                return preview_canvas->image_map_preview_update_pending();
+            };
+            // Establish the transient override before entering ShowModal.
+            // This makes the initial dialog view and every subsequent edit use
+            // the same printable-result preview path.
+            context.image_map_preview_changed_fn();
+            if (preview_canvas != nullptr && preview_canvas->is_initialized())
+                preview_canvas->render();
+            ObjColorDialog dialog(p->m_sidebar_filament_menu, input_colors, is_single_color, context, extruder_colors, filament_ids,
+                                  first_extruder_id, display_name, _L("Image Map Settings"));
+            const int dialog_result = dialog.ShowModal();
+            context.image_map_preview_changed_fn = {};
+            context.image_map_preview_refresh_fn = {};
+            if (preview_canvas != nullptr)
+                preview_canvas->set_image_map_preview_override(object_index, volume_index, {});
+            if (dialog_result != wxID_OK)
+                return;
+
+            const size_t palette_size = std::min(context.image_map_palette_colors.size(), context.image_map_palette_filament_ids.size());
+            if (palette_size == 0) {
+                MessageDialog error(p->m_sidebar_filament_menu, _L("The selected mapping settings did not produce a usable palette."),
+                                    _L("Image Map Settings"), wxOK | wxICON_ERROR);
+                error.ShowModal();
+                return;
+            }
+
+            ImageMap::VolumeData updated_data = *source_data;
+            ImageMap::Zone&      updated_zone = updated_data.zones[zone_index];
+            apply_image_map_context_to_zone(updated_zone, context);
+            updated_zone.palette.clear();
+            updated_zone.palette.reserve(palette_size);
+            for (size_t palette_index = 0; palette_index < palette_size; ++palette_index) {
+                const uint64_t stable_id = palette_index < context.image_map_palette_mixed_stable_ids.size() ?
+                                               context.image_map_palette_mixed_stable_ids[palette_index] :
+                                               0;
+                updated_zone.palette.push_back({context.image_map_palette_colors[palette_index], stable_id,
+                                                unsigned(context.image_map_palette_filament_ids[palette_index])});
+            }
+
+            p->plater->take_snapshot(_u8L("Edit image mapping"));
+            if (!target_volume->set_image_map_data(std::move(updated_data))) {
+                MessageDialog error(p->m_sidebar_filament_menu, _L("The edited image-map settings could not be attached to the volume."),
+                                    _L("Image Map Settings"), wxOK | wxICON_ERROR);
+                error.ShowModal();
+                return;
+            }
+            p->plater->set_plater_dirty(true);
+            p->plater->update_project_dirty_from_presets();
+            p->plater->changed_object(object_index);
+            p->m_sidebar_filament_menu->refresh_image_map_entries();
+        });
+
+        p->m_sidebar_filament_menu->set_on_delete_image_map([this](int object_index, int volume_index, const std::string &zone_stable_id) {
             auto *preset_bundle = wxGetApp().preset_bundle;
             if (preset_bundle == nullptr || object_index < 0 || size_t(object_index) >= wxGetApp().model().objects.size())
                 return;
 
             ModelObject *target_object = wxGetApp().model().objects[size_t(object_index)];
-            if (target_object == nullptr)
+            if (target_object == nullptr || volume_index < 0 || size_t(volume_index) >= target_object->volumes.size())
+                return;
+            ModelVolume *target_volume = target_object->volumes[size_t(volume_index)];
+            if (target_volume == nullptr || !target_volume->has_image_map_data())
+                return;
+            const std::shared_ptr<const ImageMap::VolumeData> source_data = target_volume->image_map_data();
+            const auto target_zone_it = std::find_if(source_data->zones.begin(), source_data->zones.end(), [&zone_stable_id](const ImageMap::Zone &zone) {
+                return zone.stable_id == zone_stable_id;
+            });
+            if (target_zone_it == source_data->zones.end())
                 return;
 
             auto &manager = preset_bundle->mixed_filaments;
@@ -1953,29 +2231,8 @@ Sidebar::Sidebar(Plater *parent)
                 if (entry.fallback_filament_id > num_physical)
                     target_filament_ids.insert(entry.fallback_filament_id);
             };
-
-            bool found_image_map = false;
-            for (ModelVolume *volume : target_object->volumes) {
-                if (volume == nullptr)
-                    continue;
-                const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
-                if (data == nullptr)
-                    continue;
-                const bool is_perimeter_image_map = std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone &zone) {
-                    return zone.enabled && zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2;
-                });
-                if (!is_perimeter_image_map)
-                    continue;
-                found_image_map = true;
-                for (const ImageMap::Zone &zone : data->zones) {
-                    if (zone.render_mode != ImageMap::RenderMode::PerimeterModulationV2)
-                        continue;
-                    for (const ImageMap::PaletteEntry &entry : zone.palette)
-                        remember_palette_entry(entry);
-                }
-            }
-            if (!found_image_map)
-                return;
+            for (const ImageMap::PaletteEntry &entry : target_zone_it->palette)
+                remember_palette_entry(entry);
 
             auto is_target_filament_id = [&](int filament_id) {
                 if (filament_id <= int(num_physical))
@@ -1987,21 +2244,18 @@ Sidebar::Sidebar(Plater *parent)
                 return definition && target_stable_ids.count(definition->identity.stable_id) != 0;
             };
 
-            p->plater->take_snapshot(_u8L("Remove image colors"));
-            for (ModelVolume *volume : target_object->volumes) {
-                if (volume == nullptr || !volume->has_image_map_data())
-                    continue;
-                const std::shared_ptr<const ImageMap::VolumeData> data = volume->image_map_data();
-                const bool is_perimeter_image_map = std::any_of(data->zones.begin(), data->zones.end(), [](const ImageMap::Zone &zone) {
-                    return zone.enabled && zone.render_mode == ImageMap::RenderMode::PerimeterModulationV2;
-                });
-                if (!is_perimeter_image_map)
-                    continue;
-                if (volume->config.has("extruder") && is_target_filament_id(volume->config.extruder()))
-                    volume->config.set("extruder", 1);
-                volume->clear_image_map_data();
-            }
-            if (target_object->config.has("extruder") && is_target_filament_id(target_object->config.extruder()))
+            p->plater->take_snapshot(_u8L("Remove projected image"));
+            ImageMap::VolumeData updated_data = *source_data;
+            if (!ImageMap::remove_zone(updated_data, zone_stable_id))
+                return;
+            const bool removed_last_zone = updated_data.zones.empty() || updated_data.triangle_bindings.empty();
+            if (removed_last_zone && target_volume->config.has("extruder") && is_target_filament_id(target_volume->config.extruder()))
+                target_volume->config.set("extruder", 1);
+            if (removed_last_zone)
+                target_volume->clear_image_map_data();
+            else if (!target_volume->set_image_map_data(std::move(updated_data)))
+                return;
+            if (removed_last_zone && target_object->config.has("extruder") && is_target_filament_id(target_object->config.extruder()))
                 target_object->config.set("extruder", 1);
 
             std::unordered_set<uint64_t> retained_stable_ids;
@@ -8169,9 +8423,23 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         preview->get_wxglcanvas()->Bind(EVT_GLCANVAS_COLLAPSE_SIDEBAR, [this](SimpleEvent&) { this->q->collapse_sidebar(!this->q->is_sidebar_collapsed());  });
         preview->get_wxglcanvas()->Bind(EVT_CUSTOMEVT_TICKSCHANGED, [this](wxCommandEvent& event) {
             Type tick_event_type = (Type)event.GetInt();
+            // Unknown is emitted by internal slider normalization rather than
+            // an explicit add/edit/delete action. Preview restoration is
+            // read-only, so never let this event dirty the model and trigger a
+            // Print::apply() invalidation when the user returns to Prepare.
+            if (tick_event_type == Type::Unknown)
+                return;
             Model& model = wxGetApp().plater()->model();
             //BBS: replace model custom gcode with current plate custom gcode
-            model.plates_custom_gcodes[model.curr_plate_index] = preview->get_canvas3d()->get_gcode_viewer().get_layers_slider()->GetTicksValues();
+            const CustomGCode::Info updated_ticks =
+                preview->get_canvas3d()->get_gcode_viewer().get_layers_slider()->GetTicksValues();
+            const auto existing = model.plates_custom_gcodes.find(model.curr_plate_index);
+            const CustomGCode::Info previous_ticks = existing == model.plates_custom_gcodes.end()
+                ? CustomGCode::Info{}
+                : existing->second;
+            if (updated_ticks == previous_ticks)
+                return;
+            model.plates_custom_gcodes[model.curr_plate_index] = updated_ticks;
 
             // BBS set to invalid state only
             if (tick_event_type == Type::ToolChange || tick_event_type == Type::Custom || tick_event_type == Type::Template || tick_event_type == Type::PausePrint) {
@@ -9405,7 +9673,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                                                     std::vector<unsigned char>& filament_ids,
                                                                     unsigned char& first_extruder_id,
                                                                     ObjColorImportContext& import_context) {
-                    if (!boost::iends_with(path.string(), ".obj")) {
+                    if (!boost::iends_with(path.string(), ".obj") && !is_assimp_color_mesh_file(path.string())) {
                         return;
                     }
                     const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr,
@@ -9432,32 +9700,32 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     case ObjImageMapProgressStage::ParseGeometry:
                         stage_start = 0;
                         stage_end   = 25;
-                        stage_text  = _L("Reading OBJ geometry");
+                        stage_text  = _L("Reading mesh geometry");
                         break;
                     case ObjImageMapProgressStage::DecodeTextures:
                         stage_start = 25;
                         stage_end   = 37;
-                        stage_text  = _L("Loading OBJ textures");
+                        stage_text  = _L("Loading mesh textures");
                         break;
                     case ObjImageMapProgressStage::AnalyzeSurface:
                         stage_start = 37;
                         stage_end   = 52;
-                        stage_text  = _L("Analyzing OBJ surface colors");
+                        stage_text  = _L("Analyzing mesh surface colors");
                         break;
                     case ObjImageMapProgressStage::AllocateSamples:
                         stage_start = 52;
                         stage_end   = 60;
-                        stage_text  = _L("Allocating OBJ color samples");
+                        stage_text  = _L("Allocating mesh color samples");
                         break;
                     case ObjImageMapProgressStage::SampleColors:
                         stage_start = 60;
                         stage_end   = 70;
-                        stage_text  = _L("Sampling OBJ surface colors");
+                        stage_text  = _L("Sampling mesh surface colors");
                         break;
                     case ObjImageMapProgressStage::QuantizeColors:
                         stage_start = 70;
                         stage_end   = 85;
-                        stage_text  = _L("Quantizing OBJ colors");
+                        stage_text  = _L("Quantizing mesh colors");
                         break;
                     case ObjImageMapProgressStage::CreateMixedFilaments:
                         stage_start = 85;
@@ -9467,7 +9735,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     case ObjImageMapProgressStage::StoreSource:
                         stage_start = 93;
                         stage_end   = 100;
-                        stage_text  = _L("Storing OBJ image-map source");
+                        stage_text  = _L("Storing mesh image-map source");
                         break;
                     }
 
@@ -11468,7 +11736,7 @@ void Plater::priv::reload_from_disk()
         const auto& path   = input_paths[i].string();
         auto obj_color_fun = [this, &path](std::vector<RGBA>& input_colors, bool is_single_color, std::vector<unsigned char>& filament_ids,
                                            unsigned char& first_extruder_id, ObjColorImportContext& import_context) {
-            if (!boost::iends_with(path, ".obj")) {
+            if (!boost::iends_with(path, ".obj") && !is_assimp_color_mesh_file(path)) {
                 return;
             }
             const std::vector<std::string> extruder_colours = wxGetApp().plater()->get_extruder_colors_from_plater_config(nullptr, false);
@@ -15691,6 +15959,282 @@ void adjust_settings_for_flowrate_calib(ModelObjectPtrs& objects, bool linear, i
     wxGetApp().get_tab(Preset::TYPE_PRINT)->reload_config();
     wxGetApp().get_tab(Preset::TYPE_FILAMENT)->reload_config();
     wxGetApp().get_tab(Preset::TYPE_PRINTER)->reload_config();
+}
+
+namespace {
+
+std::vector<ImageMap::ContinuousColorComponent> full_spectrum_calibration_components(
+    const std::vector<std::string>& physical_colors)
+{
+    const MixedFilamentDisplayContext context = build_mixed_filament_display_context(physical_colors);
+    std::vector<ImageMap::ContinuousColorComponent> components;
+    components.reserve(physical_colors.size());
+    for (size_t index = 0; index < physical_colors.size(); ++index) {
+        ImageMap::ContinuousColorComponent component;
+        component.color_hex = physical_colors[index];
+        if (MixedFilamentManager::use_td_for_color_prediction() && index < context.physical_tds.size() &&
+            std::isfinite(context.physical_tds[index]) && context.physical_tds[index] > EPSILON)
+            component.transmission_distance_mm = context.physical_tds[index];
+        if (index < context.physical_material_ids.size() && !context.physical_material_ids[index].empty())
+            component.material_id = context.physical_material_ids[index];
+        components.emplace_back(std::move(component));
+    }
+    return components;
+}
+
+wxColour calibration_wx_color(const RGBA& color)
+{
+    auto channel = [](float value) { return static_cast<unsigned char>(std::lround(std::clamp(value, 0.f, 1.f) * 255.f)); };
+    return wxColour(channel(color[0]), channel(color[1]), channel(color[2]));
+}
+
+uint32_t front_face_seed_triangle(const TriangleMesh& mesh)
+{
+    uint32_t selected = std::numeric_limits<uint32_t>::max();
+    double   minimum_y = std::numeric_limits<double>::infinity();
+    for (size_t triangle_index = 0; triangle_index < mesh.its.indices.size(); ++triangle_index) {
+        const stl_triangle_vertex_indices& indices = mesh.its.indices[triangle_index];
+        if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0 || size_t(indices[0]) >= mesh.its.vertices.size() ||
+            size_t(indices[1]) >= mesh.its.vertices.size() || size_t(indices[2]) >= mesh.its.vertices.size())
+            continue;
+        const double center_y = (double(mesh.its.vertices[size_t(indices[0])].y()) +
+                                 double(mesh.its.vertices[size_t(indices[1])].y()) +
+                                 double(mesh.its.vertices[size_t(indices[2])].y())) /
+                                3.0;
+        if (center_y < minimum_y) {
+            minimum_y = center_y;
+            selected  = uint32_t(triangle_index);
+        }
+    }
+    return selected;
+}
+
+TriangleMesh full_spectrum_calibration_plaque_mesh(const ImageMap::SimplePmCalibrationChartSettings& settings)
+{
+    // Extrude one continuous Y/Z profile across the chart width. The front
+    // face stays perfectly planar for image projection while the rear wall
+    // flares into a low, sloped foot at the build plate.
+    const float width = settings.plaque_width_mm;
+    const float height = settings.plaque_height_mm;
+    const float body_depth = std::max(6.f, settings.plaque_thickness_mm);
+    const float base_depth = std::max(body_depth, settings.base_depth_mm);
+    const float slope_height = std::clamp(settings.base_slope_height_mm, 0.5f, height - 0.5f);
+    const std::array<Vec2f, 5> profile = {
+        Vec2f(0.f, 0.f), Vec2f(base_depth, 0.f), Vec2f(body_depth, slope_height),
+        Vec2f(body_depth, height), Vec2f(0.f, height)};
+
+    indexed_triangle_set its;
+    its.vertices.reserve(profile.size() * 2);
+    its.indices.reserve(16);
+    for (float x : {0.f, width})
+        for (const Vec2f& point : profile)
+            its.vertices.emplace_back(x, point.x(), point.y());
+
+    constexpr int count = 5;
+    for (int edge = 0; edge < count; ++edge) {
+        const int next = (edge + 1) % count;
+        const int a = edge;
+        const int b = next;
+        const int c = count + next;
+        const int d = count + edge;
+        its.indices.emplace_back(a, c, d);
+        its.indices.emplace_back(a, b, c);
+    }
+
+    // The profile has one deliberate concave shoulder where the foot joins
+    // the body. These three ears cover each X cap without overlapping.
+    const std::array<std::array<int, 3>, 3> cap = {{{0, 1, 2}, {0, 2, 4}, {2, 3, 4}}};
+    for (const auto& triangle : cap) {
+        its.indices.emplace_back(triangle[2], triangle[1], triangle[0]);
+        its.indices.emplace_back(count + triangle[0], count + triangle[1], count + triangle[2]);
+    }
+    return TriangleMesh(std::move(its));
+}
+
+} // namespace
+
+void Plater::calib_full_spectrum_color()
+{
+    std::vector<std::string> physical_colors = get_extruder_colors_from_plater_config(nullptr, false);
+    const size_t configured_count = size_t(std::max(wxGetApp().filaments_cnt(), 0));
+    physical_colors.resize(std::min({physical_colors.size(), configured_count, size_t(4)}));
+    if (physical_colors.size() < 2) {
+        MessageDialog error(this, _L("Configure at least two physical filaments before generating a color calibration rectangle."),
+                            _L("FullSpectrum color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    const std::vector<ImageMap::ContinuousColorComponent> components = full_spectrum_calibration_components(physical_colors);
+    ImageMap::SimplePmCalibrationChart chart;
+    {
+        wxBusyCursor busy_cursor;
+        wxBusyInfo   busy(_L("Generating the Simple Perimeter Modulation recipe field..."), this);
+        chart = ImageMap::make_simple_pm_calibration_chart(components, ImageMap::ColorMixModel::FullSpectrumKmKs);
+    }
+    if (!chart.valid()) {
+        MessageDialog error(this, _L("The calibration rectangle could not be generated for the current filament set."),
+                            _L("FullSpectrum color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    const wxString summary = wxString::Format(
+        _L("Generate one %.0f x %.0f x %.1f mm rectangle containing %llu measured mix cells?\n\n"
+           "An integrated sloped foot expands to %.1f mm at the bed so the upright chart remains stable.\n\n"
+           "Each mix cell is %.1f x %.1f mm and is separated by %.1f mm guard gutters so the perimeter path can transition "
+           "before the next measurement. "
+           "%llu printable recipes exist for this filament set; the chart selects the widest-spaced subset that fits."),
+        chart.settings.plaque_width_mm, chart.settings.plaque_height_mm, chart.settings.plaque_thickness_mm,
+        static_cast<unsigned long long>(chart.patches.size()), chart.settings.base_depth_mm, chart.settings.cell_width_mm,
+        chart.settings.cell_height_mm, chart.settings.horizontal_gutter_mm,
+        static_cast<unsigned long long>(chart.total_recipe_count));
+    MessageDialog confirmation(this, summary, _L("FullSpectrum color calibration"), wxYES_NO | wxICON_INFORMATION);
+    if (confirmation.ShowModal() != wxID_YES)
+        return;
+
+    if (new_project(false, false, _L("FullSpectrum color calibration")) == wxID_CANCEL)
+        return;
+    wxGetApp().mainframe->select_tab(size_t(MainFrame::tp3DEditor));
+
+    sidebar().obj_list()->load_mesh_object(full_spectrum_calibration_plaque_mesh(chart.settings),
+                                           _L("FullSpectrum color calibration"));
+    if (model().objects.empty() || model().objects.back() == nullptr || model().objects.back()->volumes.empty())
+        return;
+    const size_t object_index = model().objects.size() - 1;
+    ModelObject* object = model().objects[object_index];
+    ModelVolume* volume = object->volumes.front();
+
+    std::vector<unsigned int> component_ids(physical_colors.size());
+    std::iota(component_ids.begin(), component_ids.end(), 1u);
+    const MixedColorMatchCreationResult cadence = create_mixed_filament_color_match(
+        calibration_wx_color(chart.guard_color), physical_colors, 0, MAXIMUM_FILAMENT_NUMBER,
+        MixedColorMatchEncoding::PerimeterModulatedLayerSequence, component_ids, ImageMap::ColorMixModel::FullSpectrumKmKs);
+    const std::optional<MixedFilamentDefinition> cadence_definition = cadence.valid && wxGetApp().preset_bundle != nullptr ?
+        wxGetApp().preset_bundle->mixed_filaments.mixed_filament_definition_from_id(cadence.filament_id, physical_colors.size()) :
+        std::nullopt;
+    if (!cadence_definition || cadence_definition->identity.stable_id == 0) {
+        MessageDialog error(this, _L("A shared Simple Perimeter Modulation cadence could not be created for these filaments."),
+                            _L("FullSpectrum color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    ImageMap::Zone zone;
+    zone.stable_id = "fullspectrum-simple-pm-calibration";
+    zone.display_name = "FullSpectrum color calibration";
+    zone.render_mode = ImageMap::RenderMode::PerimeterModulationV2;
+    zone.color_mix_model = ImageMap::ColorMixModel::FullSpectrumKmKs;
+    zone.synchronize_whole_object_cadence = true;
+    zone.minimum_component_percent = 0;
+    zone.modulation_sample_spacing_mm = 0.04f;
+    zone.palette.push_back(ImageMap::PaletteEntry{chart.guard_color, cadence_definition->identity.stable_id, cadence.filament_id});
+
+    const BoundingBoxf3 mesh_bounds = volume->mesh().bounding_box();
+    ImageMap::OrthographicProjection projection;
+    projection.center = mesh_bounds.center().cast<double>();
+    projection.center.y() = mesh_bounds.min.y();
+    projection.normal = -Vec3d::UnitY();
+    projection.up = Vec3d::UnitZ();
+    projection.width_mm = chart.settings.plaque_width_mm;
+    projection.height_mm = chart.settings.plaque_height_mm;
+    projection.max_depth_mm = chart.settings.plaque_thickness_mm + 0.2;
+    projection.max_surface_angle_degrees = 8.0;
+    projection.seed_triangle = front_face_seed_triangle(volume->mesh());
+    projection.background_color = chart.guard_color;
+
+    ImageMap::VolumeData image_map;
+    const ImageMap::ProjectionResult projection_result = ImageMap::append_orthographic_projection(
+        volume->mesh(), std::move(chart.texture), std::move(zone), projection, image_map);
+    if (!projection_result || !volume->set_image_map_data(std::move(image_map))) {
+        MessageDialog error(this,
+                            projection_result.error.empty() ? _L("The calibration image could not be attached to the rectangle.") :
+                                                              from_u8(projection_result.error),
+                            _L("FullSpectrum color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    object->config.set_key_value("brim_type", new ConfigOptionEnum<BrimType>(btOuterOnly));
+    object->config.set_key_value("brim_width", new ConfigOptionFloat(5.0));
+    object->config.set_key_value("brim_object_gap", new ConfigOptionFloat(0.0));
+    object->config.set_key_value("seam_slope_type", new ConfigOptionEnum<SeamScarfType>(SeamScarfType::None));
+
+    DynamicPrintConfig& print_config = wxGetApp().preset_bundle->prints.get_edited_preset().config;
+    print_config.set_key_value("layer_height", new ConfigOptionFloat(0.08));
+    print_config.set_key_value("initial_layer_print_height", new ConfigOptionFloat(0.16));
+    wxGetApp().get_tab(Preset::TYPE_PRINT)->update_dirty();
+    wxGetApp().get_tab(Preset::TYPE_PRINT)->reload_config();
+
+    set_plater_dirty(true);
+    changed_objects({object_index});
+    sidebar().filament_menu()->refresh_image_map_entries();
+    wxGetApp().mainframe->update_title();
+}
+
+void Plater::import_full_spectrum_color_calibration()
+{
+    std::vector<std::string> physical_colors = get_extruder_colors_from_plater_config(nullptr, false);
+    const size_t configured_count = size_t(std::max(wxGetApp().filaments_cnt(), 0));
+    physical_colors.resize(std::min({physical_colors.size(), configured_count, size_t(4)}));
+    if (physical_colors.size() < 2) {
+        MessageDialog error(this, _L("Configure the same physical filaments used to print the calibration rectangle."),
+                            _L("Import color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    wxFileDialog file_dialog(this, _L("Choose a photo of the calibration rectangle"), wxEmptyString, wxEmptyString,
+                             _L("Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|PNG files (*.png)|*.png|JPEG files "
+                                "(*.jpg;*.jpeg)|*.jpg;*.jpeg"),
+                             wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+    if (file_dialog.ShowModal() != wxID_OK)
+        return;
+
+    std::vector<uint8_t> rgba;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    if (!decode_imported_texture_rgba_from_file(into_u8(file_dialog.GetPath()), rgba, width, height)) {
+        MessageDialog error(this, _L("The selected PNG or JPEG could not be decoded."), _L("Import color calibration"),
+                            wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    const std::vector<ImageMap::ContinuousColorComponent> components = full_spectrum_calibration_components(physical_colors);
+    ImageMap::SimplePmPhotoAnalysis analysis;
+    {
+        wxBusyCursor busy_cursor;
+        wxBusyInfo   busy(_L("Registering the rectangle and measuring its mix cells..."), this);
+        analysis = ImageMap::analyze_simple_pm_calibration_photo(rgba, width, height, components,
+                                                                 ImageMap::ColorMixModel::FullSpectrumKmKs);
+    }
+    if (!analysis) {
+        MessageDialog error(this, from_u8(analysis.error), _L("Import color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    std::string saved_path;
+    std::string save_error;
+    if (!ImageMap::save_simple_pm_calibration_profile(analysis.profile, &saved_path, &save_error)) {
+        MessageDialog error(this, from_u8(save_error), _L("Import color calibration"), wxOK | wxICON_ERROR);
+        error.ShowModal();
+        return;
+    }
+
+    if (!model().objects.empty()) {
+        std::vector<size_t> object_indices(model().objects.size());
+        std::iota(object_indices.begin(), object_indices.end(), size_t(0));
+        changed_objects(object_indices);
+    }
+    const wxString message = wxString::Format(
+        _L("Calibration saved. %llu mix cells were accepted and %llu were rejected because of glare or nonuniform lighting.\n\n"
+           "KM/K-S color solving now uses the measured residual field for this exact filament set."),
+        static_cast<unsigned long long>(analysis.accepted_patch_count),
+        static_cast<unsigned long long>(analysis.rejected_patch_count));
+    MessageDialog complete(this, message, _L("FullSpectrum color calibration"), wxOK | wxICON_INFORMATION);
+    complete.ShowModal();
 }
 
 void Plater::calib_flowrate(bool is_linear, int pass) {

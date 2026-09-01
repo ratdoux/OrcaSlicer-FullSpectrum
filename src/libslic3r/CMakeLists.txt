@@ -202,6 +202,8 @@ set(lisbslic3r_sources
     format.hpp
     Format/ImportedTexture.cpp
     Format/ImportedTexture.hpp
+    Format/Assimp.cpp
+    Format/Assimp.hpp
     Format/OBJ.cpp
     Format/OBJ.hpp
     Format/OBJImageMap.cpp
@@ -228,10 +230,16 @@ set(lisbslic3r_sources
     ImageMap/BoundaryModulation.hpp
     ImageMap/ContinuousColorSolver.cpp
     ImageMap/ContinuousColorSolver.hpp
+    ImageMap/SimplePmCalibration.cpp
+    ImageMap/SimplePmCalibration.hpp
     ImageMap/Sampling.cpp
     ImageMap/Sampling.hpp
+    ImageMap/Projection.cpp
+    ImageMap/Projection.hpp
     ImageMap/FacetRasterizer.cpp
     ImageMap/FacetRasterizer.hpp
+    ImageMap/AdaptiveLocalZRenderer.cpp
+    ImageMap/AdaptiveLocalZRenderer.hpp
     ImageMap/PerimeterEnvelopeRenderer.cpp
     ImageMap/PerimeterEnvelopeRenderer.hpp
     GCode/AvoidCrossingPerimeters.cpp
@@ -324,6 +332,7 @@ set(lisbslic3r_sources
     FullSpectrumKSPairResidual.cpp
     FullSpectrumKSPairResidual.hpp
     FullSpectrumMaterialDatabaseProfile.h
+    FullSpectrumMaterialHigherOrderProfile.h
     MixedFilament.cpp
     MixedFilament/Common.cpp
     MixedFilament/Definition.cpp
@@ -530,6 +539,7 @@ cmake_policy(PUSH)
 cmake_policy(SET CMP0011 NEW)
 find_package(CGAL REQUIRED)
 find_package(OpenCV REQUIRED core)
+find_package(assimp CONFIG REQUIRED)
 cmake_policy(POP)
 
 add_library(libslic3r_cgal STATIC 
@@ -618,6 +628,7 @@ target_link_libraries(libslic3r
         ${CMAKE_DL_LIBS}
         ${EXPAT_LIBRARIES}
         ${OCCT_LIBS}
+        assimp::assimp
         boost_libs
         cereal::cereal
         clipper

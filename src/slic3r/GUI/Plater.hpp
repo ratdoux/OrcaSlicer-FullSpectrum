@@ -294,6 +294,8 @@ public:
     void calib_pa(const Calib_Params& params);
     void calib_flowrate(bool is_linear, int pass);
     void calib_temp(const Calib_Params& params);
+    void calib_full_spectrum_color();
+    void import_full_spectrum_color_calibration();
     void calib_max_vol_speed(const Calib_Params& params);
     void calib_retraction(const Calib_Params& params);
     void calib_VFA(const Calib_Params& params);
