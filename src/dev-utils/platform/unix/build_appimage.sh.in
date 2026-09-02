@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # build_appimage.sh is generated under top-level CMake binary dir (e.g. ./build)
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-APP_IMAGE="@SLIC3R_APP_KEY@_Linux_V@Snapmaker_VERSION@.AppImage"
+APP_IMAGE="@SLIC3R_APP_KEY@_Linux_V@FULLSPECTRUM_VERSION@.AppImage"
 
 wget ${APPIMAGETOOLURL} -O ../appimagetool.AppImage
 chmod +x ../appimagetool.AppImage

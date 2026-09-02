@@ -403,7 +403,7 @@ echo -n "Creating Appimage for distribution..."
     chmod +x ../build_appimage.sh
     if ../build_appimage.sh; then
         popd > /dev/null
-        mv package_appimage/"@SLIC3R_APP_KEY@_Linux_V@Snapmaker_VERSION@.AppImage" "@SLIC3R_APP_KEY@_Linux_V@Snapmaker_VERSION@.AppImage"
+        mv package_appimage/"@SLIC3R_APP_KEY@_Linux_V@FULLSPECTRUM_VERSION@.AppImage" "@SLIC3R_APP_KEY@_Linux_V@FULLSPECTRUM_VERSION@.AppImage"
         rm -fR package_appimage
     else
         popd > /dev/null

@@ -70,38 +70,38 @@ jobs:
       run: |
         ref_name="${GITHUB_REF_NAME}"
         safe_ref=$(printf '%s' "$ref_name" | tr '/ ' '--' | tr -cd '[:alnum:]._-' )
-        version=$(grep 'set(Snapmaker_VERSION' version.inc | cut -d '"' -f2)
+        version=$(grep 'set(FULLSPECTRUM_VERSION' version.inc | cut -d '"' -f2)
         tag="v${version}"
         title="SnapmakerOrca-FullSpectrum v${version}"
 
-        notes_content=""
-        for notes_file in \
+        notes_file=""
+        for candidate in \
           "doc/changelogs/RELEASE_NOTES_v${version}.md" \
           "doc/changelogs/CHANGELOG_v${version}.md" \
           "RELEASE_NOTES_v${version}.md" \
           "CHANGELOG_v${version}.md"; do
-          if [ -f "$notes_file" ]; then
-            notes_content=$(cat "$notes_file")
+          if [ -f "$candidate" ]; then
+            notes_file="$candidate"
             break
           fi
         done
 
-        if [ -z "$notes_content" ]; then
-          printf -v notes_content '%s\n\n%s\n%s\n%s\n\n%s' \
+        if [ -z "$notes_file" ]; then
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n\n%s\n%s\n%s\n\n%s\n' \
             "Automated build for ${GITHUB_REPOSITORY}." \
             "- Ref: ${GITHUB_REF_NAME}" \
             "- Commit: ${GITHUB_SHA}" \
             "- Version: V${version}" \
-            "macOS artifacts published from this fork are unsigned and not notarized."
+            "macOS artifacts published from this fork are unsigned and not notarized." \
+            > "$notes_file"
         fi
 
         {
           echo "tag=$tag"
           echo "title=$title"
           echo "version=V$version"
-          echo "notes<<NOTES_EOF"
-          echo "$notes_content"
-          echo "NOTES_EOF"
+          echo "notes_file=$notes_file"
         } >> "$GITHUB_OUTPUT"
 
     - name: Collect release files
@@ -128,8 +128,7 @@ jobs:
       run: |
         tag="${{ steps.release_meta.outputs.tag }}"
         title="${{ steps.release_meta.outputs.title }}"
-        notes_file="$RUNNER_TEMP/release-notes.md"
-        printf '%s\n' "${{ steps.release_meta.outputs.notes }}" > "$notes_file"
+        notes_file="${{ steps.release_meta.outputs.notes_file }}"
 
         if gh release view "$tag" >/dev/null 2>&1; then
           gh release edit "$tag" \
