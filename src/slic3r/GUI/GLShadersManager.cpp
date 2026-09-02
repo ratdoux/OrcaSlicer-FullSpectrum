@@ -55,6 +55,8 @@ std::pair<bool, std::string> GLShadersManager::init()
     valid &= append_shader("flat_clip", {prefix + "flat_clip.vs", prefix + "flat_clip.fs"});
     // basic shader for textures, used to render textures
     valid &= append_shader("flat_texture", {prefix + "flat_texture.vs", prefix + "flat_texture.fs"});
+    // Explicit-UV textured plane used while positioning an image projection.
+    valid &= append_shader("image_projection_preview", {prefix + "image_projection_preview.vs", prefix + "image_projection_preview.fs"});
     // High-resolution image-map preview on the source mesh UVs.
     valid &= append_shader("image_map_texture_preview", {prefix + "image_map_texture_preview.vs", prefix + "image_map_texture_preview.fs"});
     // used to render 3D scene background

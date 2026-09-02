@@ -68,11 +68,13 @@ private:
     bool         choose_image();
     bool         configure_image_mapping(const std::string &image_path, const std::vector<uint8_t> &rgba, uint32_t width, uint32_t height);
     bool         place_from_mouse(const Vec2d &mouse_pos);
-    bool         place_at_default_position();
     bool         apply_projection();
     Vec3d        projection_center() const;
     bool         mouse_position_on_projection_plane(const Linef3 &mouse_ray, const DragState &drag_state, Vec3d &local_hit) const;
     void         update_grabbers(const GLVolume &volume);
+    void         update_rotation_grabber_picker();
+    void         render_rotation_arrows(const Camera &camera);
+    void         init_rotation_arrows();
     void         set_grabbers_enabled(bool enabled);
     void         reset_projection_controls();
     void         rebuild_frame();
@@ -121,8 +123,10 @@ private:
     bool    m_frame_dirty{true};
     GLModel m_frame;
     GLModel m_preview_quad;
+    GLModel m_rotation_arrows;
     GLTexture m_preview_texture;
     bool      m_preview_texture_dirty{false};
+    bool      m_surface_pointer_down{false};
     DragState m_drag_state;
 };
 

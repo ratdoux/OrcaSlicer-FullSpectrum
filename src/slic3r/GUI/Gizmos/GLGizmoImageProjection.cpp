@@ -2,7 +2,6 @@
 
 #include "slic3r/GUI/3DScene.hpp"
 #include "slic3r/GUI/BitmapCache.hpp"
-#include "slic3r/GUI/CameraUtils.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
@@ -126,6 +125,7 @@ void GLGizmoImageProjection::on_set_state()
         m_preview_quad.reset();
         m_preview_texture.reset();
         m_preview_texture_dirty = false;
+        m_surface_pointer_down   = false;
         m_drag_state             = DragState{};
         set_grabbers_enabled(false);
         m_frame_dirty = true;
@@ -139,6 +139,7 @@ void GLGizmoImageProjection::data_changed(bool)
         m_placed      = false;
         m_object_idx  = -1;
         m_volume_idx  = -1;
+        m_surface_pointer_down = false;
         set_grabbers_enabled(false);
         m_frame_dirty = true;
     }
@@ -170,11 +171,14 @@ bool GLGizmoImageProjection::choose_image()
     m_image_height = height;
     m_palette.clear();
     reset_projection_controls();
-    m_placed       = false;
+    m_placed                = false;
+    m_surface_pointer_down  = false;
+    m_object_idx            = -1;
+    m_volume_idx            = -1;
+    set_grabbers_enabled(false);
     m_preview_texture.reset();
     m_preview_texture_dirty = true;
     mark_frame_dirty();
-    place_at_default_position();
     return true;
 }
 
@@ -340,56 +344,6 @@ bool GLGizmoImageProjection::place_from_mouse(const Vec2d &mouse_pos)
     return true;
 }
 
-bool GLGizmoImageProjection::place_at_default_position()
-{
-    GLVolume *volume = selected_gl_volume();
-    if (volume == nullptr || volume->mesh_raycaster == nullptr)
-        return false;
-
-    const BoundingBoxf3 box = volume->bounding_box();
-    if (!box.defined)
-        return false;
-
-    const std::array<Vec3d, 8> local_corners = {
-        Vec3d(box.min.x(), box.min.y(), box.min.z()), Vec3d(box.max.x(), box.min.y(), box.min.z()),
-        Vec3d(box.min.x(), box.max.y(), box.min.z()), Vec3d(box.max.x(), box.max.y(), box.min.z()),
-        Vec3d(box.min.x(), box.min.y(), box.max.z()), Vec3d(box.max.x(), box.min.y(), box.max.z()),
-        Vec3d(box.min.x(), box.max.y(), box.max.z()), Vec3d(box.max.x(), box.max.y(), box.max.z())};
-    std::vector<Vec3d> world_corners;
-    world_corners.reserve(local_corners.size());
-    const Transform3d world_matrix = volume->world_matrix();
-    for (const Vec3d &corner : local_corners)
-        world_corners.emplace_back(world_matrix * corner);
-
-    const Points projected = CameraUtils::project(wxGetApp().plater()->get_camera(), world_corners);
-    if (projected.empty())
-        return false;
-    double min_x = double(projected.front().x());
-    double max_x = min_x;
-    double min_y = double(projected.front().y());
-    double max_y = min_y;
-    for (const Point &point : projected) {
-        min_x = std::min(min_x, double(point.x()));
-        max_x = std::max(max_x, double(point.x()));
-        min_y = std::min(min_y, double(point.y()));
-        max_y = std::max(max_y, double(point.y()));
-    }
-
-    const Vec2d center(0.5 * (min_x + max_x), 0.5 * (min_y + max_y));
-    const Vec2d step(0.18 * (max_x - min_x), 0.18 * (max_y - min_y));
-    const std::array<Vec2d, 9> candidates = {
-        center,
-        center + Vec2d(step.x(), 0.0), center - Vec2d(step.x(), 0.0),
-        center + Vec2d(0.0, step.y()), center - Vec2d(0.0, step.y()),
-        center + step, center - step,
-        center + Vec2d(step.x(), -step.y()), center + Vec2d(-step.x(), step.y())};
-    for (const Vec2d &candidate : candidates) {
-        if (place_from_mouse(candidate))
-            return true;
-    }
-    return false;
-}
-
 Vec3d GLGizmoImageProjection::projection_center() const
 {
     const auto [right, up] = projection_axes(m_normal, m_up, m_rotation_degrees);
@@ -398,13 +352,36 @@ Vec3d GLGizmoImageProjection::projection_center() const
 
 bool GLGizmoImageProjection::on_mouse(const wxMouseEvent &mouse_event)
 {
-    if (m_rgba.empty())
+    if (m_rgba.empty()) {
+        m_surface_pointer_down = false;
         return false;
+    }
+
+    // A surface placement gesture belongs entirely to this gizmo. In
+    // particular, keep consuming its drag events so GLCanvas3D does not turn
+    // the same mouse motion into camera orbiting.
+    if (m_surface_pointer_down) {
+        if (mouse_event.Dragging() && mouse_event.LeftIsDown()) {
+            place_from_mouse(Vec2d(double(mouse_event.GetX()), double(mouse_event.GetY())));
+            return true;
+        }
+
+        const bool gesture_finished = mouse_event.LeftUp() || mouse_event.Leaving() || !mouse_event.LeftIsDown();
+        if (gesture_finished)
+            m_surface_pointer_down = false;
+        return mouse_event.LeftUp() || mouse_event.Leaving();
+    }
+
     if (m_placed && use_grabbers(mouse_event))
         return true;
     if (!mouse_event.LeftDown() || mouse_event.CmdDown() || mouse_event.AltDown())
         return false;
-    return place_from_mouse(Vec2d(double(mouse_event.GetX()), double(mouse_event.GetY())));
+
+    if (!place_from_mouse(Vec2d(double(mouse_event.GetX()), double(mouse_event.GetY()))))
+        return false;
+
+    m_surface_pointer_down = true;
+    return true;
 }
 
 bool GLGizmoImageProjection::mouse_position_on_projection_plane(const Linef3 &mouse_ray,
@@ -569,6 +546,103 @@ void GLGizmoImageProjection::update_grabbers(const GLVolume &volume)
     m_grabbers[RotateGrabber].hover_color = AXES_HOVER_COLOR[2];
 }
 
+void GLGizmoImageProjection::update_rotation_grabber_picker()
+{
+    Grabber &grabber = m_grabbers[RotateGrabber];
+    if (!grabber.enabled || grabber.picking_id < 0)
+        return;
+
+    PickingModel &cube = grabber.get_cube();
+    if (cube.mesh_raycaster == nullptr)
+        return;
+
+    const double picker_size = 1.5 * double(Grabber::FixedGrabberSize * INV_ZOOM);
+    const Transform3d picker_matrix =
+        grabber.matrix * Geometry::assemble_transform(grabber.center, grabber.angles, picker_size * Vec3d::Ones());
+    if (grabber.raycasters[0] == nullptr) {
+        grabber.raycasters[0] =
+            m_parent.add_raycaster_for_picking(SceneRaycaster::EType::Gizmo, grabber.picking_id, *cube.mesh_raycaster, picker_matrix);
+    } else {
+        grabber.raycasters[0]->set_transform(picker_matrix);
+    }
+}
+
+void GLGizmoImageProjection::init_rotation_arrows()
+{
+    if (m_rotation_arrows.is_initialized())
+        return;
+
+    GLModel::Geometry geometry;
+    geometry.format = {GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3};
+    geometry.color  = AXES_COLOR[2];
+
+    constexpr int    segments     = 14;
+    constexpr double inner_radius = 0.68;
+    constexpr double outer_radius = 0.90;
+    constexpr double head_radius  = 1.18;
+    auto add_arc = [&](double start_degrees, double end_degrees) {
+        const unsigned int first_vertex = unsigned(geometry.vertices_count());
+        for (int segment = 0; segment <= segments; ++segment) {
+            const double t     = double(segment) / double(segments);
+            const double angle = (start_degrees + t * (end_degrees - start_degrees)) * PI / 180.0;
+            const Vec3f  radial(float(std::cos(angle)), float(std::sin(angle)), 0.f);
+            geometry.add_vertex(Vec3f(float(inner_radius) * radial));
+            geometry.add_vertex(Vec3f(float(outer_radius) * radial));
+        }
+        for (int segment = 0; segment < segments; ++segment) {
+            const unsigned int inner0 = first_vertex + unsigned(2 * segment);
+            const unsigned int outer0 = inner0 + 1;
+            const unsigned int inner1 = inner0 + 2;
+            const unsigned int outer1 = inner0 + 3;
+            geometry.add_triangle(inner0, outer0, outer1);
+            geometry.add_triangle(inner0, outer1, inner1);
+        }
+
+        const double end_angle = end_degrees * PI / 180.0;
+        const Vec3f  radial(float(std::cos(end_angle)), float(std::sin(end_angle)), 0.f);
+        const Vec3f  tangent(-radial.y(), radial.x(), 0.f);
+        const Vec3f  tip = float(head_radius) * radial + 0.12f * tangent;
+        const unsigned int head = unsigned(geometry.vertices_count());
+        geometry.add_vertex(tip);
+        geometry.add_vertex(Vec3f(float(inner_radius - 0.12) * radial - 0.30f * tangent));
+        geometry.add_vertex(Vec3f(float(outer_radius + 0.12) * radial - 0.30f * tangent));
+        geometry.add_triangle(head, head + 1, head + 2);
+    };
+
+    // Two arrowed portions of one circular motion read cleanly at gizmo size
+    // while leaving the center open as the rotation drag target.
+    add_arc(18.0, 152.0);
+    add_arc(198.0, 332.0);
+    m_rotation_arrows.init_from(std::move(geometry));
+}
+
+void GLGizmoImageProjection::render_rotation_arrows(const Camera &camera)
+{
+    init_rotation_arrows();
+    if (!m_rotation_arrows.is_initialized())
+        return;
+
+    GLShaderProgram *shader = wxGetApp().get_shader("flat");
+    if (shader == nullptr)
+        return;
+
+    const Grabber &grabber = m_grabbers[RotateGrabber];
+    const double radius = 0.78 * double(Grabber::FixedGrabberSize * INV_ZOOM);
+    const Transform3d icon_matrix =
+        grabber.matrix * Geometry::assemble_transform(grabber.center + Vec3d(0.0, 0.0, 0.12), grabber.angles, radius * Vec3d::Ones());
+    m_rotation_arrows.set_color(m_hover_id == RotateGrabber ? grabber.hover_color : grabber.color);
+
+    const bool depth_test_enabled = glIsEnabled(GL_DEPTH_TEST) == GL_TRUE;
+    shader->start_using();
+    shader->set_uniform("view_model_matrix", camera.get_view_matrix() * icon_matrix);
+    shader->set_uniform("projection_matrix", camera.get_projection_matrix());
+    glsafe(::glDisable(GL_DEPTH_TEST));
+    m_rotation_arrows.render();
+    if (depth_test_enabled)
+        glsafe(::glEnable(GL_DEPTH_TEST));
+    shader->stop_using();
+}
+
 void GLGizmoImageProjection::mark_frame_dirty()
 {
     m_frame_dirty = true;
@@ -687,7 +761,7 @@ void GLGizmoImageProjection::on_render()
     const bool blend_enabled       = glIsEnabled(GL_BLEND) == GL_TRUE;
     const bool cull_face_enabled   = glIsEnabled(GL_CULL_FACE) == GL_TRUE;
     if (m_preview_quad.is_initialized() && m_preview_texture.get_id() != 0) {
-        GLShaderProgram *texture_shader = wxGetApp().get_shader("flat_texture");
+        GLShaderProgram *texture_shader = wxGetApp().get_shader("image_projection_preview");
         if (texture_shader != nullptr) {
             texture_shader->start_using();
             texture_shader->set_uniform("view_model_matrix", camera.get_view_matrix() * model_matrix);
@@ -728,7 +802,9 @@ void GLGizmoImageProjection::on_render()
         glsafe(::glDisable(GL_CULL_FACE));
 
     update_grabbers(*volume);
-    render_grabbers(Grabber::FixedGrabberSize);
+    render_grabbers(MoveGrabber, ScaleGrabber, Grabber::FixedGrabberSize, false);
+    update_rotation_grabber_picker();
+    render_rotation_arrows(camera);
 }
 
 bool GLGizmoImageProjection::apply_projection()
