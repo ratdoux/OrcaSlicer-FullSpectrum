@@ -4439,7 +4439,7 @@ void PrintConfigDef::init_fff_params()
     def->min = 0.05;
     def->max = 3.0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.95));
+    def->set_default_value(new ConfigOptionFloat(0.75));
 
     def = this->add("texture_mapping_outer_wall_gradient_min_line_width", coFloat);
     def->label = L("Image-map minimum visible wall width");
