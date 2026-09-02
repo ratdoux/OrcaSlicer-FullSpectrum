@@ -374,6 +374,7 @@ set(_dep_list
     ${SENTRY_PKG}
     ${WXWIDGETS_PKG}
     dep_Cereal
+    dep_Assimp
     dep_NLopt
     dep_OpenVDB
     dep_OpenCSG
