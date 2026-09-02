@@ -1686,7 +1686,7 @@ void MenuFactory::create_filament_action_menu(bool init, int active_filament_men
         wxString item_name = !desc.empty() ? from_u8(desc) : wxString::Format(_L("Mixed Filament %s"), letter);
         item_name.Replace("&", "&&");
 
-        MixedFilamentDefinition& definition = mixed_filament_definition_from_legacy_row(mfs[j], menu_ctx.physical_colors.size());
+        const MixedFilamentDefinition definition = mixed_filament_definition_from_legacy_row(mfs[j], menu_ctx.physical_colors.size());
         const std::string extra = ColorNames::mf_components(definition);
         if (!extra.empty()) {
             item_name << "\t" << from_u8(extra);
