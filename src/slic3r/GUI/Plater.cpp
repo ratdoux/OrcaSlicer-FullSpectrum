@@ -83,6 +83,7 @@
 #include "libslic3r/Format/AMF.hpp"
 #include "libslic3r/Format/Assimp.hpp"
 #include "libslic3r/Format/ImportedTexture.hpp"
+#include "libslic3r/Format/FilamentImport.hpp"
 //#include "libslic3r/Format/3mf.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/GCode/ThumbnailData.hpp"
@@ -9815,6 +9816,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 std::vector<std::string> imported_filament_colors;
                 size_t                   imported_physical_filaments = 0;
                 bool                     overflow_color_mapping_applied = false;
+                FilamentImportPlan       filament_import;
                 {
                     DynamicPrintConfig config_loaded;
 
@@ -9869,6 +9871,8 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     if (imported_physical_filaments == 0)
                         imported_physical_filaments = imported_float_count("nozzle_diameter");
 
+                    filament_import = plan_filament_import(config_loaded, imported_physical_filaments, k_import_physical_filament_limit);
+
                     // 1. add extruder for prusa model if the number of existing extruders is not enough
                     // 2. add extruder for BBS or Other model if only import geometry
                     if (en_3mf_file_type == En3mfType::From_Prusa || (load_model && !load_config)) {
@@ -9883,10 +9887,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         int size = extruderIds.size() == 0 ? 0 : *(extruderIds.rbegin());
                         const bool geometry_only_project_import =
                             load_model && (!load_config || en_3mf_file_type == En3mfType::From_Prusa) && imported_physical_filaments > 0;
-                        const size_t desired_physical_filaments = geometry_only_project_import ?
-                            std::min(imported_physical_filaments,
-                                     imported_physical_filaments > k_import_physical_filament_limit ?
-                                         k_import_physical_filament_limit : size_t(MAXIMUM_EXTRUDER_NUMBER)) : 0;
+                        const size_t desired_physical_filaments = geometry_only_project_import ? std::min(filament_import.physical_count,
+                                                                                                          size_t(MAXIMUM_EXTRUDER_NUMBER)) :
+                                                                                                 0;
                         BOOST_LOG_TRIVIAL(info) << "3MF geometry import filament detection"
                                                 << " imported_physical=" << imported_physical_filaments
                                                 << " imported_colors=" << imported_filament_colors.size()
@@ -9942,7 +9945,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                 wxGetApp().plater()->on_filaments_change(desired_physical_filaments);
                             }
 
-                            if (imported_physical_filaments > k_import_physical_filament_limit) {
+                            if (filament_import.map_overflow_colors) {
                                 map_imported_colors_to_mixed_filaments(
                                     model, imported_filament_colors, current_project_empty, current_project_empty);
                                 q->on_filaments_change(preset_bundle->filament_presets.size());
@@ -10245,8 +10248,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
                             preset_bundle->load_config_model(filename.string(), std::move(config), file_version);
 
-                            if (!overflow_color_mapping_applied &&
-                                imported_physical_filaments > k_import_physical_filament_limit &&
+                            if (!overflow_color_mapping_applied && filament_import.map_overflow_colors &&
                                 imported_filament_colors.size() >= imported_physical_filaments) {
                                 preset_bundle->set_num_filaments(unsigned(k_import_physical_filament_limit));
                                 map_imported_colors_to_mixed_filaments(model, imported_filament_colors, true, true);

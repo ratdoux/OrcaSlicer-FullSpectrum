@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 #include "test_utils.hpp"
 #include "libslic3r/ExtrusionEntity.hpp"
+#include "libslic3r/Format/FilamentImport.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfConstants.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfJson.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfLegacyBridge.hpp"
@@ -650,6 +651,64 @@ TEST_CASE("Local-Z preview reports the effective direct thickness ratio", "[Mixe
     settings.preferred_b_height            = 0.03;
     CHECK(mixed_filament_effective_local_z_preview_mix_b_percent(gradient, settings) == 30);
     CHECK_FALSE(mixed_filament_supports_bias_apparent_color(gradient, settings, true));
+}
+
+TEST_CASE("Imported mixed projects retain their saved physical palette", "[MixedFilament][Import][FullSpectrum3mf]")
+{
+    MixedAutoGenerateGuard         guard(false);
+    const std::vector<std::string> colors = {"#00FFFF", "#FF0080", "#FFFF00", "#FFFFFF", "#000000"};
+    PresetBundle                   source = make_bundle_with_filaments(colors);
+    for (int ratio = 10; ratio < 90; ++ratio)
+        source.mixed_filaments.add_custom_filament(1, 2, ratio, colors);
+    source.sync_mixed_filament_definitions_to_project_config();
+
+    DynamicPrintConfig imported = source.project_config;
+    Model              model;
+    ModelObject*       object = model.add_object();
+    object->add_instance();
+    ModelVolume* volume = object->add_volume(make_cube(1., 1., 1.));
+
+    SECTION("canonical assignments restored before GUI import planning")
+    {
+        GeometryBindingInput geometry;
+        geometry.objects.push_back({10, "obj_mixed"});
+        geometry.volumes.push_back({10, 11, "obj_mixed", "vol_mixed", 85, {}});
+        ArchiveImportState state = import_state_from_plan(build_write_plan(source.project_config, geometry, true));
+        imported.option<ConfigOptionString>("mixed_filament_definitions")->value.clear();
+        CanonicalBindingContext context;
+        context.model_objects_by_3mf_id[10] = object;
+        context.model_volumes_by_3mf_id[11] = volume;
+        REQUIRE(state.apply_to_model_and_config(model, imported, context));
+    }
+
+    SECTION("legacy assignments inherited from the object") { object->config.set("extruder", 85); }
+
+    REQUIRE(volume->extruder_id() == 85);
+    const auto&              imported_colors = imported.option<ConfigOptionStrings>("filament_colour")->values;
+    const FilamentImportPlan plan            = plan_filament_import(imported, imported_colors.size(), 4);
+    CHECK_FALSE(plan.map_overflow_colors);
+    REQUIRE(plan.physical_count == 5);
+    CHECK(imported_colors == colors);
+
+    PresetBundle restored = make_bundle_with_filaments(imported_colors);
+    restored.project_config.apply(imported);
+    restored.set_num_filaments(unsigned(plan.physical_count));
+    CHECK(restored.filament_presets.size() == 5);
+    CHECK(restored.mixed_filaments.total_filaments(plan.physical_count) == 85);
+    CHECK(restored.mixed_filaments.serialize_custom_entries() == source.mixed_filaments.serialize_custom_entries());
+}
+
+TEST_CASE("Imported physical color palettes can still convert overflow to mixed colors", "[MixedFilament][Import]")
+{
+    DynamicPrintConfig config;
+    SECTION("foreign project without mixed definitions") {}
+    SECTION("empty mixed definitions") { config.set_key_value("mixed_filament_definitions", new ConfigOptionString("")); }
+    const FilamentImportPlan overflow = plan_filament_import(config, 5, 4);
+    CHECK(overflow.map_overflow_colors);
+    CHECK(overflow.physical_count == 4);
+    const FilamentImportPlan physical = plan_filament_import(config, 4, 4);
+    CHECK_FALSE(physical.map_overflow_colors);
+    CHECK(physical.physical_count == 4);
 }
 
 TEST_CASE("Imported model filament IDs remap physical overflow to virtual colors", "[MixedFilament][Import]")
