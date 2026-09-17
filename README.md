@@ -172,6 +172,87 @@ If you're running Klipper, it's recommended to add the following configuration t
 resolution: 0.1
 ```
 
+# Troubleshooting
+
+Snapmaker Orca FullSpectrum is still evolving, and some mixed-filament workflows remain experimental. If something looks off, always review the sliced result and generated G-code before starting an important print.
+
+### The app does not start
+
+- **Windows:** If the app does not launch, especially on systems where the username contains special characters, update to the latest build.
+- **Linux:** If the AppImage will not run, your system may be missing a compatible glibc version.
+- **macOS:** If macOS blocks the app, follow the Gatekeeper workaround steps in the installation section above.
+
+### The preview color does not match the printed result
+
+- The color shown in the UI is only an approximation of the final printed appearance.
+- Different filament brands, finishes, and materials can produce very different real-world results even when the preview looks similar.
+- If a mixed filament swatch looks wrong in the interface, update to the latest version before troubleshooting further.
+- For best results, test each filament combination on a small calibration model before using it on a larger print.
+
+### The prime tower is missing or overlaps the model
+
+- In some cases, a plate that uses only a single mixed color may not show the prime tower correctly in the **Prepare** view.
+- If that happens, temporarily add a second material so the tower becomes visible, move it to a safe location, and then continue preparing the print.
+- Always double-check prime tower placement before exporting G-code.
+
+### A project opens with incorrect mixed patterns
+
+- After updating to a newer version, older project files may occasionally load with incorrect mixed-filament mappings.
+- If a project opens with the wrong gradients, patterns, or filament assignments, recreate the affected mixed entries and verify all assignments before slicing.
+- Recheck painted regions and tool mappings whenever opening an older `.3mf` file in a newer release.
+
+### The printer cannot reprint a FullSpectrum file from its screen
+
+- Some users have reported that certain FullSpectrum-sliced files can print normally once, but are not recognized correctly when loaded again from the printer interface.
+- If that happens, keep the original project file and resend the job from the slicer or host instead of relying on printer-side reprint.
+
+### Temperatures or tool behavior look wrong in the G-code
+
+- Mixed-filament support is still experimental, so edge cases can produce incorrect or unexpected G-code.
+- Before long or important prints, inspect:
+  - tool changes
+  - bed and nozzle temperature commands
+  - wipe and purge behavior
+  - first-layer material order
+- This is especially important when using custom firmware, non-standard printer profiles, or non-U1 machines.
+
+### Mixed colors look banded or uneven on sloped surfaces
+
+- Because FullSpectrum mixing works by alternating layers or segments, gently curved or sloped surfaces can show visible contour-like banding.
+- This effect is more noticeable on organic shapes, domes, and top surfaces where slight Z differences affect the visible color pattern.
+- If this happens:
+  - try simpler mix patterns
+  - reduce complexity in multi-perimeter mixes
+  - test smaller step sizes
+  - use adaptive layers where appropriate
+
+### Local-Z dithering behaves unexpectedly
+
+- Local-Z dithering has improved across recent releases, but complex paint regions and advanced combinations can still behave unpredictably.
+- If a Local-Z print looks wrong:
+  - simplify the paint setup
+  - reduce the number of overlapping mixed regions
+  - disable extra wipe-related overrides
+  - test on a small model first
+
+### Colors are shifted to one side of the print
+
+- If one color appears biased to one side, the issue may be mechanical rather than slicer-related.
+- Check the following:
+  - nozzle and toolhead calibration
+  - alignment after nozzle swaps
+  - nozzle cleanliness
+  - hardware looseness
+  - possible nozzle offset issues
+- Recalibrating the printer is a good first step before changing slicer settings.
+
+### Before starting a long FullSpectrum print
+
+- Update to the latest available release.
+- Reopen older project files carefully and verify all filament mappings.
+- Inspect the **Prepare** view for prime tower placement, top-surface appearance, and suspicious pattern behavior.
+- Run a small test print whenever using a new filament pair, new pattern, or new release version.
+- For critical prints, review the generated G-code before printing.
 
 ## Some background
 **Snapmaker Orca FullSpectrum** is forked from Snapmaker Orca, which is originally forked from Orca Slicer by SoftFever.
