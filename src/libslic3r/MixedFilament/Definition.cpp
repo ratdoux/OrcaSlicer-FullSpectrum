@@ -226,6 +226,7 @@ MixedFilamentDefinition mixed_filament_definition_from_legacy_row(const MixedFil
     definition.behavior.layer_cadence.component_b_layers   = row.ratio_b;
     definition.behavior.local_z.max_sublayers              = row.local_z_max_sublayers;
     definition.behavior.gradient.enabled                   = row.gradient_enabled;
+    definition.behavior.gradient.solid_widths              = row.gradient_solid_widths;
     definition.behavior.gradient.component_a_start         = row.gradient_start;
     definition.behavior.gradient.component_a_end           = row.gradient_end;
     definition.behavior.gradient.stop_positions =
@@ -258,6 +259,7 @@ void apply_mixed_filament_definition_to_legacy_row(const MixedFilamentDefinition
     row.distribution_mode          = legacy_distribution_mode_from_mixed_filament_distribution(definition.behavior.distribution);
     row.local_z_max_sublayers      = std::max(0, definition.behavior.local_z.max_sublayers);
     row.gradient_enabled           = definition.behavior.gradient.enabled;
+    row.gradient_solid_widths      = definition.behavior.gradient.solid_widths;
     row.gradient_start             = std::clamp(definition.behavior.gradient.component_a_start, 0.01f, 0.99f);
     row.gradient_end               = std::clamp(definition.behavior.gradient.component_a_end, 0.01f, 0.99f);
     row.gradient_stop_positions    = legacy_gradient_positions_from_float_vector(

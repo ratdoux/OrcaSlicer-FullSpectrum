@@ -134,6 +134,7 @@ std::optional<Gradient> gradient_from_definition(const MixedFilamentDefinition &
         out.stop_positions.reserve(definition.behavior.gradient.stop_positions.size());
         for (const float position : definition.behavior.gradient.stop_positions)
             out.stop_positions.emplace_back(std::clamp(double(position), 0.0, 1.0));
+        out.solid_widths.assign(definition.behavior.gradient.solid_widths.begin(), definition.behavior.gradient.solid_widths.end());
     }
     return out;
 }
@@ -376,6 +377,7 @@ MixedFilamentManager manager_from_mixed_filaments(const MixedFilaments          
             definition.behavior.gradient.enabled = vf.gradient->enabled;
             definition.behavior.gradient.component_a_start = float(std::clamp(vf.gradient->component_a_start, 0.01, 0.99));
             definition.behavior.gradient.component_a_end = float(std::clamp(vf.gradient->component_a_end, 0.01, 0.99));
+            definition.behavior.gradient.solid_widths.assign(vf.gradient->solid_widths.begin(), vf.gradient->solid_widths.end());
             definition.behavior.gradient.stop_positions.clear();
             definition.behavior.gradient.stop_positions.reserve(vf.gradient->stop_positions.size());
             for (const double position : vf.gradient->stop_positions)

@@ -606,6 +606,8 @@ std::string MixedFilamentManager::serialize_custom_entries()
         ss << ',' << 'd' << (mf.deleted ? 1 : 0) << ',' << 'o' << (mf.origin_auto ? 1 : 0) << ',' << 'u' << mf.stable_id;
         if (!normalized_positions.empty())
             ss << ",p" << normalized_positions;
+        if (!mf.gradient_solid_widths.empty())
+            ss << ",v" << legacy_gradient_positions_from_float_vector(mf.gradient_solid_widths);
         if (mf.ui_mode >= 0)
             ss << ",cm" << mf.ui_mode;
         if (mf.gradient_enabled)
@@ -677,6 +679,7 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
         std::string  gradient_component_ids;
         std::string  gradient_component_weights;
         std::string  gradient_stop_positions;
+        std::vector<float> gradient_solid_widths;
         std::string  manual_pattern;
         int          distribution_mode          = int(MixedFilamentLegacyRow::Simple);
         int          local_z_max_sublayers      = 0;
@@ -690,9 +693,10 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
         float        gradient_end               = MixedFilamentLegacyRow::k_default_gradient_minority;
         int          ui_mode                    = -1;
         if (!parse_row_definition(row, a, b, stable_id, enabled, custom, origin_auto, mix, gradient_component_ids,
-                                   gradient_component_weights, gradient_stop_positions, manual_pattern, distribution_mode, local_z_max_sublayers,
-                                   component_a_surface_offset, component_b_surface_offset, component_surface_offsets, perimeter_modulation, deleted, gradient_enabled,
-                                   gradient_start, gradient_end, ui_mode)) {
+                                  gradient_component_weights, gradient_stop_positions, gradient_solid_widths, manual_pattern,
+                                  distribution_mode, local_z_max_sublayers, component_a_surface_offset, component_b_surface_offset,
+                                  component_surface_offsets, perimeter_modulation, deleted, gradient_enabled, gradient_start, gradient_end,
+                                  ui_mode)) {
             ++skipped_rows;
             BOOST_LOG_TRIVIAL(warning) << "MixedFilamentManager::load_custom_entries invalid row format: " << row;
             continue;
@@ -745,6 +749,7 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
                 const size_t expected_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
                     (mf.gradient_enabled ? size_t(3) : size_t(0));
                 mf.gradient_stop_positions = normalize_gradient_stop_positions(gradient_stop_positions, expected_stops);
+                mf.gradient_solid_widths              = gradient_solid_widths;
             }
             mf.ui_mode                    = ui_mode;
             mf.mix_b_percent              = mf.manual_pattern.empty() ? mix : mix_percent_from_normalized_pattern(mf.manual_pattern);
@@ -785,6 +790,7 @@ void MixedFilamentManager::load_custom_entries(const std::string& serialized, co
             const size_t expected_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
                 (mf.gradient_enabled ? size_t(3) : size_t(0));
             mf.gradient_stop_positions = normalize_gradient_stop_positions(gradient_stop_positions, expected_stops);
+            mf.gradient_solid_widths              = gradient_solid_widths;
         }
         mf.ui_mode                    = ui_mode;
         if (!mf.manual_pattern.empty())

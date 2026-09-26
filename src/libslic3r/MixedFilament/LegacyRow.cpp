@@ -7,29 +7,30 @@
 
 namespace Slic3r { namespace MixedFilamentInternal {
 
-bool parse_row_definition(const std::string& row,
-                          unsigned int&      a,
-                          unsigned int&      b,
-                          uint64_t&          stable_id,
-                          bool&              enabled,
-                          bool&              custom,
-                          bool&              origin_auto,
-                          int&               mix_b_percent,
-                          std::string&       gradient_component_ids,
-                          std::string&       gradient_component_weights,
-                          std::string&       gradient_stop_positions,
-                          std::string&       manual_pattern,
-                          int&               distribution_mode,
-                          int&               local_z_max_sublayers,
-                          float&             component_a_surface_offset,
-                          float&             component_b_surface_offset,
-                          std::string&       component_surface_offsets,
-                          bool&              perimeter_modulation,
-                          bool&              deleted,
-                          bool&              gradient_enabled,
-                          float&             gradient_start,
-                          float&             gradient_end,
-                          int&               ui_mode)
+bool parse_row_definition(const std::string&  row,
+                          unsigned int&       a,
+                          unsigned int&       b,
+                          uint64_t&           stable_id,
+                          bool&               enabled,
+                          bool&               custom,
+                          bool&               origin_auto,
+                          int&                mix_b_percent,
+                          std::string&        gradient_component_ids,
+                          std::string&        gradient_component_weights,
+                          std::string&        gradient_stop_positions,
+                          std::vector<float>& gradient_solid_widths,
+                          std::string&        manual_pattern,
+                          int&                distribution_mode,
+                          int&                local_z_max_sublayers,
+                          float&              component_a_surface_offset,
+                          float&              component_b_surface_offset,
+                          std::string&        component_surface_offsets,
+                          bool&               perimeter_modulation,
+                          bool&               deleted,
+                          bool&               gradient_enabled,
+                          float&              gradient_start,
+                          float&              gradient_end,
+                          int&                ui_mode)
 {
     auto trim_copy = [](const std::string& s) {
         size_t lo = 0;
@@ -113,6 +114,7 @@ bool parse_row_definition(const std::string& row,
     gradient_component_ids.clear();
     gradient_component_weights.clear();
     gradient_stop_positions.clear();
+    gradient_solid_widths.clear();
     manual_pattern.clear();
     distribution_mode          = int(MixedFilamentLegacyRow::Simple);
     local_z_max_sublayers      = 0;
@@ -167,6 +169,10 @@ bool parse_row_definition(const std::string& row,
         }
         if (tok[0] == 'w' || tok[0] == 'W') {
             gradient_component_weights = tok.substr(1);
+            continue;
+        }
+        if (tok[0] == 'v') {
+            gradient_solid_widths = parse_gradient_stop_position_tokens(tok.substr(1));
             continue;
         }
         if (tok[0] == 'p' || tok[0] == 'P') {
@@ -294,6 +300,12 @@ void normalize_legacy_row(MixedFilamentLegacyRow& mf)
     const size_t expected_stops = gradient_component_count >= 3 ? 2 * gradient_component_count - 1 :
         (mf.gradient_enabled ? size_t(3) : size_t(0));
     mf.gradient_stop_positions = normalize_gradient_stop_positions(mf.gradient_stop_positions, expected_stops);
+    const size_t expected_widths          = std::max(size_t(2), gradient_component_count);
+    if (mf.gradient_solid_widths.size() != expected_widths ||
+        std::any_of(mf.gradient_solid_widths.begin(), mf.gradient_solid_widths.end(), [](float width) { return !std::isfinite(width); }))
+        mf.gradient_solid_widths.clear();
+    for (auto& width : mf.gradient_solid_widths)
+        width = std::clamp(width, 0.f, 1.f);
 }
 
 MixedFilamentDistributionMode mixed_filament_distribution_from_legacy_mode(int distribution_mode, const std::string& gradient_component_ids)

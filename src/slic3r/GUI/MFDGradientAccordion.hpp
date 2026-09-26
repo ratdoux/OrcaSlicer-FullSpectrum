@@ -14,14 +14,13 @@ namespace Slic3r::GUI {
 class MFDGradientAccordion : public Accordion
 {
 public:
-    MFDGradientAccordion(
-        wxWindow* parent,
-        std::vector<int>& selected_filaments,
-        std::vector<wxColor>& filament_colors,
-        std::vector<double>& gradient_positions,
-        double& min_ratio,
-        const std::vector<std::pair<std::string, std::string>>& physical_filaments
-    );
+    MFDGradientAccordion(wxWindow*                                               parent,
+                         std::vector<int>&                                       selected_filaments,
+                         std::vector<wxColor>&                                   filament_colors,
+                         std::vector<double>&                                    gradient_positions,
+                         std::vector<float>&                                     solid_widths,
+                         double&                                                 min_ratio,
+                         const std::vector<std::pair<std::string, std::string>>& physical_filaments);
     ~MFDGradientAccordion() override = default;
 
     void set_on_changed(std::function<void()> cb) { m_on_changed = std::move(cb); }
@@ -36,6 +35,9 @@ private:
     void build_canvas();
     void build_edit_row();
     void build_min_ratio_row();
+    void build_width_row();
+    void clamp_widths();
+    void set_solid_width(double width);
 
     void on_canvas_paint(wxPaintEvent& event);
     void on_canvas_left_down(wxMouseEvent& event);
@@ -63,6 +65,10 @@ private:
     std::vector<int>&       m_selected_filaments;
     std::vector<wxColor>&   m_filament_colors;
     std::vector<double>&    m_gradient_positions;
+    std::vector<float>&                                      m_solid_widths;
+    wxPanel*                                                 m_width_panel{nullptr};
+    wxTextCtrl*                                              m_width_input{nullptr};
+    int                                                      m_width_edge{0};
     double&                 m_min_ratio;
     const std::vector<std::pair<std::string, std::string>>& m_physical_filaments;
     MixedFilamentDisplayContext                              m_display_context;

@@ -1,4 +1,5 @@
 #include "MFDGradientAccordion.hpp"
+#include "MFDGradientPreview.hpp"
 
 #include <wx/wx.h>
 #include <wx/dcgraph.h>
@@ -16,18 +17,18 @@
 
 namespace Slic3r::GUI {
 
-MFDGradientAccordion::MFDGradientAccordion(
-    wxWindow* parent,
-    std::vector<int>& selected_filaments,
-    std::vector<wxColor>& filament_colors,
-    std::vector<double>& gradient_positions,
-    double& min_ratio,
-    const std::vector<std::pair<std::string, std::string>>& physical_filaments
-)
+MFDGradientAccordion::MFDGradientAccordion(wxWindow*                                               parent,
+                                           std::vector<int>&                                       selected_filaments,
+                                           std::vector<wxColor>&                                   filament_colors,
+                                           std::vector<double>&                                    gradient_positions,
+                                           std::vector<float>&                                     solid_widths,
+                                           double&                                                 min_ratio,
+                                           const std::vector<std::pair<std::string, std::string>>& physical_filaments)
     : Accordion(parent, _L("Select Gradient"))
     , m_selected_filaments(selected_filaments)
     , m_filament_colors(filament_colors)
     , m_gradient_positions(gradient_positions)
+    , m_solid_widths(solid_widths)
     , m_min_ratio(min_ratio)
     , m_physical_filaments(physical_filaments)
 {
@@ -43,6 +44,7 @@ void MFDGradientAccordion::build_ui()
 {
     build_canvas();
     build_edit_row();
+    build_width_row();
     build_min_ratio_row();
 }
 
@@ -224,8 +226,8 @@ void MFDGradientAccordion::update_sizing()
             m_min_ratio_value_input->SetValue(wxString::Format("%d", cur_pct));
     }
 
-    m_canvas->SetMinSize(wxSize(-1, FromDIP(60)));
-    m_canvas->SetMaxSize(wxSize(-1, FromDIP(60)));
+    m_canvas->SetMinSize(wxSize(-1, FromDIP(76)));
+    m_canvas->SetMaxSize(wxSize(-1, FromDIP(76)));
 
     if (count != m_last_count) {
         if (m_gradient_positions.size() != static_cast<size_t>(num_stops))
@@ -250,6 +252,7 @@ void MFDGradientAccordion::sync_data()
 
 void MFDGradientAccordion::reset_to_defaults()
 {
+    m_solid_widths.assign(m_filament_colors.size(), .03f);
     reset_points_to_defaults(m_filament_colors.size());
     m_selected_stop_index = 0;
     m_last_count = m_filament_colors.size();
@@ -276,6 +279,8 @@ void MFDGradientAccordion::clamp_all_stops()
         reset_points_to_defaults(count);
     }
 
+    if (count < 2)
+        return;
     double L = m_min_ratio;
 
     // Forward pass
@@ -297,6 +302,68 @@ void MFDGradientAccordion::clamp_all_stops()
             m_gradient_positions[i] = std::max(m_gradient_positions[i], m_gradient_positions[i - 1] + L);
         }
     }
+    clamp_widths();
+}
+
+void MFDGradientAccordion::build_width_row()
+{
+    m_width_panel = new wxPanel(get_body_panel());
+    m_width_panel->SetBackgroundColour(MFDTheme::card_background());
+    auto* row   = new wxBoxSizer(wxHORIZONTAL);
+    auto* label = new wxStaticText(m_width_panel, wxID_ANY, _L("Solid color width:"));
+    label->SetFont(::Label::Body_14);
+    MFDTheme::apply_text(label);
+    m_width_input = new wxTextCtrl(m_width_panel, wxID_ANY, "3.0", wxDefaultPosition, wxSize(FromDIP(60), -1), wxTE_PROCESS_ENTER);
+    MFDTheme::apply_input(m_width_input);
+    auto* unit = new wxStaticText(m_width_panel, wxID_ANY, "%");
+    MFDTheme::apply_text(unit);
+    row->Add(label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+    row->Add(m_width_input, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+    row->Add(unit, 0, wxALIGN_CENTER_VERTICAL);
+    m_width_panel->SetSizer(row);
+    m_width_panel->SetToolTip(
+        _L("Width of this solid color as a percentage of the complete gradient. Drag the square handles below the bar to adjust it."));
+    get_body_sizer()->Add(m_width_panel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(8));
+    auto changed = [this](wxEvent& event) {
+        double value;
+        if (m_width_input->GetValue().ToDouble(&value) && std::isfinite(value))
+            set_solid_width(value / 100.0);
+        event.Skip();
+    };
+    m_width_input->Bind(wxEVT_TEXT_ENTER, changed);
+    m_width_input->Bind(wxEVT_KILL_FOCUS, changed);
+}
+
+void MFDGradientAccordion::clamp_widths()
+{
+    const size_t count     = m_selected_filaments.size();
+    const size_t old_count = m_solid_widths.size();
+    m_solid_widths.resize(count, .03f);
+    if (count > old_count && old_count > 0)
+        m_solid_widths[old_count - 1] = .03f;
+    if (count == 0)
+        return;
+    m_solid_widths.front() = m_solid_widths.back() = 0.f;
+    for (size_t i = 1; i + 1 < count && 2 * i + 1 < m_gradient_positions.size(); ++i) {
+        const double maximum = 2.0 * std::min(m_gradient_positions[2 * i] - m_gradient_positions[2 * i - 1],
+                                              m_gradient_positions[2 * i + 1] - m_gradient_positions[2 * i]);
+        m_solid_widths[i]    = float(
+            std::clamp(std::isfinite(m_solid_widths[i]) ? double(m_solid_widths[i]) : .03, 0.0, std::max(0.0, maximum)));
+    }
+}
+
+void MFDGradientAccordion::set_solid_width(double width)
+{
+    clamp_widths();
+    const size_t color = size_t(m_selected_stop_index / 2);
+    if (m_selected_stop_index % 2 || color == 0 || color + 1 >= m_solid_widths.size())
+        return;
+    m_solid_widths[color] = float(std::clamp(width, 0.0, 1.0));
+    clamp_widths();
+    sync_edit_panel();
+    m_canvas->Refresh();
+    if (m_on_changed)
+        m_on_changed();
 }
 
 void MFDGradientAccordion::sync_edit_panel()
@@ -311,6 +378,13 @@ void MFDGradientAccordion::sync_edit_panel()
         m_selected_stop_index = 0;
     }
 
+    clamp_widths();
+    const bool interior = stop_idx % 2 == 0 && stop_idx > 0 && stop_idx + 1 < int(m_gradient_positions.size());
+    if (m_width_panel) {
+        m_width_panel->Show(interior);
+        if (interior)
+            m_width_input->ChangeValue(wxString::Format("%.1f", 100.0 * m_solid_widths[size_t(stop_idx / 2)]));
+    }
     refresh_combobox_items();
 
     if (stop_idx % 2 == 0) {
@@ -425,7 +499,7 @@ void MFDGradientAccordion::on_canvas_paint(wxPaintEvent&)
     const double margin = get_margin();
     const double bw = get_border_width();
     const double w = std::max(1.0, size.x - margin * 2.0);
-    const double h = std::max(1.0, size.y - margin * 2.0);
+    const double h      = std::max(1.0, size.y - margin * 2.0 - FromDIP(10));
     const double sx = margin;
     const double sy = margin;
 
@@ -435,22 +509,12 @@ void MFDGradientAccordion::on_canvas_paint(wxPaintEvent&)
         if (filament_index >= 0)
             component_ids.emplace_back(unsigned(filament_index + 1));
     }
-    const MixedFilamentGradientPreview preview =
-        build_mixed_filament_gradient_preview(component_ids, m_gradient_positions, m_display_context);
+    const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(component_ids, m_gradient_positions,
+                                                                                       m_display_context, 257, m_solid_widths);
 
-    // The sampled colors already encode the user stop positions and the
-    // selected prediction engine. Draw piecewise-linear samples so KM/K-S
-    // curvature is retained instead of replacing it with an RGB midpoint.
-    const int sample_segments = std::max(0, int(preview.sampled_colors.size()) - 1);
-    for (int index = 0; index < sample_segments; ++index) {
-        const double x_start = sx + w * double(index) / double(sample_segments);
-        const double x_end   = sx + w * double(index + 1) / double(sample_segments);
-        wxGraphicsBrush brush = gc->CreateLinearGradientBrush(
-            x_start, sy, x_end, sy, preview.sampled_colors[size_t(index)], preview.sampled_colors[size_t(index + 1)]);
-        gc->SetBrush(brush);
-        gc->SetPen(*wxTRANSPARENT_PEN);
-        gc->DrawRectangle(x_start, sy, x_end - x_start + 0.5, h);
-    }
+    const wxImage image = make_mixed_gradient_raster(preview.sampled_colors, wxSize(int(w), int(h)), false);
+    if (image.IsOk())
+        gc->DrawBitmap(wxBitmap(image), sx, sy, w, h);
 
     // Outline gradient bar
     gc->SetPen(wxPen(get_border_color(), bw));
@@ -489,6 +553,20 @@ void MFDGradientAccordion::on_canvas_paint(wxPaintEvent&)
         gc->SetPen(pen);
         gc->StrokeLine(xl, sy, xl, sy + h);
         gc->StrokeLine(xr, sy, xr, sy + h);
+    }
+
+    // Width handles bracket each interior solid-color zone below the gradient.
+    for (size_t i = 1; i + 1 < m_solid_widths.size(); ++i) {
+        const double half  = .5 * m_solid_widths[i];
+        const double left  = sx + (m_gradient_positions[2 * i] - half) * w;
+        const double right = sx + (m_gradient_positions[2 * i] + half) * w;
+        const double y     = sy + h + FromDIP(6);
+        gc->SetPen(wxPen(*wxWHITE, 1));
+        gc->SetBrush(wxBrush(m_filament_colors[i]));
+        gc->StrokeLine(left, y, right, y);
+        const double r = FromDIP(3);
+        gc->DrawRectangle(left - r, y - r, 2 * r, 2 * r);
+        gc->DrawRectangle(right - r, y - r, 2 * r, 2 * r);
     }
 
     // Draw handles
@@ -534,6 +612,29 @@ void MFDGradientAccordion::on_canvas_left_down(wxMouseEvent& event)
     int count = static_cast<int>(m_filament_colors.size());
     int num_stops = 2 * count - 1;
 
+    m_width_edge         = 0;
+    const double width_y = size.y - get_margin() - FromDIP(4);
+    if (std::abs(event.GetY() - width_y) < FromDIP(8)) {
+        double nearest = FromDIP(9);
+        for (size_t i = 1; i + 1 < m_solid_widths.size(); ++i) {
+            for (int side : {-1, 1}) {
+                const double hx = sx + (m_gradient_positions[2 * i] + side * .5 * m_solid_widths[i]) * w;
+                if (std::abs(click_x - hx) < nearest) {
+                    nearest               = std::abs(click_x - hx);
+                    m_selected_stop_index = int(2 * i);
+                    m_width_edge          = side;
+                }
+            }
+        }
+        if (m_width_edge) {
+            m_dragging = true;
+            if (!m_canvas->HasCapture())
+                m_canvas->CaptureMouse();
+            sync_edit_panel();
+            m_canvas->Refresh();
+            return;
+        }
+    }
     // 1. Check if clicked on a Filament handle (higher priority)
     int clicked_filament_idx = -1;
     double fil_hit_radius = FromDIP(10);
@@ -597,7 +698,14 @@ void MFDGradientAccordion::on_canvas_left_up(wxMouseEvent&)
 void MFDGradientAccordion::on_canvas_motion(wxMouseEvent& event)
 {
     if (!m_dragging) return;
-    update_positions_from_mouse(event.GetX());
+    if (m_width_edge) {
+        const double w = std::max(1.0, m_canvas->GetClientSize().x - 2.0 * get_margin());
+        const double t = (event.GetX() - get_margin()) / w;
+        set_solid_width(2.0 * m_width_edge * (t - m_gradient_positions[size_t(m_selected_stop_index)]));
+    } else {
+        update_positions_from_mouse(event.GetX());
+        clamp_widths();
+    }
 }
 
 void MFDGradientAccordion::update_positions_from_mouse(int x)

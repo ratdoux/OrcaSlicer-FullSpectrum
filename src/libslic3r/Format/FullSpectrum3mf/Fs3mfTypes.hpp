@@ -168,6 +168,7 @@ struct Gradient
     double                   component_a_start = 0.99;
     double                   component_a_end = 0.01;
     std::vector<double>      stop_positions;
+    std::vector<double>      solid_widths;
 };
 
 struct SurfaceBias

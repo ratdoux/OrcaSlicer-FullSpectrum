@@ -91,6 +91,11 @@ ValidationResult validate_package_model(const PackageModel &model)
                         vf.gradient->component_a_end < 0.01 || vf.gradient->component_a_end > 0.99)
                         result.fail("mixed filament " + vf.id + " spatial gradient endpoints are outside 0.01..0.99");
 
+                    if (!vf.gradient->solid_widths.empty() && vf.gradient->solid_widths.size() != vf.gradient->component_refs.size())
+                        result.fail("mixed filament " + vf.id + " solid widths do not match components");
+                    for (const double width : vf.gradient->solid_widths)
+                        if (!std::isfinite(width) || width < 0.0 || width > 1.0)
+                            result.fail("mixed filament " + vf.id + " solid width is outside 0..1");
                     const size_t expected_stops = 2 * vf.gradient->component_refs.size() - 1;
                     if (!vf.gradient->stop_positions.empty() && vf.gradient->stop_positions.size() != expected_stops) {
                         result.fail("mixed filament " + vf.id + " spatial gradient stop count does not match components");

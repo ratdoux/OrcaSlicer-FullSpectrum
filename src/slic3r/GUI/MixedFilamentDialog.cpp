@@ -203,6 +203,10 @@ MixedFilamentDialog::MixedFilamentDialog(
                     m_selected_filaments_weights.push_back(comp.percent / 100.0);
                     component_percents.push_back(comp.percent);
                 }
+                m_gradient_solid_widths = def.behavior.gradient.solid_widths;
+                if (m_gradient_solid_widths.empty())
+                    m_gradient_solid_widths.assign(m_selected_filaments.size(),
+                                                   float(m_display_context.preview_settings.gradient_middle_window));
                 const size_t expected_stops = m_selected_filaments.size() >= 2 ? 2 * m_selected_filaments.size() - 1 : size_t(0);
                 if (expected_stops >= 3 && def.behavior.gradient.stop_positions.size() == expected_stops) {
                     m_gradient_positions.clear();
@@ -413,14 +417,9 @@ void MixedFilamentDialog::build_ui(wxWindow* parent)
 
     build_bias_ui();
 
-    m_gradient_accordion = new MFDGradientAccordion(
-        m_content_panel,
-        m_selected_filaments,
-        m_selected_filaments_colors,
-        m_gradient_positions,
-        m_gradient_min_ratio,
-        m_physical_filaments
-    );
+    m_gradient_accordion = new MFDGradientAccordion(m_content_panel, m_selected_filaments, m_selected_filaments_colors,
+                                                    m_gradient_positions, m_gradient_solid_widths, m_gradient_min_ratio,
+                                                    m_physical_filaments);
     m_gradient_accordion->set_on_changed([this]() {
         update_preview();
         if (m_list_preview_panel) m_list_preview_panel->Refresh();
@@ -1329,12 +1328,12 @@ void MixedFilamentDialog::update_preview()
             if (filament_index >= 0)
                 component_ids.emplace_back(unsigned(filament_index + 1));
         }
-        const MixedFilamentGradientPreview preview =
-            build_mixed_filament_gradient_preview(component_ids, m_gradient_positions, m_display_context);
+        const MixedFilamentGradientPreview preview = build_mixed_filament_gradient_preview(component_ids, m_gradient_positions,
+                                                                                           m_display_context, 257, m_gradient_solid_widths);
         m_gradient_component_positions = preview.component_positions;
         m_gradient_preview_colors       = preview.sampled_colors;
-        m_preview_accordion->update_preview_gradient(
-            m_selected_filaments_colors, m_gradient_positions, m_gradient_preview_colors);
+        m_preview_accordion->update_preview_gradient(m_selected_filaments_colors, m_gradient_positions, m_gradient_preview_colors,
+                                                     m_gradient_solid_widths, m_display_context, component_ids);
     }
     if (m_list_preview_panel) m_list_preview_panel->Refresh();
 }
@@ -1699,6 +1698,7 @@ MixedFilamentDefinition MixedFilamentDialog::get_result() const
         def.behavior.gradient.enabled = true;
         def.behavior.gradient.component_a_start = MixedFilamentLegacyRow::k_default_gradient_dominant;
         def.behavior.gradient.component_a_end   = MixedFilamentLegacyRow::k_default_gradient_minority;
+        def.behavior.gradient.solid_widths      = m_gradient_solid_widths;
         def.behavior.gradient.stop_positions.clear();
         def.behavior.gradient.stop_positions.reserve(m_gradient_positions.size());
         for (const double position : m_gradient_positions)

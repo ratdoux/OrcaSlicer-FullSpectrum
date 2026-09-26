@@ -19,6 +19,7 @@
 //   No callbacks: the preview is read-only and never drives state changes.
 
 #include "Widgets/Accordion.hpp"
+#include "libslic3r/MixedFilament.hpp"
 #include <vector>
 
 namespace Slic3r::GUI {
@@ -51,10 +52,12 @@ public:
         const std::vector<wxColor>&              colors,
         const wxColor&                           mixed_color);
 
-    void update_preview_gradient(
-        const std::vector<wxColor>&              colors,
-        const std::vector<double>&               positions,
-        const std::vector<wxColor>&              predicted_colors);
+    void update_preview_gradient(const std::vector<wxColor>&        colors,
+                                 const std::vector<double>&         positions,
+                                 const std::vector<wxColor>&        predicted_colors,
+                                 const std::vector<float>&          solid_widths,
+                                 const MixedFilamentDisplayContext& context,
+                                 const std::vector<unsigned int>&   component_ids);
 
     void set_preview_mode(PreviewMode mode);
 
@@ -72,14 +75,9 @@ private:
     void paint_color_panel(wxPaintEvent& event);
     void paint_title_swatch(wxPaintEvent& event);
 
-    struct GradientSample {
-        wxColor color_a;
-        wxColor color_b;
-        double  weight_b{0.0};
-        int     index_a{-1};
-        int     index_b{-1};
-    };
-    GradientSample sample_gradient(double t) const;
+    MixedFilamentDefinition     m_gradient_definition;
+    MixedFilamentDisplayContext m_gradient_context;
+    std::vector<unsigned int>   m_gradient_component_ids;
 
     static std::vector<MFDPreviewLayerEntry> compute_layer_stack(const std::vector<double>& weights, int total_layers = 20);
     static std::vector<MFDPreviewLayerEntry> compute_pattern_layer_stack(const std::vector<int>& pattern_indices, int total_layers = 20);

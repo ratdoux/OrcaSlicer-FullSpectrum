@@ -1,4 +1,5 @@
 #include "MFDPreviewAccordion.hpp"
+#include "MFDGradientPreview.hpp"
 
 #include <wx/wx.h>
 #include <wx/dcgraph.h>
@@ -116,15 +117,25 @@ void MFDPreviewAccordion::update_preview_pattern(
         m_title_layers->Refresh();
 }
 
-void MFDPreviewAccordion::update_preview_gradient(
-    const std::vector<wxColor>&              colors,
-    const std::vector<double>&               positions,
-    const std::vector<wxColor>&              predicted_colors)
+void MFDPreviewAccordion::update_preview_gradient(const std::vector<wxColor>&        colors,
+                                                  const std::vector<double>&         positions,
+                                                  const std::vector<wxColor>&        predicted_colors,
+                                                  const std::vector<float>&          solid_widths,
+                                                  const MixedFilamentDisplayContext& context,
+                                                  const std::vector<unsigned int>&   component_ids)
 {
     m_preview_mode = PreviewMode::Gradient;
     m_colors = colors;
     m_gradient_positions = positions;
     m_gradient_predicted_colors = predicted_colors;
+    m_gradient_context                              = context;
+    m_gradient_component_ids                        = component_ids;
+    m_gradient_definition                           = MixedFilamentDefinition{};
+    m_gradient_definition.behavior.gradient.enabled = true;
+    m_gradient_definition.behavior.gradient.stop_positions.assign(positions.begin(), positions.end());
+    m_gradient_definition.behavior.gradient.solid_widths = solid_widths;
+    for (unsigned int id : component_ids)
+        m_gradient_definition.recipe.blend.components.push_back({{id}, 1});
 
     if (m_color_panel) {
         m_color_panel->UnsetToolTip();
@@ -178,63 +189,6 @@ void MFDPreviewAccordion::on_collapsed_changed(bool collapsed)
     if (m_title_layers)  m_title_layers->Refresh();
 }
 
-MFDPreviewAccordion::GradientSample MFDPreviewAccordion::sample_gradient(double t) const
-{
-    GradientSample sample;
-    if (m_colors.empty() || m_gradient_positions.empty()) {
-        sample.color_a = *wxLIGHT_GREY;
-        sample.color_b = *wxLIGHT_GREY;
-        sample.weight_b = 0.0;
-        return sample;
-    }
-    int count = static_cast<int>(m_colors.size());
-    if (count == 1 || m_gradient_positions.size() < 3) {
-        sample.color_a = m_colors[0];
-        sample.color_b = m_colors[0];
-        sample.weight_b = 0.0;
-        sample.index_a = 0;
-        sample.index_b = 0;
-        return sample;
-    }
-
-    t = std::clamp(t, 0.0, 1.0);
-
-    for (int i = 0; i < count - 1; ++i) {
-        double p_start = m_gradient_positions[2 * i];
-        double p_end   = m_gradient_positions[2 * i + 2];
-        if (t >= p_start && t <= p_end) {
-            double p_mid = m_gradient_positions[2 * i + 1];
-            sample.index_a = i;
-            sample.index_b = i + 1;
-            sample.color_a = m_colors[i];
-            sample.color_b = m_colors[i + 1];
-            if (t <= p_mid) {
-                double den = p_mid - p_start;
-                sample.weight_b = (den > 1e-6) ? (0.5 * (t - p_start) / den) : 0.0;
-            } else {
-                double den = p_end - p_mid;
-                sample.weight_b = (den > 1e-6) ? (0.5 + 0.5 * (t - p_mid) / den) : 1.0;
-            }
-            return sample;
-        }
-    }
-
-    if (t <= m_gradient_positions.front()) {
-        sample.index_a = 0;
-        sample.index_b = 0;
-        sample.color_a = m_colors.front();
-        sample.color_b = m_colors.front();
-        sample.weight_b = 0.0;
-    } else {
-        sample.index_a = count - 1;
-        sample.index_b = count - 1;
-        sample.color_a = m_colors.back();
-        sample.color_b = m_colors.back();
-        sample.weight_b = 0.0;
-    }
-    return sample;
-}
-
 void MFDPreviewAccordion::draw_layer_stack_common(
     wxGraphicsContext* gc,
     const wxSize&      size,
@@ -254,59 +208,10 @@ void MFDPreviewAccordion::draw_layer_stack_common(
         if (m_colors.empty() || m_gradient_positions.empty())
             return;
 
-        double W = size.x - 2 * padding;
-        double H = size.y - 2 * padding;
-        
-        double cycle_size = FromDIP(6.0);
-        double total_span = vertical ? H : W;
-        int num_cycles = static_cast<int>(std::round(total_span / cycle_size));
-        if (num_cycles < 2) num_cycles = 2;
-        cycle_size = total_span / num_cycles;
-        double half_cycle = cycle_size / 2.0;
-
-        for (int c = 0; c < num_cycles; ++c) {
-            double t = 0.0;
-            if (vertical) {
-                double y_cycle_bottom = (size.y - padding) - c * cycle_size;
-                double y_center = y_cycle_bottom - half_cycle;
-                t = (size.y - padding - y_center) / H;
-            } else {
-                double x_left_start = padding + c * cycle_size;
-                double x_center = x_left_start + half_cycle;
-                t = (x_center - padding) / W;
-            }
-
-            GradientSample sample = sample_gradient(t);
-
-            double size_A = cycle_size * (1.0 - sample.weight_b);
-            double size_B = cycle_size * sample.weight_b;
-
-            if (vertical) {
-                double y_cycle_bottom = (size.y - padding) - c * cycle_size;
-                if (size_A > 0) {
-                    gc->SetBrush(wxBrush(sample.color_a));
-                    gc->SetPen(*wxTRANSPARENT_PEN);
-                    gc->DrawRectangle(padding, y_cycle_bottom - size_A - 0.5, W, size_A + 0.5);
-                }
-                if (size_B > 0) {
-                    gc->SetBrush(wxBrush(sample.color_b));
-                    gc->SetPen(*wxTRANSPARENT_PEN);
-                    gc->DrawRectangle(padding, y_cycle_bottom - size_A - size_B - 0.5, W, size_B + 0.5);
-                }
-            } else {
-                double x_left_start = padding + c * cycle_size;
-                if (size_A > 0) {
-                    gc->SetBrush(wxBrush(sample.color_a));
-                    gc->SetPen(*wxTRANSPARENT_PEN);
-                    gc->DrawRectangle(x_left_start, padding, size_A + 0.5, H);
-                }
-                if (size_B > 0) {
-                    gc->SetBrush(wxBrush(sample.color_b));
-                    gc->SetPen(*wxTRANSPARENT_PEN);
-                    gc->DrawRectangle(x_left_start + size_A, padding, size_B + 0.5, H);
-                }
-            }
-        }
+        const wxSize  image_size(int(size.x - 2 * padding), int(size.y - 2 * padding));
+        const wxImage image = make_mixed_gradient_layer_raster(m_gradient_definition, m_gradient_context, image_size, vertical);
+        if (image.IsOk())
+            gc->DrawBitmap(wxBitmap(image), padding, padding, image_size.x, image_size.y);
     } else { // preview_mode == Mix or Pattern
         if (m_layer_stack.empty())
             return;
@@ -354,40 +259,18 @@ void MFDPreviewAccordion::draw_gradient_common(
     if (display_colors.size() < 2)
         return;
 
-    double W = size.x;
-    double H = size.y;
-
-    const int segment_count = int(display_colors.size()) - 1;
-    for (int index = 0; index < segment_count; ++index) {
-        const double start = double(index) / double(segment_count);
-        const double end   = double(index + 1) / double(segment_count);
-        const wxColor& color_start = display_colors[size_t(index)];
-        const wxColor& color_end   = display_colors[size_t(index + 1)];
-
-        if (vertical) {
-            const double y_start = size.y - start * H;
-            const double y_end   = size.y - end * H;
-            wxGraphicsBrush brush = gc->CreateLinearGradientBrush(0, y_start, 0, y_end, color_start, color_end);
-            gc->SetBrush(brush);
-            gc->SetPen(*wxTRANSPARENT_PEN);
-            gc->DrawRectangle(0, y_end, W, y_start - y_end + 0.5);
-        } else {
-            const double x_start = start * W;
-            const double x_end   = end * W;
-            wxGraphicsBrush brush = gc->CreateLinearGradientBrush(x_start, 0, x_end, 0, color_start, color_end);
-            gc->SetBrush(brush);
-            gc->SetPen(*wxTRANSPARENT_PEN);
-            gc->DrawRectangle(x_start, 0, x_end - x_start + 0.5, H);
-        }
-    }
+    const wxImage image = make_mixed_gradient_raster(display_colors, size, vertical);
+    if (image.IsOk())
+        gc->DrawBitmap(wxBitmap(image), 0, 0, size.x, size.y);
 }
 
 void MFDPreviewAccordion::paint_layers_panel(wxPaintEvent&)
 {
     wxAutoBufferedPaintDC dc(m_layers_panel);
     wxGCDC gcdc(dc);
-    wxGraphicsContext* gc = gcdc.GetGraphicsContext();
-    if (!gc) return;
+    wxGraphicsContext*    gc = gcdc.GetGraphicsContext();
+    if (!gc)
+        return;
 
     wxSize size = m_layers_panel->GetSize();
 

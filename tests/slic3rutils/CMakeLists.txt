@@ -7,7 +7,17 @@ endif()
 get_filename_component(_TEST_NAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 add_executable(${_TEST_NAME}_tests
     ${_TEST_NAME}_tests_main.cpp
+    test_gradient_preview.cpp
     )
+
+# Match the wxWidgets headers and compile flags selected by the application.
+get_directory_property(_gui_wx_includes DIRECTORY "${CMAKE_SOURCE_DIR}/src" DEFINITION wxWidgets_INCLUDE_DIRS)
+get_directory_property(_gui_wx_definitions DIRECTORY "${CMAKE_SOURCE_DIR}/src" DEFINITION wxWidgets_DEFINITIONS)
+get_directory_property(_gui_wx_flags DIRECTORY "${CMAKE_SOURCE_DIR}/src" DEFINITION wxWidgets_CXX_FLAGS)
+target_include_directories(${_TEST_NAME}_tests SYSTEM PRIVATE ${_gui_wx_includes})
+target_compile_definitions(${_TEST_NAME}_tests PRIVATE ${_gui_wx_definitions} wxDEBUG_LEVEL=0)
+separate_arguments(_gui_wx_flags NATIVE_COMMAND "${_gui_wx_flags}")
+target_compile_options(${_TEST_NAME}_tests PRIVATE ${_gui_wx_flags})
 
 find_package(JPEG REQUIRED)
 find_package(PNG REQUIRED)

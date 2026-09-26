@@ -100,6 +100,7 @@ private:
 
     // Gradient state
     std::vector<double>  m_gradient_positions;
+    std::vector<float>   m_gradient_solid_widths;
     std::vector<double>  m_gradient_component_positions;
     std::vector<wxColor> m_gradient_preview_colors;
     double               m_gradient_min_ratio{0.10};

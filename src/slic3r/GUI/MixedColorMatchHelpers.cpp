@@ -1929,6 +1929,12 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
                 context.nozzle_diameters[i] = std::max(0.05, opt->get_at(unsigned(std::min(i, opt_count - 1))));
         }
     }
+    const auto* maximums = preset_bundle->printers.get_edited_preset().config.option<ConfigOptionFloats>("max_layer_height");
+    context.max_layer_heights.resize(context.num_physical);
+    for (size_t i = 0; i < context.num_physical; ++i) {
+        const double configured      = maximums && !maximums->values.empty() ? maximums->get_at(i) : 0.0;
+        context.max_layer_heights[i] = std::max(.01, configured > EPSILON ? configured : .75 * context.nozzle_diameters[i]);
+    }
     context.physical_tds = selected_filament_transmission_distances(preset_bundle, context.num_physical);
     context.physical_material_ids = selected_filament_full_spectrum_material_ids(preset_bundle, context.num_physical);
     context.physical_material_types = selected_filament_material_types(preset_bundle, context.num_physical);
@@ -1947,15 +1953,20 @@ MixedFilamentDisplayContext build_mixed_filament_display_context(const std::vect
         return fallback;
     };
     auto get_mixed_float = [preset_bundle, print_cfg](const std::string& key, float fallback) {
-        if (preset_bundle->project_config.has(key))
-            return float(preset_bundle->project_config.opt_float(key));
-        if (print_cfg != nullptr && print_cfg->has(key))
-            return float(print_cfg->opt_float(key));
+        // Gradient solid width is a percentage; opt_float() only accepts plain floats.
+        for (const DynamicPrintConfig* config : {&preset_bundle->project_config, print_cfg}) {
+            if (config == nullptr)
+                continue;
+            if (const auto* opt = config->option<ConfigOptionPercent>(key))
+                return float(opt->value);
+            if (const auto* opt = config->option<ConfigOptionFloat>(key))
+                return float(opt->value);
+        }
         return fallback;
     };
 
-    context.preview_settings.min_sublayer_height =
-        std::max(0.01, double(get_mixed_float("mixed_filament_height_lower_bound", 0.06f)));
+    context.preview_settings.gradient_middle_window = get_mixed_float("dithering_local_z_gradient_middle_filament_window", 3.f) / 100.0;
+    context.preview_settings.min_sublayer_height    = std::max(0.01, double(get_mixed_float("mixed_filament_height_lower_bound", 0.06f)));
     context.preview_settings.preferred_a_height   = std::max(0.0, double(get_mixed_float("mixed_color_layer_height_a", 0.f)));
     context.preview_settings.preferred_b_height   = std::max(0.0, double(get_mixed_float("mixed_color_layer_height_b", 0.f)));
     context.preview_settings.nominal_layer_height = 0.2;
@@ -2105,11 +2116,11 @@ wxColour blend_mixed_filament_components(const std::vector<unsigned int>&   comp
     return parse_mixed_color(MixedFilamentManager::blend_color_multi(inputs));
 }
 
-MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
-    const std::vector<unsigned int>&   ordered_component_ids,
-    const std::vector<double>&         component_stop_positions,
-    const MixedFilamentDisplayContext& context,
-    size_t                             sample_count)
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(const std::vector<unsigned int>&   ordered_component_ids,
+                                                                   const std::vector<double>&         component_stop_positions,
+                                                                   const MixedFilamentDisplayContext& context,
+                                                                   size_t                             sample_count,
+                                                                   const std::vector<float>&          solid_widths)
 {
     MixedFilamentGradientPreview preview;
     if (ordered_component_ids.size() < 2 || context.physical_colors.empty())
@@ -2124,36 +2135,19 @@ MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
     if (preview.component_positions.empty())
         return {};
 
+    MixedFilamentDefinition definition;
+    definition.behavior.gradient.enabled = true;
+    definition.behavior.gradient.stop_positions.assign(preview.component_positions.begin(), preview.component_positions.end());
+    definition.behavior.gradient.solid_widths = solid_widths;
+    for (unsigned int id : ordered_component_ids)
+        definition.recipe.blend.components.push_back({{id}, 1});
     sample_count = std::max<size_t>(2, sample_count);
     preview.sampled_colors.reserve(sample_count);
     for (size_t sample_index = 0; sample_index < sample_count; ++sample_index) {
-        const double t = double(sample_index) / double(sample_count - 1);
-        size_t segment = ordered_component_ids.size() - 2;
-        for (size_t index = 0; index + 1 < ordered_component_ids.size(); ++index) {
-            if (t <= preview.component_positions[2 * index + 2] || index + 2 == ordered_component_ids.size()) {
-                segment = index;
-                break;
-            }
-        }
-
-        const double start = preview.component_positions[2 * segment];
-        const double mid   = preview.component_positions[2 * segment + 1];
-        const double end   = preview.component_positions[2 * segment + 2];
-        double       weight_b;
-        if (t <= start)
-            weight_b = 0.0;
-        else if (t >= end)
-            weight_b = 1.0;
-        else if (t <= mid)
-            weight_b = 0.5 * (t - start) / std::max(EPSILON, mid - start);
-        else
-            weight_b = 0.5 + 0.5 * (t - mid) / std::max(EPSILON, end - mid);
-
-        const int percent_b = std::clamp(int(std::lround(100.0 * weight_b)), 0, 100);
-        preview.sampled_colors.emplace_back(blend_mixed_filament_components(
-            {ordered_component_ids[segment], ordered_component_ids[segment + 1]},
-            {100 - percent_b, percent_b},
-            context));
+        const auto sample = sample_mixed_gradient(definition, context.num_physical, double(sample_index) / double(sample_count - 1),
+                                                  context.preview_settings.gradient_middle_window);
+        preview.sampled_colors.emplace_back(blend_mixed_filament_components({sample.component_a, sample.component_b},
+                                                                            {100 - sample.mix_b_percent, sample.mix_b_percent}, context));
     }
     return preview;
 }
@@ -2175,11 +2169,10 @@ MixedFilamentGradientPreview build_mixed_filament_gradient_preview(const MixedFi
     if (reverse_pair)
         std::reverse(component_ids.begin(), component_ids.end());
 
-    return build_mixed_filament_gradient_preview(
-        component_ids,
-        gradient_positions_from_definition(definition, component_ids.size(), num_physical, reverse_pair),
-        context,
-        sample_count);
+    return build_mixed_filament_gradient_preview(component_ids,
+                                                 gradient_positions_from_definition(definition, component_ids.size(), num_physical,
+                                                                                    reverse_pair),
+                                                 context, sample_count, definition.behavior.gradient.solid_widths);
 }
 
 std::vector<wxColour> build_adaptive_cycle_attainable_colors(const std::vector<unsigned int>&   component_ids,

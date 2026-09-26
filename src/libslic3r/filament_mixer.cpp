@@ -36,12 +36,54 @@ inline float to_f01(unsigned char x)
 
 } // namespace
 
-void filament_mixer_lerp(unsigned char r1, unsigned char g1, unsigned char b1,
-                         unsigned char r2, unsigned char g2, unsigned char b2,
-                         float t,
-                         unsigned char* out_r, unsigned char* out_g, unsigned char* out_b)
+void filament_mixer_lerp(unsigned char  r1,
+                         unsigned char  g1,
+                         unsigned char  b1,
+                         unsigned char  r2,
+                         unsigned char  g2,
+                         unsigned char  b2,
+                         float          t,
+                         unsigned char* out_r,
+                         unsigned char* out_g,
+                         unsigned char* out_b)
 {
-    ::filament_mixer::lerp(r1, g1, b1, r2, g2, b2, t, out_r, out_g, out_b);
+    if (!(t > 0.f) || (r1 == r2 && g1 == g2 && b1 == b2)) {
+        *out_r = r1;
+        *out_g = g1;
+        *out_b = b1;
+        return;
+    }
+    if (t >= 1.f) {
+        *out_r = r2;
+        *out_g = g2;
+        *out_b = b2;
+        return;
+    }
+
+    // Anchor the fitted polynomial P to the input colors A and B:
+    // C(t) = P(t) - (1-t)*(P(0)-A) - t*(P(1)-B).
+    // Evaluate before gamut clipping. The constant and linear terms cancel,
+    // leaving the RGB interpolation plus only the nonlinear terms in t.
+    // This preserves pigment-style curvature without a jump at either end.
+    const double colors[6]       = {double(r1), double(g1), double(b1), double(r2), double(g2), double(b2)};
+    const double ratio           = t;
+    const double ratio_powers[5] = {1.0, ratio, ratio * ratio, ratio * ratio * ratio, ratio * ratio * ratio * ratio};
+    double       channels[3]     = {(1.0 - ratio) * r1 + ratio * r2, (1.0 - ratio) * g1 + ratio * g2, (1.0 - ratio) * b1 + ratio * b2};
+    for (int i = 0; i < ::filament_mixer::detail::N_FEATURES; ++i) {
+        const int degree = ::filament_mixer::detail::POWERS[i][6];
+        if (degree < 2)
+            continue;
+        double feature = ratio_powers[degree] - ratio;
+        for (int j = 0; j < 6; ++j)
+            for (int power = 0; power < ::filament_mixer::detail::POWERS[i][j]; ++power)
+                feature *= colors[j];
+        for (int channel = 0; channel < 3; ++channel)
+            channels[channel] += feature * ::filament_mixer::detail::COEF[i][channel];
+    }
+    auto to_channel = [](double value) { return static_cast<unsigned char>(std::lround(std::clamp(value, 0.0, 255.0))); };
+    *out_r          = to_channel(channels[0]);
+    *out_g          = to_channel(channels[1]);
+    *out_b          = to_channel(channels[2]);
 }
 
 void filament_mixer_lerp_float(float r1, float g1, float b1,

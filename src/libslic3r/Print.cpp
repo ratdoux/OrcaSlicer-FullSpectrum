@@ -2279,6 +2279,7 @@ void  PrintObject::clear_shared_object()
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": this=%1%, clear previous shared object data %2%")%this %m_shared_object;
         m_layers.clear();
         m_support_layers.clear();
+        this->clear_local_z_plan();
 
         m_shared_object = nullptr;
 
@@ -2298,6 +2299,11 @@ void  PrintObject::copy_layers_from_shared_object()
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": this=%1%, copied layers from object %2%")%this%m_shared_object;
         m_layers = m_shared_object->layers();
         m_support_layers = m_shared_object->support_layers();
+
+        // G-code generation reads the SML plan from each PrintObject, even when
+        // its layers are shared with an identical object.
+        m_local_z_intervals     = m_shared_object->local_z_intervals();
+        m_local_z_sublayer_plan = m_shared_object->local_z_sublayer_plan();
 
         firstLayerObjSliceByVolume = m_shared_object->firstLayerObjSlice();
         firstLayerObjSliceByGroups = m_shared_object->firstLayerObjGroups();

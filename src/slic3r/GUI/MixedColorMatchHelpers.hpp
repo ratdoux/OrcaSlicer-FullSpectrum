@@ -281,16 +281,15 @@ wxColour blend_mixed_filament_components(
     const std::vector<int>              &component_percents,
     const MixedFilamentDisplayContext   &context);
 
-MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
-    const std::vector<unsigned int>     &ordered_component_ids,
-    const std::vector<double>           &component_stop_positions,
-    const MixedFilamentDisplayContext   &context,
-    size_t                               sample_count = 17);
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(const std::vector<unsigned int>&   ordered_component_ids,
+                                                                   const std::vector<double>&         component_stop_positions,
+                                                                   const MixedFilamentDisplayContext& context,
+                                                                   size_t                             sample_count = 257,
+                                                                   const std::vector<float>&          solid_widths = {});
 
-MixedFilamentGradientPreview build_mixed_filament_gradient_preview(
-    const MixedFilamentDefinition       &definition,
-    const MixedFilamentDisplayContext   &context,
-    size_t                               sample_count = 17);
+MixedFilamentGradientPreview build_mixed_filament_gradient_preview(const MixedFilamentDefinition&     definition,
+                                                                   const MixedFilamentDisplayContext& context,
+                                                                   size_t                             sample_count = 257);
 
 // Build the colors that an adaptive localized cycle can actually expose. The
 // requested source colors are projected through the same component-restricted

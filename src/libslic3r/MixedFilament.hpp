@@ -65,6 +65,8 @@ struct MixedFilamentLegacyRow
     // Optional explicit gradient stop positions. Encoded as a '/'-joined list
     // matching the UI stop curve: filament stop, midpoint, filament stop, ...
     std::string gradient_stop_positions;
+    // Optional solid widths aligned with gradient components; empty uses the legacy process setting.
+    std::vector<float> gradient_solid_widths;
 
     // Legacy UI fields retained for dialogs and badges that still consume
     // mixed rows directly. Typed definitions remain the source of truth.
@@ -121,30 +123,17 @@ struct MixedFilamentLegacyRow
     bool operator==(const MixedFilamentLegacyRow &rhs) const
     {
         constexpr float k_surface_offset_epsilon = 1e-6f;
-        return component_a == rhs.component_a &&
-               component_b == rhs.component_b &&
-               stable_id   == rhs.stable_id   &&
-               ratio_a     == rhs.ratio_a     &&
-               ratio_b     == rhs.ratio_b     &&
-               mix_b_percent == rhs.mix_b_percent &&
-               manual_pattern == rhs.manual_pattern &&
-               gradient_component_ids == rhs.gradient_component_ids &&
-               gradient_component_weights == rhs.gradient_component_weights &&
-               gradient_stop_positions == rhs.gradient_stop_positions &&
-               pointillism_all_filaments == rhs.pointillism_all_filaments &&
-               gradient_enabled == rhs.gradient_enabled &&
-               std::abs(gradient_start - rhs.gradient_start) <= 1e-4f &&
-               std::abs(gradient_end - rhs.gradient_end) <= 1e-4f &&
-               distribution_mode == rhs.distribution_mode &&
-               local_z_max_sublayers == rhs.local_z_max_sublayers &&
+        return component_a == rhs.component_a && component_b == rhs.component_b && stable_id == rhs.stable_id && ratio_a == rhs.ratio_a &&
+               ratio_b == rhs.ratio_b && mix_b_percent == rhs.mix_b_percent && manual_pattern == rhs.manual_pattern &&
+               gradient_component_ids == rhs.gradient_component_ids && gradient_component_weights == rhs.gradient_component_weights &&
+               gradient_stop_positions == rhs.gradient_stop_positions && gradient_solid_widths == rhs.gradient_solid_widths &&
+               pointillism_all_filaments == rhs.pointillism_all_filaments && gradient_enabled == rhs.gradient_enabled &&
+               std::abs(gradient_start - rhs.gradient_start) <= 1e-4f && std::abs(gradient_end - rhs.gradient_end) <= 1e-4f &&
+               distribution_mode == rhs.distribution_mode && local_z_max_sublayers == rhs.local_z_max_sublayers &&
                std::abs(component_a_surface_offset - rhs.component_a_surface_offset) <= k_surface_offset_epsilon &&
                std::abs(component_b_surface_offset - rhs.component_b_surface_offset) <= k_surface_offset_epsilon &&
-               component_surface_offsets == rhs.component_surface_offsets &&
-               perimeter_modulation == rhs.perimeter_modulation &&
-               deleted      == rhs.deleted &&
-               custom       == rhs.custom &&
-               origin_auto  == rhs.origin_auto &&
-               ui_mode      == rhs.ui_mode;
+               component_surface_offsets == rhs.component_surface_offsets && perimeter_modulation == rhs.perimeter_modulation &&
+               deleted == rhs.deleted && custom == rhs.custom && origin_auto == rhs.origin_auto && ui_mode == rhs.ui_mode;
     }
     bool operator!=(const MixedFilamentLegacyRow &rhs) const { return !(*this == rhs); }
 };
@@ -268,6 +257,7 @@ struct MixedFilamentGradientBehavior
     float component_a_end   = MixedFilamentLegacyRow::k_default_gradient_minority;
     // Normalized UI stop curve, length 2 * component_count - 1 when present.
     std::vector<float> stop_positions;
+    std::vector<float> solid_widths;
 };
 
 struct MixedFilamentSurfaceBias
@@ -318,6 +308,7 @@ struct MixedFilamentPreviewSettings
     bool   local_z_direct_multicolor { false };
     size_t wall_loops { 1 };
     double gradient_nominal_layer_height { 0.2 };
+    double gradient_middle_window{0.03};
 };
 
 struct MixedFilamentDisplayContext
@@ -330,7 +321,34 @@ struct MixedFilamentDisplayContext
     std::vector<double>          physical_tds;
     std::vector<std::string>     physical_material_ids;
     std::vector<std::string>     physical_material_types;
+    std::vector<double>          max_layer_heights;
 };
+
+struct MixedGradientSample
+{
+    unsigned int component_a{0};
+    unsigned int component_b{0};
+    int          mix_b_percent{0};
+};
+
+struct MixedGradientLocalZSample
+{
+    MixedGradientSample mix;
+    double              height_a{0.0};
+    double              height_b{0.0};
+};
+
+std::vector<unsigned int> mixed_gradient_components(const MixedFilamentDefinition& entry, size_t num_physical);
+std::vector<float>        mixed_gradient_stops(const MixedFilamentDefinition& entry, size_t num_physical);
+std::vector<float>  mixed_gradient_solid_half_widths(const MixedFilamentDefinition& entry, size_t num_physical, double fallback = 0.03);
+MixedGradientSample sample_mixed_gradient(const MixedFilamentDefinition& entry, size_t num_physical, double progress, double middle_window);
+MixedGradientLocalZSample sample_mixed_gradient_local_z(const MixedFilamentDefinition& entry,
+                                                        size_t                         num_physical,
+                                                        double                         progress,
+                                                        double                         middle_window,
+                                                        double                         nominal_height,
+                                                        double                         minimum_height,
+                                                        const std::vector<double>&     max_layer_heights);
 
 struct MixedFilamentColorInput
 {

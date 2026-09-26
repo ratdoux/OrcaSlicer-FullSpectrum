@@ -342,6 +342,7 @@ set(lisbslic3r_sources
     MixedFilament/Definition.cpp
     MixedFilament/Display.cpp
     MixedFilament/Gradient.cpp
+    MixedFilament/GradientPreview.cpp
     MixedFilament/Internal.hpp
     MixedFilament/Manager.cpp
     MixedFilament/PerimeterModulation.cpp

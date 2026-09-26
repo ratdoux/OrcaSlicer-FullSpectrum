@@ -364,6 +364,8 @@ void to_json(nlohmann::json &j, const Gradient &v)
         j["component_a_start"] = v.component_a_start;
         j["component_a_end"] = v.component_a_end;
         j["stop_positions"] = v.stop_positions;
+        if (!v.solid_widths.empty())
+            j["solid_widths"] = v.solid_widths;
     }
 }
 
@@ -375,6 +377,7 @@ void from_json(const nlohmann::json &j, Gradient &v)
     get_if_present(j, "component_a_start", v.component_a_start);
     get_if_present(j, "component_a_end", v.component_a_end);
     get_if_present(j, "stop_positions", v.stop_positions);
+    get_if_present(j, "solid_widths", v.solid_widths);
 }
 
 void to_json(nlohmann::json &j, const SurfaceBias &v)
