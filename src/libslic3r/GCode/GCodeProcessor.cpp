@@ -7,6 +7,7 @@
 #include "libslic3r/LocalesUtils.hpp"
 #include "libslic3r/format.hpp"
 #include "GCodeProcessor.hpp"
+#include "PreviewMemory.hpp"
 
 #include <boost/log/trivial.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -557,6 +558,7 @@ void GCodeProcessorResult::reset() {
     lock();
 
     moves = std::vector<GCodeProcessorResult::MoveVertex>();
+    lines_ends     = std::vector<size_t>();
     printable_area = Pointfs();
     //BBS: add bed exclude area
     bed_exclude_area = Pointfs();
@@ -585,6 +587,7 @@ void GCodeProcessorResult::reset() {
 
     moves.clear();
     lines_ends.clear();
+    release_unused_memory();
     printable_area = Pointfs();
     //BBS: add bed exclude area
     bed_exclude_area = Pointfs();
@@ -614,6 +617,12 @@ void GCodeProcessorResult::reset() {
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(" %1%: this=%2% reset finished")%__LINE__%this;
 }
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
+
+void GCodeProcessorResult::release_unused_memory()
+{
+    GCodePreview::shrink_excess_capacity(moves);
+    GCodePreview::shrink_excess_capacity(lines_ends);
+}
 
 const std::vector<std::pair<GCodeProcessor::EProducer, std::string>> GCodeProcessor::Producers = {
     //BBS: Snapmaker_Orca is also "bambu". Otherwise the time estimation didn't work.
@@ -1149,6 +1158,7 @@ void GCodeProcessor::reset()
     // BBS: arc move related data
     m_move_path_type = EMovePathType::Noop_move;
     m_arc_center = Vec3f::Zero();
+    m_interpolation_points = std::vector<Vec3f>();
 
     m_line_id = 0;
     m_last_line_id = 0;
@@ -1363,6 +1373,8 @@ void GCodeProcessor::finalize(bool post_process)
 
     if (post_process)
         run_post_process();
+
+    m_result.release_unused_memory();
 }
 
 float GCodeProcessor::get_time(PrintEstimatedStatistics::ETimeMode mode) const
@@ -4776,15 +4788,19 @@ void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type)
         m_line_id + 1 :
         ((type == EMoveType::Seam) ? m_last_line_id : m_line_id);
 
-    //BBS: apply plate's and extruder's offset to arc interpolation points
+    // Only arc moves own interpolation points. Copy before applying offsets so the
+    // parser's scratch points cannot be offset twice or copied into later G0/G1 moves.
+    std::vector<Vec3f> interpolation_points;
+    Vec3f              arc_center = Vec3f::Zero();
     if (path_type == EMovePathType::Arc_move_cw ||
         path_type == EMovePathType::Arc_move_ccw) {
-        for (size_t i = 0; i < m_interpolation_points.size(); i++)
-            m_interpolation_points[i] =
-                Vec3f(m_interpolation_points[i].x() + m_x_offset,
-                      m_interpolation_points[i].y() + m_y_offset,
-                      m_processing_start_custom_gcode ? m_first_layer_height : m_interpolation_points[i].z()) +
-                m_extruder_offsets[m_extruder_id];
+        interpolation_points = m_interpolation_points;
+        arc_center           = Vec3f(m_arc_center.x() + m_x_offset, m_arc_center.y() + m_y_offset, m_arc_center.z()) +
+                     m_extruder_offsets[m_extruder_id];
+        for (Vec3f& point : interpolation_points)
+            point = Vec3f(point.x() + m_x_offset, point.y() + m_y_offset,
+                          m_processing_start_custom_gcode ? m_first_layer_height : point.z()) +
+                    m_extruder_offsets[m_extruder_id];
     }
 
     m_result.moves.push_back({
@@ -4793,8 +4809,10 @@ void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type)
         m_extrusion_role,
         m_extruder_id,
         m_cp_color.current,
-        //BBS: add plate's offset to the rendering vertices
-        Vec3f(m_end_position[X] + m_x_offset, m_end_position[Y] + m_y_offset, m_processing_start_custom_gcode ? m_first_layer_height : m_end_position[Z]- m_z_offset) + m_extruder_offsets[m_extruder_id],
+        // BBS: add plate's offset to the rendering vertices
+        Vec3f(m_end_position[X] + m_x_offset, m_end_position[Y] + m_y_offset,
+              m_processing_start_custom_gcode ? m_first_layer_height : m_end_position[Z] - m_z_offset) +
+            m_extruder_offsets[m_extruder_id],
         static_cast<float>(m_end_position[E] - m_start_position[E]),
         m_feedrate,
         m_width,
@@ -4804,11 +4822,11 @@ void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type)
         m_fan_speed,
         m_extruder_temps[m_extruder_id],
         static_cast<float>(m_result.moves.size()),
-        static_cast<float>(m_layer_id), //layer_duration: set later
-        //BBS: add arc move related data
+        static_cast<float>(m_layer_id), // layer_duration: set later
+        // BBS: add arc move related data
         path_type,
-        Vec3f(m_arc_center(0, 0) + m_x_offset, m_arc_center(1, 0) + m_y_offset, m_arc_center(2, 0)) + m_extruder_offsets[m_extruder_id],
-        m_interpolation_points,
+        arc_center,
+        std::move(interpolation_points),
     });
 
     if (type == EMoveType::Seam) {

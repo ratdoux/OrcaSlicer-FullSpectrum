@@ -23,22 +23,8 @@ public:
 
 wxDEFINE_EVENT(EVT_MEDIA_CTRL_STAT, wxCommandEvent);
 
-wxMediaCtrl2::wxMediaCtrl2(wxWindow *parent)
+wxMediaCtrl2::wxMediaCtrl2(wxWindow* parent)
 {
-#ifdef __WIN32__
-    auto hModExe = GetModuleHandle(NULL);
-    // BOOST_LOG_TRIVIAL(info) << "wxMediaCtrl2: GetModuleHandle " << hModExe;
-    auto NvOptimusEnablement = (DWORD *) GetProcAddress(hModExe, "NvOptimusEnablement");
-    auto AmdPowerXpressRequestHighPerformance = (int *) GetProcAddress(hModExe, "AmdPowerXpressRequestHighPerformance");
-    if (NvOptimusEnablement) {
-        // BOOST_LOG_TRIVIAL(info) << "wxMediaCtrl2: NvOptimusEnablement " << *NvOptimusEnablement;
-        *NvOptimusEnablement = 0;
-    }
-    if (AmdPowerXpressRequestHighPerformance) {
-        // BOOST_LOG_TRIVIAL(info) << "wxMediaCtrl2: AmdPowerXpressRequestHighPerformance " << *AmdPowerXpressRequestHighPerformance;
-        *AmdPowerXpressRequestHighPerformance = 0;
-    }
-#endif
     wxMediaCtrl::Create(parent, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxMEDIACTRLPLAYERCONTROLS_NONE);
 #ifdef __LINUX__
     /* Register only after we have created the wxMediaCtrl, since only then are we guaranteed to have fired up Gstreamer's plugin registry. */

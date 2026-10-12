@@ -230,6 +230,9 @@ class Print;
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
         void reset();
 
+        // Release substantial unused preview capacity once the result is complete.
+        void release_unused_memory();
+
         //BBS: add mutex for protection of gcode result
         mutable std::mutex result_mutex;
         GCodeProcessorResult& operator=(const GCodeProcessorResult &other)
@@ -260,6 +263,7 @@ class Print;
 #if ENABLE_GCODE_VIEWER_STATISTICS
             time = other.time;
 #endif
+            release_unused_memory();
             return *this;
         }
         void  lock() const { result_mutex.lock(); }

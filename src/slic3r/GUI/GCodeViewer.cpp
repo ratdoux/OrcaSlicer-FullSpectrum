@@ -5,6 +5,7 @@
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/Geometry.hpp"
+#include "libslic3r/GCode/PreviewMemory.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/LocalesUtils.hpp"
@@ -215,6 +216,9 @@ void GCodeViewer::TBuffer::reset()
     indices.clear();
     paths.clear();
     render_paths.clear();
+    GCodePreview::shrink_excess_capacity(indices);
+    GCodePreview::shrink_excess_capacity(paths);
+    GCodePreview::shrink_excess_capacity(render_paths);
     model.reset();
 }
 
@@ -1355,6 +1359,8 @@ void GCodeViewer::reset()
     m_print_statistics.reset();
     m_custom_gcode_per_print_z = std::vector<CustomGCode::Item>();
     m_sequential_view.gcode_window.reset();
+    m_sequential_view.gcode_ids.clear();
+    GCodePreview::shrink_excess_capacity(m_sequential_view.gcode_ids);
 #if ENABLE_GCODE_VIEWER_STATISTICS
     m_statistics.reset_all();
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
@@ -3263,6 +3269,12 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
 
    // dismiss indices data, no more needed
     std::vector<MultiIndexBuffer>().swap(indices);
+
+    // Geometry generation is complete. Do not retain capacity from a larger
+    // previous preview or from the temporary first pass over the paths.
+    GCodePreview::shrink_excess_capacity(m_sequential_view.gcode_ids);
+    for (TBuffer& buffer : m_buffers)
+        GCodePreview::shrink_excess_capacity(buffer.paths);
 
     // layers zs / roles / extruder ids -> extract from result
     extract_layer_metadata(gcode_result);

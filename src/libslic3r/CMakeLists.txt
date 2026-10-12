@@ -255,6 +255,7 @@ set(lisbslic3r_sources
     GCode/FanMover.cpp
     GCode/FanMover.hpp
     GCode/GCodeProcessor.cpp
+    GCode/PreviewMemory.hpp
     GCode/GCodeProcessor.hpp
     GCode.hpp
     GCode/PchipInterpolatorHelper.cpp
