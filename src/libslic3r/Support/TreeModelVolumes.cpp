@@ -119,7 +119,7 @@ TreeModelVolumes::TreeModelVolumes(
 
     m_support_rests_on_model = false;
     m_min_resolution  = std::numeric_limits<coord_t>::max();
-    for (auto data_pair : m_layer_outlines) {
+    for (const auto& data_pair : m_layer_outlines) {
         m_support_rests_on_model |= ! data_pair.first.support_material_buildplate_only;
         m_min_resolution = std::min(m_min_resolution, data_pair.first.resolution);
     }

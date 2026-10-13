@@ -1629,6 +1629,22 @@ std::vector<int> PartPlate::get_extruders_under_cli(bool conside_custom_gcode, D
     std::sort(plate_extruders.begin(), plate_extruders.end());
     auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());
     plate_extruders.resize(std::distance(plate_extruders.begin(), it_end));
+    // CLI has no GUI_App or preset bundle. Reconstruct the same virtual IDs from
+    // the project's physical filaments and saved mixed recipes instead.
+    const auto*  diameters    = full_config.option<ConfigOptionFloats>("filament_diameter");
+    const size_t num_physical = diameters != nullptr ? diameters->size() : 0;
+    if (num_physical > 0) {
+        const auto*              colors          = full_config.option<ConfigOptionStrings>("filament_colour");
+        std::vector<std::string> physical_colors = colors != nullptr ? colors->values : std::vector<std::string>();
+        physical_colors.resize(num_physical, "#26A69A");
+        MixedFilamentManager mixed_filaments;
+        mixed_filaments.auto_generate(physical_colors);
+        if (const auto* definitions = full_config.option<ConfigOptionString>("mixed_filament_definitions"))
+            mixed_filaments.load_custom_entries(definitions->value, physical_colors);
+        mixed_filaments.expand_virtual_extruder_ids(plate_extruders, num_physical);
+        std::sort(plate_extruders.begin(), plate_extruders.end());
+        plate_extruders.erase(std::unique(plate_extruders.begin(), plate_extruders.end()), plate_extruders.end());
+    }
     std::ostringstream extruders_list;
     for (size_t i = 0; i < plate_extruders.size(); ++i) {
         if (i != 0)

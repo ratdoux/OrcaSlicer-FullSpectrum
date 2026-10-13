@@ -18,6 +18,7 @@
 #include "ImageMap/VolumeData.hpp"
 #include "Layer.hpp"
 #include "MixedFilament.hpp"
+#include "MixedFilamentLayerTracker.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
 #include "SVG.hpp"
@@ -2468,6 +2469,12 @@ static bool apply_mixed_region_surface_offsets(PrintObject &print_object)
 
 static void export_local_z_plan_debug(const PrintObject &print_object, coordf_t min_sublayer_height)
 {
+    // A large painted project can produce thousands of SVGs. Keep this developer
+    // diagnostic opt-in instead of serializing all mask geometry on every slice.
+    const char* debug_export = std::getenv("ORCA_LOCAL_Z_DEBUG");
+    if (debug_export == nullptr || std::string(debug_export) != "1")
+        return;
+
     const std::vector<LocalZInterval> &intervals = print_object.local_z_intervals();
     const std::vector<SubLayerPlan>   &plans     = print_object.local_z_sublayer_plan();
     if (intervals.empty() || plans.empty())
@@ -5854,8 +5861,8 @@ void PrintObject::apply_conical_overhang() {
 
             // Now go through all the holes in the current layer and check if they intersect anything in the layer above
             // If not, then they're the top of a hole and should be cut from the layer above before the union
-            for (auto layer_polygon : current_poly) {
-                for (auto hole : layer_polygon.holes) {
+            for (const auto& layer_polygon : current_poly) {
+                for (const auto& hole : layer_polygon.holes) {
                     if (std::abs(hole.area()) < scaled_max_hole_area) {
                         ExPolygon hole_poly(hole);
                         auto hole_with_above = intersection_ex(upper_poly, hole_poly);

@@ -3895,8 +3895,7 @@ static inline void finalize_local_z_path_height_stats(LocalZPathHeightStats& sta
 static inline LocalZPathHeightStats collect_local_z_path_height_stats(const ExtrusionEntityCollection& source)
 {
     LocalZPathHeightStats stats;
-    ExtrusionEntityCollection flattened = source.flatten(false);
-    for (const ExtrusionEntity* entity : flattened.entities)
+    for (const ExtrusionEntity* entity : source.flatten_refs())
         if (entity != nullptr)
             collect_local_z_path_height_stats(*entity, stats);
     finalize_local_z_path_height_stats(stats);
@@ -3916,8 +3915,7 @@ static inline LocalZPathHeightStats collect_local_z_path_height_stats(const Extr
 static inline Polylines collect_local_z_role_polylines(const ExtrusionEntityCollection& source, ExtrusionRole role)
 {
     Polylines lines;
-    ExtrusionEntityCollection flattened = source.flatten(false);
-    for (const ExtrusionEntity* entity : flattened.entities) {
+    for (const ExtrusionEntity* entity : source.flatten_refs()) {
         if (const auto* path = dynamic_cast<const ExtrusionPath*>(entity)) {
             if (path->role() == role)
                 lines.emplace_back(path->polyline);
@@ -3981,8 +3979,7 @@ static std::unique_ptr<ExtrusionEntityCollection> clip_extrusion_collection_for_
     auto out = std::make_unique<ExtrusionEntityCollection>();
     out->no_sort = source.no_sort;
 
-    ExtrusionEntityCollection flattened = source.flatten(false);
-    for (const ExtrusionEntity* entity : flattened.entities) {
+    for (const ExtrusionEntity* entity : source.flatten_refs()) {
         if (const auto* path = dynamic_cast<const ExtrusionPath*>(entity)) {
             if (local_z_role_matches(path->role(), role_scope)) {
                 const ExPolygons* path_exclude_masks =
@@ -4076,8 +4073,7 @@ static bool split_extrusion_collection_for_multi_perimeter_pattern(
         return false;
 
     size_t split_entities = 0;
-    ExtrusionEntityCollection flattened = source.flatten(false);
-    for (const ExtrusionEntity* entity : flattened.entities) {
+    for (const ExtrusionEntity* entity : source.flatten_refs()) {
         if (entity == nullptr)
             continue;
 

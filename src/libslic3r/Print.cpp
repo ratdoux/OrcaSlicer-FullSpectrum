@@ -102,8 +102,7 @@ static bool extrusion_collection_has_local_z_segment(const ExtrusionEntityCollec
     if (source.entities.empty() || include_masks.empty())
         return false;
 
-    ExtrusionEntityCollection flattened = source.flatten(false);
-    for (const ExtrusionEntity *entity : flattened.entities) {
+    for (const ExtrusionEntity* entity : source.flatten_refs()) {
         if (const auto *path = dynamic_cast<const ExtrusionPath*>(entity)) {
             if (local_z_segments_exist(intersection_pl(Polylines{path->polyline}, include_masks)))
                 return true;

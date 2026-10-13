@@ -270,7 +270,7 @@ void PrintObject::_transform_hole_to_polyholes()
         }
     }
     //create a polyhole per id and replace holes points by it.
-    for (auto entry : id2layerz2hole) {
+    for (const auto& entry : id2layerz2hole) {
         Polygons polyholes = create_polyholes(std::get<0>(entry.first), std::get<1>(entry.first), scale_(print()->config().nozzle_diameter.get_at(std::get<2>(entry.first) - 1)), std::get<4>(entry.first));
         for (auto& poly_to_replace : entry.second) {
             Polygon polyhole = polyholes[poly_to_replace.second % polyholes.size()];
@@ -2393,7 +2393,7 @@ void PrintObject::bridge_over_infill()
         });
 
         // note: surfaces_by_layer is ordered map
-        for (auto pair : surfaces_by_layer) {
+        for (const auto& pair : surfaces_by_layer) {
             if (clustered_layers_for_threads.empty() ||
                 this->get_layer(clustered_layers_for_threads.back().back())->print_z <
                     this->get_layer(pair.first)->print_z -

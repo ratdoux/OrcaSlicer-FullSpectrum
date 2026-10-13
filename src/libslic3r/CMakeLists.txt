@@ -353,6 +353,7 @@ set(lisbslic3r_sources
     MixedFilament/Resolver.cpp
     MixedFilament/LegacyRow.cpp
     MixedFilament.hpp
+    MixedFilamentLayerTracker.hpp
     filament_mixer.cpp
     filament_mixer.h
     filament_mixer_model.h

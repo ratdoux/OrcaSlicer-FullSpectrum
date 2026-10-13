@@ -145,6 +145,21 @@ ExtrusionEntityCollection ExtrusionEntityCollection::flatten(bool preserve_order
     return flatten.out;
 }
 
+std::vector<const ExtrusionEntity*> ExtrusionEntityCollection::flatten_refs() const
+{
+    std::vector<const ExtrusionEntity*> out;
+    const auto                          visit = [&out](const auto& self, const ExtrusionEntityCollection& collection) -> void {
+        for (const ExtrusionEntity* entity : collection.entities) {
+            if (entity->is_collection())
+                self(self, *static_cast<const ExtrusionEntityCollection*>(entity));
+            else
+                out.push_back(entity);
+        }
+    };
+    visit(visit, *this);
+    return out;
+}
+
 double ExtrusionEntityCollection::min_mm3_per_mm() const
 {
     double min_mm3_per_mm = std::numeric_limits<double>::max();
