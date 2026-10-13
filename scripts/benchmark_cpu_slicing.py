@@ -66,6 +66,7 @@ def main():
         "started": datetime.datetime.now().astimezone().isoformat(),
         "command": command, "project_sha256": sha256(project),
         "dll_sha256": sha256(exe.parent / "Snapmaker_Orca.dll"),
+        "local_z_validation": os.environ.get("ORCA_LOCAL_Z_VALIDATE") == "1",
         "logical_processors": os.cpu_count(), "samples": [],
     }
     with (output / "stdout.log").open("wb") as stdout, (output / "stderr.log").open("wb") as stderr:

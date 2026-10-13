@@ -354,6 +354,8 @@ set(lisbslic3r_sources
     MixedFilament/LegacyRow.cpp
     MixedFilament.hpp
     MixedFilamentLayerTracker.hpp
+    LocalZClipper.cpp
+    LocalZClipper.hpp
     filament_mixer.cpp
     filament_mixer.h
     filament_mixer_model.h
