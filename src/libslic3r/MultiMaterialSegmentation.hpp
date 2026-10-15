@@ -36,6 +36,13 @@ struct ModelVolumeFacetsInfo {
     const bool              replace_default_extruder;
 };
 
+// Segment already colorized contours in ExPolygon contour/hole order.
+// Keeping holes with their outer contour is required for independent islands.
+std::vector<ExPolygons> segment_painted_layer(const ExPolygons&                input,
+                                              const std::vector<ColoredLines>& colors,
+                                              size_t                           num_colors,
+                                              bool                             split_islands);
+
 // Returns segmentation based on painting in segmentation gizmos.
 std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject                                               &print_object,
                                                               const std::function<ModelVolumeFacetsInfo(const ModelVolume &)> &extract_facets_info,

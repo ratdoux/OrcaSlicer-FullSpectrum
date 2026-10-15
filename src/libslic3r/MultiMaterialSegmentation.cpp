@@ -18,6 +18,9 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <cstdlib>
+#include <stdexcept>
+#include <atomic>
 #include <utility>
 #include <unordered_map>
 #include <unordered_set>
@@ -1985,6 +1988,62 @@ static bool has_layer_only_one_color(const std::vector<ColoredLines> &colored_po
     return true;
 }
 
+std::vector<ExPolygons> segment_painted_layer(const ExPolygons&                input,
+                                              const std::vector<ColoredLines>& colors,
+                                              size_t                           num_colors,
+                                              bool                             split_islands)
+{
+    std::vector<ExPolygons> result(num_colors);
+    if (colors.empty())
+        return result;
+    if (has_layer_only_one_color(colors)) {
+        result.at(size_t(colors.front().front().color)) = input;
+        return result;
+    }
+    auto segment = [&](const std::vector<ColoredLines>& contours) {
+        MMU_Graph graph = build_graph(0, contours);
+        remove_multiple_edges_in_vertices(graph, contours);
+        graph.remove_nodes_with_one_arc();
+        return extract_colored_segments(graph, num_colors);
+    };
+    if (!split_islands || input.size() < 2)
+        return segment(colors);
+
+    size_t expected_contours = 0;
+    for (const auto& island : input)
+        expected_contours += size_t(!island.contour.empty()) +
+                             std::count_if(island.holes.begin(), island.holes.end(), [](const Polygon& p) { return !p.empty(); });
+    if (expected_contours != colors.size())
+        return segment(colors);
+    size_t first = 0;
+    for (const auto& island : input) {
+        const size_t count = size_t(!island.contour.empty()) +
+                             std::count_if(island.holes.begin(), island.holes.end(), [](const Polygon& p) { return !p.empty(); });
+        if (count == 0)
+            continue;
+        const int color   = colors[first].front().color;
+        bool      uniform = true;
+        for (size_t i = first; i < first + count; ++i)
+            for (const auto& line : colors[i])
+                uniform = uniform && line.color == color;
+        if (uniform) {
+            result.at(size_t(color)).push_back(island);
+        } else {
+            std::vector<ColoredLines> contours(colors.begin() + first, colors.begin() + first + count);
+            for (size_t i = 0; i < contours.size(); ++i)
+                for (size_t j = 0; j < contours[i].size(); ++j) {
+                    contours[i][j].poly_idx       = int(i);
+                    contours[i][j].local_line_idx = int(j);
+                }
+            auto regions = segment(contours);
+            for (size_t i = 0; i < num_colors; ++i)
+                append(result[i], std::move(regions[i]));
+        }
+        first += count;
+    }
+    return result;
+}
+
 std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject                                               &print_object,
                                                               const std::function<ModelVolumeFacetsInfo(const ModelVolume &)> &extract_facets_info,
                                                               const size_t                                                     num_facets_states,
@@ -2161,10 +2220,15 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - painted layers count: "
                              << std::count_if(painted_lines.begin(), painted_lines.end(), [](const std::vector<PaintedLine> &pl) { return !pl.empty(); });
 
+    const char*         islands_setting = std::getenv("ORCA_PAINT_ISLANDS");
+    const std::string   islands_mode    = islands_setting ? islands_setting : "cpu";
+    const bool          split_islands   = islands_mode == "islands" || islands_mode == "validate";
+    std::atomic<size_t> checked_island_layers{0};
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - layers segmentation in parallel - begin";
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions,
-                                                                       &num_facets_states, &layers, &painted_line_injector,
-                                                                       &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+                                                                  &num_facets_states, &layers, &painted_line_injector, &throw_on_cancel_callback, split_islands,
+                                                                  &islands_mode,
+                                                                  &checked_island_layers](const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
@@ -2189,15 +2253,16 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
 
                 assert(!color_poly.empty());
                 assert(!color_poly.front().empty());
-                if (has_layer_only_one_color(color_poly)) {
-                    // If the whole layer is painted using the same color, it is not needed to construct a Voronoi diagram for the segmentation of this layer.
-                    segmented_regions[layer_idx][size_t(color_poly.front().front().color)] = input_expolygons[layer_idx];
-                } else {
-                    MMU_Graph graph = build_graph(layer_idx, color_poly);
-                    remove_multiple_edges_in_vertices(graph, color_poly);
-                    graph.remove_nodes_with_one_arc();
-                    segmented_regions[layer_idx] = extract_colored_segments(graph, num_facets_states);
-                    //segmented_regions[layer_idx] = extract_colored_segments(color_poly, num_extruders, layer_idx);
+                segmented_regions[layer_idx] = segment_painted_layer(input_expolygons[layer_idx], color_poly, num_facets_states,
+                                                                     split_islands);
+                if (islands_mode == "validate" && input_expolygons[layer_idx].size() > 1) {
+                    const auto reference = segment_painted_layer(input_expolygons[layer_idx], color_poly, num_facets_states, false);
+                    for (size_t color = 0; color < num_facets_states; ++color)
+                        if (!diff_ex(reference[color], segmented_regions[layer_idx][color]).empty() ||
+                            !diff_ex(segmented_regions[layer_idx][color], reference[color]).empty())
+                            throw std::runtime_error("Paint island segmentation differs from whole-layer geometry at layer " +
+                                                     std::to_string(layer_idx));
+                    ++checked_island_layers;
                 }
 
 #ifdef MM_SEGMENTATION_DEBUG_REGIONS
@@ -2207,6 +2272,8 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
         }
     }); // end of parallel_for
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - layers segmentation in parallel - end";
+    if (islands_mode == "validate")
+        BOOST_LOG_TRIVIAL(info) << "Paint island validation layers=" << checked_island_layers.load();
     throw_on_cancel_callback();
 
     if ((segmentation_max_width > 0.f || segmentation_interlocking_depth > 0.f) && !segmentation_interlocking_beam) {

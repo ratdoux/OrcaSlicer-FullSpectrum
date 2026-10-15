@@ -10,6 +10,7 @@ add_executable(${_TEST_NAME}_tests
 	test_cpu_slicing.cpp
 	test_seam_cache.cpp
 	test_wall_support_reuse.cpp
+	test_paint_islands.cpp
 	test_custom_gcode.cpp
 	test_elephant_foot_compensation.cpp
 	test_geometry.cpp
