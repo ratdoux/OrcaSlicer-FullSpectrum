@@ -8,7 +8,8 @@ public:
     explicit SeamAlignmentSearch(const std::vector<PrintObjectSeamData::LayerSeams>& layers);
     ~SeamAlignmentSearch();
     static SeamAlignmentSearch* active();
-    std::vector<size_t>         neighbors(size_t layer, const Vec3f& center, float radius);
+    // Borrowed until the next neighbors() call on this search or its destruction.
+    const std::vector<size_t>& neighbors(size_t layer, const Vec3f& center, float radius);
 
 private:
     struct Impl;

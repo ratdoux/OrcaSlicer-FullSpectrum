@@ -1217,9 +1217,11 @@ std::optional<std::pair<size_t, size_t>> SeamPlacer::find_next_seam_in_layer(
     const size_t layer_idx, const float max_distance,
     const SeamPlacerImpl::SeamComparator &comparator) const {
   using namespace SeamPlacerImpl;
-  std::vector<size_t> nearby_points_indices = SeamAlignmentSearch::active() ?
-      SeamAlignmentSearch::active()->neighbors(layer_idx, projected_position, max_distance) :
-      find_nearby_points(*layers[layer_idx].points_tree, projected_position, max_distance);
+  // Keep the uncached result alive locally; cached lists are borrowed only during this lookup.
+  auto*                      search                = SeamAlignmentSearch::active();
+  const std::vector<size_t>  uncached              = search ? std::vector<size_t>{} :
+                                                              find_nearby_points(*layers[layer_idx].points_tree, projected_position, max_distance);
+  const std::vector<size_t>& nearby_points_indices = search ? search->neighbors(layer_idx, projected_position, max_distance) : uncached;
 
   if (nearby_points_indices.empty()) {
     return {};

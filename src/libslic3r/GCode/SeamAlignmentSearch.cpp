@@ -51,6 +51,8 @@ struct SeamAlignmentSearch::Impl
     };
     std::unordered_map<Key, Entry, Hash> cache;
     std::list<Key>                       order;
+    std::vector<size_t>                  scratch;
+    bool                                 detailed_timing = false;
     std::unordered_set<Key, Hash>        prefetched;
     std::unique_ptr<VulkanSeamNeighbors> backend;
     std::string                          mode, prefetch_policy;
@@ -66,6 +68,7 @@ struct SeamAlignmentSearch::Impl
         mode              = value ? value : "cpu";
         if (mode != "cpu" && mode != "profile" && mode != "cache" && mode != "vulkan" && mode != "validate")
             throw std::runtime_error("ORCA_SEAM_ALIGNMENT must be cpu, profile, cache, vulkan, or validate");
+        detailed_timing = mode == "profile" || mode == "validate";
         value           = std::getenv("ORCA_SEAM_NEIGHBORS_PREFETCH");
         prefetch_policy = value ? value : "seeds";
         if (prefetch_policy != "seeds" && prefetch_policy != "all")
@@ -76,9 +79,10 @@ struct SeamAlignmentSearch::Impl
     }
     std::vector<size_t> reference(size_t layer, const SeamNeighborQuery& q)
     {
-        auto t      = Clock::now();
+        auto t      = detailed_timing ? Clock::now() : Clock::time_point{};
         auto result = find_nearby_points(*layers[layer].points_tree, Vec3f(q[0], q[1], q[2]), q[3]);
-        cpu_ms += elapsed(t);
+        if (detailed_timing)
+            cpu_ms += elapsed(t);
         ++cpu_queries;
         return result;
     }
@@ -199,43 +203,47 @@ SeamAlignmentSearch::SeamAlignmentSearch(const std::vector<PrintObjectSeamData::
         current_search = this;
 }
 SeamAlignmentSearch* SeamAlignmentSearch::active() { return current_search; }
-std::vector<size_t>  SeamAlignmentSearch::neighbors(size_t layer, const Vec3f& center, float radius)
+const std::vector<size_t>& SeamAlignmentSearch::neighbors(size_t layer, const Vec3f& center, float radius)
 {
     auto& p = *m_impl;
-    auto  t = Clock::now();
+    const auto started = p.detailed_timing ? Clock::now() : Clock::time_point{};
+    auto       finish  = [&](const std::vector<size_t>& result) -> const std::vector<size_t>& {
+        if (p.detailed_timing)
+            p.lookup_ms += elapsed(started);
+        return result;
+    };
     ++p.calls;
     const SeamNeighborQuery query{center.x(), center.y(), center.z(), radius};
     const auto              key = key_for(layer, query);
-    if (p.layers[layer].points.empty())
-        return {};
-    // Zero-width / degenerate perimeters can issue a zero-radius search.
-    // Preserve the CPU result without disabling otherwise usable GPU batches.
+    if (p.layers[layer].points.empty()) {
+        p.scratch.clear();
+        return finish(p.scratch);
+    }
+    // Degenerate searches retain the original CPU semantics.
     if (!VulkanSeamNeighbors::supports_query(query)) {
         ++p.ineligible;
-        auto result = p.reference(layer, query);
-        p.lookup_ms += elapsed(t);
-        return result;
+        p.scratch = p.reference(layer, query);
+        return finish(p.scratch);
     }
-    if (p.cache.find(key) == p.cache.end())
+    auto it = p.cache.find(key);
+    if (it == p.cache.end() && (p.mode == "vulkan" || p.mode == "validate")) {
         p.prefetch(layer, query);
-    auto                it = p.cache.find(key);
-    std::vector<size_t> result;
+        it = p.cache.find(key);
+    }
     if (it != p.cache.end()) {
         ++p.hits;
         p.gpu_hits += it->second.gpu;
         p.order.splice(p.order.end(), p.order, it->second.order);
-        result = it->second.indices;
         if (p.mode == "profile" || p.mode == "validate") {
-            auto expected = p.reference(layer, query);
-            if (result != expected)
+            const auto expected = p.reference(layer, query);
+            if (it->second.indices != expected)
                 throw std::runtime_error("Cached seam neighborhood mismatch");
         }
-    } else {
-        result = p.reference(layer, query);
-        p.store(key, result, false);
+        return finish(it->second.indices);
     }
-    p.lookup_ms += elapsed(t);
-    return result;
+    p.scratch = p.reference(layer, query);
+    p.store(key, p.scratch, false);
+    return finish(p.scratch);
 }
 SeamAlignmentSearch::~SeamAlignmentSearch()
 {
