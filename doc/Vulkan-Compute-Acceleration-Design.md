@@ -4,6 +4,8 @@ Date: 2026-10-13. Source baseline: `9a791daff1`.
 
 Status: design proposal and source audit. No GPU slicing backend has been implemented or benchmarked as part of this document. Candidate benefits below are engineering hypotheses, not measured speedups. The existing CPU implementation remains the correctness reference and fallback.
 
+Follow-ups: the [Vulkan seam visibility prototype](Vulkan-Seam-Visibility-Prototype.md) accelerated its operation but saved only 0.374 seconds and demonstrated no complete-slice improvement. The [Local-Z clipping experiment](Vulkan-LocalZ-Clipping-Experiment.md) targets directly timed work in sequential export: two CPU/Vulkan timing pairs on Starry Night reduced median complete slicing from 182.7 to 160.4 seconds (12.2%), and export from 83.5 to 65.1 seconds (22.0%). Its captures, conservative GPU rejection, validation, and output-comparison limits are recorded separately. The priorities below preserve the original proposal, rather than overriding those subsequent measurements.
+
 ## 1. Proposed direction
 
 Add an optional Vulkan compute backend for selected, expensive batches of geometry calculations. Keep the slicing dependency graph, polygon topology, printer-state handling and final ordered output on the CPU initially. Continue using TBB for CPU parallelism.
@@ -222,3 +224,66 @@ For painted Local-Z workloads, mixed-zone tracking and polygon work deserve a se
 - Does native OpenGL/Vulkan interop justify its platform work for preview generation, or should preview stay separate initially?
 
 Resolve these through instrumentation and one bounded experiment before committing to a broad port of the slicing engine.
+
+## 14. Next shared target: fresh profile audit, 2026-10-15
+
+After the Local-Z Vulkan experiment, the best next contained GPU investigation is **batched neighbor searches for aligned seams**. This is a different operation from the already tested seam-visibility calculation. Polygon booleans remain the larger, more difficult shared opportunity.
+
+Two new process-only profiles use the same final DLL, SHA-256 `b5c83204b1692337f5aab6745e679957ea14285a6a3ec6c87af16fad001e2682`, with `ORCA_LOCAL_Z_CLIP=vulkan`, `ORCA_VULKAN_DEVICE=NVIDIA`, and `ORCA_SEAM_VISIBILITY=cpu`. The original Starry Night project and the existing controlled Local-Z-disabled copy retain their previously documented hashes. The disabled copy still has painting and ordinary mixed-filament regions; it is not a single-material benchmark. No new slicing optimization was implemented for this audit.
+
+Both slices and samplers exited successfully. Local-Z clipping dispatched about 10.54 million segments on NVIDIA in the active run. The disabled run reported zero prepared layers, zero segments, zero dispatch time, and no Vulkan device initialization. Neither direct clipping capture nor reference validation was enabled.
+
+### Current shared costs
+
+| Work | Local-Z + Vulkan clipping | Local-Z disabled | Scope and interpretation |
+|---|---:|---:|---|
+| Complete profiled process | 169.62 s | 120.45 s | One diagnostic run per configuration, not a new speedup benchmark. |
+| Paint / initial preparation | 37.74 s | 28.19 s | Includes painted-region Voronoi/topology work; only the first run includes Local-Z preparation. |
+| Walls | 20.38 s | 16.06 s | Classic walls in this project; already approximately 8 busy cores. |
+| Vertical shells | 17.82 s | 18.10 s | Approximately 11.4 / 11.7 busy cores. |
+| Tree support | 11.43 s | 11.58 s | Support geometry remains shared. |
+| G-code export | 63.15 s | 31.03 s | Includes seam preparation and all remaining ordered generation/filtering. |
+| Seam alignment, within export | **about 12.8 s** | **about 6.4 s** | Sampled call span, not a direct scope timer; one observed thread in each run. |
+| Initial mesh slicing | 1.46 s | 1.48 s | Too small here to be a substantial next whole-job target. |
+
+Stage durations come from log boundaries. Seam alignment is a nested operation and must not be added to export. Its first-to-last sample span was 12.828 / 6.398 s; interval-weighted occupied samples were 12.718 / 6.404 s. Independently, its inclusive sample share times export CPU consumption estimates 12.10 / 6.38 CPU-seconds. These methods agree that this is substantial serial work, while remaining approximate sampling evidence. Direct scope and query-count instrumentation should precede a new kernel benchmark.
+
+### Recommended next bounded experiment: seam-alignment neighborhoods
+
+Relevant source: [SeamPlacer.cpp](../src/libslic3r/GCode/SeamPlacer.cpp), `align_seam_points`, `find_seam_string`, and `find_next_seam_in_layer`; [KDTreeIndirect.hpp](../src/libslic3r/KDTreeIndirect.hpp), `find_nearby_points`.
+
+Alignment repeatedly follows a candidate into adjacent layers and tries alternative starting points for seam strings. Each lookup traverses a layer's KD-tree, constructs a vector of nearby candidates, then chooses among them while respecting already finalized perimeters. In these profiles, `find_next_seam_in_layer` accounts for approximately 11.68 / 5.91 CPU-seconds. Candidate KD-tree traversal accounts for approximately 9.31 / 4.74 CPU-seconds within export, so the entire alignment duration must not be advertised as removable GPU work.
+
+Candidate positions and layer trees are immutable during alignment. The ordered choices and `perimeter.finalized` flags are not. This creates a useful boundary:
+
+1. Capture query centers, target layer, actual search radius, neighbor IDs/order, and result-list sizes. Measure repeated query keys and candidate-list memory before choosing a preparation strategy.
+2. Compare a bounded CPU neighborhood cache against the current implementation. Alternative seam strings can repeat geometric searches even though the final choice changes with finalized state. A CPU cache may capture much of the benefit without GPU overhead.
+3. Try batching immutable adjacent-layer neighborhood discovery on Vulkan, with bounded buffers and compact candidate-ID lists. The radius derives from the starting perimeter's flow width, so it cannot be assumed constant for all queries. Avoid a GPU dispatch/readback for every sequential lookup; that would serialize the CPU around many small GPU jobs.
+4. Preserve CPU radius-boundary checks, neighbor traversal order/tie behavior, comparator logic, finalized-state filtering, seam-string selection, and curve fitting. An unordered set of the same neighbors is insufficient because the CPU chooses initial candidates from the first result. Near-boundary floating-point cases require conservative candidate output and CPU refinement.
+5. Compare complete aligned seam decisions and output, then time both full slicing variants against the CPU cache as well as the original path. Limit cached layer pairs/candidate lists; precomputing every possible neighbor for millions of points could erase both the time and memory benefit.
+
+This benefits Local-Z and ordinary slicing **when seam alignment is enabled** (`spAligned`, `spRear`, or `spAlignedBack`). It does not accelerate the alignment stage for nearest/random seam modes, which do not run it. The previous visibility kernel took only 0.582 / 0.565 s in these same runs despite high aggregate CPU samples; the proposed alignment work is materially different because it runs on one thread.
+
+No new GPU speedup is established. Even eliminating all alignment would save at most roughly 12.8 / 6.4 seconds on these profiles, and GPU preparation, remaining CPU selection, and transfers reduce that ceiling. Halving the complete alignment stage would save approximately 6.4 / 3.2 seconds; that is a scenario for evaluating value, not a forecast.
+
+### Larger shared project: polygon intersections and topology
+
+The most substantial general geometry target remains closed-polygon intersections/unions and offset cleanup, starting with [PrintObject.cpp](../src/libslic3r/PrintObject.cpp), `discover_vertical_shells`. This stage repeatedly intersects holes from neighboring layers, merges projected top/bottom surfaces, clips shells to internal regions, and regularizes the result. It is used independently of Local-Z when the corresponding shell-thickness mode is active.
+
+Clipper's Boolean execution appears in 78.2% / 78.6% of vertical-shell CPU samples. Across the whole processes, 57.0% / 55.8% of exclusive source-file samples land in `deps_src/clipper/clipper.cpp`. These are CPU attribution shares, not elapsed seconds or achievable speedups. The costly paths include scanbeam edge updates, intersection-list construction, and output topology, not just coordinate arithmetic.
+
+A contained initial study would capture closed-polygon operations from vertical-shell generation and measure how much time is spent on provably empty intersection/difference results. A batched Vulkan crossing/containment prepass could avoid those complete operations while retaining Clipper for the rest. Closed polygons require containment checks in both directions and correct hole/winding handling: absence of edge crossings alone does not prove an empty intersection. Neighboring-layer polygons may mostly overlap, so the useful rejection fraction is unknown and must be measured before implementing an integrated prepass. Preserve complete-operation semantics; do not assume arbitrary polygon filtering preserves Clipper's rounding or output order.
+
+Accelerating the remaining nonempty booleans would require a larger exact clipping/topology project. Calling Vulkan separately inside every scanbeam is unlikely to amortize synchronization. A useful design must batch independent operation inputs and preserve degenerate/coincident-edge, winding, integer-rounding, and contour-order behavior. No vendored library was modified for this audit.
+
+**Wall-offset arithmetic alone is a poor next GPU target.** `generate_lower_polygons_series` accounts for 55.7% / 47.5% of wall CPU samples, but `ClipperOffset::DoOffset` arithmetic is only 4.9% / 4.0% of the whole wall stage. `ClipperOffset::Execute` also runs a Boolean union to clean the offset geometry; accelerating just normals and displaced vertices leaves most of the cost intact.
+
+There is a separate concrete CPU reuse candidate in [PerimeterGenerator.cpp](../src/libslic3r/PerimeterGenerator.cpp): every `generate_lower_polygons_series(width)` computes the same positive `end_offset = 0.5 * nozzle_diameter` for the same lower slices, including the smaller-width series. The negative/start offset depends on width. Reuse should key the exact offset value and all relevant geometry/settings; the separately computed `m_lower_slices_polygons` expression has different float/double evaluation and must not be assumed bit-identical without checking. These lower slices are the merged lower-layer geometry, also shared across compatible regions. Measure duplicate work and memory before extending reuse beyond one generator.
+
+Painted-region Voronoi construction is another substantial shared cost for painted prints: `build_graph` accounts for approximately 59 CPU-seconds in either profile. Its event-driven construction and extended-precision predicates make an exact GPU replacement considerably more difficult than batched neighborhood queries. A raster approximation would change the numerical/geometry contract and is not part of this proposal.
+
+### Retained evidence
+
+`build_logs/vulkan_next_target/local_z_1/` and `no_local_z_1/` contain complete logs, G-code, metrics, raw stacks, exact-build symbol mappings, CPU timelines, and `analysis.json`. `target_summary.json` and the local `summarize.py` retain the selected function estimates and seam sample-span calculation. The runs captured 21,617 / 25,228 stacks; each had three capture failures and no depth-limit truncations. As with prior profiles, brief thread suspension, running-state sampling, and interval weighting introduce uncertainty. These profiles locate targets; they are not physical-print validation, full-output equivalence checks, or measurements of a newly implemented optimization.
+
+The subsequent implementation and measurements are recorded in [Vulkan-Shared-Geometry-Experiment.md](Vulkan-Shared-Geometry-Experiment.md). That experiment adds seam-neighborhood compute and a bounded closed-polygon empty-result prepass in walls, shells and paint preparation. It does not replace nonempty polygon topology or Voronoi construction.

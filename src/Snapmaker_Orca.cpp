@@ -19,6 +19,7 @@
 
 #include <cstdio>
 #include "libslic3r/Compute/VulkanBatch.hpp"
+#include "libslic3r/PolygonCompute.hpp"
 #include <string>
 #include <cstring>
 #include <iostream>
@@ -6389,6 +6390,7 @@ namespace {
 struct ComputeShutdown
 {
     ~ComputeShutdown() {
+        Slic3r::PolygonComputeScope::shutdown();
         Slic3r::VulkanBatch::shutdown();
     }
 };

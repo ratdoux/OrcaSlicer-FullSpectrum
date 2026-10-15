@@ -67,6 +67,15 @@ def main():
         "command": command, "project_sha256": sha256(project),
         "dll_sha256": sha256(exe.parent / "Snapmaker_Orca.dll"),
         "local_z_validation": os.environ.get("ORCA_LOCAL_Z_VALIDATE") == "1",
+        "local_z_profile": os.environ.get("ORCA_LOCAL_Z_PROFILE", ""),
+        "local_z_capture": os.environ.get("ORCA_LOCAL_Z_CAPTURE", ""),
+        "local_z_clip": os.environ.get("ORCA_LOCAL_Z_CLIP", "cpu"),
+        "seam_alignment": os.environ.get("ORCA_SEAM_ALIGNMENT", "cpu"),
+        "seam_neighbors_prefetch": os.environ.get("ORCA_SEAM_NEIGHBORS_PREFETCH", "seeds"),
+        "polygon_compute": os.environ.get("ORCA_POLYGON_COMPUTE", "cpu"),
+        "polygon_stages": os.environ.get("ORCA_POLYGON_STAGES", ""),
+        "seam_visibility": os.environ.get("ORCA_SEAM_VISIBILITY", "cpu"),
+        "vulkan_device": os.environ.get("ORCA_VULKAN_DEVICE", ""),
         "logical_processors": os.cpu_count(), "samples": [],
     }
     with (output / "stdout.log").open("wb") as stdout, (output / "stderr.log").open("wb") as stderr:

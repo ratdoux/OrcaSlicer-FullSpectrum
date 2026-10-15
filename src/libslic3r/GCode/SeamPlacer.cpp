@@ -1,4 +1,5 @@
 #include "SeamPlacer.hpp"
+#include "SeamAlignmentSearch.hpp"
 
 #include "Polygon.hpp"
 #include "PrintConfig.hpp"
@@ -1216,7 +1217,9 @@ std::optional<std::pair<size_t, size_t>> SeamPlacer::find_next_seam_in_layer(
     const size_t layer_idx, const float max_distance,
     const SeamPlacerImpl::SeamComparator &comparator) const {
   using namespace SeamPlacerImpl;
-  std::vector<size_t> nearby_points_indices = find_nearby_points(*layers[layer_idx].points_tree, projected_position, max_distance);
+  std::vector<size_t> nearby_points_indices = SeamAlignmentSearch::active() ?
+      SeamAlignmentSearch::active()->neighbors(layer_idx, projected_position, max_distance) :
+      find_nearby_points(*layers[layer_idx].points_tree, projected_position, max_distance);
 
   if (nearby_points_indices.empty()) {
     return {};
@@ -1334,6 +1337,7 @@ std::vector<std::pair<size_t, size_t>> SeamPlacer::find_seam_string(const PrintO
 // Note that this position does not necesarilly lay on the perimeter.
 void SeamPlacer::align_seam_points(const PrintObject *po, const SeamPlacerImpl::SeamComparator &comparator) {
   using namespace SeamPlacerImpl;
+  SeamAlignmentSearch neighbor_search(m_seam_per_object.at(po).layers);
 
   // Prepares Debug files for writing.
 #ifdef DEBUG_FILES

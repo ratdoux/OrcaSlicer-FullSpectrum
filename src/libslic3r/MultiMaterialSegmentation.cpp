@@ -1,3 +1,4 @@
+#include "PolygonCompute.hpp"
 #include "BoundingBox.hpp"
 #include "ClipperUtils.hpp"
 #include "EdgeGrid.hpp"
@@ -1163,6 +1164,7 @@ static void cut_segmented_layers(const std::vector<ExPolygons>        &input_exp
     const float interlocking_cut_width = interlocking_depth > 0.f ? std::max(cut_width - interlocking_depth, 0.f) : 0.f;
     tbb::parallel_for(tbb::blocked_range<size_t>(0, segmented_regions.size()),
     [&segmented_regions, &input_expolygons, &cut_width, &interlocking_depth, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+        PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
             const float  region_cut_width       = ((layer_idx % 2 == 0) && (interlocking_depth != 0.f)) ? interlocking_depth : cut_width;
@@ -1382,6 +1384,7 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers, granularity), [&granularity, &num_layers, &num_facets_states, &layer_color_stat, &top_raw, &triangles_by_color_top,
                                                                                &throw_on_cancel_callback, &input_expolygons, &bottom_raw, &triangles_by_color_bottom,
                                                                                &shell_triangles_by_color_top, &shell_triangles_by_color_bottom](const tbb::blocked_range<size_t> &range) {
+        PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         size_t group_idx   = range.begin() / granularity;
         size_t layer_idx_offset = (group_idx & 1) * num_layers;
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
@@ -1436,6 +1439,7 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
     triangles_by_color_merged.assign(num_facets_states, std::vector<ExPolygons>(num_layers));
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&triangles_by_color_merged, &triangles_by_color_bottom, &triangles_by_color_top, &num_layers, &throw_on_cancel_callback,
                                                                   &shell_triangles_by_color_top, &shell_triangles_by_color_bottom](const tbb::blocked_range<size_t> &range) {
+        PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
             throw_on_cancel_callback();
             ExPolygons painted_exploys;
@@ -1850,6 +1854,7 @@ static std::vector<std::vector<ExPolygons>> merge_segmented_layers(const std::ve
         tbb::blocked_range<size_t>(0, num_layers),
         [&segmented_regions, &top_and_bottom_layers, &segmented_regions_merged, &num_facets_states,
          protected_side_state_begin, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+        PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             assert(segmented_regions[layer_idx].size() == num_facets_states);
             // Adaptive virtual side states are complete printable islands.
@@ -2009,6 +2014,7 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     // Merge all regions and remove small holes
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - Slices preprocessing in parallel - Begin";
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&layers, &input_expolygons, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+        PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
             ExPolygons ex_polygons;
@@ -2061,6 +2067,7 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     for (const ModelVolume *mv : print_object.model_object()->volumes) {
         const ModelVolumeFacetsInfo facets_info = extract_facets_info(*mv);
         tbb::parallel_for(tbb::blocked_range<size_t>(1, num_facets_states), [&mv, &print_object, &facets_info, &layers, &edge_grids, &painted_lines, &painted_lines_mutex, &input_expolygons, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+            PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
             for (size_t extruder_idx = range.begin(); extruder_idx < range.end(); ++extruder_idx) {
                 throw_on_cancel_callback();
                 const indexed_triangle_set custom_facets = facets_info.facets_annotation.get_facets(*mv, EnforcerBlockerType(extruder_idx));
@@ -2069,6 +2076,7 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
 
                 const Transform3f tr = print_object.trafo().cast<float>() * mv->get_matrix().cast<float>();
                 tbb::parallel_for(tbb::blocked_range<size_t>(0, custom_facets.indices.size()), [&tr, &custom_facets, &print_object, &layers, &edge_grids, &input_expolygons, &painted_lines, &painted_lines_mutex, &extruder_idx](const tbb::blocked_range<size_t> &range) {
+                    PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
                     for (size_t facet_idx = range.begin(); facet_idx < range.end(); ++facet_idx) {
                         float min_z = std::numeric_limits<float>::max();
                         float max_z = std::numeric_limits<float>::lowest();
@@ -2157,6 +2165,7 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions,
                                                                        &num_facets_states, &layers, &painted_line_injector,
                                                                        &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+        PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
             if (painted_line_injector)

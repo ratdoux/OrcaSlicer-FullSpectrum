@@ -358,6 +358,10 @@ set(lisbslic3r_sources
     LocalZClipper.hpp
     LocalZClipAcceleration.cpp
     LocalZClipAcceleration.hpp
+    PolygonCompute.cpp
+    PolygonCompute.hpp
+    GCode/SeamAlignmentSearch.cpp
+    GCode/SeamAlignmentSearch.hpp
     filament_mixer.cpp
     filament_mixer.h
     filament_mixer_model.h

@@ -1,5 +1,6 @@
 #include "ClipperUtils.hpp"
 #include "Geometry.hpp"
+#include "PolygonCompute.hpp"
 #include "ShortestPath.hpp"
 
 // #define CLIPPER_UTILS_DEBUG
@@ -300,6 +301,9 @@ static ClipperLib::Paths safety_offset(PathsProvider &&paths)
     return raw_offset(std::forward<PathsProvider>(paths), ClipperSafetyOffset, DefaultJoinType, DefaultMiterLimit);
 }
 
+static bool polygon_result_empty(const ClipperLib::Paths& paths) { return paths.empty(); }
+static bool polygon_result_empty(const ClipperLib::PolyTree& tree) { return tree.Total() == 0; }
+
 template<class TResult, class TSubj, class TClip>
 TResult clipper_do(
     const ClipperLib::ClipType     clipType,
@@ -307,11 +311,18 @@ TResult clipper_do(
     TClip &&                       clip,
     const ClipperLib::PolyFillType fillType)
 {
+    PolygonComputeQuery query(clipType, fillType);
+    query.prepare(subject, clip);
+    if (query.skip()) {
+        query.finish(true, true);
+        return TResult{};
+    }
     ClipperLib::Clipper clipper;
     clipper.AddPaths(std::forward<TSubj>(subject), ClipperLib::ptSubject, true);
     clipper.AddPaths(std::forward<TClip>(clip),    ClipperLib::ptClip,    true);
     TResult retval;
     clipper.Execute(clipType, retval, fillType, fillType);
+    query.finish(polygon_result_empty(retval), false);
     return retval;
 }
 
