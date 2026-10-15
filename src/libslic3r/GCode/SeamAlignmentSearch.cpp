@@ -65,7 +65,7 @@ struct SeamAlignmentSearch::Impl
     explicit Impl(const std::vector<PrintObjectSeamData::LayerSeams>& input) : layers(input)
     {
         const char* value = std::getenv("ORCA_SEAM_ALIGNMENT");
-        mode              = value ? value : "cpu";
+        mode              = value ? value : "cache";
         if (mode != "cpu" && mode != "profile" && mode != "cache" && mode != "vulkan" && mode != "validate")
             throw std::runtime_error("ORCA_SEAM_ALIGNMENT must be cpu, profile, cache, vulkan, or validate");
         detailed_timing = mode == "profile" || mode == "validate";
@@ -263,6 +263,7 @@ SeamAlignmentSearch::~SeamAlignmentSearch()
                                  {"validated", p.validated},
                                  {"evictions", p.evictions},
                                  {"peak_cache_bytes", p.peak_bytes},
+                                 {"detailed_timing", p.detailed_timing},
                                  {"cpu_ms", p.cpu_ms},
                                  {"lookup_ms", p.lookup_ms},
                                  {"prefetch_ms", p.prefetch_ms},
