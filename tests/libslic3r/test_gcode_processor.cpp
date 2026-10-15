@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <string>
 
 using namespace Slic3r;
 
@@ -31,6 +32,51 @@ void check_non_arc_moves(const GCodeProcessorResult& result)
 }
 
 } // namespace
+
+TEST_CASE("Klipper velocity limits retain command matching and estimated motion times", "[GCodeProcessor][VelocityLimits]")
+{
+    auto estimate = [](const std::string& limits) {
+        PrintConfig config;
+        config.gcode_flavor.value = gcfKlipper;
+        GCodeProcessor processor;
+        processor.reset();
+        processor.apply_config(config);
+        processor.initialize("velocity-limits-test.gcode");
+        processor.process_buffer("G21\nG90\nM83\nM204 S1000\nM203 X300 Y300\nM205 X10 Y10\n");
+        processor.process_buffer(limits);
+        processor.process_buffer("G1 X0 Y0 Z0.2 F12000\n;TYPE:External perimeter\n;WIDTH:0.4\n;HEIGHT:0.2\n"
+                                 "G1 X100 Y0 E2\nG1 X100 Y100 E2\nG1 X0 Y100 E2\nG1 X0 Y0 E2\n"
+                                 "G0 X50 Y50\nG0 X100 Y0\nG0 X0 Y0\n");
+        processor.finalize(false);
+        return processor.get_time(PrintEstimatedStatistics::ETimeMode::Normal);
+    };
+    const float initial = estimate("");
+    REQUIRE(std::isfinite(initial));
+    REQUIRE(initial > 0);
+    REQUIRE(estimate("M204 S100\n") > initial);
+    REQUIRE(estimate("M203 X30 Y30\n") > initial);
+    REQUIRE(estimate("M205 X1 Y1\n") != initial);
+
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"ACCEL=100", "M204 S100\n"},
+        {"VELOCITY=30", "M203 X30 Y30\n"},
+        {"SQUARE_CORNER_VELOCITY=1", "M205 X1 Y1\n"},
+        {"ACCEL_TO_DECEL=100", ""},
+        {"ACCEL=", "M204 S0\n"},
+        {"ACCEL=-100", "M204 S0\n"},
+        {"ACCEL=1..2", "M204 S1\n"},
+        {"ACCEL=2e3", "M204 S2\n"},
+        {"ACCEL=100 ACCEL=200", "M204 S100\n"},
+        {"accel=100", ""},
+        {"VELOCITY = 30.5\tACCEL = 100.5 SQUARE_CORNER_VELOCITY = .5", "M203 X30.5 Y30.5\nM204 S100.5\nM205 X.5 Y.5\n"},
+    };
+    for (const auto& [parameters, reference] : cases) {
+        INFO(parameters);
+        const std::string command = "SET_VELOCITY_LIMIT " + parameters + "\n";
+        CHECK(estimate(command) == estimate(reference));
+        CHECK(estimate(command + command) == estimate(reference));
+    }
+}
 
 TEST_CASE("Arc interpolation belongs only to arc moves across streaming buffers", "[GCodeProcessor][PreviewMemory]")
 {
