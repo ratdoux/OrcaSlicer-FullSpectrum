@@ -2,6 +2,11 @@
 
 #include "libslic3r/ExtrusionEntityCollection.hpp"
 #include "libslic3r/MixedFilamentLayerTracker.hpp"
+#include "libslic3r/Print.hpp"
+#include "libslic3r/TriangleMesh.hpp"
+#include <cstdlib>
+#include <optional>
+#include <string>
 
 using namespace Slic3r;
 
@@ -86,4 +91,85 @@ TEST_CASE("Read-only extrusion flattening borrows leaves without changing order"
         CHECK(original_points == copied_points);
     }
     REQUIRE(ExtrusionEntityCollection{}.flatten_refs().empty());
+}
+
+namespace {
+struct CpuReuseEnvironment
+{
+    const std::array<const char*, 3>          names{"ORCA_WALL_SUPPORT", "ORCA_SHELL_VOLUME", "ORCA_SHELL_PROJECTION"};
+    std::array<std::optional<std::string>, 3> previous;
+    explicit CpuReuseEnvironment(const char* mode)
+    {
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (const char* value = std::getenv(names[i]))
+                previous[i] = value;
+            set(names[i], mode);
+        }
+    }
+    ~CpuReuseEnvironment()
+    {
+        for (size_t i = 0; i < names.size(); ++i)
+            set(names[i], previous[i] ? previous[i]->c_str() : nullptr);
+    }
+    static void set(const char* name, const char* value)
+    {
+#ifdef _WIN32
+        _putenv_s(name, value ? value : "");
+#else
+        if (value)
+            setenv(name, value, 1);
+        else
+            unsetenv(name);
+#endif
+    }
+};
+} // namespace
+TEST_CASE("Shell reuse preserves fill geometry for adjoining material regions", "[CPUSlicing][ShellReuse]")
+{
+    auto slice = [](const char* mode, bool interfaces) {
+        CpuReuseEnvironment environment(mode);
+        auto                config = DynamicPrintConfig::full_print_config();
+        config.set_num_extruders(2);
+        config.set_num_filaments(2);
+        config.set("layer_height", 0.2);
+        config.set("initial_layer_print_height", 0.2);
+        config.set("interface_shells", interfaces);
+        config.set_key_value("ensure_vertical_shell_thickness", new ConfigOptionEnum<EnsureVerticalShellThickness>(evstAll));
+        config.set("top_shell_layers", 5);
+        config.set("bottom_shell_layers", 4);
+        config.set("enable_prime_tower", false);
+        config.set("single_extruder_multi_material", false);
+        config.option<ConfigOptionStrings>("filament_colour")->values  = {"#FF0000", "#0000FF"};
+        config.option<ConfigOptionFloats>("filament_diameter")->values = {1.75, 1.75};
+        Model model;
+        auto* object = model.add_object();
+        auto* left   = object->add_volume(make_cube(8., 10., 4.));
+        left->config.set("extruder", 1);
+        auto* right = object->add_volume(make_cube(8., 10., 3.));
+        right->translate(Vec3d(8., 0., 0.));
+        right->config.set("extruder", 2);
+        for (const char* option : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
+            left->config.set(option, 1);
+            right->config.set(option, 2);
+        }
+        object->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        object->ensure_on_bed();
+        Print print;
+        print.is_BBL_printer() = false;
+        print.set_status_silent();
+        print.apply(model, config);
+        print.process();
+        std::vector<Polygons> result;
+        REQUIRE(print.get_object(0)->num_printing_regions() == 2);
+        for (const Layer* layer : print.get_object(0)->layers())
+            for (const LayerRegion* region : layer->regions())
+                for (SurfaceType type : {stInternal, stInternalVoid, stInternalSolid})
+                    result.push_back(to_polygons(region->fill_surfaces.filter_by_type(type)));
+        return result;
+    };
+    for (bool interfaces : {false, true}) {
+        const auto reference = slice("cpu", interfaces);
+        const auto reused    = slice("validate", interfaces);
+        REQUIRE(reused == reference);
+    }
 }
