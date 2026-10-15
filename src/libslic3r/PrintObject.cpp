@@ -1874,6 +1874,12 @@ void PrintObject::discover_vertical_shells()
                     Layer       	        *layer          = m_layers[idx_layer];
                     LayerRegion 	        *layerm         = layer->m_regions[region_id];
                     const PrintRegionConfig &region_config  = layerm->region().config();
+                    // With no internal/void/solid fill, intersecting the projected shell
+                    // and adding internal-minus-holes both produce an empty result.
+                    const Polygons polygonsInternal = to_polygons(
+                        layerm->fill_surfaces.filter_by_types({stInternal, stInternalVoid, stInternalSolid}));
+                    if (polygonsInternal.empty())
+                        continue;
 
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
                     layerm->export_region_slices_to_svg_debug("3_discover_vertical_shells-initial");
@@ -2078,7 +2084,6 @@ void PrintObject::discover_vertical_shells()
 #endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
 
                     // Trim the shells region by the internal & internal void surfaces.
-                    const Polygons polygonsInternal = to_polygons(layerm->fill_surfaces.filter_by_types({stInternal, stInternalVoid, stInternalSolid}));
                     shell = intersection(shell, polygonsInternal, ApplySafetyOffset::Yes);
                     polygons_append(shell, diff(polygonsInternal, holes));
                     if (shell.empty())
