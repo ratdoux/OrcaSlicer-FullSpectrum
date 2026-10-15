@@ -1568,10 +1568,9 @@ static MMU_Graph build_graph(size_t layer_idx, const std::vector<std::vector<Col
     }
 
     ColoredLines       lines_colored = to_lines(color_poly);
-    const ColoredLines colored_lines = lines_colored;
 
     Voronoi::VD vd;
-    vd.construct_voronoi(colored_lines.begin(), colored_lines.end());
+    vd.construct_voronoi(lines_colored.cbegin(), lines_colored.cend());
     // boost::polygon::construct_voronoi(lines_colored.begin(), lines_colored.end(), &vd);
     MMU_Graph graph;
     graph.nodes.reserve(points.size() + vd.vertices().size());
@@ -1605,6 +1604,7 @@ static MMU_Graph build_graph(size_t layer_idx, const std::vector<std::vector<Col
 
     // Make a copy of the input segments with the double type.
     std::vector<Voronoi::Internal::segment_type> segments;
+    segments.reserve(lines.size());
     for (const Line &line : lines)
         segments.emplace_back(Voronoi::Internal::point_type(double(line.a(0)), double(line.a(1))), Voronoi::Internal::point_type(double(line.b(0)), double(line.b(1))));
 

@@ -134,7 +134,7 @@ public:
     double      mm3_per_mm_overhang()   const { return m_mm3_per_mm_overhang; }
     //BBS
     double      smaller_width_ext_mm3_per_mm()   const { return m_ext_mm3_per_mm_smaller_width; }
-    Polygons    lower_slices_polygons() const { return m_lower_slices_polygons; }
+    const Polygons& lower_slices_polygons() const { return m_lower_slices_polygons; }
 
 private:
     std::vector<Polygons> generate_lower_polygons_series(float width, const Polygons* grown_lower_slices = nullptr, bool validate = false);
