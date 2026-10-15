@@ -1988,15 +1988,15 @@ static bool has_layer_only_one_color(const std::vector<ColoredLines> &colored_po
     return true;
 }
 
-std::vector<ExPolygons> segment_painted_layer(const ExPolygons&                input,
-                                              const std::vector<ColoredLines>& colors,
-                                              size_t                           num_colors,
-                                              bool                             split_islands)
+static std::vector<ExPolygons> segment_painted_layer_impl(
+    const ExPolygons& input, const std::vector<ColoredLines>& colors, size_t num_colors, bool split_islands, bool* used_island_fast_path)
 {
-    std::vector<ExPolygons> result(num_colors);
+    if (used_island_fast_path)
+        *used_island_fast_path = false;
     if (colors.empty())
-        return result;
+        return std::vector<ExPolygons>(num_colors);
     if (has_layer_only_one_color(colors)) {
+        std::vector<ExPolygons> result(num_colors);
         result.at(size_t(colors.front().front().color)) = input;
         return result;
     }
@@ -2015,33 +2015,41 @@ std::vector<ExPolygons> segment_painted_layer(const ExPolygons&                i
                              std::count_if(island.holes.begin(), island.holes.end(), [](const Polygon& p) { return !p.empty(); });
     if (expected_contours != colors.size())
         return segment(colors);
+    // Independent mixed-color Voronoi diagrams can round/topologize differently
+    // from the whole-layer graph. Only bypass that graph if every island is uniform.
+    std::vector<int> island_colors;
+    island_colors.reserve(input.size());
     size_t first = 0;
     for (const auto& island : input) {
         const size_t count = size_t(!island.contour.empty()) +
                              std::count_if(island.holes.begin(), island.holes.end(), [](const Polygon& p) { return !p.empty(); });
-        if (count == 0)
+        if (count == 0) {
+            island_colors.push_back(-1);
             continue;
-        const int color   = colors[first].front().color;
-        bool      uniform = true;
+        }
+        const int color = colors[first].front().color;
         for (size_t i = first; i < first + count; ++i)
             for (const auto& line : colors[i])
-                uniform = uniform && line.color == color;
-        if (uniform) {
-            result.at(size_t(color)).push_back(island);
-        } else {
-            std::vector<ColoredLines> contours(colors.begin() + first, colors.begin() + first + count);
-            for (size_t i = 0; i < contours.size(); ++i)
-                for (size_t j = 0; j < contours[i].size(); ++j) {
-                    contours[i][j].poly_idx       = int(i);
-                    contours[i][j].local_line_idx = int(j);
-                }
-            auto regions = segment(contours);
-            for (size_t i = 0; i < num_colors; ++i)
-                append(result[i], std::move(regions[i]));
-        }
+                if (line.color != color)
+                    return segment(colors);
+        island_colors.push_back(color);
         first += count;
     }
+    std::vector<ExPolygons> result(num_colors);
+    for (size_t i = 0; i < input.size(); ++i)
+        if (island_colors[i] >= 0)
+            result.at(size_t(island_colors[i])).push_back(input[i]);
+    if (used_island_fast_path)
+        *used_island_fast_path = true;
     return result;
+}
+
+std::vector<ExPolygons> segment_painted_layer(const ExPolygons&                input,
+                                              const std::vector<ColoredLines>& colors,
+                                              size_t                           num_colors,
+                                              bool                             split_islands)
+{
+    return segment_painted_layer_impl(input, colors, num_colors, split_islands, nullptr);
 }
 
 std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject                                               &print_object,
@@ -2223,12 +2231,12 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     const char*         islands_setting = std::getenv("ORCA_PAINT_ISLANDS");
     const std::string   islands_mode    = islands_setting ? islands_setting : "cpu";
     const bool          split_islands   = islands_mode == "islands" || islands_mode == "validate";
-    std::atomic<size_t> checked_island_layers{0};
+    std::atomic<size_t> checked_island_layers{0}, fast_island_layers{0};
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - layers segmentation in parallel - begin";
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions,
                                                                   &num_facets_states, &layers, &painted_line_injector, &throw_on_cancel_callback, split_islands,
-                                                                  &islands_mode,
-                                                                  &checked_island_layers](const tbb::blocked_range<size_t>& range) {
+                                                                  &islands_mode, &checked_island_layers,
+                                                                  &fast_island_layers](const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
@@ -2253,8 +2261,11 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
 
                 assert(!color_poly.empty());
                 assert(!color_poly.front().empty());
-                segmented_regions[layer_idx] = segment_painted_layer(input_expolygons[layer_idx], color_poly, num_facets_states,
-                                                                     split_islands);
+                bool used_island_fast_path   = false;
+                segmented_regions[layer_idx] = segment_painted_layer_impl(input_expolygons[layer_idx], color_poly, num_facets_states,
+                                                                          split_islands, &used_island_fast_path);
+                if (used_island_fast_path)
+                    ++fast_island_layers;
                 if (islands_mode == "validate" && input_expolygons[layer_idx].size() > 1) {
                     const auto reference = segment_painted_layer(input_expolygons[layer_idx], color_poly, num_facets_states, false);
                     for (size_t color = 0; color < num_facets_states; ++color)
@@ -2273,7 +2284,8 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(const PrintObject 
     }); // end of parallel_for
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - layers segmentation in parallel - end";
     if (islands_mode == "validate")
-        BOOST_LOG_TRIVIAL(info) << "Paint island validation layers=" << checked_island_layers.load();
+        BOOST_LOG_TRIVIAL(info) << "Paint island validation layers=" << checked_island_layers.load()
+                                << " fast_layers=" << fast_island_layers.load();
     throw_on_cancel_callback();
 
     if ((segmentation_max_width > 0.f || segmentation_interlocking_depth > 0.f) && !segmentation_interlocking_beam) {
