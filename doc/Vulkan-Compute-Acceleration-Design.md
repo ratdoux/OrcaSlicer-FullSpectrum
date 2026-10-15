@@ -8,6 +8,8 @@ Follow-ups: the [Vulkan seam visibility prototype](Vulkan-Seam-Visibility-Protot
 
 ## 1. Proposed direction
 
+For the latest prioritization, see the [indexed CPU/Vulkan classifier comparison](LocalZ-Indexed-Classifier-Results.md), [CPU follow-up results](CPU-Overhang-Parallelism-Results.md), and [subsequent Vulkan candidate review](Vulkan-Next-Targets-Review.md). The latter does not establish another large, low-risk GPU win on the current Starry Night profiles and recommends further CPU work and finer query-cost measurements first.
+
 Add an optional Vulkan compute backend for selected, expensive batches of geometry calculations. Keep the slicing dependency graph, polygon topology, printer-state handling and final ordered output on the CPU initially. Continue using TBB for CPU parallelism.
 
 The first implementation should accelerate one kernel with a demonstrated contribution to end-to-end slicing time. Leading candidates are batched spatial queries and mesh/plane intersections. Preview geometry generation is another candidate, but must be measured separately because it improves preview loading rather than the production of printable toolpaths.
