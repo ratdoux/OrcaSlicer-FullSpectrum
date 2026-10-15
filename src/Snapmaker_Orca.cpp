@@ -18,6 +18,7 @@
 #endif /* WIN32 */
 
 #include <cstdio>
+#include "libslic3r/Compute/VulkanBatch.hpp"
 #include <string>
 #include <cstring>
 #include <iostream>
@@ -6384,10 +6385,20 @@ std::string CLI::output_filepath(const ModelObject &object, unsigned int index, 
 }
 
 
+namespace {
+struct ComputeShutdown
+{
+    ~ComputeShutdown() {
+        Slic3r::VulkanBatch::shutdown();
+    }
+};
+} // namespace
+
 #if defined(_MSC_VER) || defined(__MINGW32__)
 extern "C" {
     __declspec(dllexport) int __stdcall Snapmaker_Orca_main(int argc, wchar_t **argv)
     {
+        const ComputeShutdown compute_shutdown;
         // Convert wchar_t arguments to UTF8.
         std::vector<std::string> 	argv_narrow;
         std::vector<char*>			argv_ptrs(argc + 1, nullptr);
@@ -6407,6 +6418,7 @@ extern "C" {
 #else /* _MSC_VER */
 int main(int argc, char **argv)
 {
+    const ComputeShutdown compute_shutdown;
     initSentry();
     auto soft_start_time = get_time_timestamp();    
     auto res = CLI().run(argc, argv);

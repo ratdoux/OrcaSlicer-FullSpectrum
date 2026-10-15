@@ -1,0 +1,39 @@
+#version 450
+layout(local_size_x=64) in;
+struct Node { vec4 position; uvec4 meta; };
+layout(std430,binding=0) readonly buffer Nodes { Node nodes[]; };
+layout(std430,binding=1) readonly buffer Queries { vec4 queries[]; };
+layout(std430,binding=2) writeonly buffer Results { uint results[]; };
+layout(push_constant) uniform Params { uint count; uint node_count; float unused; float epsilon; } params;
+void main() {
+    uint q=gl_GlobalInvocationID.x;
+    if(q>=params.count) return;
+    uint base=q*258, found=0, fallback=0;
+    vec4 query=queries[q];
+    precise float radius2=query.w*query.w;
+    uint stack[32]; uint pending=1; stack[0]=0;
+    while(pending!=0) {
+        uint index=stack[--pending];
+        if(index>=params.node_count || nodes[index].meta.x==0xffffffffu) continue;
+        precise vec3 d=query.xyz-nodes[index].position.xyz;
+        precise float distance2=d.x*d.x;
+        distance2=distance2+d.y*d.y;
+        distance2=distance2+d.z*d.z;
+        // An ambiguous float boundary re-runs this whole query on the CPU.
+        float guard=0.00001*max(1.0,max(distance2,radius2));
+        if(abs(distance2-radius2)<=guard) fallback|=1;
+        if(distance2<radius2) {
+            if(found==256) { fallback|=2; break; }
+            results[base+2+found++]=nodes[index].meta.x;
+        }
+        uint dimension=uint(findMSB(index+1))%3;
+        precise float plane2=d[dimension]*d[dimension];
+        precise float threshold=radius2+params.epsilon;
+        if(abs(plane2-threshold)<=0.00001*max(1.0,max(plane2,threshold))) fallback|=1;
+        bool both=plane2<threshold;
+        uint left=2*index+1, right=left+1;
+        if((both||d[dimension]>0.0)&&right<params.node_count) stack[pending++]=right;
+        if((both||d[dimension]<=0.0)&&left<params.node_count) stack[pending++]=left;
+    }
+    results[base]=found; results[base+1]=fallback;
+}

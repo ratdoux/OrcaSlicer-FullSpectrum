@@ -1,0 +1,55 @@
+#version 450
+
+// One query per invocation; preserve the CPU tree's node/left/right order.
+// No optional Vulkan features, subgroups, float64 or hardware ray tracing.
+layout(local_size_x = 64) in;
+struct Node { vec4 position; vec4 normal; };
+layout(std430, binding = 0) readonly buffer Nodes { Node nodes[]; };
+layout(std430, binding = 1) readonly buffer Queries { vec4 queries[]; };
+layout(std430, binding = 2) writeonly buffer Results { float results[]; };
+layout(push_constant) uniform Params { uint count; uint node_count; float radius; float epsilon; } params;
+
+void main()
+{
+    uint query_index = gl_GlobalInvocationID.x;
+    if (query_index >= params.count) return;
+    vec3 position = queries[query_index].xyz;
+    precise float radius_squared = params.radius * params.radius;
+    precise float total_weight = 0.0;
+    precise float total_visibility = 0.0;
+    uint neighbours = 0;
+    uint stack[32];
+    uint pending = 1;
+    stack[0] = 0;
+    while (pending != 0) {
+        uint index = stack[--pending];
+        if (index >= params.node_count || nodes[index].normal.w == 0.0) continue;
+        Node sample_node = nodes[index];
+        precise vec3 delta = position - sample_node.position.xyz;
+        // find_nearby_points accumulates dimensions from X to Z.
+        precise float distance_squared = delta.x * delta.x;
+        distance_squared = distance_squared + delta.y * delta.y;
+        distance_squared = distance_squared + delta.z * delta.z;
+        if (distance_squared < radius_squared) {
+            // Eigen's fixed-size Vector3 reduction is X + (Y + Z).
+            precise vec3 plane_terms = delta * sample_node.normal.xyz;
+            precise float plane_distance = abs(plane_terms.x + (plane_terms.y + plane_terms.z));
+            precise vec3 squares = delta * delta;
+            precise float distance_to_sample = sqrt(squares.x + (squares.y + squares.z));
+            precise float weight = params.radius - plane_distance;
+            weight = weight + (params.radius - distance_to_sample);
+            total_visibility = total_visibility + weight * sample_node.position.w;
+            total_weight = total_weight + weight;
+            ++neighbours;
+        }
+        uint dimension = uint(findMSB(index + 1)) % 3;
+        precise float d = delta[dimension];
+        precise float plane_squared = d * d;
+        bool both = plane_squared < radius_squared + params.epsilon;
+        uint left = 2 * index + 1;
+        uint right = left + 1;
+        if ((both || d > 0.0) && right < params.node_count) stack[pending++] = right;
+        if ((both || d <= 0.0) && left < params.node_count) stack[pending++] = left;
+    }
+    results[query_index] = neighbours == 0 ? 1.0 : total_visibility / total_weight;
+}

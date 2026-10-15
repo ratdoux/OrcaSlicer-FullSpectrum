@@ -545,6 +545,9 @@ add_library(libslic3r STATIC ${lisbslic3r_sources}
     ${OpenVDBUtils_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${lisbslic3r_sources})
 
+add_subdirectory(Compute)
+target_link_libraries(libslic3r PRIVATE orca_vulkan_compute)
+
 if (SLIC3R_STATIC)
     set(CGAL_Boost_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
 endif ()

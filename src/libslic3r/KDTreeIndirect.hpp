@@ -37,6 +37,9 @@ public:
     KDTreeIndirect& operator=(KDTreeIndirect &&rhs) { m_nodes = std::move(rhs.m_nodes); coordinate = std::move(rhs.coordinate); return *this; }
     void clear() { m_nodes.clear(); }
 
+    // Read-only binary-heap layout for batched spatial-query backends.
+    const std::vector<size_t>& node_indices() const { return m_nodes; }
+
     void build(size_t num_indices)
     {
         std::vector<size_t> indices;
