@@ -3,6 +3,7 @@
 #include "libslic3r/Compute/LocalZClipDecision.hpp"
 #include "libslic3r/LocalZClipper.hpp"
 #include "libslic3r/LocalZClipAcceleration.hpp"
+#include "libslic3r/ExtrusionEntityCollection.hpp"
 #include <nlohmann/json.hpp>
 
 #include <chrono>
@@ -39,14 +40,15 @@ Polylines read_lines(const Json& value)
 }
 struct ReplayCase
 {
-    uint64_t                       id;
-    bool                           difference;
-    double                         captured_ms;
-    ExPolygons                     masks;
-    Polylines                      input, reference;
-    std::vector<ClipSegmentQuery>  queries;
-    std::unique_ptr<LocalZClipper> clipper;
-    bool                           eligible = true, proven_empty = false;
+    uint64_t                         id;
+    bool                             difference;
+    double                           captured_ms;
+    ExPolygons                       masks;
+    Polylines                        input, reference;
+    std::vector<ClipSegmentQuery>    queries;
+    std::unique_ptr<LocalZClipper>   clipper;
+    std::unique_ptr<LocalZClipIndex> index;
+    bool                             eligible = true, proven_empty = false;
 };
 bool bounded(const Point& p) { return p.x() >= -(1 << 29) && p.x() <= (1 << 29) && p.y() >= -(1 << 29) && p.y() <= (1 << 29); }
 
@@ -104,6 +106,14 @@ TEST_CASE("Local-Z GPU preference is sampled per export and respects explicit ov
     auto validating = LocalZClipAcceleration::from_settings();
     REQUIRE(validating);
     CHECK(validating->validation());
+    settings.set_environment("indexed");
+    auto indexed = LocalZClipAcceleration::from_settings();
+    REQUIRE(indexed);
+    CHECK_FALSE(indexed->validation());
+    settings.set_environment("indexed_validate");
+    indexed = LocalZClipAcceleration::from_settings();
+    REQUIRE(indexed);
+    CHECK(indexed->validation());
     settings.set_environment("invalid");
     CHECK_THROWS_AS(LocalZClipAcceleration::from_settings(), std::runtime_error);
 }
@@ -123,6 +133,32 @@ TEST_CASE("Local-Z empty decisions preserve boundaries and holes", "[LocalZ][Vul
     CHECK(decision({1, 10, 1, 90}, true) == 0); // Rounding guard.
     CHECK(decision({40, 40, 40, 40}, false) == 0);
     CHECK(decision({1 << 30, 0, (1 << 30) + 10, 10}, false) == 0);
+}
+
+TEST_CASE("Indexed export separates empty rings from an adjacent packed mask", "[LocalZ][ClipIndex]")
+{
+    LocalZSettingsGuard settings;
+    settings.set_environment("indexed");
+    auto                acceleration = LocalZClipAcceleration::from_settings();
+    const ExPolygons    empty_rings{ExPolygon{}};
+    const ExPolygons    solid{ExPolygon(Points{{0, 0}, {100, 0}, {100, 100}, {0, 100}})};
+    const LocalZClipper empty_mask(empty_rings), solid_mask(solid);
+    ExtrusionPath       path(erPerimeter, 0.08, 0.4f, 0.2f);
+    path.polyline = Polyline(Points{{20, 20}, {80, 20}});
+    ExtrusionEntityCollection collection;
+    collection.append(path);
+    acceleration->begin_layer();
+    acceleration->add(collection, empty_mask, false);
+    acceleration->add(collection, empty_mask, true);
+    acceleration->add(collection, solid_mask, false);
+    acceleration->add(collection, solid_mask, true);
+    acceleration->prepare([] {});
+    const auto& entity = *collection.entities.front();
+    CHECK(acceleration->proven_empty(entity, &empty_mask, nullptr));
+    CHECK_FALSE(acceleration->proven_empty(entity, nullptr, &empty_mask));
+    CHECK_FALSE(acceleration->proven_empty(entity, &solid_mask, nullptr));
+    CHECK(acceleration->proven_empty(entity, nullptr, &solid_mask));
+    CHECK_FALSE(acceleration->proven_empty(entity, &solid_mask, &empty_mask));
 }
 
 TEST_CASE("Vulkan Local-Z decisions match bounded integer reference", "[.][LocalZVulkanHardware]")
@@ -145,7 +181,8 @@ TEST_CASE("Vulkan Local-Z decisions match bounded integer reference", "[.][Local
     for (size_t count : {size_t(1), size_t(1003), size_t(VulkanBatch::BATCH_CAPACITY)}) {
         std::vector<ClipSegmentQuery> queries;
         for (size_t i = 0; i < count; ++i)
-            queries.push_back({{position(engine), position(engine), position(engine), position(engine)}, 0, 8, uint32_t(i % 2), 0});
+            queries.push_back(
+                {{position(engine), position(engine), position(engine), position(engine)}, 0, 8, uint32_t(i % 2), uint32_t((i / 2) % 2)});
         queries.front().endpoints = {0, 0, 500000000, 0}; // Coincident boundary.
         if (count > 1) {
             queries[1].edge_start = 9;
@@ -159,7 +196,7 @@ TEST_CASE("Vulkan Local-Z decisions match bounded integer reference", "[.][Local
         REQUIRE(backend->compute(queries, decisions, error));
         REQUIRE(decisions.size() == queries.size());
         for (size_t i = 0; i < queries.size(); ++i)
-            CHECK(decisions[i] == local_z_segment_proven_empty(edges, queries[i]));
+            CHECK(decisions[i] == local_z_segment_decision(edges, queries[i]));
     }
     std::vector<uint32_t> results;
     REQUIRE(backend->compute({}, results, error));
@@ -176,6 +213,65 @@ TEST_CASE("Vulkan Local-Z decisions match bounded integer reference", "[.][Local
     CHECK(results[0] == 1);
     CHECK_FALSE(backend->update_edges(std::vector<ClipMaskEdge>(edges.size() + 1), error));
     CHECK_FALSE(backend->update_edges({}, error));
+}
+
+TEST_CASE("Indexed Local-Z decisions exactly preserve the reference predicates", "[LocalZ][VulkanCompute][ClipIndex]")
+{
+    std::mt19937                           engine(73195);
+    std::uniform_int_distribution<int32_t> coordinate(-20000, 20000);
+    std::vector<ClipMaskEdge>              edges{{INT32_MIN, 0, INT32_MAX, 0}}; // Outside the indexed range.
+    for (int i = 0; i < 100; ++i) {
+        const int32_t x = coordinate(engine), y = coordinate(engine);
+        edges.insert(edges.end(), {{x, y, x + 200, y}, {x + 200, y, x + 200, y + 300}, {x + 200, y + 300, x, y + 300}, {x, y + 300, x, y}});
+    }
+    edges.insert(edges.end(), {{-100, -100, 100, -100},
+                               {100, -100, 100, 100},
+                               {100, 100, -100, 100},
+                               {-100, 100, -100, -100},
+                               {-30, -30, -30, 30},
+                               {-30, 30, 30, 30},
+                               {30, 30, 30, -30},
+                               {30, -30, -30, -30},
+                               {5, 5, 5, 5}});
+    const uint32_t        count = uint32_t(edges.size() - 1);
+    const LocalZClipIndex index(edges, 1, count);
+    auto                  compare = [&](const std::array<int32_t, 4>& p) {
+        for (uint32_t difference : {0u, 1u})
+            for (uint32_t keep : {0u, 1u}) {
+                ClipSegmentQuery query{p, 1, count, difference, keep};
+                CHECK(index.classify(query) == local_z_segment_decision(edges, query));
+                CHECK(local_z_segment_proven_empty(edges, query) == uint32_t(local_z_segment_decision(edges, query) == 1));
+            }
+    };
+    for (int i = 0; i < 12000; ++i)
+        compare({coordinate(engine), coordinate(engine), coordinate(engine), coordinate(engine)});
+    for (const auto& e : edges)
+        for (int delta = -3; delta <= 3; ++delta) {
+            if (e[0] == INT32_MIN)
+                continue;
+            compare({e[0] + delta, e[1], e[2] + delta, e[3]});
+            compare({e[0], e[1] + delta, e[2], e[3] + delta});
+        }
+    compare({0, 0, 0, 0});
+    compare({INT32_MIN, 0, INT32_MAX, 1});
+    const int32_t                   bound = 1 << 29;
+    const std::vector<ClipMaskEdge> extremes{{-bound, -bound, bound, -bound},
+                                             {bound, -bound, bound, bound},
+                                             {bound, bound, -bound, bound},
+                                             {-bound, bound, -bound, -bound}};
+    const LocalZClipIndex           extreme_index(extremes, 0, 4);
+    for (int delta = 0; delta < 5; ++delta) {
+        ClipSegmentQuery q{{-bound + delta, -bound + delta, bound - delta, bound - delta}, 0, 4, 1, 1};
+        CHECK(extreme_index.classify(q) == local_z_segment_decision(extremes, q));
+    }
+    const LocalZClipIndex invalid(edges, 0, uint32_t(edges.size()));
+    CHECK(invalid.classify({{1000, 1000, 1001, 1001}, 0, uint32_t(edges.size()), 0, 1}) == 0);
+    const LocalZClipIndex empty({}, 0, 0);
+    CHECK(empty.classify({{1, 1, 2, 2}, 0, 0, 0, 1}) == 1);
+    CHECK(empty.classify({{1, 1, 2, 2}, 0, 0, 1, 1}) == 2);
+    CHECK(index.classify({{1, 1, 2, 2}, 0, count, 0, 1}) == 0);
+    const LocalZClipIndex invalid_range(edges, uint32_t(edges.size()) + 1, 1);
+    CHECK(invalid_range.classify({{1, 1, 2, 2}, uint32_t(edges.size()) + 1, 1, 0, 1}) == 0);
 }
 
 TEST_CASE("Conservative empty decisions agree with polygon clipping", "[LocalZ][VulkanCompute]")
@@ -278,7 +374,7 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
                                      uint32_t(edge_start),
                                      uint32_t(edges.size() - edge_start),
                                      uint32_t(c.difference),
-                                     0});
+                                     1});
             }
         }
         if (c.queries.empty())
@@ -288,18 +384,31 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
     REQUIRE_FALSE(cases.empty());
     for (auto& c : cases)
         c.clipper = std::make_unique<LocalZClipper>(c.masks);
-    double     reference_ms = 0, captured_ms = 0, saved_reference_ms = 0, saved_captured_ms = 0;
-    size_t     empty = 0, rejected = 0, queries = 0;
-    const auto classify_start = Clock::now();
+    const auto index_start = Clock::now();
+    size_t     index_bytes = 0;
+    for (auto& c : cases) {
+        if (c.queries.empty())
+            continue;
+        c.index = std::make_unique<LocalZClipIndex>(edges, c.queries[0].edge_start, c.queries[0].edge_count);
+        index_bytes += c.index->memory_bytes();
+    }
+    const double          index_build_ms = elapsed_ms(index_start);
+    std::vector<uint32_t> reference_decisions;
+    double                reference_ms = 0, captured_ms = 0, saved_reference_ms = 0, saved_captured_ms = 0;
+    size_t                empty = 0, rejected = 0, queries = 0;
+    const auto            classify_start = Clock::now();
     for (auto& c : cases) {
         c.proven_empty = c.eligible;
         for (const auto& query : c.queries) {
             ++queries;
-            if (!local_z_segment_proven_empty(edges, query))
+            const uint32_t decision = local_z_segment_decision(edges, query);
+            reference_decisions.push_back(decision);
+            if (decision != 1)
                 c.proven_empty = false;
         }
     }
     const double classify_ms = elapsed_ms(classify_start);
+    size_t       unchanged = 0, changed = 0, keep_admitted = 0, keep_mismatches = 0;
     for (const auto& c : cases) {
         INFO(c.id);
         const auto   start  = Clock::now();
@@ -309,6 +418,15 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
         reference_ms += ms;
         captured_ms += c.captured_ms;
         empty += result.empty();
+        unchanged += !result.empty() && same(result, c.input);
+        changed += !result.empty() && !same(result, c.input);
+        bool keep = c.eligible;
+        for (const auto& q : c.queries)
+            keep = keep && c.index->classify(q) == 2;
+        if (keep) {
+            ++keep_admitted;
+            keep_mismatches += !same(result, c.input);
+        }
         if (c.proven_empty) {
             REQUIRE(result.empty());
             ++rejected;
@@ -316,16 +434,34 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
             saved_captured_ms += c.captured_ms;
         }
     }
-    Json report = {{"cases", cases.size()},
-                   {"edges", edges.size()},
-                   {"segments", queries},
-                   {"empty_results", empty},
-                   {"proven_empty", rejected},
-                   {"reference_ms", reference_ms},
-                   {"classify_cpu_ms", classify_ms},
-                   {"saved_reference_ms", saved_reference_ms},
-                   {"captured_ms", captured_ms},
-                   {"saved_captured_ms", saved_captured_ms}};
+    Json report          = {{"cases", cases.size()},
+                            {"edges", edges.size()},
+                            {"segments", queries},
+                            {"empty_results", empty},
+                            {"unchanged_results", unchanged},
+                            {"changed_results", changed},
+                            {"shadow_keep_admitted", keep_admitted},
+                            {"shadow_keep_ordered_mismatches", keep_mismatches},
+                            {"cpu_index_build_ms", index_build_ms},
+                            {"cpu_index_accounted_bytes", index_bytes},
+                            {"proven_empty", rejected},
+                            {"reference_ms", reference_ms},
+                            {"classify_cpu_ms", classify_ms},
+                            {"saved_reference_ms", saved_reference_ms},
+                            {"captured_ms", captured_ms},
+                            {"saved_captured_ms", saved_captured_ms}};
+    Json cpu_repetitions = Json::array();
+    auto run_index       = [&]() {
+        const auto            start = Clock::now();
+        std::vector<uint32_t> decisions;
+        decisions.reserve(queries);
+        for (const auto& c : cases)
+            for (const auto& query : c.queries)
+                decisions.push_back(c.index->classify(query));
+        const double ms = elapsed_ms(start);
+        REQUIRE(decisions == reference_decisions);
+        cpu_repetitions.push_back(ms);
+    };
     if (std::getenv("ORCA_LOCAL_Z_REPLAY_GPU")) {
         const char* device = std::getenv("ORCA_VULKAN_DEVICE");
         std::string error;
@@ -336,7 +472,9 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
         report["gpu_device"]          = backend->device_name();
         report["gpu_setup_upload_ms"] = elapsed_ms(setup_start);
         Json repetitions              = Json::array();
-        for (size_t repetition = 0; repetition < 3; ++repetition) {
+        for (size_t repetition = 0; repetition < 5; ++repetition) {
+            if (repetition % 2 == 0)
+                run_index();
             const auto                    start = Clock::now();
             std::vector<uint32_t>         decisions, batch_results;
             std::vector<ClipSegmentQuery> batch;
@@ -360,7 +498,7 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
             for (size_t i = 0; i < cases.size(); ++i) {
                 discard[i] = cases[i].eligible;
                 for (size_t q = 0; q < cases[i].queries.size(); ++q)
-                    if (!decisions[index++])
+                    if (decisions[index++] != 1)
                         discard[i] = false;
             }
             const double gpu_ms = elapsed_ms(start);
@@ -370,7 +508,7 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
                 INFO(cases[i].id);
                 REQUIRE(discard[i] == cases[i].proven_empty);
                 for (const auto& query : cases[i].queries)
-                    REQUIRE(decisions[index++] == local_z_segment_proven_empty(edges, query));
+                    REQUIRE(decisions[index++] == local_z_segment_decision(edges, query));
             }
             double fallback_ms = 0;
             for (size_t i = 0; i < cases.size(); ++i) {
@@ -383,9 +521,15 @@ TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
             }
             repetitions.push_back(
                 {{"gpu_classification_ms", gpu_ms}, {"cpu_fallback_ms", fallback_ms}, {"combined_ms", gpu_ms + fallback_ms}});
+            if (repetition % 2 != 0)
+                run_index();
         }
         report["gpu_repetitions"] = std::move(repetitions);
+    } else {
+        for (int i = 0; i < 5; ++i)
+            run_index();
     }
+    report["indexed_cpu_query_ms"] = std::move(cpu_repetitions);
     std::cout << "Local-Z replay " << report.dump() << '\n';
     if (const char* output = std::getenv("ORCA_LOCAL_Z_REPLAY_REPORT")) {
         std::ofstream out(std::filesystem::u8path(output));

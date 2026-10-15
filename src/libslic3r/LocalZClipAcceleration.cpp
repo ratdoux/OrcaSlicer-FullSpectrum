@@ -49,12 +49,16 @@ struct LocalZClipAcceleration::Impl
     std::vector<ClipMaskEdge>                      edges;
     std::vector<ClipSegmentQuery>                  queries;
     std::unique_ptr<VulkanLocalZClipDecision>      backend;
+    bool                                           indexed;
     bool                                           validate, disabled = false, overflow = false, ready = false;
     Clock::time_point                              start;
     double                                         total_ms = 0;
     uint64_t                                       layers = 0, fallback_layers = 0, rejected = 0, tested = 0;
     size_t                                         peak_edges = 0, peak_queries = 0, peak_entries = 0;
-    explicit Impl(bool validation) : validate(validation) {}
+    size_t                                         peak_index_bytes = 0;
+    uint64_t                                       cpu_queries      = 0;
+    double                                         index_build_ms = 0, index_query_ms = 0;
+    explicit Impl(bool validation, bool use_index) : indexed(use_index), validate(validation) {}
     void fail(const std::string& error)
     {
         ready    = false;
@@ -84,7 +88,7 @@ struct LocalZClipAcceleration::Impl
     }
 };
 
-LocalZClipAcceleration::LocalZClipAcceleration(bool validate) : m_impl(std::make_unique<Impl>(validate)) {}
+LocalZClipAcceleration::LocalZClipAcceleration(bool validate, bool indexed) : m_impl(std::make_unique<Impl>(validate, indexed)) {}
 LocalZClipAcceleration::~LocalZClipAcceleration() = default;
 void LocalZClipAcceleration::set_preference_enabled(bool enabled) { gpu_preference_enabled.store(enabled, std::memory_order_relaxed); }
 bool LocalZClipAcceleration::preference_enabled() { return gpu_preference_enabled.load(std::memory_order_relaxed); }
@@ -95,9 +99,11 @@ std::shared_ptr<LocalZClipAcceleration> LocalZClipAcceleration::from_settings()
         mode = preference_enabled() && VulkanBatch::compiled() ? "vulkan" : "cpu";
     if (std::string(mode) == "cpu")
         return nullptr;
-    if (std::string(mode) != "vulkan" && std::string(mode) != "validate")
-        throw std::runtime_error("ORCA_LOCAL_Z_CLIP must be cpu, vulkan, or validate");
-    return std::shared_ptr<LocalZClipAcceleration>(new LocalZClipAcceleration(std::string(mode) == "validate"));
+    const std::string selected(mode);
+    if (selected != "vulkan" && selected != "validate" && selected != "indexed" && selected != "indexed_validate")
+        throw std::runtime_error("ORCA_LOCAL_Z_CLIP must be cpu, vulkan, validate, indexed, or indexed_validate");
+    return std::shared_ptr<LocalZClipAcceleration>(new LocalZClipAcceleration(selected == "validate" || selected == "indexed_validate",
+                                                                              selected == "indexed" || selected == "indexed_validate"));
 }
 void LocalZClipAcceleration::begin_layer()
 {
@@ -185,6 +191,47 @@ void LocalZClipAcceleration::prepare(const std::function<void()>& cancel)
         return;
     }
     cancel();
+    if (p.indexed) {
+        const auto                                    build_start = Clock::now();
+        std::unordered_map<uint32_t, LocalZClipIndex> indexes;
+        size_t                                        index_bytes = 0;
+        for (const auto& item : p.masks) {
+            cancel();
+            const auto& mask = item.second;
+            if (!mask.eligible || mask.count == 0)
+                continue;
+            auto inserted = indexes.try_emplace(mask.start, p.edges, mask.start, mask.count);
+            if (inserted.second)
+                index_bytes += inserted.first->second.memory_bytes();
+        }
+        p.peak_index_bytes = std::max(p.peak_index_bytes, index_bytes);
+        p.index_build_ms += elapsed_ms(build_start);
+        const auto            query_start = Clock::now();
+        std::vector<uint32_t> decisions;
+        decisions.reserve(p.queries.size());
+        for (size_t i = 0; i < p.queries.size(); ++i) {
+            if (i % 4096 == 0)
+                cancel();
+            const auto& query = p.queries[i];
+            // Empty rings can share the next nonempty mask's start offset.
+            if (query.edge_count == 0) {
+                decisions.push_back(local_z_segment_decision(p.edges, query));
+                continue;
+            }
+            const auto found = indexes.find(query.edge_start);
+            decisions.push_back(found == indexes.end() ? 0 : found->second.classify(query));
+        }
+        p.cpu_queries += decisions.size();
+        for (auto& item : p.entries) {
+            auto& entry = item.second;
+            entry.empty = entry.eligible && std::all_of(decisions.begin() + entry.first, decisions.begin() + entry.first + entry.count,
+                                                        [](uint32_t value) { return value == 1; });
+        }
+        p.index_query_ms += elapsed_ms(query_start);
+        p.ready = true;
+        p.total_ms += elapsed_ms(p.start);
+        return;
+    }
     std::string error;
     if (!p.backend) {
         const char* device = std::getenv("ORCA_VULKAN_DEVICE");
@@ -240,11 +287,14 @@ void LocalZClipAcceleration::report() const
 {
     const auto&             p      = *m_impl;
     const VulkanBatchTiming timing = p.backend ? p.backend->timing() : VulkanBatchTiming{};
-    BOOST_LOG_TRIVIAL(info) << "Local-Z Vulkan clipping device=" << (p.backend ? p.backend->device_name() : "none")
-                            << " validation=" << p.validate << " prepare_ms=" << p.total_ms << " setup_ms=" << timing.setup_ms
-                            << " upload_ms=" << timing.upload_ms << " dispatch_ms=" << timing.dispatch_readback_ms << " layers=" << p.layers
+    BOOST_LOG_TRIVIAL(info) << "Local-Z Vulkan clipping device="
+                            << (p.indexed ? "CPU-index" : (p.backend ? p.backend->device_name() : "none")) << " validation=" << p.validate
+                            << " prepare_ms=" << p.total_ms << " setup_ms=" << timing.setup_ms << " upload_ms=" << timing.upload_ms
+                            << " dispatch_ms=" << timing.dispatch_readback_ms << " layers=" << p.layers
                             << " fallback_layers=" << p.fallback_layers << " tested_entities=" << p.tested
                             << " rejected_entities=" << p.rejected << " segments=" << timing.queries << " peak_edges=" << p.peak_edges
-                            << " peak_queries=" << p.peak_queries << " peak_entries=" << p.peak_entries;
+                            << " peak_queries=" << p.peak_queries << " peak_entries=" << p.peak_entries
+                            << " index_build_ms=" << p.index_build_ms << " index_query_ms=" << p.index_query_ms
+                            << " indexed_segments=" << p.cpu_queries << " peak_index_bytes=" << p.peak_index_bytes;
 }
 } // namespace Slic3r

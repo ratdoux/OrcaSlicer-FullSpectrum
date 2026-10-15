@@ -41,7 +41,9 @@ uint classify(Query q) {
         else if (e.y > p.y && e.w <= p.y && a < 0)
             --winding;
     }
-    return uint(q.meta.z != 0 ? winding != 0 : winding == 0);
+    bool empty = q.meta.z != 0 ? winding != 0 : winding == 0;
+    // Existing callers keep the binary protocol; keep-whole is diagnostic only.
+    return empty ? 1u : (q.meta.w != 0 ? 2u : 0u);
 }
 void main() {
     uint i = gl_GlobalInvocationID.x;

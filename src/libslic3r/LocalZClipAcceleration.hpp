@@ -9,7 +9,7 @@ class ExtrusionEntity;
 class ExtrusionEntityCollection;
 class LocalZClipper;
 
-// Opt-in, export-owned Vulkan context. Decisions borrow geometry only until
+// Opt-in, export-owned acceleration context. Decisions borrow geometry only until
 // begin_layer() and never replace seam placement or nonempty clipping results.
 class LocalZClipAcceleration
 {
@@ -29,7 +29,7 @@ public:
 
 private:
     struct Impl;
-    explicit LocalZClipAcceleration(bool validate);
+    explicit LocalZClipAcceleration(bool validate, bool indexed = false);
     std::unique_ptr<Impl> m_impl;
 };
 } // namespace Slic3r
