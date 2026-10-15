@@ -4,6 +4,8 @@
 #include "libslic3r/MixedFilamentLayerTracker.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/TriangleMesh.hpp"
+#include "libslic3r/Support/TreeSupport.hpp"
+#include <tbb/task_arena.h>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -171,5 +173,97 @@ TEST_CASE("Shell reuse preserves fill geometry for adjoining material regions", 
         const auto reference = slice("cpu", interfaces);
         const auto reused    = slice("validate", interfaces);
         REQUIRE(reused == reference);
+    }
+}
+
+TEST_CASE("Tree overhang geometry and labels agree across worker counts", "[CPUSlicing][TreeOverhang]")
+{
+    struct Snapshot
+    {
+        std::vector<ExPolygons>       overhangs, cantilevers;
+        std::vector<std::vector<int>> types;
+        bool                          sharp_tail, cantilever;
+        double                        max_cantilever;
+    };
+    auto detect = [](int workers, bool critical_only) {
+        auto config = DynamicPrintConfig::full_print_config();
+        config.set_num_extruders(2);
+        config.set_num_filaments(2);
+        config.set("layer_height", 0.2);
+        config.set("initial_layer_print_height", 0.2);
+        config.set("enable_support", true);
+        config.set_key_value("support_type", new ConfigOptionEnum<SupportType>(stTreeAuto));
+        config.set("support_remove_small_overhang", false);
+        config.set("support_critical_regions_only", critical_only);
+        config.set("max_bridge_length", 10.0);
+        config.set("enable_prime_tower", false);
+        config.set("single_extruder_multi_material", false);
+        config.option<ConfigOptionStrings>("filament_colour")->values  = {"#FF0000", "#0000FF"};
+        config.option<ConfigOptionFloats>("filament_diameter")->values = {1.75, 1.75};
+        Model model;
+        auto* object  = model.add_object();
+        auto  add_box = [&](double x, double z, double width, double height, int extruder) {
+            auto* volume = object->add_volume(make_cube(width, 10., height));
+            volume->translate(Vec3d(x, 0., z));
+            volume->config.set("extruder", extruder);
+            for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"})
+                volume->config.set(key, extruder);
+            return volume;
+        };
+        add_box(0., 0., 4., 3., 1);
+        add_box(20., 0., 4., 3., 1);
+        add_box(0., 3., 30., 1., 1);
+        add_box(30., 3., 4., 1., 2);
+        add_box(42., 1., 3., 1., 1); // Floating component exercises sharp-tail propagation.
+        add_box(12., 0., 3., 5., 1)->set_type(ModelVolumeType::SUPPORT_ENFORCER);
+        add_box(27., 0., 2., 5., 1)->set_type(ModelVolumeType::SUPPORT_BLOCKER);
+        object->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        Print print;
+        print.is_BBL_printer() = false;
+        print.set_status_silent();
+        print.apply(model, config);
+        print.process();
+        auto* printed = print.get_object(0);
+        // Repeat detection on finished perimeters/surfaces with fresh derived state.
+        for (Layer* layer : printed->layers()) {
+            layer->cantilevers.clear();
+            layer->sharp_tails.clear();
+            layer->sharp_tails_height.clear();
+        }
+        REQUIRE(printed->num_printing_regions() >= 2);
+        TreeSupport     support(*printed, printed->slicing_parameters());
+        tbb::task_arena arena(workers);
+        arena.execute([&] { support.detect_overhangs(); });
+        Snapshot result;
+        for (const Layer* layer : printed->layers()) {
+            result.overhangs.push_back(layer->loverhangs);
+            result.cantilevers.push_back(layer->cantilevers);
+            std::vector<int> types;
+            for (const auto& polygon : layer->loverhangs) {
+                const auto found = support.overhang_types.find(&polygon);
+                REQUIRE(found != support.overhang_types.end());
+                types.push_back(int(found->second));
+            }
+            result.types.push_back(std::move(types));
+        }
+        result.sharp_tail     = support.has_sharp_tails;
+        result.cantilever     = support.has_cantilever;
+        result.max_cantilever = support.max_cantilever_dist;
+        REQUIRE(std::any_of(result.overhangs.begin(), result.overhangs.end(), [](const auto& p) { return !p.empty(); }));
+        REQUIRE(result.cantilever);
+        REQUIRE(result.max_cantilever > scale_(3.));
+        return result;
+    };
+    for (bool critical_only : {false, true}) {
+        const auto reference = detect(1, critical_only);
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            const auto parallel = detect(4, critical_only);
+            CHECK(parallel.overhangs == reference.overhangs);
+            CHECK(parallel.cantilevers == reference.cantilevers);
+            CHECK(parallel.types == reference.types);
+            CHECK(parallel.sharp_tail == reference.sharp_tail);
+            CHECK(parallel.cantilever == reference.cantilever);
+            CHECK(parallel.max_cantilever == reference.max_cantilever);
+        }
     }
 }
