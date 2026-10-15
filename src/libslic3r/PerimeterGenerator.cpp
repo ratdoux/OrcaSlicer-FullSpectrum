@@ -1181,10 +1181,18 @@ void PerimeterGenerator::process_classic()
     m_ext_mm3_per_mm_smaller_width = this->smaller_ext_perimeter_flow.mm3_per_mm();
 
     // prepare grown lower layer slices for overhang detection
-    m_lower_polygons_series = generate_lower_polygons_series(this->perimeter_flow.width());
     const char* support_mode     = std::getenv("ORCA_WALL_SUPPORT");
     const bool  reuse_support    = !support_mode || std::string(support_mode) != "cpu";
     const bool  validate_support = support_mode && std::string(support_mode) == "validate";
+    // The precomputed overhang outline uses double arithmetic, while the series
+    // uses float arithmetic. Share it only if the actual Clipper deltas match.
+    const double    nozzle         = print_config->nozzle_diameter.get_at(config->wall_filament - 1);
+    const float     series_delta   = float(scale_(float(0.5 * float(nozzle))));
+    const float     prepared_delta = float(scale_(nozzle / 2));
+    const Polygons* prepared       = reuse_support && lower_slices && config->detect_overhang_wall && series_delta == prepared_delta ?
+                                         &m_lower_slices_polygons :
+                                         nullptr;
+    m_lower_polygons_series        = generate_lower_polygons_series(this->perimeter_flow.width(), prepared, validate_support);
     // The positive offset depends only on the nozzle and lower slices, not the wall width.
     const Polygons* grown_lower_slices = reuse_support && !m_lower_polygons_series.empty() ? &m_lower_polygons_series.back() : nullptr;
     if (ext_perimeter_width == perimeter_width){
