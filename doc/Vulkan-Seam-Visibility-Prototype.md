@@ -20,7 +20,7 @@ Windows loads the system Vulkan loader. Linux uses `libvulkan.so.1`. The macOS l
 
 ## Build and operation
 
-The build option defaults to **OFF**:
+The original prototype used an **OFF** build default. Current builds use `AUTO`; the Windows release helper provisions the build tools automatically. See [current build and preference controls](CPU-Geometry-Reuse-Results.md#runtime-controls). Explicit CMake configuration remains available:
 
 ```text
 cmake -S . -B <existing-build> -DORCA_ENABLE_VULKAN_COMPUTE=ON
@@ -33,7 +33,7 @@ Runtime controls:
 
 | Variable | Behavior |
 |---|---|
-| `ORCA_SEAM_VISIBILITY=cpu` | Original TBB implementation, with stage timing. This is also the default when unset. |
+| `ORCA_SEAM_VISIBILITY=cpu` | Original TBB implementation, with stage timing. Overrides the GUI preference. When unset, the GUI preference applies (off by default); CLI defaults to CPU. |
 | `ORCA_SEAM_VISIBILITY=vulkan` | GPU scoring; failure falls back to recomputing every score on the CPU. |
 | `ORCA_SEAM_VISIBILITY=validate` | GPU scoring plus a CPU reference for every query; unavailable GPU or differences above `2e-6` fail the experiment. Not a speed measurement. |
 | `ORCA_VULKAN_DEVICE=NVIDIA` / `Intel` | Case-insensitive device-name filter. An unavailable requested device is reported rather than silently selecting another GPU. |

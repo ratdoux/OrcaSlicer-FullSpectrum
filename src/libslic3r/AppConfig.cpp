@@ -333,6 +333,9 @@ void AppConfig::set_defaults()
     if (get("local_z_gpu_acceleration").empty()) {
         set_bool("local_z_gpu_acceleration", false);
     }
+    if (get("seam_visibility_gpu_acceleration").empty()) {
+        set_bool("seam_visibility_gpu_acceleration", false);
+    }
 
     if (get("show_home_page").empty()) {
         set_bool("show_home_page", true);

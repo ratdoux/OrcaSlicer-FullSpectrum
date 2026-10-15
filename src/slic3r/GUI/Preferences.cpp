@@ -8,6 +8,7 @@
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/MixedFilament.hpp"
 #include "libslic3r/Compute/VulkanBatch.hpp"
+#include "libslic3r/Compute/SeamVisibility.hpp"
 #include "libslic3r/LocalZClipAcceleration.hpp"
 #include <wx/language.h>
 #include <wx/notebook.h>
@@ -774,6 +775,8 @@ wxBoxSizer *PreferencesDialog::create_item_checkbox(wxString title, wxWindow *pa
 
         if (param == "local_z_gpu_acceleration")
             LocalZClipAcceleration::set_preference_enabled(checkbox->GetValue());
+        if (param == "seam_visibility_gpu_acceleration")
+            VulkanSeamVisibility::set_preference_enabled(checkbox->GetValue());
 
         if (param == "allow_filament_temp_mixing" && wxGetApp().plater())
             wxGetApp().plater()->notify_filament_usage_changed();
@@ -889,17 +892,18 @@ wxBoxSizer *PreferencesDialog::create_item_checkbox(wxString title, wxWindow *pa
         checkbox->Enable(pbool);
     }
 
-    if (param == "local_z_gpu_acceleration") {
+    if (param == "local_z_gpu_acceleration" || param == "seam_visibility_gpu_acceleration") {
+        const char* override_name = param == "local_z_gpu_acceleration" ? "ORCA_LOCAL_Z_CLIP" : "ORCA_SEAM_VISIBILITY";
         if (!VulkanBatch::compiled()) {
             checkbox->SetValue(false);
             checkbox->Disable();
             checkbox_title->Disable();
             tooltip = _L("GPU acceleration is not included in this build. CPU slicing optimizations are still enabled.");
-        } else if (const char* mode = std::getenv("ORCA_LOCAL_Z_CLIP")) {
+        } else if (const char* mode = std::getenv(override_name)) {
             checkbox->SetValue(std::string(mode) == "vulkan" || std::string(mode) == "validate");
             checkbox->Disable();
             checkbox_title->Disable();
-            tooltip = _L("A launch setting controls Local-Z GPU acceleration for this session.");
+            tooltip = _L("A launch setting controls this GPU option for this session.");
         }
     }
     checkbox_title->SetToolTip(tooltip);
@@ -1313,11 +1317,16 @@ wxWindow* PreferencesDialog::create_general_page()
         _L("Use Vulkan to speed up Local-Z path clipping. A compatible GPU is selected automatically, preferring a dedicated GPU. "
                              "Falls back to CPU if unavailable. Changes apply when G-code is next generated."),
         50, "local_z_gpu_acceleration");
+    auto item_seam_visibility_gpu = create_item_checkbox(
+        _L("Use GPU for seam visibility (experimental)"), page,
+        _L("Use Vulkan to score seam visibility in both normal and Local-Z slicing. This speeds up a small part of seam placement; "
+           "overall slicing may not be faster. Falls back to CPU if unavailable. Changes apply when seam visibility is next calculated."),
+        50, "seam_visibility_gpu_acceleration");
     wxString performance_note = _L("CPU slicing optimizations are always enabled. GPU acceleration is optional.");
     if (!VulkanBatch::compiled())
         performance_note = _L("GPU acceleration is not included in this build. CPU slicing optimizations are still enabled.");
-    else if (std::getenv("ORCA_LOCAL_Z_CLIP"))
-        performance_note = _L("A launch setting controls Local-Z GPU acceleration for this session.");
+    else if (std::getenv("ORCA_LOCAL_Z_CLIP") || std::getenv("ORCA_SEAM_VISIBILITY"))
+        performance_note = _L("Launch settings control the disabled GPU options for this session.");
     auto item_performance_note = new wxStaticText(page, wxID_ANY, performance_note);
     item_performance_note->SetFont(Label::Body_12);
     item_performance_note->SetForegroundColour(DESIGN_GRAY800_COLOR);
@@ -1424,6 +1433,7 @@ wxWindow* PreferencesDialog::create_general_page()
     sizer_page->Add(item_auto_arrange, 0, wxTOP, FromDIP(3));
     sizer_page->Add(title_slicing_performance, 0, wxTOP | wxEXPAND, FromDIP(20));
     sizer_page->Add(item_local_z_gpu, 0, wxTOP, FromDIP(3));
+    sizer_page->Add(item_seam_visibility_gpu, 0, wxTOP, FromDIP(3));
     sizer_page->Add(item_performance_note, 0, wxLEFT | wxTOP, FromDIP(23));
     sizer_page->Add(title_presets, 0, wxTOP | wxEXPAND, FromDIP(20));
     sizer_page->Add(item_calc_mode, 0, wxTOP, FromDIP(3));

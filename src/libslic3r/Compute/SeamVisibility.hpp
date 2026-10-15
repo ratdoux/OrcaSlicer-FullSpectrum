@@ -29,6 +29,12 @@ using SeamVisibilityTiming = VulkanBatchTiming;
 class VulkanSeamVisibility
 {
 public:
+    enum class Mode { Cpu, Vulkan, Validate };
+    // The GUI preference is thread-safe; an explicit diagnostic environment setting takes precedence.
+    // Sample once per object's visibility calculation, keeping an in-flight calculation unchanged.
+    static void                                  set_preference_enabled(bool enabled);
+    static bool                                  preference_enabled();
+    static Mode                                  mode_from_settings();
     static constexpr uint32_t                    BATCH_CAPACITY = 16384;
     static std::unique_ptr<VulkanSeamVisibility> create(const std::vector<SeamVisibilityNode>& nodes,
                                                         float                                  radius,

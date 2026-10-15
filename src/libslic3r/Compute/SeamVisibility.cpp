@@ -1,8 +1,27 @@
 #include "SeamVisibility.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdlib>
 
 namespace Slic3r {
+namespace {
+std::atomic<bool> gpu_preference{false};
+}
+
+void VulkanSeamVisibility::set_preference_enabled(bool enabled) { gpu_preference.store(enabled, std::memory_order_relaxed); }
+bool VulkanSeamVisibility::preference_enabled() { return gpu_preference.load(std::memory_order_relaxed); }
+VulkanSeamVisibility::Mode VulkanSeamVisibility::mode_from_settings()
+{
+    if (const char* override_mode = std::getenv("ORCA_SEAM_VISIBILITY")) {
+        const std::string mode(override_mode);
+        if (mode == "validate")
+            return Mode::Validate;
+        return mode == "vulkan" ? Mode::Vulkan : Mode::Cpu;
+    }
+    return preference_enabled() && VulkanBatch::compiled() ? Mode::Vulkan : Mode::Cpu;
+}
+
 struct VulkanSeamVisibility::Impl
 {
     std::unique_ptr<VulkanBatch> batch;

@@ -8,9 +8,61 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <random>
 
 using namespace Slic3r;
+
+namespace {
+struct VisibilitySettingsGuard
+{
+    bool                       preference = VulkanSeamVisibility::preference_enabled();
+    std::optional<std::string> environment;
+    VisibilitySettingsGuard()
+    {
+        if (const char* value = std::getenv("ORCA_SEAM_VISIBILITY"))
+            environment = value;
+        set_environment(nullptr);
+    }
+    ~VisibilitySettingsGuard()
+    {
+        set_environment(environment ? environment->c_str() : nullptr);
+        VulkanSeamVisibility::set_preference_enabled(preference);
+    }
+    static void set_environment(const char* value)
+    {
+#ifdef _WIN32
+        _putenv_s("ORCA_SEAM_VISIBILITY", value ? value : "");
+#else
+        if (value)
+            setenv("ORCA_SEAM_VISIBILITY", value, 1);
+        else
+            unsetenv("ORCA_SEAM_VISIBILITY");
+#endif
+    }
+};
+} // namespace
+
+TEST_CASE("Seam visibility preference respects explicit overrides and CPU-only builds", "[VulkanCompute][SlicingPreferences]")
+{
+    VisibilitySettingsGuard settings;
+    using Mode = VulkanSeamVisibility::Mode;
+    VulkanSeamVisibility::set_preference_enabled(false);
+    CHECK(VulkanSeamVisibility::mode_from_settings() == Mode::Cpu);
+    VulkanSeamVisibility::set_preference_enabled(true);
+    CHECK(VulkanSeamVisibility::mode_from_settings() == (VulkanBatch::compiled() ? Mode::Vulkan : Mode::Cpu));
+    settings.set_environment("cpu");
+    CHECK(VulkanSeamVisibility::mode_from_settings() == Mode::Cpu);
+    VulkanSeamVisibility::set_preference_enabled(false);
+    settings.set_environment("vulkan");
+    CHECK(VulkanSeamVisibility::mode_from_settings() == Mode::Vulkan);
+    settings.set_environment("validate");
+    CHECK(VulkanSeamVisibility::mode_from_settings() == Mode::Validate);
+    settings.set_environment("unknown");
+    CHECK(VulkanSeamVisibility::mode_from_settings() == Mode::Cpu);
+    settings.set_environment(nullptr);
+    CHECK(VulkanSeamVisibility::mode_from_settings() == Mode::Cpu);
+}
 
 TEST_CASE("Vulkan seam backend rejects invalid input or reports an unavailable build", "[VulkanCompute]")
 {

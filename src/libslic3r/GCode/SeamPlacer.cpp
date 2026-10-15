@@ -1046,10 +1046,9 @@ void SeamPlacer::calculate_candidates_visibility(const PrintObject* po, const Se
     using namespace SeamPlacerImpl;
 
     std::vector<PrintObjectSeamData::LayerSeams>& layers             = m_seam_per_object[po].layers;
-    const char*                                   requested          = std::getenv("ORCA_SEAM_VISIBILITY");
-    const std::string                             mode               = requested ? requested : "cpu";
-    const bool                                    validate           = mode == "validate";
-    const bool                                    use_vulkan         = mode == "vulkan" || validate;
+    const auto                                    mode               = VulkanSeamVisibility::mode_from_settings();
+    const bool                                    validate           = mode == VulkanSeamVisibility::Mode::Validate;
+    const bool                                    use_vulkan         = mode != VulkanSeamVisibility::Mode::Cpu;
     const auto                                    started            = std::chrono::steady_clock::now();
     auto                                          milliseconds_since = [](auto start) {
         return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -1154,7 +1153,7 @@ void SeamPlacer::calculate_candidates_visibility(const PrintObject* po, const Se
             }
         }
     });
-    if (requested)
+    if (use_vulkan || std::getenv("ORCA_SEAM_VISIBILITY"))
         BOOST_LOG_TRIVIAL(info) << "Seam visibility backend=cpu queries=" << total_queries << " total_ms=" << milliseconds_since(started);
 }
 
