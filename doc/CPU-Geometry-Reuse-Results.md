@@ -23,7 +23,17 @@ Full-model checks compared all 35 multi-island layers in each project. None qual
 
 ## Runtime controls
 
-These are diagnostic environment variables, not new UI settings:
+The CPU improvements below are enabled in a normal release build without extra flags. The Windows `build_release_vs2022.bat slicer` command now requests automatic Vulkan build-tool detection, including when reusing an older CPU-only build directory. It includes GPU support when Vulkan headers and `glslangValidator` / `glslang` are available through the Vulkan SDK or CMake search paths. Without those tools it prints a warning and produces a CPU-only build. End users of a GPU-enabled package need a compatible driver, not the SDK.
+
+In **Preferences → Slicing performance**, **Use GPU for Local-Z slicing (experimental)** replaces the need to set `ORCA_LOCAL_Z_CLIP=vulkan` when using the GUI. It defaults off, persists between launches, and is sampled when each G-code export starts; changing it does not modify an active export's context. The backend automatically prefers a compatible dedicated GPU and falls back to CPU if initialization or compute fails. The checkbox is disabled with an explanation when GPU support was not compiled in. This option does not enable the slower seam/polygon GPU experiments.
+
+The new UI control does not change the earlier timings or binary hashes recorded in this report. CPU reuse remains enabled regardless of the checkbox. Explicit diagnostic environment settings still take precedence; an `ORCA_LOCAL_Z_CLIP` override is shown in Preferences and disables the checkbox for that session. CLI users can continue using the environment variable.
+
+For build automation, `ORCA_ENABLE_VULKAN_COMPUTE` accepts `AUTO` (default), `ON` (require tools), or `OFF`. The Windows release helper also accepts that environment variable as an override. A preference cannot add GPU code to a CPU-only package.
+
+The preference integration was checked with a successful Release application build and **254,801 assertions in 30 cases**, including per-export preference sampling and explicit environment overrides. Separate build probes compiled `AUTO` with and without tools and explicit `OFF`; explicit `ON` without tools and invalid modes produced the expected configuration errors. An isolated GUI instance verified the dark-theme control, saved value and persistence after an application restart. Logs are under `build_logs/gpu_preferences/`. These checks validate build selection and preference wiring, not a new performance measurement.
+
+The remaining controls are diagnostic environment variables:
 
 | Variable | Default | Alternatives |
 |---|---|---|
@@ -33,7 +43,7 @@ These are diagnostic environment variables, not new UI settings:
 | `ORCA_SHELL_PROJECTION` | reuse | `cpu` recomputes projections; `validate` compares each hit with the original ordered shell/hole polygons. |
 | `ORCA_PAINT_ISLANDS` | `cpu` | `islands` enables the restricted shortcut; `validate` compares per-color geometry in both directions. |
 
-The empty-region early exit and copy removals have no runtime switch. Use their commits for rollback. No new Vulkan path is enabled by these changes. Existing Local-Z Vulkan clipping is held constant during the comparisons below.
+The empty-region early exit and copy removals have no runtime switch. Use their commits for rollback. No Vulkan path is enabled by default. Existing Local-Z Vulkan clipping is held constant during the comparisons below.
 
 ## Validation and benchmark protocol
 

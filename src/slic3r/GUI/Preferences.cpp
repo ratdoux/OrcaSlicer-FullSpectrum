@@ -7,6 +7,8 @@
 #include "I18N.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/Compute/VulkanBatch.hpp"
+#include "libslic3r/LocalZClipAcceleration.hpp"
 #include <wx/language.h>
 #include <wx/notebook.h>
 #include "Notebook.hpp"
@@ -20,6 +22,7 @@
 #include <wx/display.h>
 #include <map>
 #include <memory>
+#include <cstdlib>
 
 #include "sentry_wrapper/SentryWrapper.hpp"
 #include "SSWCP.hpp"
@@ -769,6 +772,9 @@ wxBoxSizer *PreferencesDialog::create_item_checkbox(wxString title, wxWindow *pa
         app_config->set_bool(param, checkbox->GetValue());
         app_config->save();
 
+        if (param == "local_z_gpu_acceleration")
+            LocalZClipAcceleration::set_preference_enabled(checkbox->GetValue());
+
         if (param == "allow_filament_temp_mixing" && wxGetApp().plater())
             wxGetApp().plater()->notify_filament_usage_changed();
 
@@ -883,7 +889,20 @@ wxBoxSizer *PreferencesDialog::create_item_checkbox(wxString title, wxWindow *pa
         checkbox->Enable(pbool);
     }
 
-
+    if (param == "local_z_gpu_acceleration") {
+        if (!VulkanBatch::compiled()) {
+            checkbox->SetValue(false);
+            checkbox->Disable();
+            checkbox_title->Disable();
+            tooltip = _L("GPU acceleration is not included in this build. CPU slicing optimizations are still enabled.");
+        } else if (const char* mode = std::getenv("ORCA_LOCAL_Z_CLIP")) {
+            checkbox->SetValue(std::string(mode) == "vulkan" || std::string(mode) == "validate");
+            checkbox->Disable();
+            checkbox_title->Disable();
+            tooltip = _L("A launch setting controls Local-Z GPU acceleration for this session.");
+        }
+    }
+    checkbox_title->SetToolTip(tooltip);
     checkbox->SetToolTip(tooltip);
     return m_sizer_checkbox;
 }
@@ -1288,6 +1307,21 @@ wxWindow* PreferencesDialog::create_general_page()
     auto item_step_mesh_setting = create_item_checkbox(_L("Show the step mesh parameter setting dialog."), page, _L("If enabled,a parameter settings dialog will appear during STEP file import."), 50, "enable_step_mesh_setting");
     auto item_multi_machine = create_item_checkbox(_L("Multi-device Management (Take effect after restarting Snapmaker Orca)."), page, _L("With this option enabled, you can send a task to multiple devices at the same time and manage multiple devices."), 50, "enable_multi_machine");
     auto item_auto_arrange  = create_item_checkbox(_L("Auto arrange plate after cloning"), page, _L("Auto arrange plate after object cloning"), 50, "auto_arrange");
+    auto title_slicing_performance = create_item_title(_L("Slicing performance"), page, wxEmptyString);
+    auto item_local_z_gpu          = create_item_checkbox(
+        _L("Use GPU for Local-Z slicing (experimental)"), page,
+        _L("Use Vulkan to speed up Local-Z path clipping. A compatible GPU is selected automatically, preferring a dedicated GPU. "
+                             "Falls back to CPU if unavailable. Changes apply when G-code is next generated."),
+        50, "local_z_gpu_acceleration");
+    wxString performance_note = _L("CPU slicing optimizations are always enabled. GPU acceleration is optional.");
+    if (!VulkanBatch::compiled())
+        performance_note = _L("GPU acceleration is not included in this build. CPU slicing optimizations are still enabled.");
+    else if (std::getenv("ORCA_LOCAL_Z_CLIP"))
+        performance_note = _L("A launch setting controls Local-Z GPU acceleration for this session.");
+    auto item_performance_note = new wxStaticText(page, wxID_ANY, performance_note);
+    item_performance_note->SetFont(Label::Body_12);
+    item_performance_note->SetForegroundColour(DESIGN_GRAY800_COLOR);
+    item_performance_note->Wrap(FromDIP(580));
     auto title_presets = create_item_title(_L("Presets"), page, _L("Presets"));
     //auto title_network = create_item_title(_L("Network"), page, _L("Network"));
     auto item_user_sync        = create_item_checkbox(_L("Auto sync user presets (Printer/Filament/Process)"), page, _L("User Sync"), 50, "sync_user_preset");
@@ -1388,6 +1422,9 @@ wxWindow* PreferencesDialog::create_general_page()
     sizer_page->Add(item_multi_machine, 0, wxTOP, FromDIP(3));
     sizer_page->Add(item_step_mesh_setting, 0, wxTOP, FromDIP(3));
     sizer_page->Add(item_auto_arrange, 0, wxTOP, FromDIP(3));
+    sizer_page->Add(title_slicing_performance, 0, wxTOP | wxEXPAND, FromDIP(20));
+    sizer_page->Add(item_local_z_gpu, 0, wxTOP, FromDIP(3));
+    sizer_page->Add(item_performance_note, 0, wxLEFT | wxTOP, FromDIP(23));
     sizer_page->Add(title_presets, 0, wxTOP | wxEXPAND, FromDIP(20));
     sizer_page->Add(item_calc_mode, 0, wxTOP, FromDIP(3));
     sizer_page->Add(item_calc_in_long_retract, 0, wxTOP, FromDIP(3));

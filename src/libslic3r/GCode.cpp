@@ -2208,7 +2208,7 @@ static BambuBedType to_bambu_bed_type(BedType type)
 void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGeneratorCallback thumbnail_cb)
 {
     PROFILE_FUNC();
-    m_local_z_clip_acceleration = LocalZClipAcceleration::from_environment();
+    m_local_z_clip_acceleration = LocalZClipAcceleration::from_settings();
 
     // modifies m_silent_time_estimator_enabled
     DoExport::init_gcode_processor(print.config(), m_processor, m_silent_time_estimator_enabled);

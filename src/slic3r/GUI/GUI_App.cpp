@@ -19,6 +19,7 @@
 #include "slic3r/Utils/PresetUpdater.hpp"
 #include "slic3r/Config/Version.hpp"
 #include "libslic3r/MixedFilament.hpp"
+#include "libslic3r/LocalZClipAcceleration.hpp"
 
 // Localization headers: include libslic3r version first so everything in this file
 // uses the slic3r/GUI version (the macros will take precedence over the functions).
@@ -2294,6 +2295,7 @@ void GUI_App::init_app_config()
     MixedFilamentManager::set_color_engine(
         MixedFilamentManager::color_engine_from_string(app_config->get("mixed_filament_color_engine")));
     MixedFilamentManager::set_use_td_for_color_prediction(app_config->get_bool("mixed_filament_use_td_prediction"));
+    LocalZClipAcceleration::set_preference_enabled(app_config->get_bool("local_z_gpu_acceleration"));
     set_logging_level(Slic3r::level_string_to_boost(app_config->get("log_severity_level")));
 
 }

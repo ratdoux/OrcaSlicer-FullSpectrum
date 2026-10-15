@@ -30,6 +30,8 @@ public:
                                                const std::string& device_filter,
                                                std::string&       error);
     ~VulkanBatch();
+    // Build capability only; does not load a driver or probe devices.
+    static bool compiled();
     // Call after application jobs have joined, before unloading the host DLL.
     // Avoid Vulkan/driver teardown from Windows DLL_PROCESS_DETACH.
     static void              shutdown();

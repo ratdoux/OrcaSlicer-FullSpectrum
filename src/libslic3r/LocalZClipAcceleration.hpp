@@ -14,7 +14,11 @@ class LocalZClipper;
 class LocalZClipAcceleration
 {
 public:
-    static std::shared_ptr<LocalZClipAcceleration> from_environment();
+    // The GUI preference is sampled once per export. Explicit environment settings
+    // retain precedence for CLI use and reference validation.
+    static void                                    set_preference_enabled(bool enabled);
+    static bool                                    preference_enabled();
+    static std::shared_ptr<LocalZClipAcceleration> from_settings();
     ~LocalZClipAcceleration();
     void begin_layer();
     void add(const ExtrusionEntityCollection& source, const LocalZClipper& masks, bool difference);

@@ -547,6 +547,15 @@ struct VulkanBatch::Impl
 VulkanBatch::VulkanBatch(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
 VulkanBatch::~VulkanBatch() = default;
 
+bool VulkanBatch::compiled()
+{
+#ifdef ORCA_ENABLE_VULKAN_COMPUTE
+    return true;
+#else
+    return false;
+#endif
+}
+
 void VulkanBatch::shutdown()
 {
 #ifdef ORCA_ENABLE_VULKAN_COMPUTE

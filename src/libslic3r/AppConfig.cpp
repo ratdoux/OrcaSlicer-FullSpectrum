@@ -330,6 +330,10 @@ void AppConfig::set_defaults()
         set_bool("mixed_filament_use_td_prediction", true);
     }
 
+    if (get("local_z_gpu_acceleration").empty()) {
+        set_bool("local_z_gpu_acceleration", false);
+    }
+
     if (get("show_home_page").empty()) {
         set_bool("show_home_page", true);
     }

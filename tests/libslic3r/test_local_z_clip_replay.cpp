@@ -2,6 +2,7 @@
 
 #include "libslic3r/Compute/LocalZClipDecision.hpp"
 #include "libslic3r/LocalZClipper.hpp"
+#include "libslic3r/LocalZClipAcceleration.hpp"
 #include <nlohmann/json.hpp>
 
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <optional>
 
 using namespace Slic3r;
 namespace {
@@ -47,7 +49,64 @@ struct ReplayCase
     bool                           eligible = true, proven_empty = false;
 };
 bool bounded(const Point& p) { return p.x() >= -(1 << 29) && p.x() <= (1 << 29) && p.y() >= -(1 << 29) && p.y() <= (1 << 29); }
+
+struct LocalZSettingsGuard
+{
+    bool                       preference = LocalZClipAcceleration::preference_enabled();
+    std::optional<std::string> environment;
+    LocalZSettingsGuard()
+    {
+        if (const char* value = std::getenv("ORCA_LOCAL_Z_CLIP"))
+            environment = value;
+        set_environment(nullptr);
+    }
+    ~LocalZSettingsGuard()
+    {
+        set_environment(environment ? environment->c_str() : nullptr);
+        LocalZClipAcceleration::set_preference_enabled(preference);
+    }
+    static void set_environment(const char* value)
+    {
+#ifdef _WIN32
+        _putenv_s("ORCA_LOCAL_Z_CLIP", value ? value : "");
+#else
+        if (value)
+            setenv("ORCA_LOCAL_Z_CLIP", value, 1);
+        else
+            unsetenv("ORCA_LOCAL_Z_CLIP");
+#endif
+    }
+};
 } // namespace
+
+TEST_CASE("Local-Z GPU preference is sampled per export and respects explicit overrides", "[LocalZ][SlicingPreferences]")
+{
+    LocalZSettingsGuard settings;
+    LocalZClipAcceleration::set_preference_enabled(false);
+    CHECK_FALSE(LocalZClipAcceleration::from_settings());
+    LocalZClipAcceleration::set_preference_enabled(true);
+    auto active_export = LocalZClipAcceleration::from_settings();
+    CHECK(bool(active_export) == VulkanBatch::compiled());
+    LocalZClipAcceleration::set_preference_enabled(false);
+    CHECK_FALSE(LocalZClipAcceleration::from_settings());
+    if (active_export)
+        CHECK_FALSE(active_export->validation()); // An existing export keeps its sampled settings.
+
+    settings.set_environment("cpu");
+    LocalZClipAcceleration::set_preference_enabled(true);
+    CHECK_FALSE(LocalZClipAcceleration::from_settings());
+    settings.set_environment("vulkan");
+    LocalZClipAcceleration::set_preference_enabled(false);
+    auto forced = LocalZClipAcceleration::from_settings();
+    REQUIRE(forced);
+    CHECK_FALSE(forced->validation());
+    settings.set_environment("validate");
+    auto validating = LocalZClipAcceleration::from_settings();
+    REQUIRE(validating);
+    CHECK(validating->validation());
+    settings.set_environment("invalid");
+    CHECK_THROWS_AS(LocalZClipAcceleration::from_settings(), std::runtime_error);
+}
 
 TEST_CASE("Local-Z empty decisions preserve boundaries and holes", "[LocalZ][VulkanCompute]")
 {

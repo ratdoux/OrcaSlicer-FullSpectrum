@@ -3,6 +3,7 @@
 #include "Compute/LocalZClipDecision.hpp"
 #include "ExtrusionEntityCollection.hpp"
 #include <boost/log/trivial.hpp>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <stdexcept>
@@ -10,6 +11,7 @@
 
 namespace Slic3r {
 namespace {
+std::atomic<bool> gpu_preference_enabled{false};
 using Clock = std::chrono::steady_clock;
 double elapsed_ms(Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); }
 bool   bounded(const Point& p) { return p.x() >= -(1 << 29) && p.x() <= (1 << 29) && p.y() >= -(1 << 29) && p.y() <= (1 << 29); }
@@ -84,10 +86,14 @@ struct LocalZClipAcceleration::Impl
 
 LocalZClipAcceleration::LocalZClipAcceleration(bool validate) : m_impl(std::make_unique<Impl>(validate)) {}
 LocalZClipAcceleration::~LocalZClipAcceleration() = default;
-std::shared_ptr<LocalZClipAcceleration> LocalZClipAcceleration::from_environment()
+void LocalZClipAcceleration::set_preference_enabled(bool enabled) { gpu_preference_enabled.store(enabled, std::memory_order_relaxed); }
+bool LocalZClipAcceleration::preference_enabled() { return gpu_preference_enabled.load(std::memory_order_relaxed); }
+std::shared_ptr<LocalZClipAcceleration> LocalZClipAcceleration::from_settings()
 {
     const char* mode = std::getenv("ORCA_LOCAL_Z_CLIP");
-    if (!mode || std::string(mode) == "cpu")
+    if (!mode)
+        mode = preference_enabled() && VulkanBatch::compiled() ? "vulkan" : "cpu";
+    if (std::string(mode) == "cpu")
         return nullptr;
     if (std::string(mode) != "vulkan" && std::string(mode) != "validate")
         throw std::runtime_error("ORCA_LOCAL_Z_CLIP must be cpu, vulkan, or validate");
