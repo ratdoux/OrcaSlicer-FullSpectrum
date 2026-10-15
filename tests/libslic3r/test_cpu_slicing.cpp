@@ -7,6 +7,7 @@
 #include "libslic3r/Support/TreeSupport.hpp"
 #include <tbb/task_arena.h>
 #include <cstdlib>
+#include <atomic>
 #include <optional>
 #include <string>
 
@@ -185,8 +186,20 @@ TEST_CASE("Tree overhang geometry and labels agree across worker counts", "[CPUS
         bool                          sharp_tail, cantilever;
         double                        max_cantilever;
     };
-    auto detect = [](int workers, bool critical_only) {
-        auto config = DynamicPrintConfig::full_print_config();
+    struct FilterEnvironment
+    {
+        std::optional<std::string> previous;
+        explicit FilterEnvironment(const char* mode)
+        {
+            if (const char* value = std::getenv("ORCA_TREE_OVERHANG_FILTER"))
+                previous = value;
+            CpuReuseEnvironment::set("ORCA_TREE_OVERHANG_FILTER", mode);
+        }
+        ~FilterEnvironment() { CpuReuseEnvironment::set("ORCA_TREE_OVERHANG_FILTER", previous ? previous->c_str() : nullptr); }
+    };
+    auto detect = [](int workers, bool critical_only, const char* mode, bool cancel = false) {
+        FilterEnvironment environment(mode);
+        auto              config = DynamicPrintConfig::full_print_config();
         config.set_num_extruders(2);
         config.set_num_filaments(2);
         config.set("layer_height", 0.2);
@@ -233,6 +246,18 @@ TEST_CASE("Tree overhang geometry and labels agree across worker counts", "[CPUS
         REQUIRE(printed->num_printing_regions() >= 2);
         TreeSupport     support(*printed, printed->slicing_parameters());
         tbb::task_arena arena(workers);
+        if (cancel) {
+            std::atomic<int> callbacks{0};
+            support.throw_on_cancel = [&] {
+                if (callbacks.fetch_add(1) == 2)
+                    print.cancel();
+                if (print.canceled())
+                    throw CanceledException();
+            };
+            REQUIRE_THROWS_AS(arena.execute([&] { support.detect_overhangs(); }), CanceledException);
+            CHECK(support.overhang_types.empty()); // No partial pointer map is published.
+            return Snapshot{};
+        }
         arena.execute([&] { support.detect_overhangs(); });
         Snapshot result;
         for (const Layer* layer : printed->layers()) {
@@ -255,9 +280,9 @@ TEST_CASE("Tree overhang geometry and labels agree across worker counts", "[CPUS
         return result;
     };
     for (bool critical_only : {false, true}) {
-        const auto reference = detect(1, critical_only);
+        const auto reference = detect(1, critical_only, "serial");
         for (int repeat = 0; repeat < 2; ++repeat) {
-            const auto parallel = detect(4, critical_only);
+            const auto parallel = detect(4, critical_only, repeat == 0 ? "parallel" : "validate");
             CHECK(parallel.overhangs == reference.overhangs);
             CHECK(parallel.cantilevers == reference.cantilevers);
             CHECK(parallel.types == reference.types);
@@ -266,4 +291,5 @@ TEST_CASE("Tree overhang geometry and labels agree across worker counts", "[CPUS
             CHECK(parallel.max_cantilever == reference.max_cantilever);
         }
     }
+    detect(4, false, "parallel", true);
 }

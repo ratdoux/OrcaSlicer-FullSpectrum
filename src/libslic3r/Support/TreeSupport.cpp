@@ -1,4 +1,6 @@
 #include <chrono>
+#include <cstdlib>
+#include <stdexcept>
 #include <atomic>
 #include <math.h>
 
@@ -24,6 +26,7 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/task_arena.h>
 
 #include <boost/log/trivial.hpp>
 
@@ -1029,7 +1032,8 @@ void TreeSupport::detect_overhangs(bool check_support_necessity/* = false*/)
     }
 
     for (auto& cluster : overhangClusters) {
-        if (cluster.is_small_overhang) continue;
+        if (cluster.is_small_overhang)
+            continue;
         // collect overhangs that's not small overhangs
         for (auto it = cluster.layer_overhangs.begin(); it != cluster.layer_overhangs.end(); it++) {
             int  layer_nr   = it->first;
@@ -1038,14 +1042,22 @@ void TreeSupport::detect_overhangs(bool check_support_necessity/* = false*/)
         }
     }
 
-    int layers_with_overhangs = 0;
-    int layers_with_enforcers = 0;
-    for (int layer_nr = 0; layer_nr < m_object->layer_count(); layer_nr++) {
-        if (m_object->print()->canceled())
-            break;
-
-        auto layer = m_object->get_layer(layer_nr);
-        auto lower_layer = layer->lower_layer;
+    struct FilterSummary
+    {
+        size_t detected = 0, enforced = 0;
+        bool   sharp_tail = false;
+    };
+    struct FilterResult
+    {
+        ExPolygons    overhangs, cantilevers;
+        FilterSummary summary;
+    };
+    // All neighboring slices, region paths and sharp-tail heights are finalized.
+    // A worker owns its output and temporaries; it never mutates neighboring data.
+    auto filter_layer = [&](size_t layer_nr, ExPolygons overhangs, ExPolygons cantilevers) {
+        FilterResult result{std::move(overhangs), std::move(cantilevers), {}};
+        const Layer* layer       = m_object->get_layer(layer_nr);
+        auto         lower_layer = layer->lower_layer;
 
         // add support for every 1mm height for sharp tails
         ExPolygons sharp_tail_overhangs;
@@ -1053,12 +1065,12 @@ void TreeSupport::detect_overhangs(bool check_support_necessity/* = false*/)
             sharp_tail_overhangs = layer->sharp_tails;
         else {
             ExPolygons lower_layer_expanded = offset_ex(lower_layer->lslices_extrudable, SCALED_RESOLUTION);
-            for (size_t i = 0; i < layer->sharp_tails_height.size();i++) {
-                ExPolygons areas = diff_clipped({ layer->sharp_tails[i]}, lower_layer_expanded);
-                float accum_height = layer->sharp_tails_height[i];
+            for (size_t i = 0; i < layer->sharp_tails_height.size(); i++) {
+                ExPolygons areas        = diff_clipped({layer->sharp_tails[i]}, lower_layer_expanded);
+                float      accum_height = layer->sharp_tails_height[i];
                 if (!areas.empty() && int(accum_height * 10) % 5 == 0) {
                     append(sharp_tail_overhangs, areas);
-                    has_sharp_tails = true;
+                    result.summary.sharp_tail = true;
 #ifdef SUPPORT_TREE_DEBUG_TO_SVG
                     SVG::export_expolygons(debug_out_path("sharp_tail_%.02f.svg", layer->print_z), areas);
 #endif
@@ -1069,62 +1081,134 @@ void TreeSupport::detect_overhangs(bool check_support_necessity/* = false*/)
         if (layer_nr < blockers.size()) {
             // Arthur: union_ is a must because after mirroring, the blocker polygons are in left-hand coordinates, ie clockwise,
             // which are not valid polygons, and will be removed by offset_ex. union_ can make these polygons right.
-            ExPolygons blocker = offset_ex(union_(blockers[layer_nr]), scale_(radius_sample_resolution));
-            layer->loverhangs = diff_ex(layer->loverhangs, blocker);
-            layer->cantilevers = diff_ex(layer->cantilevers, blocker);
+            ExPolygons blocker   = offset_ex(union_(blockers[layer_nr]), scale_(radius_sample_resolution));
+            result.overhangs     = diff_ex(result.overhangs, blocker);
+            result.cantilevers   = diff_ex(result.cantilevers, blocker);
             sharp_tail_overhangs = diff_ex(sharp_tail_overhangs, blocker);
         }
 
         if (support_critical_regions_only && is_auto(stype)) {
-            layer->loverhangs.clear();  // remove oridinary overhangs, only keep cantilevers and sharp tails (added later)
-            append(layer->loverhangs, layer->cantilevers);
+            result.overhangs.clear(); // remove oridinary overhangs, only keep cantilevers and sharp tails (added later)
+            append(result.overhangs, result.cantilevers);
         }
 
-        if (max_bridge_length > 0 && layer->loverhangs.size() > 0 && lower_layer) {
+        if (max_bridge_length > 0 && result.overhangs.size() > 0 && lower_layer) {
             // do not break bridge as the interface will be poor, see #4318
             bool break_bridge = false;
-            m_object->remove_bridges_from_contacts(lower_layer, layer, extrusion_width_scaled, &layer->loverhangs, max_bridge_length, break_bridge);
+            m_object->remove_bridges_from_contacts(lower_layer, layer, extrusion_width_scaled, &result.overhangs, max_bridge_length,
+                                                   break_bridge);
         }
 
-		int nDetected = layer->loverhangs.size();
+        result.summary.detected = result.overhangs.size();
         // enforcers now follow same logic as normal support. See STUDIO-3692
         if (layer_nr < enforcers.size() && lower_layer) {
-            ExPolygons enforced_overhangs   = intersection_ex(diff_ex(layer->lslices_extrudable, lower_layer->lslices_extrudable), enforcers[layer_nr]);
+            ExPolygons enforced_overhangs = intersection_ex(diff_ex(layer->lslices_extrudable, lower_layer->lslices_extrudable),
+                                                            enforcers[layer_nr]);
             if (!enforced_overhangs.empty()) {
                 // FIXME this is a hack to make enforcers work on steep overhangs. See STUDIO-7538.
                 enforced_overhangs = diff_ex(offset_ex(enforced_overhangs, enforcer_overhang_offset), lower_layer->lslices_extrudable);
-                append(layer->loverhangs, enforced_overhangs);
+                append(result.overhangs, enforced_overhangs);
             }
         }
-        int nEnforced = layer->loverhangs.size();
+        result.summary.enforced = result.overhangs.size();
 
         // add sharp tail overhangs
-        append(layer->loverhangs, sharp_tail_overhangs);
+        append(result.overhangs, sharp_tail_overhangs);
 
-        // fill overhang_types
-        for (size_t i = 0; i < layer->loverhangs.size(); i++)
-            overhang_types.emplace(&layer->loverhangs[i], i < nDetected ? OverhangType::Detected :
-                i < nEnforced ? OverhangType::Enforced : OverhangType::SharpTail);
+        return result;
+    };
 
-        if (!layer->loverhangs.empty()) {
-            layers_with_overhangs++;
-            m_highest_overhang_layer = std::max(m_highest_overhang_layer, size_t(layer_nr));
+    const char*       setting = std::getenv("ORCA_TREE_OVERHANG_FILTER");
+    const std::string mode    = setting ? setting : "parallel";
+    if (mode != "serial" && mode != "parallel" && mode != "validate")
+        throw std::runtime_error("ORCA_TREE_OVERHANG_FILTER must be serial, parallel, or validate");
+    const size_t               count = m_object->layer_count();
+    std::vector<FilterSummary> summaries(count);
+    auto                       check_canceled = [&] {
+        if (throw_on_cancel)
+            throw_on_cancel();
+        if (m_object->print()->canceled())
+            throw CanceledException();
+    };
+    // Only diagnostics retain a second set of outputs. Build references before
+    // starting workers, so the comparison can detect cross-layer dependencies.
+    std::vector<FilterResult> reference;
+    if (mode == "validate") {
+        reference.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            check_canceled();
+            const Layer* layer = m_object->get_layer(i);
+            reference.push_back(filter_layer(i, layer->loverhangs, layer->cantilevers));
         }
-        if (nEnforced > 0) layers_with_enforcers++;
-        if (!layer->cantilevers.empty()) has_cantilever = true;
     }
+    const auto filter_start  = std::chrono::steady_clock::now();
+    auto       process_layer = [&](size_t i) {
+        check_canceled();
+        Layer* layer  = m_object->get_layer(i);
+        auto   result = filter_layer(i, std::move(layer->loverhangs), std::move(layer->cantilevers));
+        if (!reference.empty()) {
+            const auto& expected = reference[i];
+            if (result.overhangs != expected.overhangs || result.cantilevers != expected.cantilevers ||
+                result.summary.detected != expected.summary.detected || result.summary.enforced != expected.summary.enforced ||
+                result.summary.sharp_tail != expected.summary.sharp_tail)
+                throw std::runtime_error("Parallel tree overhang filtering differs from serial output at layer " + std::to_string(i));
+        }
+        layer->loverhangs  = std::move(result.overhangs);
+        layer->cantilevers = std::move(result.cantilevers);
+        summaries[i]       = result.summary;
+    };
+    const int worker_limit = mode == "serial" ? 1 : std::min(4, tbb::this_task_arena::max_concurrency());
+    if (worker_limit == 1) {
+        for (size_t i = 0; i < count; ++i)
+            process_layer(i);
+    } else {
+        // Limit simultaneous Clipper temporaries; do not queue future exports.
+        tbb::task_arena arena(worker_limit);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, count, 1), [&](const tbb::blocked_range<size_t>& range) {
+                for (size_t i = range.begin(); i < range.end(); ++i)
+                    process_layer(i);
+            });
+        });
+    }
+    check_canceled();
 
-    BOOST_LOG_TRIVIAL(info) << "Tree support overhang detection done. " << layers_with_overhangs << " layers with overhangs. nEnforced=" << layers_with_enforcers;
+    int layers_with_overhangs = 0;
+    int layers_with_enforcers = 0;
+    // Publish pointers only after every vector has reached its final location.
+    overhang_types.clear();
+    for (size_t layer_nr = 0; layer_nr < count; ++layer_nr) {
+        const Layer* layer   = m_object->get_layer(layer_nr);
+        const auto&  summary = summaries[layer_nr];
+        has_sharp_tails      = has_sharp_tails || summary.sharp_tail;
+        for (size_t i = 0; i < layer->loverhangs.size(); ++i)
+            overhang_types.emplace(&layer->loverhangs[i], i < summary.detected ? OverhangType::Detected :
+                                                          i < summary.enforced ? OverhangType::Enforced :
+                                                                                 OverhangType::SharpTail);
+        if (!layer->loverhangs.empty()) {
+            ++layers_with_overhangs;
+            m_highest_overhang_layer = std::max(m_highest_overhang_layer, layer_nr);
+        }
+        if (summary.enforced > 0)
+            ++layers_with_enforcers;
+        if (!layer->cantilevers.empty())
+            has_cantilever = true;
+    }
+    BOOST_LOG_TRIVIAL(info) << "Tree support final filtering mode=" << mode << " worker_limit=" << worker_limit << " layers=" << count
+                            << " validated=" << reference.size() << " elapsed_ms="
+                            << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - filter_start).count();
+
+    BOOST_LOG_TRIVIAL(info) << "Tree support overhang detection done. " << layers_with_overhangs
+                            << " layers with overhangs. nEnforced=" << layers_with_enforcers;
 
 #ifdef SUPPORT_TREE_DEBUG_TO_SVG
     for (const Layer* layer : m_object->layers()) {
-        if (layer->loverhangs.empty() && (blockers.size()<=layer->id() || blockers[layer->id()].empty()))
+        if (layer->loverhangs.empty() && (blockers.size() <= layer->id() || blockers[layer->id()].empty()))
             continue;
 
-        SVG::export_expolygons(debug_out_path("overhang_areas_%d_%.2f.svg",layer->id(), layer->print_z), {
-            { m_object->get_layer(layer->id())->lslices_extrudable, {"lslices_extrudable","yellow",0.5} },
-            { layer->loverhangs, {"overhang","red",0.5} }
-            });
+        SVG::export_expolygons(debug_out_path("overhang_areas_%d_%.2f.svg", layer->id(), layer->print_z),
+                               {{m_object->get_layer(layer->id())->lslices_extrudable, {"lslices_extrudable", "yellow", 0.5}},
+                                {layer->loverhangs, {"overhang", "red", 0.5}}});
 
         if (enforcers.size() > layer->id()) {
             SVG svg(format("SVG/enforcer_%s.svg", layer->print_z), m_object->bounding_box());
@@ -1149,7 +1233,7 @@ void TreeSupport::detect_overhangs(bool check_support_necessity/* = false*/)
 void TreeSupport::create_tree_support_layers()
 {
     int layer_id = 0;
-    if (m_raft_layers > 0) { //create raft layers
+    if (m_raft_layers > 0) { // create raft layers
         coordf_t raft_print_z = 0.f;
         coordf_t raft_slice_z = 0.f;
         {

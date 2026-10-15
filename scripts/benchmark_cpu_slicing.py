@@ -75,6 +75,7 @@ def main():
         "shell_volume": os.environ.get("ORCA_SHELL_VOLUME", "cache"),
         "shell_projection": os.environ.get("ORCA_SHELL_PROJECTION", "cache"),
         "paint_islands": os.environ.get("ORCA_PAINT_ISLANDS", "cpu"),
+        "tree_overhang_filter": os.environ.get("ORCA_TREE_OVERHANG_FILTER", "parallel"),
         "seam_neighbors_prefetch": os.environ.get("ORCA_SEAM_NEIGHBORS_PREFETCH", "seeds"),
         "polygon_compute": os.environ.get("ORCA_POLYGON_COMPUTE", "cpu"),
         "polygon_stages": os.environ.get("ORCA_POLYGON_STAGES", ""),
