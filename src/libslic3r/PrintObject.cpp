@@ -4516,37 +4516,34 @@ void PrintObject::_generate_support_material()
 #define SUPPORT_SURFACES_OFFSET_PARAMETERS ClipperLib::jtSquare, 0.
 #define SUPPORT_MATERIAL_MARGIN 1.2
 template<typename PolysType>
-void PrintObject::remove_bridges_from_contacts(
-    const Layer* lower_layer,
-    const Layer* current_layer,
-    float extrusion_width,
-    PolysType* overhang_regions,
-    float max_bridge_length,
-    bool break_bridge)
+void PrintObject::remove_bridges_from_contacts(const Layer* lower_layer,
+                                               const Layer* current_layer,
+                                               float        extrusion_width,
+                                               PolysType*   overhang_regions,
+                                               float        max_bridge_length,
+                                               bool         break_bridge)
 {
     // Extrusion width accounts for the roundings of the extrudates.
     // It is the maximum widh of the extrudate.
-    float fw = extrusion_width;
-    Lines overhang_perimeters = to_lines(*overhang_regions);
-    auto layer_regions = current_layer->regions();
-    Polygons lower_layer_polygons = to_polygons(lower_layer->lslices);
-    const PrintObjectConfig& object_config = current_layer->object()->config();
+    float                    fw                   = extrusion_width;
+    auto                     layer_regions        = current_layer->regions();
+    Polygons                 lower_layer_polygons = to_polygons(lower_layer->lslices);
+    const PrintObjectConfig& object_config        = current_layer->object()->config();
+    // The support outline depends only on the lower layer and the shared width,
+    // not on the current region's flow. Reuse exactly the same offset for each region.
+    const Polygons lower_grown_slices = layer_regions.empty() ? Polygons{} :
+                                                                offset(lower_layer_polygons, 0.5f * fw, SUPPORT_SURFACES_OFFSET_PARAMETERS);
 
     Polygons all_bridges;
-    for (LayerRegion* layerm : layer_regions)
-    {
-        Polygons bridges;
-        // Surface supporting this layer, expanded by 0.5 * nozzle_diameter, as we consider this kind of overhang to be sufficiently supported.
-        Polygons lower_grown_slices = offset(lower_layer_polygons,
-            //FIXME to mimic the decision in the perimeter generator, we should use half the external perimeter width.
-            0.5f * fw, SUPPORT_SURFACES_OFFSET_PARAMETERS);
+    for (LayerRegion* layerm : layer_regions) {
+        Polygons  bridges;
         Polylines overhang_perimeters = diff_pl(layerm->perimeters.as_polylines(), lower_grown_slices);
         // only consider straight overhangs
-            // only consider overhangs having endpoints inside layer's slices
-            // convert bridging polylines into polygons by inflating them with their thickness
-            // since we're dealing with bridges, we can't assume width is larger than spacing,
-            // so we take the largest value and also apply safety offset to be ensure no gaps
-            // are left in between
+        // only consider overhangs having endpoints inside layer's slices
+        // convert bridging polylines into polygons by inflating them with their thickness
+        // since we're dealing with bridges, we can't assume width is larger than spacing,
+        // so we take the largest value and also apply safety offset to be ensure no gaps
+        // are left in between
         Flow bridge_flow = layerm->bridging_flow(frPerimeter, object_config.thick_bridges);
         float w = float(std::max(bridge_flow.scaled_width(), bridge_flow.scaled_spacing()));
         for (Polyline& polyline : overhang_perimeters)
