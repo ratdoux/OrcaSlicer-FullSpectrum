@@ -3840,49 +3840,42 @@ void GCodeProcessor::process_M205(const GCodeReader::GCodeLine& line)
 void GCodeProcessor::process_SET_VELOCITY_LIMIT(const GCodeReader::GCodeLine& line)
 {
     // handle SQUARE_CORNER_VELOCITY
-    std::regex pattern("\\sSQUARE_CORNER_VELOCITY\\s*=\\s*([0-9]*\\.*[0-9]*)");
-    std::smatch matches;
-    if (std::regex_search(line.raw(), matches, pattern) && matches.size() == 2) {
+    static const std::regex jerk_pattern("\\sSQUARE_CORNER_VELOCITY\\s*=\\s*([0-9]*\\.*[0-9]*)");
+    static const std::regex acceleration_pattern("\\sACCEL\\s*=\\s*([0-9]*\\.*[0-9]*)");
+    static const std::regex velocity_pattern("\\sVELOCITY\\s*=\\s*([0-9]*\\.*[0-9]*)");
+    std::smatch             matches;
+    if (std::regex_search(line.raw(), matches, jerk_pattern) && matches.size() == 2) {
         float _jerk = 0;
-        try
-        {
+        try {
             _jerk = std::stof(matches[1]);
-        }
-        catch (...){}
+        } catch (...) {}
         for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
             set_option_value(m_time_processor.machine_limits.machine_max_jerk_x, i, _jerk);
             set_option_value(m_time_processor.machine_limits.machine_max_jerk_y, i, _jerk);
         }
     }
 
-    pattern = std::regex("\\sACCEL\\s*=\\s*([0-9]*\\.*[0-9]*)");
-    if (std::regex_search(line.raw(), matches, pattern) && matches.size() == 2) {
+    if (std::regex_search(line.raw(), matches, acceleration_pattern) && matches.size() == 2) {
         float _accl = 0;
-        try
-        {
+        try {
             _accl = std::stof(matches[1]);
-        }
-        catch (...) {}
+        } catch (...) {}
         for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
             set_acceleration(static_cast<PrintEstimatedStatistics::ETimeMode>(i), _accl);
             set_travel_acceleration(static_cast<PrintEstimatedStatistics::ETimeMode>(i), _accl);
         }
     }
 
-    pattern = std::regex("\\sVELOCITY\\s*=\\s*([0-9]*\\.*[0-9]*)");
-    if (std::regex_search(line.raw(), matches, pattern) && matches.size() == 2) {
+    if (std::regex_search(line.raw(), matches, velocity_pattern) && matches.size() == 2) {
         float _speed = 0;
-        try
-        {
+        try {
             _speed = std::stof(matches[1]);
-        }
-        catch (...) {}
+        } catch (...) {}
         for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
-                set_option_value(m_time_processor.machine_limits.machine_max_speed_x, i, _speed);
-                set_option_value(m_time_processor.machine_limits.machine_max_speed_y, i, _speed);
+            set_option_value(m_time_processor.machine_limits.machine_max_speed_x, i, _speed);
+            set_option_value(m_time_processor.machine_limits.machine_max_speed_y, i, _speed);
         }
     }
-
 }
 
 void GCodeProcessor::process_M221(const GCodeReader::GCodeLine& line)
