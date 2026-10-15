@@ -1,4 +1,6 @@
 #include "PerimeterGenerator.hpp"
+#include <cstdlib>
+#include <stdexcept>
 #include "AABBTreeLines.hpp"
 #include "BridgeDetector.hpp"
 #include "ClipperUtils.hpp"
@@ -1180,12 +1182,19 @@ void PerimeterGenerator::process_classic()
 
     // prepare grown lower layer slices for overhang detection
     m_lower_polygons_series = generate_lower_polygons_series(this->perimeter_flow.width());
+    const char* support_mode     = std::getenv("ORCA_WALL_SUPPORT");
+    const bool  reuse_support    = !support_mode || std::string(support_mode) != "cpu";
+    const bool  validate_support = support_mode && std::string(support_mode) == "validate";
+    // The positive offset depends only on the nozzle and lower slices, not the wall width.
+    const Polygons* grown_lower_slices = reuse_support && !m_lower_polygons_series.empty() ? &m_lower_polygons_series.back() : nullptr;
     if (ext_perimeter_width == perimeter_width){
         m_external_lower_polygons_series = m_lower_polygons_series;
     } else {
-        m_external_lower_polygons_series = generate_lower_polygons_series(this->ext_perimeter_flow.width());
+        m_external_lower_polygons_series = generate_lower_polygons_series(this->ext_perimeter_flow.width(), grown_lower_slices,
+                                                                          validate_support);
     }
-    m_smaller_external_lower_polygons_series = generate_lower_polygons_series(this->smaller_ext_perimeter_flow.width());
+    m_smaller_external_lower_polygons_series = generate_lower_polygons_series(this->smaller_ext_perimeter_flow.width(), grown_lower_slices,
+                                                                              validate_support);
     // we need to process each island separately because we might have different
     // extra perimeters for each one
     Surfaces all_surfaces = this->slices->surfaces;
@@ -2535,7 +2544,7 @@ bool PerimeterGeneratorLoop::is_internal_contour() const
     return true;
 }
 
-std::vector<Polygons> PerimeterGenerator::generate_lower_polygons_series(float width)
+std::vector<Polygons> PerimeterGenerator::generate_lower_polygons_series(float width, const Polygons* grown_lower_slices, bool validate)
 {
     float nozzle_diameter = print_config->nozzle_diameter.get_at(config->wall_filament - 1);
     float start_offset = -0.5 * width;
@@ -2555,7 +2564,13 @@ std::vector<Polygons> PerimeterGenerator::generate_lower_polygons_series(float w
 
     // offset expolygon to generate series of polygons
     for (int i = 0; i < offset_series.size(); i++) {
-        lower_polygons_series.emplace_back(offset(*this->lower_slices, float(scale_(offset_series[i]))));
+        if (i + 1 == offset_series.size() && grown_lower_slices) {
+            if (validate && *grown_lower_slices != offset(*this->lower_slices, float(scale_(offset_series[i]))))
+                throw std::runtime_error("Reused wall support offset differs from CPU reference");
+            lower_polygons_series.push_back(*grown_lower_slices);
+        } else {
+            lower_polygons_series.emplace_back(offset(*this->lower_slices, float(scale_(offset_series[i]))));
+        }
     }
     return lower_polygons_series;
 }
