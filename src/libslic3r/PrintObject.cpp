@@ -24,6 +24,9 @@
 #include "format.hpp"
 
 #include <float.h>
+#include <cstdlib>
+#include <optional>
+#include <stdexcept>
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/concurrent_vector.h>
 #include <oneapi/tbb/parallel_for.h>
@@ -1672,10 +1675,17 @@ void PrintObject::discover_vertical_shells()
         Polygons    top_surfaces;
         Polygons    bottom_surfaces;
         Polygons    holes;
+        std::optional<Polygons> object_volume;
     };
+    const char* volume_mode      = std::getenv("ORCA_SHELL_VOLUME");
+    const bool  reuse_volume     = !volume_mode || std::string(volume_mode) != "cpu";
+    const bool  validate_volume  = volume_mode && std::string(volume_mode) == "validate";
     bool     spiral_mode      = this->print()->config().spiral_mode.value;
     size_t   num_layers       = spiral_mode ? std::min(size_t(this->printing_region(0).config().bottom_shell_layers), m_layers.size()) : m_layers.size();
     std::vector<DiscoverVerticalShellsCacheEntry> cache_top_botom_regions(num_layers, DiscoverVerticalShellsCacheEntry());
+    // Each layer has a single writer in each region pass. Region passes join before
+    // the next begins, so immutable layer intersections can be shared without locks.
+    const size_t volume_cache_limit              = (64u * 1024 * 1024) / std::max(size_t(1), num_layers);
     bool top_bottom_surfaces_all_regions = this->num_printing_regions() > 1 && ! m_config.interface_shells.value;
 //    static constexpr const float top_bottom_expansion_coeff = 1.05f;
     // Just a tiny fraction of an infill extrusion width to merge neighbor regions reliably.
@@ -1808,9 +1818,8 @@ void PrintObject::discover_vertical_shells()
         BOOST_LOG_TRIVIAL(debug) << "Discovering vertical shells for region " << region_id << " in parallel - start : ensure vertical wall thickness";
         grain_size = 1;
         tbb::parallel_for(
-            tbb::blocked_range<size_t>(0, num_layers, grain_size),
-            [this, region_id, &cache_top_botom_regions]
-            (const tbb::blocked_range<size_t>& range) {
+            tbb::blocked_range<size_t>(0, num_layers, grain_size), [this, region_id, &cache_top_botom_regions, reuse_volume, validate_volume,
+                                                                    volume_cache_limit](const tbb::blocked_range<size_t>& range) {
                 PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Shells);
                 // printf("discover_vertical_shells from %d to %d\n", range.begin(), range.end());
                 for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
@@ -1916,7 +1925,7 @@ void PrintObject::discover_vertical_shells()
 	                    for (; i >= 0 &&
 	                         (i > ibottom || bottom_z - m_layers[i]->bottom_z() < region_config.bottom_shell_thickness - EPSILON);
 	                        -- i) {
-                                at_least_one_bottom_projected = true;
+                            at_least_one_bottom_projected                 = true;
 	                        const DiscoverVerticalShellsCacheEntry &cache = cache_top_botom_regions[i];
 							combine_holes(cache.holes);
                             combine_shells(cache.bottom_surfaces);
@@ -2024,35 +2033,72 @@ void PrintObject::discover_vertical_shells()
                             // Finally expand the infill a bit to remove tiny gaps between solid infill and the other regions.
                             narrow_sparse_infill_region_radius - tiny_overlap_radius, ClipperLib::jtSquare);
 
-                        Polygons object_volume;
-                        Polygons internal_volume;
-                        {
-                            Polygons shrinked_bottom_slice = idx_layer > 0 ? to_polygons(m_layers[idx_layer - 1]->lslices) : Polygons{};
-                            Polygons shrinked_upper_slice  = (idx_layer + 1) < m_layers.size() ?
-                                                                 to_polygons(m_layers[idx_layer + 1]->lslices) :
-                                                                 Polygons{};
-                            object_volume = intersection(shrinked_bottom_slice, shrinked_upper_slice);
+                        auto compute_object_volume = [&] {
+                            const Polygons below = idx_layer > 0 ? to_polygons(m_layers[idx_layer - 1]->lslices) : Polygons{};
+                            const Polygons above = idx_layer + 1 < m_layers.size() ? to_polygons(m_layers[idx_layer + 1]->lslices) :
+                                                                                     Polygons{};
+                            return intersection(below, above);
+                        };
+                        auto&                   cached_volume = cache_top_botom_regions[idx_layer].object_volume;
+                        std::optional<Polygons> local_volume, internal_volume;
+                        auto                    object_volume = [&]() -> const Polygons& {
+                            if (reuse_volume && cached_volume) {
+                                if (validate_volume && *cached_volume != compute_object_volume())
+                                    throw std::runtime_error("Cached shell volume differs from CPU reference");
+                                return *cached_volume;
+                            }
+                            if (!local_volume) {
+                                local_volume = compute_object_volume();
+                                if (reuse_volume && this->num_printing_regions() > 1) {
+                                    size_t bytes = local_volume->capacity() * sizeof(Polygon);
+                                    for (const Polygon& polygon : *local_volume)
+                                        bytes += polygon.points.capacity() * sizeof(Point);
+                                    if (bytes <= volume_cache_limit) {
+                                        cached_volume = std::move(local_volume);
+                                        return *cached_volume;
+                                    }
+                                }
+                            }
+                            return *local_volume;
+                        };
+                        // Most shell pieces never need these expensive filter inputs.
+                        // Preserve the original predicate and only prepare inputs if reached.
+                        if (!reuse_volume) {
+                            local_volume    = compute_object_volume();
                             internal_volume = closing(polygonsInternal, SCALED_EPSILON);
                         }
-
-                        // The regularization operation may cause scattered tiny drops on the smooth parts of the model, filter them out
-                        // If the region checks both following conditions, it is removed:
-                        //   1. the area is very small,
-                        //      OR the area is quite small and it is fully wrapped in model (not visible)
-                        //      the in-model condition is there due to small sloping surfaces, e.g. top of the hull of the benchy
-                        //   2. the area does not fully cover an internal polygon
-                        //         This is there mainly for a very thin parts, where the solid layers would be missing if the part area is quite small
+                        const auto original_shell = validate_volume ? regularized_shell : ExPolygons{};
                         regularized_shell.erase(std::remove_if(regularized_shell.begin(), regularized_shell.end(),
-                                                               [&internal_volume, &min_perimeter_infill_spacing,
-                                                                &object_volume](const ExPolygon &p) {
-                                                                   return (p.area() < min_perimeter_infill_spacing * scaled(1.5) ||
-                                                                           (p.area() < min_perimeter_infill_spacing * scaled(8.0) &&
-                                                                            diff(to_polygons(p), object_volume).empty())) &&
-                                                                          diff(internal_volume,
+                                                               [&](const ExPolygon& p) {
+                                                                   const double area = p.area();
+                                                                   if (!(area < min_perimeter_infill_spacing * scaled(1.5) ||
+                                                                         (area < min_perimeter_infill_spacing * scaled(8.0) &&
+                                                                          diff(to_polygons(p), object_volume()).empty())))
+                                                                       return false;
+                                                                   if (!internal_volume)
+                                                                       internal_volume = closing(polygonsInternal, SCALED_EPSILON);
+                                                                   return diff(*internal_volume,
                                                                                expand(to_polygons(p), min_perimeter_infill_spacing))
-                                                                                  .size() >= internal_volume.size();
+                                                                              .size() >= internal_volume->size();
                                                                }),
                                                 regularized_shell.end());
+                        if (validate_volume) {
+                            const Polygons reference_volume   = compute_object_volume();
+                            const Polygons reference_internal = closing(polygonsInternal, SCALED_EPSILON);
+                            auto           expected           = original_shell;
+                            expected.erase(std::remove_if(expected.begin(), expected.end(),
+                                                          [&](const ExPolygon& p) {
+                                                              return (p.area() < min_perimeter_infill_spacing * scaled(1.5) ||
+                                                                      (p.area() < min_perimeter_infill_spacing * scaled(8.0) &&
+                                                                       diff(to_polygons(p), reference_volume).empty())) &&
+                                                                     diff(reference_internal,
+                                                                          expand(to_polygons(p), min_perimeter_infill_spacing))
+                                                                             .size() >= reference_internal.size();
+                                                          }),
+                                           expected.end());
+                            if (to_polygons(expected) != to_polygons(regularized_shell))
+                                throw std::runtime_error("Lazy shell filter differs from CPU reference");
+                        }
                     }
                     if (regularized_shell.empty())
                         continue;
