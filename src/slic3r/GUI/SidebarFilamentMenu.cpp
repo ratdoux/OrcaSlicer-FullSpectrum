@@ -242,10 +242,8 @@ void SidebarFilamentMenu::on_physical_change(size_t physical_count)
 
     update_physical_filaments();
 
-    if (physical_count == 1)
-        m_physical_sizer->SetCols(1);
-    else
-        m_physical_sizer->SetCols(2);
+    const int phys_cols = (physical_count <= 1) ? 1 : std::min(static_cast<int>(physical_count), get_max_columns());
+    m_physical_sizer->SetCols(phys_cols);
 
     // Counter logic
     if (m_lbl_physical_counter) {
@@ -491,10 +489,8 @@ void SidebarFilamentMenu::rebuild_mixed_cards(const std::vector<MixedFilamentDef
     const int mixed_grid_card_count = int(m_mixed_cards.size() + m_adaptive_mixed_cards.size());
     const int new_count = mixed_grid_card_count + int(m_image_map_cards.size());
 
-    if (mixed_grid_card_count <= 1)
-        m_mixed_sizer->SetCols(1);
-    else
-        m_mixed_sizer->SetCols(2);
+    const int mixed_cols = (mixed_grid_card_count <= 1) ? 1 : std::min(mixed_grid_card_count, get_max_columns());
+    m_mixed_sizer->SetCols(mixed_cols);
 
     // Counter logic
     if (m_lbl_mixed_counter) {
@@ -601,6 +597,44 @@ void SidebarFilamentMenu::set_adaptive_cycle_highlight(unsigned int filament_id)
     };
     apply_highlight(plater->get_view3D_canvas3D());
     apply_highlight(plater->get_assmeble_canvas3D());
+}
+
+int SidebarFilamentMenu::get_max_columns() const
+{
+    const int default_width = 42 * wxGetApp().em_unit();
+    const int width         = GetSize().x;
+    if (width <= 0)
+        return 2;
+
+    if (width >= int(default_width * 1.9))
+        return 4;
+    if (width >= int(default_width * 1.4))
+        return 3;
+    if (width >= int(default_width * 0.7))
+        return 2;
+    return 1;
+}
+
+void SidebarFilamentMenu::update_columns()
+{
+    if (!m_physical_sizer || !m_mixed_sizer)
+        return;
+
+    const int max_cols         = get_max_columns();
+    const int phys_cols        = (m_physical_count() <= 1) ? 1 : std::min(m_physical_count(), max_cols);
+    const int mixed_card_count = int(m_mixed_cards.size() + m_adaptive_mixed_cards.size());
+    const int mixed_cols       = (mixed_card_count <= 1) ? 1 : std::min(mixed_card_count, max_cols);
+
+    if (m_physical_sizer->GetCols() != phys_cols || m_mixed_sizer->GetCols() != mixed_cols) {
+        m_physical_sizer->SetCols(phys_cols);
+        m_mixed_sizer->SetCols(mixed_cols);
+        if (m_physical_panel)
+            m_physical_panel->Layout();
+        if (m_mixed_panel)
+            m_mixed_panel->Layout();
+        if (m_content_panel)
+            m_content_panel->Layout();
+    }
 }
 
 void SidebarFilamentMenu::edit_mixed_filament(int index, bool edit_by_color)
@@ -1231,6 +1265,11 @@ void SidebarFilamentMenu::build_ui(const wxColour& title_bg)
     SetSizer(m_main_sizer);
 
     show_SEMM_buttons(true);
+
+    Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
+        update_columns();
+        event.Skip();
+    });
 }
 
 void SidebarFilamentMenu::update_title(const wxString& label, const std::string& icon_name)
@@ -1297,6 +1336,8 @@ void SidebarFilamentMenu::msw_rescale()
     for (auto* card : m_adaptive_mixed_cards) {
         card->msw_rescale();
     }
+
+    update_columns();
 }
 
 void SidebarFilamentMenu::sys_color_changed()

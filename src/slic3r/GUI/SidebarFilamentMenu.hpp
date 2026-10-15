@@ -108,6 +108,8 @@ private:
     void end_mixed_card_callback();
     void schedule_pending_mixed_rebuild();
     void set_adaptive_cycle_highlight(unsigned int filament_id);
+    int  get_max_columns() const;
+    void update_columns();
 
     int                                  m_mixed_card_callback_depth{0};
     bool                                 m_mixed_rebuild_pending{false};

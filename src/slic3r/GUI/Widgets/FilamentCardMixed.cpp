@@ -614,43 +614,62 @@ void FilamentCardMixed::paint_box_mix(wxDC&                            context,
         swatch_start_x_positions.push_back(start_x);
     }
 
+    const wxColour default_text_color = is_dark ? *wxWHITE : wxColour(50, 58, 61);
+    const int      border_width       = 1;
+    const int      border_offset      = border_width / 2;
+
     // paint swatches
     for (int i = 0; i < physical_count; i++) {
-        // background
-        context.SetBrush(wxBrush(colors[i]));
-        context.SetPen(*wxTRANSPARENT_PEN);
-        context.DrawRectangle(swatch_start_x_positions[i], padding, swatch_widths[i], swatch_size.y);
+        const int      swatch_x   = swatch_start_x_positions[i];
+        const int      swatch_y   = padding;
+        const int      swatch_w   = swatch_widths[i];
+        const int      swatch_h   = swatch_size.y;
+        const wxColour text_color = is_hovered ? (colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE)
+                                               : default_text_color;
+        const wxString text       = is_hovered ? wxString(std::to_string(percentages[i]) + "%")
+                                               : wxString(std::to_string(indices[i]));
 
-        // optional border for very dark or very light colors
-        if (is_dark && colors[i].Red() < 45 && colors[i].Green() < 45 && colors[i].Blue() < 45) {
-            context.SetPen(wxPen(wxColour(130, 130, 128), 1)); // grey border for very dark colors
+        // swatch
+        if (is_hovered) {
+            context.SetBrush(wxBrush(colors[i]));
+            context.SetPen(*wxTRANSPARENT_PEN);
+            context.DrawRectangle(swatch_x, swatch_y, swatch_w, swatch_h);
+
+            // optional border for very dark or very light colors when filled
+            if (is_dark && colors[i].Red() < 45 && colors[i].Green() < 45 && colors[i].Blue() < 45) {
+                context.SetPen(wxPen(wxColour(130, 130, 128), 1)); // grey border for very dark colors
+                context.SetBrush(*wxTRANSPARENT_BRUSH);
+                context.DrawRectangle(swatch_x, swatch_y, swatch_w, swatch_h);
+            } else if (!is_dark && colors[i].Red() > 224 && colors[i].Green() > 224 && colors[i].Blue() > 224) {
+                context.SetPen(wxPen(wxColour(207, 207, 207), 1)); // light grey border for very light colors
+                context.SetBrush(*wxTRANSPARENT_BRUSH);
+                context.DrawRectangle(swatch_x, swatch_y, swatch_w, swatch_h);
+            }
+        } else {
             context.SetBrush(*wxTRANSPARENT_BRUSH);
-            context.DrawRectangle(swatch_start_x_positions[i], padding, swatch_widths[i], swatch_size.y);
-        } else if (!is_dark && colors[i].Red() > 224 && colors[i].Green() > 224 && colors[i].Blue() > 224) {
-            context.SetPen(wxPen(wxColour(207, 207, 207), 1)); // light grey border for very light colors
-            context.SetBrush(*wxTRANSPARENT_BRUSH);
-            context.DrawRectangle(swatch_start_x_positions[i], padding, swatch_widths[i], swatch_size.y);
+            context.SetPen(wxPen(colors[i], border_width));
+            context.DrawRectangle(swatch_x + border_offset, swatch_y + border_offset,
+                                  swatch_w - border_offset, swatch_h - border_offset);
         }
 
         // text
         context.SetFont(::Label::Body_12);
-        context.SetTextForeground(colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
+        context.SetTextForeground(text_color);
 
-        const wxString text      = is_hovered ? wxString(std::to_string(percentages[i]) + "%") : wxString(std::to_string(indices[i]));
         const wxSize   text_size = context.GetTextExtent(text);
-        const wxPoint  text_baseline_start_pos(swatch_start_x_positions[i] + (swatch_widths[i] - text_size.x) / 2,
-                                               padding + (swatch_size.y - text_size.y) / 2);
+        const wxPoint  text_baseline_start_pos(swatch_x + (swatch_w - text_size.x) / 2,
+                                               swatch_y + (swatch_h - text_size.y) / 2);
         context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
     }
 
     // border (draw last, so its on top)
-    const int     border_width = 1;
+    const int     panel_border_width = 1;
     const wxColor border_color = is_hovered ?
                                      wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1) :
                                      StateColor::darkModeColorFor(wxColour("#CECECE"));
 
     context.SetBrush(*wxTRANSPARENT_BRUSH);
-    context.SetPen(wxPen(border_color, border_width));
+    context.SetPen(wxPen(border_color, panel_border_width));
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 }
 
@@ -689,37 +708,55 @@ void FilamentCardMixed::paint_box_pattern(wxDC&                            conte
         }
         swatch_start_x_positions.push_back(start_x);
 
-        if (start_x <= size.x) {
+        if (start_x < size.x) {
             max_paintable_swatch_count++; // calculate how many swatches fit
         }
     }
 
+    const wxColour default_text_color = is_dark ? *wxWHITE : wxColour(50, 58, 61);
+    const int      border_width       = 1;
+    const int      border_offset      = border_width / 2;
+
     // paint swatches
     for (int i = 0; i < max_paintable_swatch_count; i++) {
-        // background
-        context.SetBrush(wxBrush(colors[i]));
-        context.SetPen(*wxTRANSPARENT_PEN);
-        context.DrawRectangle(swatch_start_x_positions[i], padding, swatch_width, swatch_size.y);
+        const int      swatch_x   = swatch_start_x_positions[i];
+        const int      swatch_y   = padding;
+        const int      swatch_w   = swatch_width;
+        const int      swatch_h   = swatch_size.y;
+        const wxColour text_color = is_hovered ? (colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE)
+                                               : default_text_color;
+        const wxString text       = wxString(std::to_string(indices[i]));
 
-        // optional border for very dark or very light colors
-        if (is_dark && colors[i].Red() < 45 && colors[i].Green() < 45 && colors[i].Blue() < 45) {
-            context.SetPen(wxPen(wxColour(130, 130, 128), 1)); // grey border for very dark colors
+        // swatch
+        if (is_hovered) {
+            context.SetBrush(wxBrush(colors[i]));
+            context.SetPen(*wxTRANSPARENT_PEN);
+            context.DrawRectangle(swatch_x, swatch_y, swatch_w, swatch_h);
+
+            // optional border for very dark or very light colors when filled
+            if (is_dark && colors[i].Red() < 45 && colors[i].Green() < 45 && colors[i].Blue() < 45) {
+                context.SetPen(wxPen(wxColour(130, 130, 128), 1)); // grey border for very dark colors
+                context.SetBrush(*wxTRANSPARENT_BRUSH);
+                context.DrawRectangle(swatch_x, swatch_y, swatch_w, swatch_h);
+            } else if (!is_dark && colors[i].Red() > 224 && colors[i].Green() > 224 && colors[i].Blue() > 224) {
+                context.SetPen(wxPen(wxColour(207, 207, 207), 1)); // light grey border for very light colors
+                context.SetBrush(*wxTRANSPARENT_BRUSH);
+                context.DrawRectangle(swatch_x, swatch_y, swatch_w, swatch_h);
+            }
+        } else {
             context.SetBrush(*wxTRANSPARENT_BRUSH);
-            context.DrawRectangle(swatch_start_x_positions[i], padding, swatch_width, swatch_size.y);
-        } else if (!is_dark && colors[i].Red() > 224 && colors[i].Green() > 224 && colors[i].Blue() > 224) {
-            context.SetPen(wxPen(wxColour(207, 207, 207), 1)); // light grey border for very light colors
-            context.SetBrush(*wxTRANSPARENT_BRUSH);
-            context.DrawRectangle(swatch_start_x_positions[i], padding, swatch_width, swatch_size.y);
+            context.SetPen(wxPen(colors[i], border_width));
+            context.DrawRectangle(swatch_x + border_offset, swatch_y + border_offset,
+                                  swatch_w - border_offset, swatch_h - border_offset);
         }
 
         // text
         context.SetFont(::Label::Body_12);
-        context.SetTextForeground(colors[i].GetLuminance() > 0.5 ? wxColour(50, 58, 61) : *wxWHITE);
+        context.SetTextForeground(text_color);
 
-        const wxString text      = wxString(std::to_string(indices[i]));
         const wxSize   text_size = context.GetTextExtent(text);
-        const wxPoint  text_baseline_start_pos(swatch_start_x_positions[i] + (swatch_width - text_size.x) / 2,
-                                               padding + (swatch_size.y - text_size.y) / 2);
+        const wxPoint  text_baseline_start_pos(swatch_x + (swatch_w - text_size.x) / 2,
+                                               swatch_y + (swatch_h - text_size.y) / 2);
         context.DrawText(text, text_baseline_start_pos.x, text_baseline_start_pos.y);
     }
 
@@ -744,13 +781,13 @@ void FilamentCardMixed::paint_box_pattern(wxDC&                            conte
     }
 
     // border (draw last, so its on top)
-    const int     border_width = 1;
+    const int     panel_border_width = 1;
     const wxColor border_color = is_hovered ?
                                      wxColor(ColorRGB::ORCA().r_uchar(), ColorRGB::ORCA().g_uchar(), ColorRGB::ORCA().b_uchar(), 1) :
                                      StateColor::darkModeColorFor(wxColour("#CECECE"));
 
     context.SetBrush(*wxTRANSPARENT_BRUSH);
-    context.SetPen(wxPen(border_color, border_width));
+    context.SetPen(wxPen(border_color, panel_border_width));
     context.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 }
 
