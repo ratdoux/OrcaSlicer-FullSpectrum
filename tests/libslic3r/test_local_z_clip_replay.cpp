@@ -1,0 +1,336 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include "libslic3r/Compute/LocalZClipDecision.hpp"
+#include "libslic3r/LocalZClipper.hpp"
+#include <nlohmann/json.hpp>
+
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <random>
+
+using namespace Slic3r;
+namespace {
+using Json  = nlohmann::json;
+using Clock = std::chrono::steady_clock;
+double elapsed_ms(Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); }
+bool   same(const Polylines& a, const Polylines& b)
+{
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(), [](const Polyline& x, const Polyline& y) { return x.points == y.points; });
+}
+Points read_points(const Json& value)
+{
+    Points points;
+    for (const auto& point : value)
+        points.emplace_back(point[0].get<coord_t>(), point[1].get<coord_t>());
+    return points;
+}
+Polylines read_lines(const Json& value)
+{
+    Polylines lines;
+    for (const auto& line : value)
+        lines.emplace_back(read_points(line));
+    return lines;
+}
+struct ReplayCase
+{
+    uint64_t                       id;
+    bool                           difference;
+    double                         captured_ms;
+    ExPolygons                     masks;
+    Polylines                      input, reference;
+    std::vector<ClipSegmentQuery>  queries;
+    std::unique_ptr<LocalZClipper> clipper;
+    bool                           eligible = true, proven_empty = false;
+};
+bool bounded(const Point& p) { return p.x() >= -(1 << 29) && p.x() <= (1 << 29) && p.y() >= -(1 << 29) && p.y() <= (1 << 29); }
+} // namespace
+
+TEST_CASE("Local-Z empty decisions preserve boundaries and holes", "[LocalZ][VulkanCompute]")
+{
+    const std::vector<ClipMaskEdge> edges{{0, 0, 100, 0},   {100, 0, 100, 100}, {100, 100, 0, 100}, {0, 100, 0, 0},
+                                          {30, 30, 30, 70}, {30, 70, 70, 70},   {70, 70, 70, 30},   {70, 30, 30, 30}};
+    auto                            decision = [&](std::array<int32_t, 4> p, bool difference) {
+        return local_z_segment_proven_empty(edges, {p, 0, uint32_t(edges.size()), uint32_t(difference), 0});
+    };
+    CHECK(decision({10, 10, 20, 20}, true) == 1);
+    CHECK(decision({40, 40, 60, 60}, false) == 1); // Hole.
+    CHECK(decision({110, 50, 200, 50}, false) == 1);
+    CHECK(decision({-10, 50, 110, 50}, false) == 0);
+    CHECK(decision({0, 10, 0, 90}, true) == 0);
+    CHECK(decision({1, 10, 1, 90}, true) == 0); // Rounding guard.
+    CHECK(decision({40, 40, 40, 40}, false) == 0);
+    CHECK(decision({1 << 30, 0, (1 << 30) + 10, 10}, false) == 0);
+}
+
+TEST_CASE("Vulkan Local-Z decisions match bounded integer reference", "[.][LocalZVulkanHardware]")
+{
+    const std::vector<ClipMaskEdge> edges{{0, 0, 500000000, 0},
+                                          {500000000, 0, 500000000, 500000000},
+                                          {500000000, 500000000, 0, 500000000},
+                                          {0, 500000000, 0, 0},
+                                          {100000000, 100000000, 100000000, 200000000},
+                                          {100000000, 200000000, 200000000, 200000000},
+                                          {200000000, 200000000, 200000000, 100000000},
+                                          {200000000, 100000000, 100000000, 100000000}};
+    const char*                     device = std::getenv("ORCA_VULKAN_DEVICE");
+    std::string                     error;
+    auto                            backend = VulkanLocalZClipDecision::create(edges, device ? device : "", error);
+    INFO(error);
+    REQUIRE(backend);
+    std::mt19937                           engine(43871);
+    std::uniform_int_distribution<int32_t> position(-536870912, 536870912);
+    for (size_t count : {size_t(1), size_t(1003), size_t(VulkanBatch::BATCH_CAPACITY)}) {
+        std::vector<ClipSegmentQuery> queries;
+        for (size_t i = 0; i < count; ++i)
+            queries.push_back({{position(engine), position(engine), position(engine), position(engine)}, 0, 8, uint32_t(i % 2), 0});
+        queries.front().endpoints = {0, 0, 500000000, 0}; // Coincident boundary.
+        if (count > 1) {
+            queries[1].edge_start = 9;
+            queries[2].edge_count = 100;
+            queries[3].endpoints  = {0, 0, 0, 0};
+            queries[4].endpoints  = {INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX};
+            queries[5].endpoints  = {1, 20, 1, 5000};
+            queries[6].endpoints  = {499999999, 20, 499999999, 5000};
+        }
+        std::vector<uint32_t> decisions;
+        REQUIRE(backend->compute(queries, decisions, error));
+        REQUIRE(decisions.size() == queries.size());
+        for (size_t i = 0; i < queries.size(); ++i)
+            CHECK(decisions[i] == local_z_segment_proven_empty(edges, queries[i]));
+    }
+    std::vector<uint32_t> results;
+    REQUIRE(backend->compute({}, results, error));
+    CHECK(results.empty());
+    CHECK_FALSE(backend->compute(std::vector<ClipSegmentQuery>(VulkanBatch::BATCH_CAPACITY + 1), results, error));
+    CHECK_FALSE(error.empty());
+    CHECK_FALSE(VulkanLocalZClipDecision::create(edges, "no-such-vulkan-gpu", error));
+    REQUIRE(backend->update_edges(std::vector<ClipMaskEdge>(edges.begin(), edges.begin() + 4), error));
+    const std::vector<ClipMaskEdge>     solid(edges.begin(), edges.begin() + 4);
+    const std::vector<ClipSegmentQuery> updated{{{150000000, 150000000, 160000000, 160000000}, 0, 4, 1, 0}};
+    REQUIRE(backend->compute(updated, results, error));
+    REQUIRE(results.size() == 1);
+    CHECK(results[0] == local_z_segment_proven_empty(solid, updated[0]));
+    CHECK(results[0] == 1);
+    CHECK_FALSE(backend->update_edges(std::vector<ClipMaskEdge>(edges.size() + 1), error));
+    CHECK_FALSE(backend->update_edges({}, error));
+}
+
+TEST_CASE("Conservative empty decisions agree with polygon clipping", "[LocalZ][VulkanCompute]")
+{
+    std::mt19937                       engine(307117);
+    std::uniform_int_distribution<int> coordinate(-10000, 10000), size(20, 1000);
+    size_t                             checked_empty = 0;
+    for (size_t iteration = 0; iteration < 400; ++iteration) {
+        ExPolygons                polygons;
+        std::vector<ClipMaskEdge> edges;
+        auto                      add_ring = [&](const Points& points) {
+            for (size_t i = 0; i < points.size(); ++i) {
+                const auto& a = points[i];
+                const auto& b = points[(i + 1) % points.size()];
+                edges.push_back({int32_t(a.x()), int32_t(a.y()), int32_t(b.x()), int32_t(b.y())});
+            }
+        };
+        for (size_t m = 0; m < 6; ++m) {
+            const int x = coordinate(engine), y = coordinate(engine), width = size(engine), height = size(engine);
+            ExPolygon polygon(Points{{x, y}, {x + width, y}, {x + width + 5, y + height}, {x, y + height / 2}});
+            if (m % 2 == 0) {
+                polygon.holes.emplace_back(Points{{x + 3, y + 3}, {x + 3, y + 8}, {x + 8, y + 8}, {x + 8, y + 3}});
+                add_ring(polygon.holes.back().points);
+            }
+            add_ring(polygon.contour.points);
+            polygons.push_back(std::move(polygon));
+        }
+        LocalZClipper clipper(polygons);
+        for (size_t path = 0; path < 20; ++path) {
+            Points points;
+            for (size_t i = 0; i < 2 + path % 5; ++i)
+                points.emplace_back(coordinate(engine), coordinate(engine));
+            const Polyline line(points);
+            for (bool difference : {false, true}) {
+                bool empty = true;
+                for (size_t i = 1; i < points.size(); ++i)
+                    empty = empty && local_z_segment_proven_empty(edges, {{int32_t(points[i - 1].x()), int32_t(points[i - 1].y()),
+                                                                           int32_t(points[i].x()), int32_t(points[i].y())},
+                                                                          0,
+                                                                          uint32_t(edges.size()),
+                                                                          uint32_t(difference),
+                                                                          0});
+                if (empty) {
+                    const auto clipped = difference ? clipper.difference(Polylines{line}) : clipper.intersection(line);
+                    REQUIRE(clipped.empty());
+                    ++checked_empty;
+                }
+            }
+        }
+    }
+    CHECK(checked_empty > 1000);
+}
+
+// Captured inputs are deliberately external, bounded development artifacts.
+// Replay reproduces ordered integer output before reporting any opportunity.
+TEST_CASE("Replay captured Local-Z export clipping", "[.][LocalZReplay]")
+{
+    const char* capture = std::getenv("ORCA_LOCAL_Z_REPLAY");
+    REQUIRE(capture != nullptr);
+    std::ifstream stream(std::filesystem::u8path(capture));
+    REQUIRE(stream.good());
+    std::vector<ReplayCase>   cases;
+    std::vector<ClipMaskEdge> edges;
+    std::string               text;
+    while (std::getline(stream, text)) {
+        const auto row = Json::parse(text);
+        REQUIRE(row.at("version") == 1);
+        ReplayCase c;
+        c.id                    = row.at("id");
+        c.difference            = row.at("operation") == "difference";
+        c.captured_ms           = row.at("elapsed_ms");
+        c.input                 = read_lines(row.at("subject"));
+        c.reference             = read_lines(row.at("result"));
+        const size_t edge_start = edges.size();
+        for (const auto& polygon : row.at("masks")) {
+            ExPolygon mask(read_points(polygon.at(0)));
+            for (size_t i = 1; i < polygon.size(); ++i)
+                mask.holes.emplace_back(read_points(polygon[i]));
+            for (const auto& ring : polygon) {
+                const Points points = read_points(ring);
+                for (size_t i = 0; i < points.size(); ++i) {
+                    const auto& a = points[i];
+                    const auto& b = points[(i + 1) % points.size()];
+                    if (!bounded(a) || !bounded(b))
+                        c.eligible = false;
+                    edges.push_back({int32_t(a.x()), int32_t(a.y()), int32_t(b.x()), int32_t(b.y())});
+                }
+            }
+            c.masks.push_back(std::move(mask));
+        }
+        for (const Polyline& line : c.input) {
+            if (line.points.size() < 2)
+                c.eligible = false;
+            for (size_t i = 1; i < line.points.size(); ++i) {
+                const auto& a = line.points[i - 1];
+                const auto& b = line.points[i];
+                if (!bounded(a) || !bounded(b))
+                    c.eligible = false;
+                c.queries.push_back({{int32_t(a.x()), int32_t(a.y()), int32_t(b.x()), int32_t(b.y())},
+                                     uint32_t(edge_start),
+                                     uint32_t(edges.size() - edge_start),
+                                     uint32_t(c.difference),
+                                     0});
+            }
+        }
+        if (c.queries.empty())
+            c.eligible = false;
+        cases.emplace_back(std::move(c));
+    }
+    REQUIRE_FALSE(cases.empty());
+    for (auto& c : cases)
+        c.clipper = std::make_unique<LocalZClipper>(c.masks);
+    double     reference_ms = 0, captured_ms = 0, saved_reference_ms = 0, saved_captured_ms = 0;
+    size_t     empty = 0, rejected = 0, queries = 0;
+    const auto classify_start = Clock::now();
+    for (auto& c : cases) {
+        c.proven_empty = c.eligible;
+        for (const auto& query : c.queries) {
+            ++queries;
+            if (!local_z_segment_proven_empty(edges, query))
+                c.proven_empty = false;
+        }
+    }
+    const double classify_ms = elapsed_ms(classify_start);
+    for (const auto& c : cases) {
+        INFO(c.id);
+        const auto   start  = Clock::now();
+        const auto   result = c.difference ? c.clipper->difference(c.input) : c.clipper->intersection(c.input.at(0));
+        const double ms     = elapsed_ms(start);
+        REQUIRE(same(result, c.reference));
+        reference_ms += ms;
+        captured_ms += c.captured_ms;
+        empty += result.empty();
+        if (c.proven_empty) {
+            REQUIRE(result.empty());
+            ++rejected;
+            saved_reference_ms += ms;
+            saved_captured_ms += c.captured_ms;
+        }
+    }
+    Json report = {{"cases", cases.size()},
+                   {"edges", edges.size()},
+                   {"segments", queries},
+                   {"empty_results", empty},
+                   {"proven_empty", rejected},
+                   {"reference_ms", reference_ms},
+                   {"classify_cpu_ms", classify_ms},
+                   {"saved_reference_ms", saved_reference_ms},
+                   {"captured_ms", captured_ms},
+                   {"saved_captured_ms", saved_captured_ms}};
+    if (std::getenv("ORCA_LOCAL_Z_REPLAY_GPU")) {
+        const char* device = std::getenv("ORCA_VULKAN_DEVICE");
+        std::string error;
+        const auto  setup_start = Clock::now();
+        auto        backend     = VulkanLocalZClipDecision::create(edges, device ? device : "", error);
+        INFO(error);
+        REQUIRE(backend);
+        report["gpu_device"]          = backend->device_name();
+        report["gpu_setup_upload_ms"] = elapsed_ms(setup_start);
+        Json repetitions              = Json::array();
+        for (size_t repetition = 0; repetition < 3; ++repetition) {
+            const auto                    start = Clock::now();
+            std::vector<uint32_t>         decisions, batch_results;
+            std::vector<ClipSegmentQuery> batch;
+            batch.reserve(VulkanBatch::BATCH_CAPACITY);
+            decisions.reserve(queries);
+            for (const auto& c : cases)
+                for (const auto& query : c.queries) {
+                    batch.push_back(query);
+                    if (batch.size() == VulkanBatch::BATCH_CAPACITY) {
+                        REQUIRE(backend->compute(batch, batch_results, error));
+                        decisions.insert(decisions.end(), batch_results.begin(), batch_results.end());
+                        batch.clear();
+                    }
+                }
+            if (!batch.empty()) {
+                REQUIRE(backend->compute(batch, batch_results, error));
+                decisions.insert(decisions.end(), batch_results.begin(), batch_results.end());
+            }
+            std::vector<bool> discard(cases.size());
+            size_t            index = 0;
+            for (size_t i = 0; i < cases.size(); ++i) {
+                discard[i] = cases[i].eligible;
+                for (size_t q = 0; q < cases[i].queries.size(); ++q)
+                    if (!decisions[index++])
+                        discard[i] = false;
+            }
+            const double gpu_ms = elapsed_ms(start);
+            REQUIRE(index == decisions.size());
+            index = 0;
+            for (size_t i = 0; i < cases.size(); ++i) {
+                INFO(cases[i].id);
+                REQUIRE(discard[i] == cases[i].proven_empty);
+                for (const auto& query : cases[i].queries)
+                    REQUIRE(decisions[index++] == local_z_segment_proven_empty(edges, query));
+            }
+            double fallback_ms = 0;
+            for (size_t i = 0; i < cases.size(); ++i) {
+                const auto& c              = cases[i];
+                const auto  fallback_start = Clock::now();
+                const auto  result         = discard[i] ? Polylines{} :
+                                                          (c.difference ? c.clipper->difference(c.input) : c.clipper->intersection(c.input.at(0)));
+                fallback_ms += elapsed_ms(fallback_start);
+                REQUIRE(same(result, c.reference));
+            }
+            repetitions.push_back(
+                {{"gpu_classification_ms", gpu_ms}, {"cpu_fallback_ms", fallback_ms}, {"combined_ms", gpu_ms + fallback_ms}});
+        }
+        report["gpu_repetitions"] = std::move(repetitions);
+    }
+    std::cout << "Local-Z replay " << report.dump() << '\n';
+    if (const char* output = std::getenv("ORCA_LOCAL_Z_REPLAY_REPORT")) {
+        std::ofstream out(std::filesystem::u8path(output));
+        out << report.dump(2) << '\n';
+        REQUIRE(out.good());
+    }
+}

@@ -7,6 +7,7 @@
 #include "GCode.hpp"
 #include "LocalZOrderOptimizer.hpp"
 #include "LocalZClipper.hpp"
+#include "LocalZClipAcceleration.hpp"
 #include "Exception.hpp"
 #include "ExtrusionEntity.hpp"
 #include "EdgeGrid.hpp"
@@ -2207,6 +2208,7 @@ static BambuBedType to_bambu_bed_type(BedType type)
 void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGeneratorCallback thumbnail_cb)
 {
     PROFILE_FUNC();
+    m_local_z_clip_acceleration = LocalZClipAcceleration::from_environment();
 
     // modifies m_silent_time_estimator_enabled
     DoExport::init_gcode_processor(print.config(), m_processor, m_silent_time_estimator_enabled);
@@ -3174,6 +3176,8 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
     }
     file.write("\n");
 
+    if (m_local_z_clip_acceleration)
+        m_local_z_clip_acceleration->report();
     print.throw_if_canceled();
 }
 
@@ -3772,10 +3776,7 @@ static inline void append_clipped_path(const ExtrusionPath& src_path,
                                        const double         flow_height_override,
                                        ExtrusionEntityCollection& dst)
 {
-    Polylines segments = include_masks != nullptr && !include_masks->empty() ? include_masks->intersection(src_path.polyline) :
-                                                                               Polylines{src_path.polyline};
-    if (exclude_masks != nullptr && !exclude_masks->empty())
-        segments = exclude_masks->difference(segments);
+    Polylines segments = LocalZClipper::clip_path(src_path.polyline, include_masks, exclude_masks);
 
     for (Polyline& segment : segments) {
         if (!segment.is_valid())
@@ -3964,7 +3965,8 @@ static std::unique_ptr<ExtrusionEntityCollection> clip_extrusion_collection_for_
     const LocalZClipper*                exclude_masks,
     const double                     flow_height_override,
     const LocalZClipRoleScope         role_scope,
-    const LocalZClipper*                non_external_exclude_masks = nullptr)
+    const LocalZClipper*                non_external_exclude_masks = nullptr,
+    LocalZClipAcceleration*             acceleration = nullptr)
 {
     if (source.entities.empty())
         return nullptr;
@@ -3980,6 +3982,20 @@ static std::unique_ptr<ExtrusionEntityCollection> clip_extrusion_collection_for_
     out->no_sort = source.no_sort;
 
     for (const ExtrusionEntity* entity : source.flatten_refs()) {
+        // The classifier has one exclusion mask per entity. Adaptive FullSpectrum
+        // walls can use different masks by role, so leave those on exact clipping.
+        const bool discard = acceleration && non_external_exclude_masks == nullptr &&
+                             acceleration->proven_empty(*entity, include_masks, exclude_masks);
+        if (discard) {
+            if (acceleration->validation()) {
+                ExtrusionEntityCollection reference_source;
+                reference_source.append(*entity);
+                if (clip_extrusion_collection_for_local_z(reference_source, include_masks, exclude_masks,
+                                                         flow_height_override, role_scope))
+                    throw std::runtime_error("Local-Z classifier rejected a nonempty clipped extrusion");
+            }
+            continue;
+        }
         if (const auto* path = dynamic_cast<const ExtrusionPath*>(entity)) {
             if (local_z_role_matches(path->role(), role_scope)) {
                 const LocalZClipper* path_exclude_masks =
@@ -5134,6 +5150,39 @@ LayerResult GCode::process_layer(const Print& print,
                                    << " runtime_supported=" << local_z_perimeter_runtime_supported;
     }
 
+    if (m_local_z_clip_acceleration && local_z_perimeter_phase_b_enabled) {
+        auto& acceleration = *m_local_z_clip_acceleration;
+        acceleration.begin_layer();
+        for (size_t layer_idx = 0; layer_idx < layers.size(); ++layer_idx) {
+            if (!local_z_layer_contexts[layer_idx].enabled || layers[layer_idx].object_layer == nullptr)
+                continue;
+            print.throw_if_canceled();
+            auto& ctx = local_z_layer_contexts[layer_idx];
+            for (const LayerRegion* region : layers[layer_idx].object_layer->regions()) {
+                if (region == nullptr)
+                    continue;
+                auto add_collections = [&](const ExtrusionEntityCollection& collections) {
+                    for (const ExtrusionEntity* entity : collections.entities) {
+                        const auto* collection = dynamic_cast<const ExtrusionEntityCollection*>(entity);
+                        if (collection == nullptr || collection->entities.empty())
+                            continue;
+                        for (const auto& pass : ctx.pass_buckets) {
+                            if (pass.plan == nullptr)
+                                continue;
+                            for (size_t extruder = 0; extruder < pass.plan->painted_masks_by_extruder.size(); ++extruder)
+                                acceleration.add(*collection, pass.clippers_by_extruder[extruder], false);
+                        }
+                        acceleration.add(*collection, ctx.base_external_exclude_clipper, true);
+                    }
+                };
+                add_collections(region->perimeters);
+                if (local_z_infill_enabled)
+                    add_collections(region->fills);
+            }
+        }
+        acceleration.prepare([&print] { print.throw_if_canceled(); });
+    }
+
     for (const LayerToPrint& layer_to_print : layers) {
         const size_t layer_to_print_idx = &layer_to_print - layers.data();
         if (layer_to_print.support_layer != nullptr) {
@@ -5346,7 +5395,7 @@ LayerResult GCode::process_layer(const Print& print,
                                         entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
                                                 pass_bucket.plan->external_perimeters_only
                                             ? LocalZClipRoleScope::ExternalPerimeters
-                                            : LocalZClipRoleScope::All);
+                                            : LocalZClipRoleScope::All, nullptr, m_local_z_clip_acceleration.get());
                                     if (!clipped_local)
                                         continue;
 
@@ -5396,7 +5445,8 @@ LayerResult GCode::process_layer(const Print& print,
                                 entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
                                         local_z_ctx->has_adaptive_perimeter_pass
                                     ? &local_z_ctx->non_adaptive_exclude_clipper
-                                    : nullptr);
+                                    : nullptr,
+                                m_local_z_clip_acceleration.get());
                             if (!clipped_base)
                                 continue;
                             const LocalZPathHeightStats base_height_stats = collect_local_z_path_height_stats(*clipped_base);

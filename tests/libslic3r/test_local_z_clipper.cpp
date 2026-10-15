@@ -27,6 +27,9 @@ void check_paths(const ExPolygons& masks, const Polylines& subjects)
     for (const Polyline& subject : subjects) {
         const Polylines reference = intersection_pl(Polylines{subject}, masks);
         CHECK(same_paths(prepared.intersection(subject), reference));
+        CHECK(same_paths(LocalZClipper::clip_path(subject, &prepared, nullptr), masks.empty() ? Polylines{subject} : reference));
+        CHECK(same_paths(LocalZClipper::clip_path(subject, nullptr, &prepared),
+                         masks.empty() ? Polylines{subject} : diff_pl(Polylines{subject}, masks)));
         CHECK(prepared.intersects(subject) ==
               std::any_of(reference.begin(), reference.end(), [](const Polyline& line) { return line.is_valid(); }));
         CHECK(same_paths(prepared.difference(Polylines{subject}), diff_pl(Polylines{subject}, masks)));

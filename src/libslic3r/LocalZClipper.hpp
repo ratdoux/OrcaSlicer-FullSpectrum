@@ -24,7 +24,12 @@ public:
     Polylines difference(const Polylines& subject) const;
     bool      intersects(const Polyline& subject) const;
 
+    // Export's intersection-then-difference operation. Optional process-wide
+    // timing/capture is enabled by ORCA_LOCAL_Z_PROFILE / ORCA_LOCAL_Z_CAPTURE.
+    static Polylines clip_path(const Polyline& subject, const LocalZClipper* include_masks, const LocalZClipper* exclude_masks);
+
 private:
+    friend class LocalZClipAcceleration;
     const ExPolygons*        m_masks = nullptr;
     BoundingBox              m_bounds;
     std::vector<BoundingBox> m_polygon_bounds;

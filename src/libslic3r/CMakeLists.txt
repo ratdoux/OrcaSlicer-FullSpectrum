@@ -356,6 +356,8 @@ set(lisbslic3r_sources
     MixedFilamentLayerTracker.hpp
     LocalZClipper.cpp
     LocalZClipper.hpp
+    LocalZClipAcceleration.cpp
+    LocalZClipAcceleration.hpp
     filament_mixer.cpp
     filament_mixer.h
     filament_mixer_model.h
