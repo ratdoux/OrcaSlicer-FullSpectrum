@@ -13,14 +13,14 @@ struct TravelTestLayer : Layer
 };
 } // namespace
 
-TEST_CASE("Indexed travel containment preserves clipping at holes and boundaries", "[CPUSlicing][TravelContainment]")
+TEST_CASE("Travel containment cache preserves clipping at holes and boundaries", "[CPUSlicing][TravelContainment]")
 {
     TravelTestLayer layer, other;
     ExPolygon       island(Polygon{{{0, 0}, {10000000, 0}, {10000000, 10000000}, {0, 10000000}}});
     island.holes.emplace_back(Points{{2000000, 2000000}, {2000000, 8000000}, {8000000, 8000000}, {8000000, 2000000}});
     layer.add_region(nullptr)->slices.surfaces.emplace_back(stInternal, island);
     ExPolygon far = island;
-    far.translate(1000000000, 0); // Outside the bounded predicate's coordinate range.
+    far.translate(1000000000, 0); // Also check large coordinates when switching cached layers.
     other.add_region(nullptr)->slices.surfaces.emplace_back(stInternal, far);
     RetractWhenCrossingPerimeters cache;
     auto                          check = [&](const Layer& current, const ExPolygon& shape, const Points& points) {
@@ -48,6 +48,12 @@ TEST_CASE("Indexed travel containment preserves clipping at holes and boundaries
             points.emplace_back(coordinate(random), coordinate(random));
         check(layer, island, points);
     }
+    // Exercise Clipper's integer rounding guard, touches, duplicate vertices,
+    // and tiny segments on both sides of the outer and hole boundaries.
+    for (coord_t origin : {coord_t(0), coord_t(2000000), coord_t(8000000), coord_t(10000000)})
+        for (coord_t dx = -3; dx <= 3; ++dx)
+            for (coord_t dy = -3; dy <= 3; ++dy)
+                check(layer, island, {{origin + dx, origin + dy}, {origin + dx + 1, origin + dy + 2}});
     check(other, far, {{1000000100, 100}, {1000000200, 200}});
     check(layer, island, {{100, 100}, {200, 200}});
 }
