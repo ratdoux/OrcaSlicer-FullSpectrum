@@ -36,6 +36,7 @@ struct State
     Statistics                                stats[4];
     std::ofstream                             capture;
     size_t                                    capture_bytes = 0;
+    bool                                      capture_all   = false;
     State()
     {
         if (const char* value = std::getenv("ORCA_POLYGON_COMPUTE"))
@@ -49,6 +50,7 @@ struct State
         if (const char* value = std::getenv("ORCA_POLYGON_PROFILE"))
             profile = value;
         if (const char* value = std::getenv("ORCA_POLYGON_CAPTURE"); value && *value) {
+            capture_all = std::getenv("ORCA_POLYGON_CAPTURE_ALL") != nullptr;
             capture.open(std::filesystem::u8path(value), std::ios::binary);
             if (!capture)
                 throw std::runtime_error("Cannot open polygon capture");
@@ -170,9 +172,11 @@ void PolygonComputeQuery::finish(bool empty, bool skipped)
     c.eligible_cpu_ms += m_eligible ? cpu_ms : 0;
     c.eligible_empty_cpu_ms += m_eligible && empty ? cpu_ms : 0;
     c.prepare_ms += m_prepare_ms;
-    if (s.capture.is_open() && m_eligible && c.eligible % 127 == 1 && s.capture_bytes < 64u * 1024 * 1024) {
-        nlohmann::json row  = {{"stage", stage_name(m_stage)}, {"operation", int(m_operation)}, {"empty", empty}, {"cpu_ms", cpu_ms},
-                               {"subject", encode(m_subject)}, {"clip", encode(m_clip)}};
+    if (s.capture.is_open() && (s.capture_all ? c.calls % 127 == 1 : m_eligible && c.eligible % 127 == 1) &&
+        s.capture_bytes < 64u * 1024 * 1024) {
+        nlohmann::json row =
+            {{"stage", stage_name(m_stage)}, {"operation", int(m_operation)}, {"fill", int(m_fill)}, {"empty", empty}, {"cpu_ms", cpu_ms},
+             {"subject", encode(m_subject)}, {"clip", encode(m_clip)}};
         std::string    data = row.dump();
         if (s.capture_bytes + data.size() + 1 <= 64u * 1024 * 1024) {
             s.capture << data << '\n';

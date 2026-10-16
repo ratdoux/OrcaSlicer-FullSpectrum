@@ -7,6 +7,9 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <chrono>
+#include <fstream>
+#include <iostream>
 
 using namespace Slic3r;
 
@@ -32,6 +35,36 @@ void check_non_arc_moves(const GCodeProcessorResult& result)
 }
 
 } // namespace
+
+TEST_CASE("Replay real velocity limit commands without geometry work", "[.][VelocityLimitReplay]")
+{
+    const char* path = std::getenv("ORCA_PARSER_REPLAY");
+    REQUIRE(path);
+    std::ifstream input(path);
+    REQUIRE(input.good());
+    std::string line, commands;
+    size_t      count = 0;
+    while (std::getline(input, line))
+        if (line.rfind("SET_VELOCITY_LIMIT ", 0) == 0) {
+            commands += line;
+            commands += '\n';
+            ++count;
+        }
+    REQUIRE(count > 0);
+    PrintConfig config;
+    config.gcode_flavor.value = gcfKlipper;
+    GCodeProcessor processor;
+    processor.reset();
+    processor.apply_config(config);
+    processor.initialize("velocity-replay.gcode");
+    const auto started = std::chrono::steady_clock::now();
+    processor.process_buffer(commands);
+    const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    processor.process_buffer("G21\nG90\nM83\nG1 X0 Y0 Z0.2 F12000\nG1 X100 Y0 E2\nG1 X100 Y100 E2\n");
+    processor.finalize(false);
+    std::cout << "Velocity replay commands=" << count << " bytes=" << commands.size() << " elapsed_ms=" << elapsed
+              << " estimated_motion_seconds=" << processor.get_time(PrintEstimatedStatistics::ETimeMode::Normal) << '\n';
+}
 
 TEST_CASE("Klipper velocity limits retain command matching and estimated motion times", "[GCodeProcessor][VelocityLimits]")
 {
