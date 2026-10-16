@@ -29,6 +29,7 @@
 #include <unordered_set>
 
 #include <boost/log/trivial.hpp>
+#include <boost/container/small_vector.hpp>
 #include <tbb/parallel_for.h>
 #include <tbb/task_arena.h>
 #include <mutex>
@@ -92,7 +93,9 @@ struct MMU_Graph
     struct Node
     {
         Vec2d             point;
-        std::list<size_t> arc_idxs;
+        // Most nodes have at most three neighbors. Preserve insertion/erase
+        // order without allocating a linked-list node for every arc.
+        boost::container::small_vector<size_t, 4> arc_idxs;
 
         void remove_edge(const size_t to_idx, MMU_Graph &graph)
         {
@@ -363,8 +366,8 @@ static std::vector<std::vector<const MMU_Graph::Arc *>> get_all_next_arcs(
     return all_next_arcs;
 }
 
-static std::vector<const MMU_Graph::Arc *> get_next_arc(
-    const MMU_Graph &graph, std::vector<bool> &used_arcs, const Linef &process_line, const MMU_Graph::Arc &original_arc, const int color)
+static std::vector<const MMU_Graph::Arc*> get_next_arc_legacy(
+    const MMU_Graph& graph, std::vector<bool>& used_arcs, const Linef& process_line, const MMU_Graph::Arc& original_arc, const int color)
 {
     std::vector<const MMU_Graph::Arc *> res;
 
@@ -401,6 +404,38 @@ static std::vector<const MMU_Graph::Arc *> get_next_arc(
     }
 
     return sorted_arcs.front().first;
+}
+
+// Every continuation currently contains exactly one arc. Keep the candidate
+// pointer directly instead of allocating/copying a vector for each candidate.
+static std::vector<const MMU_Graph::Arc*> get_next_arc(
+    const MMU_Graph& graph, std::vector<bool>& used_arcs, const Linef& process_line, const MMU_Graph::Arc& original_arc, int color)
+{
+    static const bool compact_candidates = preparation_experiment("graph_arcs");
+    static const bool validate           = preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE");
+    if (!compact_candidates)
+        return get_next_arc_legacy(graph, used_arcs, process_line, original_arc, color);
+    boost::container::small_vector<std::pair<const MMU_Graph::Arc*, double>, 4> candidates;
+    candidates.reserve(graph.nodes[original_arc.to_idx].arc_idxs.size());
+    for (size_t index : graph.nodes[original_arc.to_idx].arc_idxs) {
+        const auto& arc = graph.arcs[index];
+        if (graph.nodes[arc.to_idx].point == process_line.a || used_arcs[index])
+            continue;
+        if ((original_arc.type == MMU_Graph::ARC_TYPE::BORDER && original_arc.color != color) ||
+            (arc.type == MMU_Graph::ARC_TYPE::BORDER && arc.color != color))
+            continue;
+        const Vec2d process_direction  = (process_line.a - process_line.b).normalized();
+        const Vec2d neighbor_direction = (graph.nodes[arc.to_idx].point - graph.nodes[arc.from_idx].point).normalized();
+        double      angle              = ::acos(std::clamp(neighbor_direction.dot(process_direction), -1.0, 1.0));
+        if (Slic3r::cross2(neighbor_direction, process_direction) < 0.0)
+            angle = 2.0 * double(PI) - angle;
+        candidates.emplace_back(&arc, angle);
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    std::vector<const MMU_Graph::Arc*> result{candidates.empty() ? &original_arc : candidates.front().first};
+    if (validate && result != get_next_arc_legacy(graph, used_arcs, process_line, original_arc, color))
+        throw std::runtime_error("Compact graph candidates changed traversal order");
+    return result;
 }
 
 static bool is_profile_self_interaction(Polygon poly)
