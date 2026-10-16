@@ -1,5 +1,6 @@
 #include "PolygonCompute.hpp"
 #include "PreparationDiagnostics.hpp"
+#include "PaintedLayerOutlineCache.hpp"
 #include "TriangleSelector.hpp"
 #include "BoundingBox.hpp"
 #include "ClipperUtils.hpp"
@@ -1368,20 +1369,26 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
 #endif // MM_SEGMENTATION_DEBUG_TOP_BOTTOM
 
     PreparationTimer occlusion_timer(profile, "occlusion");
-    // When the upper surface of an object is occluded, it should no longer be considered the upper surface
-    {
-        for (size_t extruder_idx = 0; extruder_idx < num_facets_states; ++extruder_idx) {
-            for (size_t layer_idx = 0; layer_idx < layers.size(); ++layer_idx) {
-                if (!top_raw[extruder_idx].empty() && !top_raw[extruder_idx][layer_idx].empty() && layer_idx + 1 < layers.size()) {
-                    top_raw[extruder_idx][layer_idx] = diff(top_raw[extruder_idx][layer_idx], input_expolygons[layer_idx + 1]);
-                }
-                if (!bottom_raw[extruder_idx].empty() && !bottom_raw[extruder_idx][layer_idx].empty() && layer_idx > 0) {
-                    bottom_raw[extruder_idx][layer_idx] = diff(bottom_raw[extruder_idx][layer_idx], input_expolygons[layer_idx - 1]);
-                }
+    // Each (state, layer) owns its output and reads immutable neighboring slices.
+    auto trim_occluded = [&](size_t state, size_t layer) {
+        if (!top_raw[state].empty() && !top_raw[state][layer].empty() && layer + 1 < layers.size())
+            top_raw[state][layer] = diff(top_raw[state][layer], input_expolygons[layer + 1]);
+        if (!bottom_raw[state].empty() && !bottom_raw[state][layer].empty() && layer > 0)
+            bottom_raw[state][layer] = diff(bottom_raw[state][layer], input_expolygons[layer - 1]);
+    };
+    if (preparation_experiment("occlusion")) {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, num_facets_states * num_layers), [&](const tbb::blocked_range<size_t>& range) {
+            PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
+            for (size_t index = range.begin(); index < range.end(); ++index) {
+                throw_on_cancel_callback();
+                trim_occluded(index / num_layers, index % num_layers);
             }
-        }
+        });
+    } else {
+        for (size_t state = 0; state < num_facets_states; ++state)
+            for (size_t layer = 0; layer < num_layers; ++layer)
+                trim_occluded(state, layer);
     }
-
     occlusion_timer.finish();
     PreparationTimer                     propagation_timer(profile, "shell_propagation");
     std::vector<std::vector<ExPolygons>> triangles_by_color_bottom(num_facets_states);
@@ -1442,6 +1449,11 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         const size_t        layer_idx_offset = (group_idx & 1) * num_layers;
         for (size_t layer_idx = begin; layer_idx < end; ++layer_idx) {
+            // Lazily retain a small prefix per direction, shared by colors.
+            // Large layers/deep shells continue in the caller's scratch buffer.
+            const bool               reuse_trim    = preparation_experiment("trim_chain");
+            const bool               validate_trim = reuse_trim && preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE");
+            PaintedLayerOutlineCache trimmed_cache(input_expolygons, layer_idx);
             for (size_t color_idx = 0; color_idx < num_facets_states; ++color_idx) {
                 throw_on_cancel_callback();
                 LayerColorStat stat = layer_color_stat(layer_idx, color_idx);
@@ -1452,13 +1464,24 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
                         if (! top_ex.empty()) {
                             append(triangles_by_color_top[color_idx][layer_idx + layer_idx_offset], top_ex);
                             float offset = 0.f;
-                            ExPolygons layer_slices_trimmed = input_expolygons[layer_idx];
+                            ExPolygons layer_slices_trimmed = reuse_trim ? ExPolygons() : input_expolygons[layer_idx];
+                            ExPolygons reference_trimmed    = validate_trim ? input_expolygons[layer_idx] : ExPolygons();
                             for (int last_idx = int(layer_idx) - 1; last_idx > std::max(int(layer_idx - stat.top_shell_layers), int(0)); --last_idx) {
                                 //BBS: offset width should be 2*spacing to avoid too narrow area which has overlap of wall line
                                 //offset -= stat.extrusion_width ;
                                 offset -= (stat.extrusion_spacing + stat.extrusion_width);
-                                layer_slices_trimmed = intersection_ex(layer_slices_trimmed, input_expolygons[last_idx]);
-                                ExPolygons last = opening_ex(intersection_ex(top_ex, offset_ex(layer_slices_trimmed, offset)), stat.small_region_threshold);
+                                const ExPolygons* trimmed = &layer_slices_trimmed;
+                                if (reuse_trim) {
+                                    trimmed = &trimmed_cache.step(true, layer_idx - size_t(last_idx), layer_slices_trimmed);
+                                    if (validate_trim) {
+                                        reference_trimmed = intersection_ex(reference_trimmed, input_expolygons[last_idx]);
+                                        if (reference_trimmed != *trimmed)
+                                            throw std::runtime_error("Shared shell outline chain changed ordered polygons");
+                                    }
+                                } else
+                                    layer_slices_trimmed = intersection_ex(layer_slices_trimmed, input_expolygons[last_idx]);
+                                ExPolygons last = opening_ex(intersection_ex(top_ex, offset_ex(*trimmed, offset)),
+                                                             stat.small_region_threshold);
                                 if (last.empty())
                                     break;
                                 append(shell_triangles_by_color_top[color_idx][last_idx + layer_idx_offset], std::move(last));
@@ -1472,13 +1495,24 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
                         if (! bottom_ex.empty()) {
                             append(triangles_by_color_bottom[color_idx][layer_idx + layer_idx_offset], bottom_ex);
                             float offset = 0.f;
-                            ExPolygons layer_slices_trimmed = input_expolygons[layer_idx];
+                            ExPolygons layer_slices_trimmed = reuse_trim ? ExPolygons() : input_expolygons[layer_idx];
+                            ExPolygons reference_trimmed    = validate_trim ? input_expolygons[layer_idx] : ExPolygons();
                             for (size_t last_idx = layer_idx + 1; last_idx < std::min(layer_idx + stat.bottom_shell_layers, num_layers); ++last_idx) {
                                 //BBS: offset width should be 2*spacing to avoid too narrow area which has overlap of wall line
                                 //offset -= stat.extrusion_width;
                                 offset -= (stat.extrusion_spacing + stat.extrusion_width);
-                                layer_slices_trimmed = intersection_ex(layer_slices_trimmed, input_expolygons[last_idx]);
-                                ExPolygons last = opening_ex(intersection_ex(bottom_ex, offset_ex(layer_slices_trimmed, offset)), stat.small_region_threshold);
+                                const ExPolygons* trimmed = &layer_slices_trimmed;
+                                if (reuse_trim) {
+                                    trimmed = &trimmed_cache.step(false, last_idx - layer_idx, layer_slices_trimmed);
+                                    if (validate_trim) {
+                                        reference_trimmed = intersection_ex(reference_trimmed, input_expolygons[last_idx]);
+                                        if (reference_trimmed != *trimmed)
+                                            throw std::runtime_error("Shared shell outline chain changed ordered polygons");
+                                    }
+                                } else
+                                    layer_slices_trimmed = intersection_ex(layer_slices_trimmed, input_expolygons[last_idx]);
+                                ExPolygons last = opening_ex(intersection_ex(bottom_ex, offset_ex(*trimmed, offset)),
+                                                             stat.small_region_threshold);
                                 if (last.empty())
                                     break;
                                 append(shell_triangles_by_color_bottom[color_idx][last_idx + layer_idx_offset], std::move(last));
