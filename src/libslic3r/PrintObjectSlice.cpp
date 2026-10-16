@@ -4658,14 +4658,20 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                 BoundingBox bbox;
             };
 
-            auto intersect_surfaces_preserve_types = [](const SurfaceCollection &src, const ExPolygons &mask) {
+            using SurfaceBuckets                         = std::array<SurfacesPtr, size_t(stCount)>;
+            const bool reuse_bounds                      = preparation_experiment("region_bounds");
+            const bool reuse_buckets                     = preparation_experiment("surface_buckets");
+            auto       intersect_surfaces_preserve_types = [](const SurfaceCollection& src, const ExPolygons& mask,
+                                                        const SurfaceBuckets* prepared) {
                 SurfaceCollection out;
                 if (src.empty() || mask.empty())
                     return out;
 
-                std::array<SurfacesPtr, size_t(stCount)> by_surface;
-                for (const Surface &surface : src.surfaces)
-                    by_surface[size_t(surface.surface_type)].emplace_back(&surface);
+                SurfaceBuckets scratch;
+                if (!prepared)
+                    for (const Surface& surface : src.surfaces)
+                        scratch[size_t(surface.surface_type)].emplace_back(&surface);
+                const SurfaceBuckets& by_surface = prepared ? *prepared : scratch;
 
                 for (size_t surface_type = 0; surface_type < size_t(stCount); ++surface_type) {
                     const SurfacesPtr &typed_surfaces = by_surface[surface_type];
@@ -4753,7 +4759,8 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     ByExtruder &region = by_extruder[effective_idx];
                     append(region.expolygons, std::move(segmentation[layer_id][channel_idx]));
                     if (! region.expolygons.empty()) {
-                        region.bbox = get_extents(region.expolygons);
+                        if (!reuse_bounds)
+                            region.bbox = get_extents(region.expolygons);
                         layer_split = true;
                     }
 
@@ -4772,6 +4779,9 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
 
                 if (!layer_split)
                     continue;
+                if (reuse_bounds)
+                    for (ByExtruder& region : by_extruder)
+                        region.bbox = get_extents(region.expolygons);
 
                 ExPolygons  layer_geometry_mask;
                 BoundingBox layer_geometry_bbox;
@@ -4799,6 +4809,11 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     if (parent_layer_region.slices.empty())
                         continue;
 
+                    SurfaceBuckets parent_buckets;
+                    if (reuse_buckets)
+                        for (const Surface& surface : parent_layer_region.slices.surfaces)
+                            parent_buckets[size_t(surface.surface_type)].push_back(&surface);
+                    const SurfaceBuckets* prepared_buckets       = reuse_buckets ? &parent_buckets : nullptr;
                     auto preserve_parent_region = [&by_region, &parent_layer_region, &parent_print_region]() {
                         if (!parent_layer_region.slices.empty())
                             by_region[parent_print_region.print_object_region_id()].surfaces = parent_layer_region.slices;
@@ -4885,7 +4900,8 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                         ExPolygons stolen           = intersection_ex(parent_layer_region.slices.surfaces, segmented.expolygons);
                         if (!stolen.empty()) {
                             ByRegion &dst = by_region[target_region_id];
-                            SurfaceCollection stolen_surfaces = intersect_surfaces_preserve_types(parent_layer_region.slices, stolen);
+                            SurfaceCollection stolen_surfaces = intersect_surfaces_preserve_types(parent_layer_region.slices, stolen,
+                                                                                                  prepared_buckets);
                             if (stolen_surfaces.empty())
                                 continue;
                             if (dst.surfaces.empty()) {
@@ -4950,7 +4966,8 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     }
 
                     if (!mine_expolygons.empty()) {
-                        SurfaceCollection mine_surfaces = intersect_surfaces_preserve_types(parent_layer_region.slices, mine_expolygons);
+                        SurfaceCollection mine_surfaces = intersect_surfaces_preserve_types(parent_layer_region.slices, mine_expolygons,
+                                                                                            prepared_buckets);
                         if (!mine_surfaces.empty()) {
                             ByRegion &dst = by_region[parent_print_region.print_object_region_id()];
                             if (dst.surfaces.empty()) {
