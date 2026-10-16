@@ -5,6 +5,8 @@ Date: 2026-10-15. This follows the shared-target audit in
 
 Subsequent [CPU geometry reuse improvements](CPU-Geometry-Reuse-Results.md) enable CPU seam caching by default and reduce wall/shell work. The defaults and measurements below describe this earlier experiment.
 
+The later [U1 project experiment](U1-Paint-Shortcut-Results.md) tests polygon rejection on a different painted model, including actual empty wall/shell operations and a separate uniform-island comparison.
+
 **Outcome:** the new Vulkan paths remain experimental and off by default. CPU seam-neighborhood caching produces the useful shared improvement: about 3.0% ordinary / 5.2% Local-Z whole-process reduction in these two-run comparisons. GPU prefetch does not establish an additional benefit over caching. The polygon empty-result prepass costs more than it saves. To evaluate the winning CPU path, use `ORCA_SEAM_ALIGNMENT=cache`; its default remains the original `cpu` path.
 
 ## Scope

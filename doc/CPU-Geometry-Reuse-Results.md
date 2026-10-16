@@ -21,6 +21,8 @@ The retained opt-in shortcut bypasses graph construction only when **every islan
 
 Full-model checks compared all 35 multi-island layers in each project. None qualified for the restricted shortcut, so this is not a source of the reported Starry Night improvement. Deterministic fixtures exercise uniform islands, differently colored holes, mixed boundaries and islands nested inside holes. The shortcut remains off by default.
 
+A later [U1 project experiment](U1-Paint-Shortcut-Results.md) exercises the shortcut on 41 layers and separately compares complete-slice performance with normal CPU processing and the Vulkan polygon prototype.
+
 ## Runtime controls
 
 The CPU improvements below are enabled in a normal release build without extra flags. The Windows `build_release_vs2022.bat slicer` command now also includes Vulkan support by default. It uses a complete `VULKAN_SDK` installation when available; otherwise `scripts/setup_vulkan_compute.ps1` downloads pinned Khronos Vulkan-Headers 1.3.290 and glslang 16.6.0 into the ignored `build-tools/vulkan/` directory. Both archives are checked against fixed SHA-256 hashes before extraction and cached for subsequent builds. These are the same versions used in the validated prototypes. Download or verification failures stop the build rather than silently omitting GPU support. End users need a compatible driver, not the SDK.
