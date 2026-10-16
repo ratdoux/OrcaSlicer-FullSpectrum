@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -806,6 +807,66 @@ void groupingVolumesForBrim(PrintObject* object, LayerPtrs& layers, int firstLay
     reGroupingLayerPolygons(object->firstLayerObjGroupsMod(), layers.front()->lslices, scaled_resolution);
 }
 
+// Exact diagnostic snapshot of the ordered geometry handed to perimeter/fill
+// generation. Field-wise output avoids padding and runtime pointer/object IDs.
+// This is a native binary comparison format, not a project serialization format.
+template<class ThrowOnCancel> static void capture_prepared_layers(const PrintObject& object, ThrowOnCancel throw_on_cancel)
+{
+    const char* prefix = std::getenv("ORCA_PREP_CAPTURE");
+    if (!prefix || !*prefix)
+        return;
+    const auto&       objects      = object.print()->objects();
+    const size_t      object_index = size_t(std::find(objects.begin(), objects.end(), &object) - objects.begin());
+    const std::string path         = std::string(prefix) + "-" + std::to_string(object_index) + ".bin";
+    std::ofstream     output(std::filesystem::u8path(path), std::ios::binary | std::ios::trunc);
+    if (!output)
+        throw std::runtime_error("Cannot open preparation snapshot");
+    auto value   = [&](const auto& item) { output.write(reinterpret_cast<const char*>(&item), sizeof(item)); };
+    auto count   = [&](size_t size) { value(uint64_t(size)); };
+    auto polygon = [&](const Polygon& polygon) {
+        count(polygon.points.size());
+        for (const Point& point : polygon.points) {
+            value(point.x());
+            value(point.y());
+        }
+    };
+    auto expolygon = [&](const ExPolygon& item) {
+        polygon(item.contour);
+        count(item.holes.size());
+        for (const Polygon& hole : item.holes)
+            polygon(hole);
+    };
+    output.write("OrcaPrep1", 9);
+    count(object.layer_count());
+    for (const Layer* layer : object.layers()) {
+        throw_on_cancel();
+        count(layer->id());
+        value(layer->print_z);
+        value(layer->slice_z);
+        value(layer->height);
+        count(layer->lslices.size());
+        for (const ExPolygon& item : layer->lslices)
+            expolygon(item);
+        count(layer->regions().size());
+        for (const LayerRegion* region : layer->regions()) {
+            count(region->region().print_object_region_id());
+            count(region->slices.surfaces.size());
+            for (const Surface& surface : region->slices.surfaces) {
+                value(surface.surface_type);
+                value(surface.thickness);
+                value(surface.thickness_layers);
+                value(surface.bridge_angle);
+                value(surface.extra_perimeters);
+                expolygon(surface.expolygon);
+            }
+        }
+    }
+    output.close();
+    if (!output)
+        throw std::runtime_error("Failed to write preparation snapshot");
+    BOOST_LOG_TRIVIAL(info) << "Preparation snapshot saved " << path;
+}
+
 // Called by make_perimeters()
 // 1) Decides Z positions of the layers,
 // 2) Initializes layers and their regions
@@ -872,6 +933,7 @@ void PrintObject::slice()
     if (m_layers.empty())
         throw Slic3r::SlicingError(L("No layers were detected. You might want to repair your STL file(s) or check their size or thickness and retry.\n"));
 
+    capture_prepared_layers(*this, [this] { m_print->throw_if_canceled(); });
     // BBS
     this->set_done(posSlice);
 }
