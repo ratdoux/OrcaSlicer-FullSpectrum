@@ -108,8 +108,14 @@ public:
     template<typename Callback>
     void parse_buffer(const std::string &buffer, Callback callback)
     {
-        const char *ptr = buffer.c_str();
-        const char *end = ptr + buffer.size();
+        parse_buffer(buffer.c_str(), buffer.size(), callback);
+    }
+
+    // The buffer must remain NUL-terminated at buffer[size] for parse_line_internal.
+    template<typename Callback> void parse_buffer(const char* buffer, size_t size, Callback callback)
+    {
+        const char* ptr = buffer;
+        const char* end = ptr + size;
         GCodeLine gline;
         m_parsing = true;
         while (m_parsing && *ptr != 0) {

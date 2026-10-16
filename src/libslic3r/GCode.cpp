@@ -19,6 +19,7 @@
 #include "ShortestPath.hpp"
 #include "ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "ImageMap/AdaptiveLocalZRenderer.hpp"
+#include "SlicingAcceleration.hpp"
 #include "MixedFilament.hpp"
 #include "MixedFilament/PerimeterModulation.hpp"
 #include "Print.hpp"
@@ -7195,9 +7196,13 @@ void GCode::GCodeOutputStream::write(const char* what)
     if (what != nullptr) {
         const char* gcode = what;
         // writes string to file
-        fwrite(gcode, 1, ::strlen(gcode), this->f);
-        // FIXME don't allocate a string, maybe process a batch of lines?
-        m_processor.process_buffer(std::string(gcode));
+        const size_t size = ::strlen(gcode);
+        fwrite(gcode, 1, size, this->f);
+        static const bool borrow = slicing_acceleration("output");
+        if (borrow)
+            m_processor.process_buffer(gcode, size);
+        else
+            m_processor.process_buffer(std::string(gcode));
     }
 }
 

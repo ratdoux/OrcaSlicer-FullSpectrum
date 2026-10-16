@@ -1314,12 +1314,12 @@ void GCodeProcessor::initialize(const std::string& filename)
     m_result.moves.emplace_back(GCodeProcessorResult::MoveVertex());
 }
 
-void GCodeProcessor::process_buffer(const std::string &buffer)
+void GCodeProcessor::process_buffer(const std::string& buffer) { process_buffer(buffer.c_str(), buffer.size()); }
+
+void GCodeProcessor::process_buffer(const char* buffer, size_t size)
 {
     //FIXME maybe cache GCodeLine gline to be over multiple parse_buffer() invocations.
-    m_parser.parse_buffer(buffer, [this](GCodeReader&, const GCodeReader::GCodeLine& line) { 
-        this->process_gcode_line(line, false);
-    });
+    m_parser.parse_buffer(buffer, size, [this](GCodeReader&, const GCodeReader::GCodeLine& line) { this->process_gcode_line(line, false); });
 }
 
 void GCodeProcessor::finalize(bool post_process)
