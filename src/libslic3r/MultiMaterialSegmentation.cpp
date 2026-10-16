@@ -716,7 +716,19 @@ static std::vector<std::vector<PaintedLine>> post_process_painted_lines(const st
                    ((first.projected_line.a - first_start_p).cast<double>().squaredNorm() == (second.projected_line.a - first_start_p).cast<double>().squaredNorm() &&
                     (first.projected_line.b - first.projected_line.a).cast<double>().squaredNorm() < (second.projected_line.b - second.projected_line.a).cast<double>().squaredNorm())))));
     };
-    std::sort(painted_lines.begin(), painted_lines.end(), comp);
+    // Parallel projection may append identical spans in any order. Resolve
+    // ambiguous colors explicitly; stable_sort would retain that random order.
+    if (preparation_experiment("ties")) {
+        std::sort(painted_lines.begin(), painted_lines.end(), [&](const PaintedLine& a, const PaintedLine& b) {
+            if (comp(a, b))
+                return true;
+            if (comp(b, a))
+                return false;
+            return std::make_tuple(a.color, a.projected_line.a.x(), a.projected_line.a.y(), a.projected_line.b.x(), a.projected_line.b.y()) <
+                   std::make_tuple(b.color, b.projected_line.a.x(), b.projected_line.a.y(), b.projected_line.b.x(), b.projected_line.b.y());
+        });
+    } else
+        std::sort(painted_lines.begin(), painted_lines.end(), comp);
 
     std::vector<std::vector<PaintedLine>> filtered_painted_lines(contours.size());
     size_t prev_painted_line_idx = 0;
@@ -1394,13 +1406,10 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
         return out;
     };
 
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers, granularity), [&granularity, &num_layers, &num_facets_states, &layer_color_stat, &top_raw, &triangles_by_color_top,
-                                                                               &throw_on_cancel_callback, &input_expolygons, &bottom_raw, &triangles_by_color_bottom,
-                                                                               &shell_triangles_by_color_top, &shell_triangles_by_color_bottom](const tbb::blocked_range<size_t> &range) {
+    auto propagate_group = [&](size_t begin, size_t end, size_t group_idx) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
-        size_t group_idx   = range.begin() / granularity;
-        size_t layer_idx_offset = (group_idx & 1) * num_layers;
-        for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
+        const size_t        layer_idx_offset = (group_idx & 1) * num_layers;
+        for (size_t layer_idx = begin; layer_idx < end; ++layer_idx) {
             for (size_t color_idx = 0; color_idx < num_facets_states; ++color_idx) {
                 throw_on_cancel_callback();
                 LayerColorStat stat = layer_color_stat(layer_idx, color_idx);
@@ -1446,8 +1455,21 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
                     }
             }
         }
-    });
-
+    };
+    if (preparation_experiment("shell_groups")) {
+        // Partition group IDs, not layers: blocked_range's grain size does not
+        // align its split points. Equal-parity groups must be separated by a
+        // full shell reach to own disjoint destination entries.
+        const size_t group_count = (num_layers + size_t(granularity) - 1) / size_t(granularity);
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, group_count), [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t group = range.begin(); group < range.end(); ++group)
+                propagate_group(group * granularity, std::min((group + 1) * granularity, num_layers), group);
+        });
+    } else {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers, granularity), [&](const tbb::blocked_range<size_t>& range) {
+            propagate_group(range.begin(), range.end(), range.begin() / granularity);
+        });
+    }
     propagation_timer.finish();
     PreparationTimer                     top_merge_timer(profile, "shell_merge");
     std::vector<std::vector<ExPolygons>> triangles_by_color_merged(num_facets_states);
@@ -2074,6 +2096,11 @@ std::vector<ExPolygons> segment_painted_layer(const ExPolygons&                i
     return segment_painted_layer_impl(input, colors, num_colors, split_islands, nullptr);
 }
 
+struct PaintingSnapshot
+{
+    std::vector<std::vector<ExPolygons>> sides, shells;
+};
+
 static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const PrintObject                                               &print_object,
                                                               const std::function<ModelVolumeFacetsInfo(const ModelVolume &)> &extract_facets_info,
                                                               const size_t                                                     num_facets_states,
@@ -2084,7 +2111,7 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
                                                               const size_t protected_side_state_begin,
                                                               const PaintedLineInjector                                        &painted_line_injector,
                                                               const std::function<void()>                                     &throw_on_cancel_callback,
-                                                              PreparationProfile* profile)
+                                                              PreparationProfile* profile, PaintingSnapshot* snapshot)
 {
     const size_t                          num_layers    = print_object.layers().size();
     std::vector<std::vector<ExPolygons>>  segmented_regions(num_layers);
@@ -2334,6 +2361,10 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
         throw_on_cancel_callback();
     }
 
+    if (snapshot) {
+        snapshot->sides  = segmented_regions;
+        snapshot->shells = top_and_bottom_layers;
+    }
     top_bottom_timer.finish();
     PreparationTimer merge_timer(profile, "merge");
     std::vector<std::vector<ExPolygons>> segmented_regions_merged =
@@ -2368,34 +2399,45 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(
     const PaintedLineInjector& painted_line_injector,
     const std::function<void()>&                                    throw_on_cancel_callback)
 {
-    auto run = [&](PreparationProfile& profile) {
+    auto run = [&](PreparationProfile& profile, PaintingSnapshot* snapshot = nullptr) {
         return segmentation_by_painting_impl(print_object, extract_facets_info, num_facets_states, segmentation_max_width,
                                              segmentation_interlocking_depth, segmentation_interlocking_beam, include_top_and_bottom_layers,
-                                             protected_side_state_begin, painted_line_injector, throw_on_cancel_callback, &profile);
+                                             protected_side_state_begin, painted_line_injector, throw_on_cancel_callback, &profile, snapshot);
     };
     PreparationProfile profile("painting");
     if (!preparation_diagnostic("ORCA_PREP_VALIDATE_THREADS"))
         return run(profile);
     PreparationProfile reference_profile("painting_one_thread");
+    PaintingSnapshot   reference_snapshot, snapshot;
     tbb::task_arena    serial(1);
-    const auto         reference           = serial.execute([&] { return run(reference_profile); });
-    auto               result              = run(profile);
-    size_t             ordered_differences = 0, geometry_differences = 0;
-    for (size_t layer = 0; layer < result.size(); ++layer)
-        for (size_t color = 0; color < result[layer].size(); ++color) {
-            throw_on_cancel_callback();
-            if (reference[layer][color] == result[layer][color])
-                continue;
-            ++ordered_differences;
-            if (!diff_ex(reference[layer][color], result[layer][color]).empty() ||
-                !diff_ex(result[layer][color], reference[layer][color]).empty()) {
-                ++geometry_differences;
-                BOOST_LOG_TRIVIAL(error) << "Preparation thread geometry difference layer=" << layer << " color=" << color;
+    const auto         reference = serial.execute([&] { return run(reference_profile, &reference_snapshot); });
+    auto               result    = run(profile, &snapshot);
+    auto               compare   = [&](const auto& reference, const auto& result, const char* stage) {
+        size_t ordered_differences = 0, geometry_differences = 0;
+        double total_area = 0.;
+        for (size_t i = 0; i < result.size(); ++i)
+            for (size_t j = 0; j < result[i].size(); ++j) {
+                throw_on_cancel_callback();
+                if (reference[i][j] == result[i][j])
+                    continue;
+                ++ordered_differences;
+                const auto missing = diff_ex(reference[i][j], result[i][j]);
+                const auto extra   = diff_ex(result[i][j], reference[i][j]);
+                if (!missing.empty() || !extra.empty()) {
+                    ++geometry_differences;
+                    const double delta_area = (std::abs(area(missing)) + std::abs(area(extra))) * SCALING_FACTOR * SCALING_FACTOR;
+                    total_area += delta_area;
+                    BOOST_LOG_TRIVIAL(error) << "Preparation thread geometry stage=" << stage << " outer=" << i << " inner=" << j
+                                             << " area_mm2=" << delta_area;
+                }
             }
-        }
-    BOOST_LOG_TRIVIAL(info) << "Preparation thread validation layers=" << result.size() << " ordered_differences=" << ordered_differences
-                            << " geometry_differences=" << geometry_differences;
-    if (geometry_differences)
+        BOOST_LOG_TRIVIAL(info) << "Preparation thread validation stage=" << stage << " ordered_differences=" << ordered_differences
+                                << " geometry_differences=" << geometry_differences << " area_mm2=" << total_area;
+        return geometry_differences;
+    };
+    compare(reference_snapshot.sides, snapshot.sides, "sides");
+    compare(reference_snapshot.shells, snapshot.shells, "shells");
+    if (compare(reference, result, "merged"))
         throw std::runtime_error("Painting geometry depends on worker scheduling");
     return result;
 }

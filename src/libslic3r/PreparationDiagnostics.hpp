@@ -16,6 +16,14 @@ namespace Slic3r {
 // process environment during a slice. No project settings or geometry tolerances.
 inline bool preparation_experiment(const char* name)
 {
+    const std::string feature(name);
+    if (feature == "ties" || feature == "shell_groups" || feature == "slab_order") {
+        static const bool legacy = [] {
+            const char* value = std::getenv("ORCA_PREP_LEGACY_THREADS");
+            return value && std::string(value) == "1";
+        }();
+        return !legacy;
+    }
     static const std::string modes = [] {
         const char* value = std::getenv("ORCA_PREP_EXPERIMENTS");
         return std::string(",") + (value ? value : "") + ",";
@@ -32,7 +40,7 @@ inline bool preparation_diagnostic(const char* name)
 class PreparationProfile
 {
 public:
-    explicit PreparationProfile(std::string label) : m_label(std::move(label)), enabled(preparation_diagnostic("ORCA_PREP_PROFILE")) {}
+    explicit PreparationProfile(std::string label) : enabled(preparation_diagnostic("ORCA_PREP_PROFILE")), m_label(std::move(label)) {}
     ~PreparationProfile()
     {
         for (auto& [name, values] : m_times) {

@@ -1,4 +1,5 @@
 #include "ClipperUtils.hpp"
+#include "PreparationDiagnostics.hpp"
 #include "Geometry.hpp"
 #include "Tesselate.hpp"
 #include "TriangleMesh.hpp"
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <deque>
 #include <queue>
+#include <numeric>
 #include <mutex>
 #include <utility>
 
@@ -562,6 +564,35 @@ static inline IntersectionLines slice_make_lines(
 
 // For projecting triangle sets onto slice slabs.
 struct SlabLines {
+    // Transient source IDs only for slab projections, not ordinary mesh slicing.
+    // Stable face ordering recreates serial emission, including multiple lines
+    // from the same face, before greedy loop chaining.
+    bool                             ordered = preparation_experiment("slab_order");
+    std::vector<std::vector<size_t>> at_slice_faces, between_faces;
+    void                             restore_face_order()
+    {
+        if (!ordered)
+            return;
+        auto restore = [](IntersectionLines& lines, const std::vector<size_t>& faces) {
+            std::vector<size_t> order(faces.size());
+            std::iota(order.begin(), order.end(), size_t(0));
+            std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return faces[a] < faces[b]; });
+            IntersectionLines sorted;
+            sorted.reserve(lines.size());
+            for (size_t index : order)
+                sorted.push_back(lines[index]);
+            lines = std::move(sorted);
+        };
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, at_slice.size()), [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t layer = range.begin(); layer < range.end(); ++layer) {
+                restore(at_slice[layer], at_slice_faces[layer]);
+                restore(between_slices[layer], between_faces[layer]);
+            }
+        });
+        at_slice_faces.clear();
+        between_faces.clear();
+    }
+
     // Intersection lines of a slice with a triangle set, CCW oriented.
     std::vector<IntersectionLines>  at_slice;
     // Projections of triangle set boundary lines into layer below (for projection from the top)
@@ -612,11 +643,13 @@ void slice_facet_with_slabs(
     assert(min_layer == zs.end() ? max_layer == zs.end() : *min_layer >= min_z);
     assert(max_layer == zs.end() || *max_layer > max_z);
 
-    auto emit_slab_edge = [&lines, &lines_mutex](IntersectionLine il, size_t slab_id, bool reverse) {
+    auto emit_slab_edge = [&lines, &lines_mutex, facet_idx](IntersectionLine il, size_t slab_id, bool reverse) {
         if (reverse)
             il.reverse();
         boost::lock_guard<std::mutex> l(lines_mutex[(slab_id + lines_mutex.size() / 2) % lines_mutex.size()]);
         lines.between_slices[slab_id].emplace_back(il);
+        if (lines.ordered)
+            lines.between_faces[slab_id].push_back(facet_idx);
     };
 
     if (min_layer == max_layer || horizontal) {
@@ -653,6 +686,8 @@ void slice_facet_with_slabs(
                         // if (! ProjectionFromTop) il.reverse();
                         boost::lock_guard<std::mutex> l(lines_mutex[line_id % lines_mutex.size()]);
                         lines.at_slice[line_id].emplace_back(il);
+                        if (lines.ordered)
+                            lines.at_slice_faces[line_id].push_back(facet_idx);
                     }
         } else {
             // Triangle is completely between two slicing planes, the triangle may or may not be horizontal, which 
@@ -772,6 +807,8 @@ void slice_facet_with_slabs(
                     size_t line_id = it - zs.begin();
                     boost::lock_guard<std::mutex> l(lines_mutex[line_id % lines_mutex.size()]);
                     lines.at_slice[line_id].emplace_back(il);
+                    if (lines.ordered)
+                        lines.at_slice_faces[line_id].push_back(facet_idx);
                 }
             }
             if (! ProjectionFromTop || it != zs.begin()) {
@@ -930,10 +967,18 @@ inline std::pair<SlabLines, SlabLines> slice_slabs_make_lines(
 
     if (top) {
         lines_top.at_slice.assign(zs.size(), IntersectionLines());
+        if (lines_top.ordered) {
+            lines_top.at_slice_faces.resize(zs.size());
+            lines_top.between_faces.resize(zs.size());
+        }
         lines_top.between_slices.assign(zs.size(), IntersectionLines());
     }
     if (bottom) {
         lines_bottom.at_slice.assign(zs.size(), IntersectionLines());
+        if (lines_bottom.ordered) {
+            lines_bottom.at_slice_faces.resize(zs.size());
+            lines_bottom.between_faces.resize(zs.size());
+        }
         lines_bottom.between_slices.assign(zs.size(), IntersectionLines());        
     }
 
@@ -971,6 +1016,10 @@ inline std::pair<SlabLines, SlabLines> slice_slabs_make_lines(
             }
         }
     );
+    if (top)
+        lines_top.restore_face_order();
+    if (bottom)
+        lines_bottom.restore_face_order();
     return out;
 }
 
