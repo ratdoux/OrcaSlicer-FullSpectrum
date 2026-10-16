@@ -3361,9 +3361,15 @@ static void build_local_z_plan(PrintObject &print_object,
         return false;
     };
 
+    const bool                             reuse_fixed_masks = preparation_experiment("fixed_masks");
+    std::array<std::vector<ExPolygons>, 3> fixed_mask_window;
+    if (reuse_fixed_masks && !segmentation.empty())
+        fixed_mask_window[0] = collect_local_z_fixed_state_masks_by_extruder(segmentation[0], num_physical);
     for (size_t layer_id = 0; layer_id < print_object.layer_count(); ++layer_id) {
         throw_on_cancel();
 
+        if (reuse_fixed_masks && layer_id + 1 < segmentation.size())
+            fixed_mask_window[(layer_id + 1) % 3] = collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id + 1], num_physical);
         const Layer &layer = *print_object.get_layer(int(layer_id));
         LocalZInterval interval;
         interval.layer_id           = layer_id;
@@ -3504,14 +3510,15 @@ static void build_local_z_plan(PrintObject &print_object,
         const size_t active_mixed_definitions = size_t(std::count(row_active_this_layer.begin(), row_active_this_layer.end(), uint8_t(1)));
         std::vector<ExPolygons> row_state_masks(mixed_definitions.size());
         std::vector<unsigned int> row_state_ids(mixed_definitions.size(), 0);
-        std::vector<ExPolygons> fixed_state_masks_by_extruder(num_physical);
+        std::vector<ExPolygons>   owned_fixed_masks(num_physical);
         for (size_t channel_idx = 0; channel_idx < segmentation[layer_id].size(); ++channel_idx) {
             const ExPolygons &state_masks = segmentation[layer_id][channel_idx];
             if (state_masks.empty())
                 continue;
             const unsigned int state_id = segmentation_channel_filament_id(channel_idx);
             if (state_id >= 1 && state_id <= num_physical) {
-                append(fixed_state_masks_by_extruder[state_id - 1], state_masks);
+                if (!reuse_fixed_masks)
+                    append(owned_fixed_masks[state_id - 1], state_masks);
                 continue;
             }
             if (!mixed_mgr.is_mixed(state_id, num_physical))
@@ -3528,15 +3535,32 @@ static void build_local_z_plan(PrintObject &print_object,
         for (ExPolygons &state_masks : row_state_masks)
             if (state_masks.size() > 1)
                 state_masks = union_ex(state_masks);
-        for (ExPolygons &state_masks : fixed_state_masks_by_extruder)
+        for (ExPolygons& state_masks : owned_fixed_masks)
             if (state_masks.size() > 1)
                 state_masks = union_ex(state_masks);
-        const std::vector<ExPolygons> prev_fixed_state_masks_by_extruder =
-            layer_id > 0 ? collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id - 1], num_physical)
-                         : std::vector<ExPolygons>(num_physical);
-        const std::vector<ExPolygons> next_fixed_state_masks_by_extruder =
-            layer_id + 1 < segmentation.size() ? collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id + 1], num_physical)
-                                               : std::vector<ExPolygons>(num_physical);
+        const std::vector<ExPolygons> owned_prev       = !reuse_fixed_masks && layer_id > 0 ?
+                                                             collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id - 1],
+                                                                                                           num_physical) :
+                                                             std::vector<ExPolygons>(num_physical);
+        const std::vector<ExPolygons> owned_next       = !reuse_fixed_masks && layer_id + 1 < segmentation.size() ?
+                                                             collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id + 1],
+                                                                                                           num_physical) :
+                                                             std::vector<ExPolygons>(num_physical);
+        const auto& fixed_state_masks_by_extruder      = reuse_fixed_masks ? fixed_mask_window[layer_id % 3] : owned_fixed_masks;
+        const auto& prev_fixed_state_masks_by_extruder = reuse_fixed_masks && layer_id > 0 ? fixed_mask_window[(layer_id + 2) % 3] :
+                                                                                             owned_prev;
+        const auto& next_fixed_state_masks_by_extruder = reuse_fixed_masks && layer_id + 1 < segmentation.size() ?
+                                                             fixed_mask_window[(layer_id + 1) % 3] :
+                                                             owned_next;
+        if (reuse_fixed_masks && preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE")) {
+            if (fixed_state_masks_by_extruder != collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id], num_physical) ||
+                (layer_id > 0 && prev_fixed_state_masks_by_extruder !=
+                                     collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id - 1], num_physical)) ||
+                (layer_id + 1 < segmentation.size() &&
+                 next_fixed_state_masks_by_extruder !=
+                     collect_local_z_fixed_state_masks_by_extruder(segmentation[layer_id + 1], num_physical)))
+                throw std::runtime_error("Local-Z rolling fixed masks changed ordered geometry");
+        }
 
         ExPolygons fixed_state_masks_union;
         for (const ExPolygons &state_masks : fixed_state_masks_by_extruder)
