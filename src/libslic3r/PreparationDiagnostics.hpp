@@ -12,8 +12,9 @@
 
 namespace Slic3r {
 
-// Developer experiments only. Read once before workers start; never mutate the
-// process environment during a slice. No project settings or geometry tolerances.
+// Validated CPU paths are enabled in normal builds. Developers can select an
+// explicit comma-separated set (or "none") for fresh-process comparisons.
+// Never mutate the environment during a slice. No project settings/tolerances.
 inline bool preparation_experiment(const char* name)
 {
     const std::string feature(name);
@@ -26,7 +27,9 @@ inline bool preparation_experiment(const char* name)
     }
     static const std::string modes = [] {
         const char* value = std::getenv("ORCA_PREP_EXPERIMENTS");
-        return std::string(",") + (value ? value : "") + ",";
+        return std::string(",") +
+               (value ? value : "selector,compact,occlusion,trim_chain,tracking,region_bounds,surface_buckets,graph_arcs,local_z_geometry") +
+               ",";
     }();
     return modes == ",all," || modes.find(std::string(",") + name + ",") != std::string::npos;
 }
