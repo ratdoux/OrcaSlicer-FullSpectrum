@@ -15,12 +15,14 @@
 #include "../ClipperUtils.hpp"
 #include "../Flow.hpp"
 #include "../Config.hpp"
+#include "../SlicingAcceleration.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -35,12 +37,15 @@ struct ExtendedPoint
 };
 
 template<bool SCALED_INPUT, bool ADD_INTERSECTIONS, bool PREV_LAYER_BOUNDARY_OFFSET, bool SIGNED_DISTANCE, typename POINTS, typename L>
-std::vector<ExtendedPoint> estimate_points_properties(const POINTS                           &input_points,
-                                                      const AABBTreeLines::LinesDistancer<L> &unscaled_prev_layer,
+std::vector<ExtendedPoint> estimate_points_properties(const POINTS&                           input_points,
+                                                      const AABBTreeLines::LinesDistancer<L>& unscaled_prev_layer,
                                                       float                                   flow_width,
-                                                      float                                   max_line_length = -1.0f,
-                                                      float                                   min_distance = -1.0f)
+                                                      float                                   max_line_length     = -1.0f,
+                                                      float                                   min_distance        = -1.0f,
+                                                      bool                                    calculate_curvature = true)
 {
+    if (input_points.empty())
+        return {};
     bool   looped     = input_points.front() == input_points.back();
     std::function<size_t(size_t,size_t)> get_prev_index = [](size_t idx, size_t count) {
         if (idx > 0) {
@@ -78,8 +83,6 @@ std::vector<ExtendedPoint> estimate_points_properties(const POINTS              
     double min_spacing = flow_width*0.25;
 
     using AABBScalar = typename AABBTreeLines::LinesDistancer<L>::Scalar;
-    if (input_points.empty())
-        return {};
     float boundary_offset = PREV_LAYER_BOUNDARY_OFFSET ? 0.5 * flow_width : 0.0f;
     auto  maybe_unscale   = [](const P &p) { return SCALED_INPUT ? unscaled(p) : p.template cast<double>(); };
 
@@ -88,15 +91,13 @@ std::vector<ExtendedPoint> estimate_points_properties(const POINTS              
 
     {
         ExtendedPoint start_point{maybe_unscale(input_points.front())};
-        auto [distance, nearest_line,
-              x] = unscaled_prev_layer.template distance_from_lines_extra<SIGNED_DISTANCE>(start_point.position.cast<AABBScalar>());
+        const auto distance = unscaled_prev_layer.template distance_from_lines<SIGNED_DISTANCE>(start_point.position.cast<AABBScalar>());
         start_point.distance = distance + boundary_offset;
         points.push_back(start_point);
     }
     for (size_t i = 1; i < input_points.size(); i++) {
         ExtendedPoint next_point{maybe_unscale(input_points[i])};
-        auto [distance, nearest_line,
-              x] = unscaled_prev_layer.template distance_from_lines_extra<SIGNED_DISTANCE>(next_point.position.cast<AABBScalar>());
+        const auto distance = unscaled_prev_layer.template distance_from_lines<SIGNED_DISTANCE>(next_point.position.cast<AABBScalar>());
         next_point.distance = distance + boundary_offset;
 
         // Intersection handling
@@ -215,6 +216,10 @@ std::vector<ExtendedPoint> estimate_points_properties(const POINTS              
         points = std::move(new_points);
     }
 
+    // Export uses only positions and distances. Support/curl estimation keeps
+    // the original curvature calculation through the default argument.
+    if (!calculate_curvature)
+        return points;
     // Curvature calculation
     float accumulated_distance = 0;
     std::vector<float> distances_for_curvature(points.size());
@@ -295,53 +300,74 @@ class ExtrusionQualityEstimator
     std::unordered_map<const PrintObject *, AABBTreeLines::LinesDistancer<CurledLine>> prev_curled_extrusions;
     std::unordered_map<const PrintObject *, AABBTreeLines::LinesDistancer<CurledLine>> next_curled_extrusions;
     const PrintObject                                                            *current_object;
+    ConfigOptionPercents                                                               m_cached_overlaps;
+    ConfigOptionFloatsOrPercents                                                       m_cached_speeds;
+    float                                                                              m_cached_width = -1, m_cached_external_speed = -1;
+    std::vector<std::pair<float, float>>                                               m_speed_sections;
 
 public:
     void set_current_object(const PrintObject *object) { current_object = object; }
-
-    void prepare_for_new_layer(const PrintObject * obj, const Layer *layer)
+    void prepare_for_new_layer(const PrintObject* obj, const Layer* layer)
     {
         if (layer == nullptr) return;
         const PrintObject *object = obj;
-        prev_layer_boundaries[object] = next_layer_boundaries[object];
+        static const bool  reuse  = slicing_acceleration("quality");
+        if (reuse)
+            prev_layer_boundaries[object] = std::move(next_layer_boundaries[object]);
+        else
+            prev_layer_boundaries[object] = next_layer_boundaries[object];
         next_layer_boundaries[object] = AABBTreeLines::LinesDistancer<Linef>{to_unscaled_linesf(layer->lslices)};
-        prev_curled_extrusions[object] = next_curled_extrusions[object];
+        if (reuse)
+            prev_curled_extrusions[object] = std::move(next_curled_extrusions[object]);
+        else
+            prev_curled_extrusions[object] = next_curled_extrusions[object];
         next_curled_extrusions[object] = AABBTreeLines::LinesDistancer<CurledLine>{layer->curled_lines};
+
     }
 
-    std::vector<ProcessedPoint> estimate_extrusion_quality(const ExtrusionPath                &path,
-                                                           const ConfigOptionPercents         &overlaps,
-                                                           const ConfigOptionFloatsOrPercents &speeds,
+    std::vector<ProcessedPoint> estimate_extrusion_quality(const ExtrusionPath&                path,
+                                                           const ConfigOptionPercents&         overlaps,
+                                                           const ConfigOptionFloatsOrPercents& speeds,
                                                            float                               ext_perimeter_speed,
                                                            float                               original_speed,
-                                                           bool								   slowdown_for_curled_edges)
+                                                           bool                                slowdown_for_curled_edges,
+                                                           bool                                optimize = slicing_acceleration("quality"))
     {
         size_t                               speed_sections_count = std::min(overlaps.values.size(), speeds.values.size());
-        std::vector<std::pair<float, float>> speed_sections;
-        
-        
-        
-        for (size_t i = 0; i < speed_sections_count; i++) {
-            float distance = path.width * (1.0 - (overlaps.get_at(i) / 100.0));
-            float speed    = speeds.get_at(i).percent ? (ext_perimeter_speed * speeds.get_at(i).value / 100.0) : speeds.get_at(i).value;
-            speed_sections.push_back({distance, speed});
-        }
-        std::sort(speed_sections.begin(), speed_sections.end(),
-                  [](const std::pair<float, float> &a, const std::pair<float, float> &b) { 
-                    if (a.first == b.first) {
-                        return a.second > b.second;
-                    }
-                    return a.first < b.first; });
+        std::vector<std::pair<float, float>> scratch_sections;
+        auto&                                speed_sections = optimize ? m_speed_sections : scratch_sections;
+        if (!optimize || path.width != m_cached_width || ext_perimeter_speed != m_cached_external_speed ||
+            !(overlaps == m_cached_overlaps) || !(speeds == m_cached_speeds)) {
+            speed_sections.clear();
+            speed_sections.reserve(speed_sections_count);
+            for (size_t i = 0; i < speed_sections_count; i++) {
+                float distance = path.width * (1.0 - (overlaps.get_at(i) / 100.0));
+                float speed    = speeds.get_at(i).percent ? (ext_perimeter_speed * speeds.get_at(i).value / 100.0) : speeds.get_at(i).value;
+                speed_sections.push_back({distance, speed});
+            }
+            std::sort(speed_sections.begin(), speed_sections.end(), [](const std::pair<float, float>& a, const std::pair<float, float>& b) {
+                if (a.first == b.first) {
+                    return a.second > b.second;
+                }
+                return a.first < b.first;
+            });
 
-        std::pair<float, float> last_section{INFINITY, 0};
-        for (auto &section : speed_sections) {
-            if (section.first == last_section.first) {
-                section.second = last_section.second;
-            } else {
-                last_section = section;
+            std::pair<float, float> last_section{INFINITY, 0};
+            for (auto& section : speed_sections) {
+                if (section.first == last_section.first) {
+                    section.second = last_section.second;
+                } else {
+                    last_section = section;
+                }
+            }
+            if (optimize) {
+                m_cached_width          = path.width;
+                m_cached_external_speed = ext_perimeter_speed;
+                m_cached_overlaps       = overlaps;
+                m_cached_speeds         = speeds;
             }
         }
-        
+
         // Orca: Find the smallest overhang distance where speed adjustments begin
         float smallest_distance_with_lower_speed = std::numeric_limits<float>::infinity(); // Initialize to a large value
         bool found = false;
@@ -359,12 +385,9 @@ public:
             smallest_distance_with_lower_speed=-1.f;
 
         // Orca: Pass to the point properties estimator the smallest ovehang distance that triggers a slowdown (smallest_distance_with_lower_speed)
-        std::vector<ExtendedPoint> extended_points = estimate_points_properties<true, true, true, true>
-                                                                (path.polyline.points,
-                                                                 prev_layer_boundaries[current_object],
-                                                                 path.width,
-                                                                 -1,
-                                                                 smallest_distance_with_lower_speed);
+        std::vector<ExtendedPoint> extended_points =
+            estimate_points_properties<true, true, true, true>(path.polyline.points, prev_layer_boundaries[current_object], path.width, -1,
+                                                               smallest_distance_with_lower_speed, !optimize);
         const auto width_inv = 1.0f / path.width;
         std::vector<ProcessedPoint> processed_points;
         processed_points.reserve(extended_points.size());
@@ -454,6 +477,16 @@ public:
             float overlap = std::min(1 - (curr.distance+artificial_distance_to_curled_lines) * width_inv, 1 - (next.distance+artificial_distance_to_curled_lines) * width_inv);
 			
             processed_points.push_back({ scaled(curr.position), extrusion_speed, overlap });
+        }
+        if (optimize && slicing_acceleration_validate()) {
+            const auto reference = estimate_extrusion_quality(path, overlaps, speeds, ext_perimeter_speed, original_speed,
+                                                              slowdown_for_curled_edges, false);
+            if (reference.size() != processed_points.size())
+                throw std::runtime_error("Extrusion quality point count differs from reference");
+            for (size_t i = 0; i < reference.size(); ++i)
+                if (reference[i].p != processed_points[i].p || reference[i].speed != processed_points[i].speed ||
+                    reference[i].overlap != processed_points[i].overlap)
+                    throw std::runtime_error("Extrusion quality differs from reference");
         }
         return processed_points;
     }

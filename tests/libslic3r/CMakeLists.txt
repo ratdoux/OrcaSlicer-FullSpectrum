@@ -11,6 +11,7 @@ add_executable(${_TEST_NAME}_tests
 	test_seam_cache.cpp
 	test_wall_support_reuse.cpp
 	test_travel_containment.cpp
+	test_export_geometry.cpp
 	test_paint_islands.cpp
 	test_custom_gcode.cpp
 	test_elephant_foot_compensation.cpp
