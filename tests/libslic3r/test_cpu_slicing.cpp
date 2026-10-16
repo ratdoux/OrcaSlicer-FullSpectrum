@@ -2,6 +2,8 @@
 
 #include "libslic3r/ExtrusionEntityCollection.hpp"
 #include "libslic3r/MixedFilamentLayerTracker.hpp"
+#include "libslic3r/MixedFilamentChannelMap.hpp"
+#include "libslic3r/LayerGeometryBatch.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Support/TreeSupport.hpp"
@@ -19,6 +21,68 @@ ExPolygon rectangle(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
     return ExPolygon(Polygon(Points{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}));
 }
 } // namespace
+
+TEST_CASE("Mixed channel snapshots preserve hidden rows and borrowed legacy edits", "[CPUSlicing][PaintPreparation]")
+{
+    MixedFilamentManager       manager;
+    std::vector<MixedFilament> rows(4);
+    for (auto& row : rows) {
+        row.component_a = 1;
+        row.component_b = 2;
+    }
+    rows[0].deleted = true;
+    rows[1].enabled = false;
+    manager.set_mixed_filament_legacy_rows(rows, 2, {"#FFFFFF", "#000000"});
+    const auto initial = mixed_filament_channel_rows(manager, 2, 7);
+    REQUIRE(initial == std::vector<int>{-1, -1, -1, 2, 3, -1, -1});
+    auto& borrowed      = manager.mixed_filaments();
+    borrowed[2].enabled = false;
+    const auto updated  = mixed_filament_channel_rows(manager, 2, 7);
+    REQUIRE(updated == std::vector<int>{-1, -1, -1, 3, -1, -1, -1});
+    CHECK(initial[3] == 2);
+    for (size_t channel = 0; channel < updated.size(); ++channel)
+        CHECK(updated[channel] == manager.mixed_index_from_filament_id(unsigned(channel), 2));
+    CHECK(mixed_filament_channel_rows(manager, 2, 0).empty());
+}
+
+TEST_CASE("Layer geometry batches preserve progress and neighbor halos at boundaries", "[CPUSlicing][PaintPreparation]")
+{
+    struct Fixture
+    {
+        std::vector<size_t> points, ends;
+    };
+    std::vector<Fixture> fixtures{{std::vector<size_t>(64, 1), {64}},
+                                  {std::vector<size_t>(65, 1), {64, 65}},
+                                  {std::vector<size_t>(66, 1), {64, 66}},
+                                  {{200, 1, 1}, {1, 3}},
+                                  {{1, 200, 1}, {1, 2, 3}},
+                                  {{1, 1, 200}, {2, 3}},
+                                  {{0}, {1}}};
+    fixtures[2].points[64] = 0;
+    for (const auto& fixture : fixtures) {
+        size_t begin = 0;
+        for (size_t expected_end : fixture.ends) {
+            const auto batch = next_layer_geometry_batch(begin, fixture.points.size(), 64, 128,
+                                                         [&](size_t i) { return fixture.points.at(i); });
+            REQUIRE(batch.end == expected_end);
+            CHECK(batch.begin == begin);
+            CHECK(batch.neighbor_begin == (begin == 0 ? 0 : begin - 1));
+            CHECK(batch.neighbor_end == std::min(expected_end + 1, fixture.points.size()));
+            if (batch.input_points > 128)
+                CHECK(batch.end == begin + 1);
+            for (size_t layer = batch.begin; layer < batch.end; ++layer) {
+                CHECK(layer >= batch.neighbor_begin);
+                CHECK(layer < batch.neighbor_end);
+                if (layer > 0)
+                    CHECK(layer - 1 >= batch.neighbor_begin);
+                if (layer + 1 < fixture.points.size())
+                    CHECK(layer + 1 < batch.neighbor_end);
+            }
+            begin = batch.end;
+        }
+        CHECK(begin == fixture.points.size());
+    }
+}
 
 TEST_CASE("Cheap mixed-component overlap preserves holes, contacts and earliest activation", "[CPUSlicing][PaintPreparation]")
 {

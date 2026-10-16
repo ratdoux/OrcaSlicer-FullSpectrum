@@ -20,6 +20,8 @@
 #include "MixedFilament.hpp"
 #include "MixedFilamentLayerTracker.hpp"
 #include "PreparationDiagnostics.hpp"
+#include "MixedFilamentChannelMap.hpp"
+#include "LayerGeometryBatch.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
 #include "SVG.hpp"
@@ -3361,6 +3363,11 @@ static void build_local_z_plan(PrintObject &print_object,
         return false;
     };
 
+    size_t channel_count = 0;
+    for (const auto& channels : segmentation)
+        channel_count = std::max(channel_count, channels.size());
+    const std::vector<int> mixed_rows = mixed_filament_channel_rows(mixed_mgr, num_physical, channel_count);
+
     // Only immutable geometry is prepared in parallel. Cadence, gradient state,
     // error accumulation, dependency IDs and plan emission remain ordered below.
     struct PreparedLocalZGeometry
@@ -3394,11 +3401,8 @@ static void build_local_z_plan(PrintObject &print_object,
             const ExPolygons &state_masks = segmentation[layer_id][channel_idx];
             if (state_masks.empty())
                 continue;
-            const unsigned int state_id = segmentation_channel_filament_id(channel_idx);
-            if (!mixed_mgr.is_mixed(state_id, num_physical))
-                continue;
 
-            const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+            const int mixed_idx = mixed_rows[channel_idx];
             if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_definitions.size())
                 continue;
             if (row_uses_local_z[size_t(mixed_idx)] == 0)
@@ -3445,9 +3449,7 @@ static void build_local_z_plan(PrintObject &print_object,
                     append(owned_fixed_masks[state_id - 1], state_masks);
                 continue;
             }
-            if (!mixed_mgr.is_mixed(state_id, num_physical))
-                continue;
-            const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
+            const int mixed_idx = mixed_rows[channel_idx];
             if (mixed_idx < 0 || size_t(mixed_idx) >= mixed_definitions.size())
                 continue;
             const size_t row_idx = size_t(mixed_idx);
@@ -3530,24 +3532,23 @@ static void build_local_z_plan(PrintObject &print_object,
             PreparationTimer batch_timer(&prep_profile, "geometry_batch_wall");
             prepared_batch.clear();
             batch_fixed_masks.clear();
-            batch_begin         = layer_id;
-            size_t input_points = 0;
-            while (batch_end < segmentation.size() && batch_end - batch_begin < batch_layer_limit) {
-                size_t points = 0;
-                for (const ExPolygons& masks : segmentation[batch_end])
-                    points += count_points(masks);
-                for (const LayerRegion* region : print_object.get_layer(int(batch_end))->regions())
-                    for (const Surface& surface : region->slices.surfaces)
-                        points += count_points(surface.expolygon);
-                if (batch_end != batch_begin && points > batch_point_limit - std::min(input_points, batch_point_limit))
-                    break;
-                input_points += points;
-                ++batch_end;
-            }
+            const LayerGeometryBatch batch = next_layer_geometry_batch(layer_id, segmentation.size(), batch_layer_limit, batch_point_limit,
+                                                                       [&](size_t i) {
+                                                                           size_t points = 0;
+                                                                           for (const ExPolygons& masks : segmentation[i])
+                                                                               points += count_points(masks);
+                                                                           for (const LayerRegion* region :
+                                                                                print_object.get_layer(int(i))->regions())
+                                                                               for (const Surface& surface : region->slices.surfaces)
+                                                                                   points += count_points(surface.expolygon);
+                                                                           return points;
+                                                                       });
+            batch_begin                    = batch.begin;
+            batch_end                      = batch.end;
             // Neighbor halos are immutable and shared by all consumers in this
             // batch. Two small halo recomputations avoid cross-batch ownership.
-            fixed_begin            = batch_begin > 0 ? batch_begin - 1 : 0;
-            const size_t fixed_end = std::min(batch_end + 1, segmentation.size());
+            fixed_begin            = batch.neighbor_begin;
+            const size_t fixed_end = batch.neighbor_end;
             batch_fixed_masks.resize(fixed_end - fixed_begin);
             tbb::parallel_for(tbb::blocked_range<size_t>(fixed_begin, fixed_end, 1), [&](const tbb::blocked_range<size_t>& range) {
                 for (size_t i = range.begin(); i < range.end(); ++i) {
@@ -3571,7 +3572,7 @@ static void build_local_z_plan(PrintObject &print_object,
                     for (const ExPolygons& masks : layer_masks)
                         retained_points += count_points(masks);
                 max_batch_layers          = std::max(max_batch_layers, prepared_batch.size());
-                max_batch_input_points    = std::max(max_batch_input_points, input_points);
+                max_batch_input_points    = std::max(max_batch_input_points, batch.input_points);
                 max_batch_retained_points = std::max(max_batch_retained_points, retained_points);
             }
         }
