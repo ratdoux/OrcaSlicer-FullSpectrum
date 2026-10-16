@@ -20,6 +20,31 @@ ExPolygon rectangle(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
 }
 } // namespace
 
+TEST_CASE("Cheap mixed-component overlap preserves holes, contacts and earliest activation", "[CPUSlicing][PaintPreparation]")
+{
+    ExPolygon ring = rectangle(0, 0, 100, 100);
+    Polygon   hole = rectangle(20, 20, 80, 80).contour;
+    hole.reverse();
+    ring.holes.push_back(hole);
+    const std::vector<ExPolygons> layers{{rectangle(200, 0, 250, 50)},
+                                         {ring, rectangle(200, 0, 250, 50)},
+                                         {rectangle(25, 25, 75, 75), rectangle(5, 5, 15, 15), rectangle(100, 0, 110, 10),
+                                          rectangle(200, 0, 250, 50)},
+                                         {rectangle(0, 0, 300, 100)},
+                                         {},
+                                         {ring},
+                                         {ring}};
+    MixedFilamentLayerTracker     reference, optimized(true);
+    std::vector<int>              expected, actual;
+    for (size_t layer = 0; layer < layers.size(); ++layer) {
+        reference.track_layer(layers[layer], int(layer), expected);
+        optimized.track_layer(layers[layer], int(layer), actual);
+        REQUIRE(actual == expected);
+        if (layer == 3)
+            CHECK(actual == std::vector<int>{3});
+    }
+}
+
 TEST_CASE("Mixed painted components retain cadence through splits and merges", "[CPUSlicing][MixedFilament]")
 {
     // All layers remain alive, as in the segmentation pass that owns the masks.
