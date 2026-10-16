@@ -8,6 +8,7 @@
 #include "libslic3r/format.hpp"
 #include "GCodeProcessor.hpp"
 #include "PreviewMemory.hpp"
+#include "../SlicingAcceleration.hpp"
 
 #include <boost/log/trivial.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -3844,33 +3845,71 @@ void GCodeProcessor::process_SET_VELOCITY_LIMIT(const GCodeReader::GCodeLine& li
     static const std::regex acceleration_pattern("\\sACCEL\\s*=\\s*([0-9]*\\.*[0-9]*)");
     static const std::regex velocity_pattern("\\sVELOCITY\\s*=\\s*([0-9]*\\.*[0-9]*)");
     std::smatch             matches;
-    if (std::regex_search(line.raw(), matches, jerk_pattern) && matches.size() == 2) {
-        float _jerk = 0;
-        try {
-            _jerk = std::stof(matches[1]);
-        } catch (...) {}
+    const auto              read_value = [&](const char* name, const std::regex& pattern, float& value) {
+        static const bool fast = slicing_acceleration("parser");
+        std::string       token;
+        bool              found = false;
+        if (fast) {
+            const auto& raw = line.raw();
+            const auto  space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v'; };
+            const auto  digit = [](char c) { return c >= '0' && c <= '9'; };
+            for (size_t pos = raw.find(name); pos != std::string::npos; pos = raw.find(name, pos + 1)) {
+                if (!pos || !space(raw[pos - 1]))
+                    continue;
+                size_t at = pos + std::strlen(name);
+                while (at < raw.size() && space(raw[at]))
+                    ++at;
+                if (at == raw.size() || raw[at++] != '=')
+                    continue;
+                while (at < raw.size() && space(raw[at]))
+                    ++at;
+                const size_t start = at;
+                // Preserve the historical regex grammar, including malformed
+                // values, repeated dots, and the first matching parameter.
+                while (at < raw.size() && digit(raw[at]))
+                    ++at;
+                while (at < raw.size() && raw[at] == '.')
+                    ++at;
+                while (at < raw.size() && digit(raw[at]))
+                    ++at;
+                token = raw.substr(start, at - start);
+                found = true;
+                break;
+            }
+            if (slicing_acceleration_validate()) {
+                const bool reference = std::regex_search(raw, matches, pattern) && matches.size() == 2;
+                if (found != reference || (found && token != matches[1].str()))
+                    throw std::runtime_error("Velocity-limit token differs from regex reference");
+            }
+        } else if ((found = std::regex_search(line.raw(), matches, pattern) && matches.size() == 2)) {
+            token = matches[1].str();
+        }
+        value = 0;
+        if (found) {
+            try {
+                value = std::stof(token);
+            } catch (...) {}
+        }
+        return found;
+    };
+    float _jerk;
+    if (read_value("SQUARE_CORNER_VELOCITY", jerk_pattern, _jerk)) {
         for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
             set_option_value(m_time_processor.machine_limits.machine_max_jerk_x, i, _jerk);
             set_option_value(m_time_processor.machine_limits.machine_max_jerk_y, i, _jerk);
         }
     }
 
-    if (std::regex_search(line.raw(), matches, acceleration_pattern) && matches.size() == 2) {
-        float _accl = 0;
-        try {
-            _accl = std::stof(matches[1]);
-        } catch (...) {}
+    float _accl;
+    if (read_value("ACCEL", acceleration_pattern, _accl)) {
         for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
             set_acceleration(static_cast<PrintEstimatedStatistics::ETimeMode>(i), _accl);
             set_travel_acceleration(static_cast<PrintEstimatedStatistics::ETimeMode>(i), _accl);
         }
     }
 
-    if (std::regex_search(line.raw(), matches, velocity_pattern) && matches.size() == 2) {
-        float _speed = 0;
-        try {
-            _speed = std::stof(matches[1]);
-        } catch (...) {}
+    float _speed;
+    if (read_value("VELOCITY", velocity_pattern, _speed)) {
         for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
             set_option_value(m_time_processor.machine_limits.machine_max_speed_x, i, _speed);
             set_option_value(m_time_processor.machine_limits.machine_max_speed_y, i, _speed);

@@ -68,6 +68,12 @@ TEST_CASE("Klipper velocity limits retain command matching and estimated motion 
         {"ACCEL=2e3", "M204 S2\n"},
         {"ACCEL=100 ACCEL=200", "M204 S100\n"},
         {"accel=100", ""},
+        {"XACCEL=100 ACCEL_TO_DECEL=200 ACCEL = 300", "M204 S300\n"},
+        {"ACCEL=...5", "M204 S0\n"},
+        {"ACCEL=.5.6", "M204 S.5\n"},
+        {"ACCEL=+100", "M204 S0\n"},
+        {"ACCEL\t=\t100.25", "M204 S100.25\n"},
+        {"ACCEL=1e999", "M204 S1\n"},
         {"VELOCITY = 30.5\tACCEL = 100.5 SQUARE_CORNER_VELOCITY = .5", "M203 X30.5 Y30.5\nM204 S100.5\nM205 X.5 Y.5\n"},
     };
     for (const auto& [parameters, reference] : cases) {
