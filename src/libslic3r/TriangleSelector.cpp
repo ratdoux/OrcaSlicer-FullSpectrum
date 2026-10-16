@@ -1516,6 +1516,31 @@ indexed_triangle_set TriangleSelector::get_facets_strict(EnforcerBlockerType sta
     return out;
 }
 
+indexed_triangle_set TriangleSelector::get_facets_strict_compact(EnforcerBlockerType state) const
+{
+    indexed_triangle_set out;
+    // Resolve T-joints on the complete selector, before compacting its indices.
+    for (int i = 0; i < m_orig_size_indices; ++i)
+        get_facets_strict_recursive(m_triangles[i], m_neighbors[i], state, out.indices);
+    if (out.indices.empty())
+        return out;
+    std::vector<int> vertex_map(m_vertices.size(), -1);
+    for (const auto& triangle : out.indices)
+        for (int i = 0; i < 3; ++i)
+            vertex_map[triangle(i)] = 0;
+    out.vertices.reserve(std::count(vertex_map.begin(), vertex_map.end(), 0));
+    for (size_t i = 0; i < m_vertices.size(); ++i)
+        if (vertex_map[i] == 0) {
+            assert(m_vertices[i].ref_cnt > 0);
+            vertex_map[i] = int(out.vertices.size());
+            out.vertices.push_back(m_vertices[i].v);
+        }
+    for (auto& triangle : out.indices)
+        for (int i = 0; i < 3; ++i)
+            triangle(i) = vertex_map[triangle(i)];
+    return out;
+}
+
 void TriangleSelector::get_facets_strict_recursive(
     const Triangle                              &tr,
     const Vec3i32                                 &neighbors,

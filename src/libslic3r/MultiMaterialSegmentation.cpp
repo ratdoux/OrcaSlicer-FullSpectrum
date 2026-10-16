@@ -1,5 +1,6 @@
 #include "PolygonCompute.hpp"
 #include "PreparationDiagnostics.hpp"
+#include "TriangleSelector.hpp"
 #include "BoundingBox.hpp"
 #include "ClipperUtils.hpp"
 #include "EdgeGrid.hpp"
@@ -1246,9 +1247,25 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
         for (const ModelVolume *mv : print_object.model_object()->volumes)
             if (mv->is_model_part()) {
                 const Transform3d volume_trafo = object_trafo * mv->get_matrix();
+                std::unique_ptr<TriangleSelector> selector;
+                if (preparation_experiment("selector") || preparation_experiment("compact")) {
+                    PreparationTimer selector_timer(profile, "selector_top");
+                    selector = std::make_unique<TriangleSelector>(mv->mesh());
+                    selector->deserialize(extract_facets_info(*mv).facets_annotation.get_data(), false);
+                }
+                // Legacy strict meshes contain every live vertex, so sinking
+                // classification must still consider the complete selector.
+                const bool selector_sinking = preparation_experiment("compact") &&
+                                              is_volume_sinking(selector->get_facets_strict(EnforcerBlockerType::NONE), volume_trafo);
                 for (size_t extruder_idx = 0; extruder_idx < num_facets_states; ++extruder_idx) {
                     PreparationTimer facets_timer(profile, "strict_facets");
-                    const indexed_triangle_set painted = extract_facets_info(*mv).facets_annotation.get_facets_strict(*mv, EnforcerBlockerType(extruder_idx));
+                    if (selector && !selector->has_facets(EnforcerBlockerType(extruder_idx)))
+                        continue;
+                    const indexed_triangle_set painted =
+                        selector ?
+                            (preparation_experiment("compact") ? selector->get_facets_strict_compact(EnforcerBlockerType(extruder_idx)) :
+                                                                 selector->get_facets_strict(EnforcerBlockerType(extruder_idx))) :
+                            extract_facets_info(*mv).facets_annotation.get_facets_strict(*mv, EnforcerBlockerType(extruder_idx));
 #ifdef MM_SEGMENTATION_DEBUG_TOP_BOTTOM
                     {
                         static int iRun = 0;
@@ -1259,21 +1276,36 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
                     if (! painted.indices.empty()) {
                         PreparationTimer      slab_timer(profile, "slabs");
                         std::vector<Polygons> top, bottom;
-                        if (!zs.empty() && is_volume_sinking(painted, volume_trafo)) {
-                            std::vector<float> zs_sinking = {0.f};
-                            Slic3r::append(zs_sinking, zs);
-                            slice_mesh_slabs(painted, zs_sinking, volume_trafo, max_top_layers > 0 ? &top : nullptr, max_bottom_layers > 0 ? &bottom : nullptr, nullptr, throw_on_cancel_callback);
+                        auto                  project_surfaces = [&](const indexed_triangle_set& painted, std::vector<Polygons>& top,
+                                                    std::vector<Polygons>& bottom) {
+                            if (!zs.empty() &&
+                                (preparation_experiment("compact") ? selector_sinking : is_volume_sinking(painted, volume_trafo))) {
+                                std::vector<float> zs_sinking = {0.f};
+                                Slic3r::append(zs_sinking, zs);
+                                slice_mesh_slabs(painted, zs_sinking, volume_trafo, max_top_layers > 0 ? &top : nullptr,
+                                                 max_bottom_layers > 0 ? &bottom : nullptr, nullptr, throw_on_cancel_callback);
 
-                            MeshSlicingParams slicing_params;
-                            slicing_params.trafo = volume_trafo;
-                            Polygons bottom_slice = slice_mesh(painted, zs[0], slicing_params);
+                                MeshSlicingParams slicing_params;
+                                slicing_params.trafo  = volume_trafo;
+                                Polygons bottom_slice = slice_mesh(painted, zs[0], slicing_params);
 
-                            top.erase(top.begin());
-                            bottom.erase(bottom.begin());
+                                top.erase(top.begin());
+                                bottom.erase(bottom.begin());
 
-                            bottom[0] = union_(bottom[0], bottom_slice);
-                        } else
-                            slice_mesh_slabs(painted, zs, volume_trafo, max_top_layers > 0 ? &top : nullptr, max_bottom_layers > 0 ? &bottom : nullptr, nullptr, throw_on_cancel_callback);
+                                bottom[0] = union_(bottom[0], bottom_slice);
+                            } else
+                                slice_mesh_slabs(painted, zs, volume_trafo, max_top_layers > 0 ? &top : nullptr,
+                                                 max_bottom_layers > 0 ? &bottom : nullptr, nullptr, throw_on_cancel_callback);
+                        };
+                        project_surfaces(painted, top, bottom);
+                        if (selector && preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE")) {
+                            const auto reference = extract_facets_info(*mv).facets_annotation.get_facets_strict(*mv, EnforcerBlockerType(
+                                                                                                                         extruder_idx));
+                            std::vector<Polygons> reference_top, reference_bottom;
+                            project_surfaces(reference, reference_top, reference_bottom);
+                            if (reference_top != top || reference_bottom != bottom)
+                                throw std::runtime_error("Reused/compact painting selector changed ordered slab polygons");
+                        }
                         auto merge = [](std::vector<Polygons> &&src, std::vector<Polygons> &dst) {
                             auto it_src = find_if(src.begin(), src.end(), [](const Polygons &p){ return ! p.empty(); });
                             if (it_src != src.end()) {
@@ -2188,11 +2220,32 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - Projection of painted triangles - Begin";
     for (const ModelVolume *mv : print_object.model_object()->volumes) {
         const ModelVolumeFacetsInfo facets_info = extract_facets_info(*mv);
-        tbb::parallel_for(tbb::blocked_range<size_t>(1, num_facets_states), [&mv, &print_object, &facets_info, &layers, &edge_grids, &painted_lines, &painted_lines_mutex, &input_expolygons, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+        std::unique_ptr<TriangleSelector> selector;
+        if (preparation_experiment("selector")) {
+            if (!mv->is_model_part())
+                continue;
+            PreparationTimer selector_timer(profile, "selector_sides");
+            selector = std::make_unique<TriangleSelector>(mv->mesh());
+            selector->deserialize(facets_info.facets_annotation.get_data(), false);
+        }
+        tbb::parallel_for(tbb::blocked_range<size_t>(1, num_facets_states), [&mv, &selector, &print_object, &facets_info, &layers,
+                                                                             &edge_grids, &painted_lines, &painted_lines_mutex,
+                                                                             &input_expolygons, &throw_on_cancel_callback](
+                                                                                const tbb::blocked_range<size_t>& range) {
             PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
             for (size_t extruder_idx = range.begin(); extruder_idx < range.end(); ++extruder_idx) {
                 throw_on_cancel_callback();
-                const indexed_triangle_set custom_facets = facets_info.facets_annotation.get_facets(*mv, EnforcerBlockerType(extruder_idx));
+                if (selector && !selector->has_facets(EnforcerBlockerType(extruder_idx)))
+                    continue;
+                const indexed_triangle_set custom_facets = selector ?
+                                                               selector->get_facets(EnforcerBlockerType(extruder_idx)) :
+                                                               facets_info.facets_annotation.get_facets(*mv,
+                                                                                                        EnforcerBlockerType(extruder_idx));
+                if (selector && preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE")) {
+                    const auto reference = facets_info.facets_annotation.get_facets(*mv, EnforcerBlockerType(extruder_idx));
+                    if (reference.indices != custom_facets.indices || reference.vertices != custom_facets.vertices)
+                        throw std::runtime_error("Reused painting selector changed non-strict facets");
+                }
                 if (!mv->is_model_part() || custom_facets.indices.empty())
                     continue;
 
@@ -2305,13 +2358,17 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
                 export_painted_lines_to_svg(debug_out_path("0-mm-painted-lines-%d-%d.svg", layer_idx, iRun), {painted_lines[layer_idx]}, input_expolygons[layer_idx]);
 #endif // MM_SEGMENTATION_DEBUG_PAINTED_LINES
 
+                PreparationTimer line_sort_timer(profile, "paint_line_sort_filter");
                 std::vector<std::vector<PaintedLine>> post_processed_painted_lines = post_process_painted_lines(edge_grids[layer_idx].contours(), std::move(painted_lines[layer_idx]));
+                line_sort_timer.finish();
 
 #ifdef MM_SEGMENTATION_DEBUG_PAINTED_LINES
                 export_painted_lines_to_svg(debug_out_path("1-mm-painted-lines-post-processed-%d-%d.svg", layer_idx, iRun), post_processed_painted_lines, input_expolygons[layer_idx]);
 #endif // MM_SEGMENTATION_DEBUG_PAINTED_LINES
 
+                PreparationTimer          colorize_timer(profile, "colorize");
                 std::vector<ColoredLines> color_poly = colorize_contours(edge_grids[layer_idx].contours(), post_processed_painted_lines);
+                colorize_timer.finish();
 
 #ifdef MM_SEGMENTATION_DEBUG_COLORIZED_POLYGONS
                 export_colorized_polygons_to_svg(debug_out_path("2-mm-colorized_polygons-%d-%d.svg", layer_idx, iRun), color_poly, input_expolygons[layer_idx]);
