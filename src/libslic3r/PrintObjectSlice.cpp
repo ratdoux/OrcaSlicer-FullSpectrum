@@ -19,6 +19,7 @@
 #include "Layer.hpp"
 #include "MixedFilament.hpp"
 #include "MixedFilamentLayerTracker.hpp"
+#include "PreparationDiagnostics.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
 #include "SVG.hpp"
@@ -2929,6 +2930,8 @@ static void build_local_z_plan(PrintObject &print_object,
                                const std::vector<uint8_t> &adaptive_independent_rows,
                                ThrowOnCancel throw_on_cancel)
 {
+    PreparationProfile prep_profile("local_z_plan");
+    PreparationTimer   plan_timer(&prep_profile, "total");
     print_object.clear_local_z_plan();
 
     const Print *print = print_object.print();
@@ -3374,6 +3377,7 @@ static void build_local_z_plan(PrintObject &print_object,
             local_z_whole_objects,
             local_z_preserve_first_layer);
 
+        PreparationTimer     scan_timer(&prep_profile, "active_scan");
         ExPolygons mixed_masks;
         size_t     mixed_state_count = 0;
         std::vector<uint8_t> row_active_this_layer(mixed_definitions.size(), uint8_t(0));
@@ -3410,6 +3414,8 @@ static void build_local_z_plan(PrintObject &print_object,
                 dominant_mixed_idx  = size_t(mixed_idx);
             }
         }
+        scan_timer.finish();
+        PreparationTimer cadence_timer(&prep_profile, "cadence");
         for (size_t row_idx = 0; row_idx < row_active_this_layer.size(); ++row_idx) {
             if (row_active_this_layer[row_idx] == 0) {
                 if (row_idx < row_last_gradient_extruder.size())
@@ -3477,6 +3483,8 @@ static void build_local_z_plan(PrintObject &print_object,
                 dominant_gradient_valid = true;
             }
         }
+        cadence_timer.finish();
+        PreparationTimer geometry_timer(&prep_profile, "geometry");
         total_mixed_state_layers += mixed_state_count;
         if (!mixed_masks.empty())
             mixed_masks = union_ex(mixed_masks);
@@ -3565,6 +3573,8 @@ static void build_local_z_plan(PrintObject &print_object,
             }
         }
 
+        geometry_timer.finish();
+        PreparationTimer emit_timer(&prep_profile, "plan_assembly");
         size_t active_row_mask_components = 0;
         size_t active_row_mask_vertices   = 0;
         for (size_t row_idx = 0; row_idx < row_state_masks.size(); ++row_idx)
@@ -4587,6 +4597,8 @@ static void build_local_z_plan(PrintObject &print_object,
 template<typename ThrowOnCancel>
 static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<std::vector<ExPolygons>> segmentation, ThrowOnCancel throw_on_cancel)
 {
+    PreparationProfile prep_profile("apply_regions");
+    PreparationTimer   apply_timer(&prep_profile, "total");
     assert(segmentation.size() == print_object.layer_count());
     const PrintConfig        &print_cfg = print_object.print()->config();
     const DynamicPrintConfig &full_cfg  = print_object.print()->full_print_config();
@@ -4604,6 +4616,7 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
         bool_from_full_config(full_cfg, "mixed_filament_component_bias_enabled", print_cfg.mixed_filament_component_bias_enabled.value);
     const MixedFilamentManager &mixed_mgr = print_object.print()->mixed_filament_manager();
 
+    PreparationTimer regions_timer(&prep_profile, "regions");
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, segmentation.size(), std::max(segmentation.size() / 128, size_t(1))),
         [&print_object, &segmentation, &mixed_mgr, num_physical, preferred_a, preferred_b, base_height, collapse_mixed_regions, local_z_mode, bias_mode_enabled, throw_on_cancel](const tbb::blocked_range<size_t> &range) {
