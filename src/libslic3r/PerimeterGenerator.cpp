@@ -9,6 +9,7 @@
 #include "Feature/FuzzySkin/FuzzySkin.hpp"
 #include "PrintConfig.hpp"
 #include "ShortestPath.hpp"
+#include "SlicingAcceleration.hpp"
 #include "VariableWidth.hpp"
 #include "Arachne/WallToolPaths.hpp"
 #include "Geometry/ConvexHull.hpp"
@@ -148,6 +149,9 @@ static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perime
             extrusion_mm3_per_mm = perimeter_generator.mm3_per_mm();
             extrusion_width = perimeter_generator.perimeter_flow.width();
         }
+        static const bool shared_support = slicing_acceleration("support");
+        if (shared_support)
+            lower_polygons_series = &perimeter_generator.m_lower_polygons_series;
 
         // Apply fuzzy skin if it is enabled for at least some part of the polygon.
         const Polygon polygon = apply_fuzzy_skin(loop.polygon, perimeter_generator, loop.depth, loop.is_contour);
@@ -1193,16 +1197,24 @@ void PerimeterGenerator::process_classic()
                                          &m_lower_slices_polygons :
                                          nullptr;
     m_lower_polygons_series        = generate_lower_polygons_series(this->perimeter_flow.width(), prepared, validate_support);
-    // The positive offset depends only on the nozzle and lower slices, not the wall width.
-    const Polygons* grown_lower_slices = reuse_support && !m_lower_polygons_series.empty() ? &m_lower_polygons_series.back() : nullptr;
-    if (ext_perimeter_width == perimeter_width){
-        m_external_lower_polygons_series = m_lower_polygons_series;
+    if (slicing_acceleration("support")) {
+        // Every consumer uses only the final, nozzle-dependent offset. All wall
+        // widths read the same owned outline; the unused negative offsets and
+        // copies of the positive outline are unnecessary.
+        m_external_lower_polygons_series.clear();
+        m_smaller_external_lower_polygons_series.clear();
     } else {
-        m_external_lower_polygons_series = generate_lower_polygons_series(this->ext_perimeter_flow.width(), grown_lower_slices,
-                                                                          validate_support);
-    }
-    m_smaller_external_lower_polygons_series = generate_lower_polygons_series(this->smaller_ext_perimeter_flow.width(), grown_lower_slices,
+        // The positive offset depends only on the nozzle and lower slices, not the wall width.
+        const Polygons* grown_lower_slices = reuse_support && !m_lower_polygons_series.empty() ? &m_lower_polygons_series.back() : nullptr;
+        if (ext_perimeter_width == perimeter_width) {
+            m_external_lower_polygons_series = m_lower_polygons_series;
+        } else {
+            m_external_lower_polygons_series = generate_lower_polygons_series(this->ext_perimeter_flow.width(), grown_lower_slices,
                                                                               validate_support);
+        }
+        m_smaller_external_lower_polygons_series = generate_lower_polygons_series(this->smaller_ext_perimeter_flow.width(),
+                                                                                  grown_lower_slices, validate_support);
+    }
     // we need to process each island separately because we might have different
     // extra perimeters for each one
     Surfaces all_surfaces = this->slices->surfaces;
@@ -2571,7 +2583,8 @@ std::vector<Polygons> PerimeterGenerator::generate_lower_polygons_series(float w
     }
 
     // offset expolygon to generate series of polygons
-    for (int i = 0; i < offset_series.size(); i++) {
+    const int first_offset = slicing_acceleration("support") ? int(offset_series.size()) - 1 : 0;
+    for (int i = first_offset; i < offset_series.size(); i++) {
         if (i + 1 == offset_series.size() && grown_lower_slices) {
             if (validate && *grown_lower_slices != offset(*this->lower_slices, float(scale_(offset_series[i]))))
                 throw std::runtime_error("Reused wall support offset differs from CPU reference");

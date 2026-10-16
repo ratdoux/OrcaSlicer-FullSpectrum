@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "libslic3r/PerimeterGenerator.hpp"
 #include "libslic3r/ClipperUtils.hpp"
+#include "libslic3r/SlicingAcceleration.hpp"
 using namespace Slic3r;
 TEST_CASE("Classic walls reuse nozzle offsets for distinct wall widths", "[CPUSlicing][WallSupport]")
 {
@@ -25,9 +26,14 @@ TEST_CASE("Classic walls reuse nozzle offsets for distinct wall widths", "[CPUSl
         generator.ext_perimeter_flow = Flow(nozzle * 1.2f, 0.1f, nozzle);
         generator.process_classic();
         const auto expected = offset(below, float(scale_(float(0.5 * float(nozzle)))));
-        REQUIRE(generator.m_lower_polygons_series.size() == 2);
+        REQUIRE(generator.m_lower_polygons_series.size() == (slicing_acceleration("support") ? 1 : 2));
         CHECK(generator.m_lower_polygons_series.back() == expected);
-        CHECK(generator.m_external_lower_polygons_series.back() == expected);
-        CHECK(generator.m_smaller_external_lower_polygons_series.back() == expected);
+        if (slicing_acceleration("support")) {
+            CHECK(generator.m_external_lower_polygons_series.empty());
+            CHECK(generator.m_smaller_external_lower_polygons_series.empty());
+        } else {
+            CHECK(generator.m_external_lower_polygons_series.back() == expected);
+            CHECK(generator.m_smaller_external_lower_polygons_series.back() == expected);
+        }
     }
 }
