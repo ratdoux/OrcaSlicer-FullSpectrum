@@ -11,7 +11,7 @@ inline bool slicing_acceleration(const char* name)
 {
     static const std::string modes = [] {
         const char* value = std::getenv("ORCA_SLICE_EXPERIMENTS");
-        return std::string(",") + (value ? value : "all") + ",";
+        return std::string(",") + (value ? value : "support,parser,output,quality,quality_batch") + ",";
     }();
     return modes == ",all," || modes.find(std::string(",") + name + ",") != std::string::npos;
 }

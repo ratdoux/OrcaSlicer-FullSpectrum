@@ -3179,6 +3179,7 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
 
     if (m_local_z_clip_acceleration)
         m_local_z_clip_acceleration->report();
+    m_extrusion_quality_estimator.report_profile();
     print.throw_if_canceled();
 }
 
@@ -4810,7 +4811,13 @@ LayerResult GCode::process_layer(const Print& print,
                 return r->has_extrusions() && r->region().config().enable_overhang_speed.values.front();  // Snapmaker: flow variant -- region has no flow context here, use standard value
             });
             if (enable_overhang_speed) {
-                m_extrusion_quality_estimator.prepare_for_new_layer(layer_to_print.original_object, layer_to_print.object_layer);
+                // Real slice benchmarks justify distance batching for Local-Z objects.
+                // Ordinary export keeps direct queries to avoid unnecessary cache setup.
+                const bool cache_distances = layer_to_print.original_object != nullptr &&
+                                             !layer_to_print.original_object->local_z_intervals().empty() &&
+                                             !layer_to_print.original_object->local_z_sublayer_plan().empty();
+                m_extrusion_quality_estimator.prepare_for_new_layer(layer_to_print.original_object, layer_to_print.object_layer,
+                                                                    cache_distances);
             }
         }
     }

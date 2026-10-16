@@ -16,6 +16,7 @@
 #include "../Flow.hpp"
 #include "../Config.hpp"
 #include "../SlicingAcceleration.hpp"
+#include "libslic3r/GCode/QualityDistanceCache.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -42,7 +43,8 @@ std::vector<ExtendedPoint> estimate_points_properties(const POINTS&             
                                                       float                                   flow_width,
                                                       float                                   max_line_length     = -1.0f,
                                                       float                                   min_distance        = -1.0f,
-                                                      bool                                    calculate_curvature = true)
+                                                      bool                                    calculate_curvature = true,
+                                                      const std::vector<double>*              initial_distances   = nullptr)
 {
     if (input_points.empty())
         return {};
@@ -83,6 +85,7 @@ std::vector<ExtendedPoint> estimate_points_properties(const POINTS&             
     double min_spacing = flow_width*0.25;
 
     using AABBScalar = typename AABBTreeLines::LinesDistancer<L>::Scalar;
+    using Distance        = typename AABBTreeLines::LinesDistancer<L>::Floating;
     float boundary_offset = PREV_LAYER_BOUNDARY_OFFSET ? 0.5 * flow_width : 0.0f;
     auto  maybe_unscale   = [](const P &p) { return SCALED_INPUT ? unscaled(p) : p.template cast<double>(); };
 
@@ -91,13 +94,17 @@ std::vector<ExtendedPoint> estimate_points_properties(const POINTS&             
 
     {
         ExtendedPoint start_point{maybe_unscale(input_points.front())};
-        const auto distance = unscaled_prev_layer.template distance_from_lines<SIGNED_DISTANCE>(start_point.position.cast<AABBScalar>());
+        const Distance distance = initial_distances ? Distance((*initial_distances)[0]) :
+                                                      unscaled_prev_layer.template distance_from_lines<SIGNED_DISTANCE>(
+                                                          start_point.position.cast<AABBScalar>());
         start_point.distance = distance + boundary_offset;
         points.push_back(start_point);
     }
     for (size_t i = 1; i < input_points.size(); i++) {
         ExtendedPoint next_point{maybe_unscale(input_points[i])};
-        const auto distance = unscaled_prev_layer.template distance_from_lines<SIGNED_DISTANCE>(next_point.position.cast<AABBScalar>());
+        const Distance distance = initial_distances ? Distance((*initial_distances)[i]) :
+                                                      unscaled_prev_layer.template distance_from_lines<SIGNED_DISTANCE>(
+                                                          next_point.position.cast<AABBScalar>());
         next_point.distance = distance + boundary_offset;
 
         // Intersection handling
@@ -304,10 +311,18 @@ class ExtrusionQualityEstimator
     ConfigOptionFloatsOrPercents                                                       m_cached_speeds;
     float                                                                              m_cached_width = -1, m_cached_external_speed = -1;
     std::vector<std::pair<float, float>>                                               m_speed_sections;
+    std::unordered_map<const PrintObject*, QualityDistanceCache>                       m_distance_caches;
+    size_t                                                                             m_cached_point_count = 0;
 
 public:
     void set_current_object(const PrintObject *object) { current_object = object; }
-    void prepare_for_new_layer(const PrintObject* obj, const Layer* layer)
+    void report_profile() const
+    {
+        for (const auto& entry : m_distance_caches)
+            entry.second.report();
+    }
+
+    void prepare_for_new_layer(const PrintObject* obj, const Layer* layer, bool use_distance_cache = false)
     {
         if (layer == nullptr) return;
         const PrintObject *object = obj;
@@ -322,7 +337,16 @@ public:
         else
             prev_curled_extrusions[object] = next_curled_extrusions[object];
         next_curled_extrusions[object] = AABBTreeLines::LinesDistancer<CurledLine>{layer->curled_lines};
-
+        static const bool batch_distances = slicing_acceleration("quality") && slicing_acceleration("quality_batch");
+        if (batch_distances && use_distance_cache) {
+            auto& cache = m_distance_caches[object];
+            m_cached_point_count -= cache.size();
+            cache.prepare(*layer, prev_layer_boundaries[object], 131072 - m_cached_point_count);
+            m_cached_point_count += cache.size();
+        } else if (auto cached = m_distance_caches.find(object); cached != m_distance_caches.end()) {
+            m_cached_point_count -= cached->second.size();
+            m_distance_caches.erase(cached);
+        }
     }
 
     std::vector<ProcessedPoint> estimate_extrusion_quality(const ExtrusionPath&                path,
@@ -385,9 +409,14 @@ public:
             smallest_distance_with_lower_speed=-1.f;
 
         // Orca: Pass to the point properties estimator the smallest ovehang distance that triggers a slowdown (smallest_distance_with_lower_speed)
+        const auto                 cache             = m_distance_caches.find(current_object);
+        const auto                 initial_distances = optimize && cache != m_distance_caches.end() ?
+                                                           cache->second.query(path.polyline.points, prev_layer_boundaries[current_object]) :
+                                                           std::vector<double>();
         std::vector<ExtendedPoint> extended_points =
             estimate_points_properties<true, true, true, true>(path.polyline.points, prev_layer_boundaries[current_object], path.width, -1,
-                                                               smallest_distance_with_lower_speed, !optimize);
+                                                               smallest_distance_with_lower_speed, !optimize,
+                                                               initial_distances.empty() ? nullptr : &initial_distances);
         const auto width_inv = 1.0f / path.width;
         std::vector<ProcessedPoint> processed_points;
         processed_points.reserve(extended_points.size());
