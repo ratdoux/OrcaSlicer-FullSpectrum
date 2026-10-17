@@ -48,15 +48,57 @@ explicit direct/independent LocalZ settings instead of source-branch defaults.
 FullSpectrum already contains the prime-tower scheduling fix from `707c6e1853`.
 Its end-to-end test is ported separately and extended beyond the 64-layer batch
 boundary. The unrelated gradient-dialog change `8106485824` is excluded.
-Source-only pointillism helpers and per-component painted-cadence tracking are
-not inserted into FullSpectrum's different nominal-layer cadence. The tracker
-utility and its regression tests are retained for source traceability.
+Source-only pointillism helpers are not inserted into FullSpectrum.
+
+The painted-zone pattern fix from `2c0e48757c` (upstream PR #363, bugs 34/43) is
+integrated as a follow-up to the initial performance port. Each connected
+ordinary painted mix starts its pattern at its first active layer, continues
+through connected splits/merges, and restarts after a gap. Disconnected zones
+can select different physical filaments on the same nominal layer. This
+intentionally changes the old FullSpectrum behavior, which used the object's
+absolute layer index. Incoming upstream code contained this fix during the
+July/September merges, but FullSpectrum's merge results retained the old path.
+
+The production integration now uses the performance series' borrowed-mask
+tracker, parallel channels with ordered per-channel layers, and short-circuited
+overlap checks (`df79223de4`, `b21f39fbd1`). Worker cancellation only reads the
+cancel flag; the full callback runs before and after the new parallel phase.
+`ORCA_PREP_VALIDATE_REUSE=1` compares activation indices with the exhaustive
+reference tracker. `ORCA_PREP_EXPERIMENTS=none` disables the overlap shortcut
+without reverting the pattern-start fix. Canonical recipe lookup, LocalZ and
+perimeter-modulation exclusions, and disabled region-collapse behavior remain
+in place.
 
 Each of the 52 selected commits records its source hash with `cherry picked
 from`. The imported performance reports are historical source-branch evidence;
 their speedup figures do not establish FullSpectrum performance.
 
-## Validation
+## Painted-zone follow-up validation
+
+- The new sliced-geometry regression reproduces incorrect elevated/restarted
+  manual-pattern assignments against the pre-fix library. With the fix, all
+  546 assertions pass, covering two mixed channels, simultaneous disconnected
+  zones, gaps, manual and ratio-based patterns, disabled collapse, and one/four
+  worker execution. The exhaustive tracking mode also passes the same test.
+- Reference-enabled `[SlicingSpeedPort],[CPUSlicing],[SMLCopy],[GradientPort]`
+  passes **29 cases / 231,082 assertions**, including LocalZ tower output,
+  copy reuse, gradients, and fast-versus-exhaustive activation comparisons.
+- Release application, libslic3r tests, and FFF tests rebuild successfully.
+- Full CTest run: **414/422 passed**. The same eight failures listed below
+  remain; no new failing test was introduced.
+- The normal-workflow Starry CLI project completes and exports G-code with
+  `ORCA_PREP_VALIDATE_REUSE=1`. Production tracking exercises multiple mixed
+  channels, including one with 99 disconnected components, with no activation
+  mismatch against the exhaustive reference. This is a correctness run, not
+  an isolated performance benchmark.
+
+Local evidence: `cadence-before.log`, `cadence-reference-validation.log`,
+`cadence-reference-only.log`, `build-cadence.log`, and `ctest-cadence.log`.
+The completed CLI run is in
+`build-speed/validation/starry-painted-cadence-final/`; its DLL SHA-256 is
+`bf6052f6f56b41c7392cc702be4fe4fe35aac1bf4a9a2364554df106d8a357e9`.
+
+## Validation of the initial performance series
 
 Validated on Windows with Visual Studio 2022, CMake 3.28.4, and Catch2 3.7.1.
 The out-of-source `build-speed` configuration enables `BUILD_TESTS`,

@@ -19,6 +19,7 @@
 #include "ImageMap/VolumeData.hpp"
 #include "Layer.hpp"
 #include "MixedFilament.hpp"
+#include "MixedFilamentLayerTracker.hpp"
 #include "PreparationDiagnostics.hpp"
 #include "MixedFilamentChannelMap.hpp"
 #include "LayerGeometryBatch.hpp"
@@ -4807,20 +4808,65 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
         bool_from_full_config(full_cfg, "mixed_filament_component_bias_enabled", print_cfg.mixed_filament_component_bias_enabled.value);
     const MixedFilamentManager &mixed_mgr = print_object.print()->mixed_filament_manager();
 
+    // Anchor each connected painted zone to its first active layer. Snapshot
+    // channel eligibility before workers run; manager queries may synchronize
+    // legacy state. Masks remain immutable until all trackers have finished.
+    const size_t num_channels = segmentation.empty() ? 0 : segmentation.front().size();
+    const auto mixed_zone_phase_slot = [num_channels](size_t layer_id, size_t channel_idx) { return layer_id * num_channels + channel_idx; };
+    std::vector<std::vector<int>> mixed_zone_component_local_layer_index(segmentation.size() * num_channels);
+    PreparationTimer              tracking_timer(&prep_profile, "tracking");
+    std::vector<size_t>           mixed_channels;
+    for (size_t channel_idx = 1; channel_idx < num_channels; ++channel_idx)
+        if (mixed_mgr.is_mixed(segmentation_channel_filament_id(channel_idx), num_physical))
+            mixed_channels.push_back(channel_idx);
+    throw_on_cancel();
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, mixed_channels.size()), [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t channel_slot = range.begin(); channel_slot < range.end(); ++channel_slot) {
+            const size_t              channel_idx       = mixed_channels[channel_slot];
+            const bool                reuse_tracking    = preparation_experiment("tracking");
+            const bool                validate_tracking = preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE");
+            MixedFilamentLayerTracker tracker(reuse_tracking), reference_tracker;
+            std::vector<int>          reference_indices;
+            size_t                    max_components = 0;
+            for (size_t layer_id = 0; layer_id < segmentation.size(); ++layer_id) {
+                // The caller's callback also updates memory-guard sampling
+                // state, so only read cancellation from these new workers.
+                if (print_object.print()->canceled())
+                    throw CanceledException();
+                if (segmentation[layer_id].size() != num_channels)
+                    continue;
+                auto& indices = mixed_zone_component_local_layer_index[mixed_zone_phase_slot(layer_id, channel_idx)];
+                tracker.track_layer(segmentation[layer_id][channel_idx], int(layer_id), indices);
+                max_components = std::max(max_components, segmentation[layer_id][channel_idx].size());
+                if (validate_tracking) {
+                    reference_tracker.track_layer(segmentation[layer_id][channel_idx], int(layer_id), reference_indices);
+                    if (reference_indices != indices)
+                        throw std::runtime_error("Optimized mixed-component tracking changed activation indices");
+                }
+            }
+            if (prep_profile.enabled)
+                BOOST_LOG_TRIVIAL(info) << "Preparation tracker channel=" << channel_idx << " max_components=" << max_components;
+        }
+    });
+    throw_on_cancel();
+    tracking_timer.finish();
     PreparationTimer regions_timer(&prep_profile, "regions");
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, segmentation.size(), std::max(segmentation.size() / 128, size_t(1))),
-        [&print_object, &segmentation, &mixed_mgr, num_physical, preferred_a, preferred_b, base_height, collapse_mixed_regions, local_z_mode, bias_mode_enabled, throw_on_cancel](const tbb::blocked_range<size_t> &range) {
-            const auto  &layer_ranges   = print_object.shared_regions()->layer_ranges;
-            double       z              = print_object.get_layer(int(range.begin()))->slice_z;
-            auto         it_layer_range = layer_range_first(layer_ranges, z);
+        [&print_object, &segmentation, &mixed_mgr, &mixed_zone_component_local_layer_index, mixed_zone_phase_slot, num_physical,
+         preferred_a, preferred_b, base_height, collapse_mixed_regions, local_z_mode, bias_mode_enabled,
+         throw_on_cancel](const tbb::blocked_range<size_t>& range) {
+            const auto& layer_ranges   = print_object.shared_regions()->layer_ranges;
+            double      z              = print_object.get_layer(int(range.begin()))->slice_z;
+            auto        it_layer_range = layer_range_first(layer_ranges, z);
             // MM segmentation channel 0 is the underlying / default color of the parent
             // region. Remaining channels correspond to filament IDs (1-based), which
             // now include visible mixed / virtual filaments.
             const size_t num_channels  = segmentation.empty() ? 0 : segmentation.front().size();
             const size_t num_extruders = num_channels > 0 ? num_channels - 1 : 0;
 
-            struct ByExtruder {
+            struct ByExtruder
+            {
                 ExPolygons  expolygons;
                 BoundingBox bbox;
             };
@@ -4851,7 +4897,8 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                 return out;
             };
 
-            struct ByRegion {
+            struct ByRegion
+            {
                 SurfaceCollection surfaces;
                 bool       needs_merge { false };
             };
@@ -4911,36 +4958,66 @@ static inline void apply_mm_segmentation(PrintObject &print_object, std::vector<
                     bool collapse_this_channel = collapse_mixed_regions;
                     if (collapse_this_channel && (channel_uses_local_z || channel_uses_perimeter_modulation))
                         collapse_this_channel = false;
+                    const auto& component_local_indices =
+                        mixed_zone_component_local_layer_index[mixed_zone_phase_slot(layer_id, channel_idx)];
+                    ExPolygons& state_masks         = segmentation[layer_id][channel_idx];
+                    const bool  split_by_zone_phase = collapse_this_channel && component_local_indices.size() == state_masks.size() &&
+                                                     std::any_of(component_local_indices.begin(), component_local_indices.end(),
+                                                                 [](int idx) { return idx >= 0; });
+                    if (split_by_zone_phase) {
+                        for (size_t component_idx = 0; component_idx < state_masks.size(); ++component_idx) {
+                            if (state_masks[component_idx].empty())
+                                continue;
+                            const int          local_layer_index = component_local_indices[component_idx] >= 0 ?
+                                                                       component_local_indices[component_idx] :
+                                                                       int(layer_id);
+                            const unsigned int effective_filament_id =
+                                mixed_mgr.effective_painted_region_filament_id(channel_id, num_physical, local_layer_index,
+                                                                               float(layer.print_z), float(layer.height),
+                                                                               float(preferred_a), float(preferred_b), float(base_height));
+                            const size_t effective_idx = effective_filament_id >= 1 && effective_filament_id <= num_extruders ?
+                                                             size_t(effective_filament_id - 1) :
+                                                             size_t(channel_idx - 1);
+                            ByExtruder&  region        = by_extruder[effective_idx];
+                            region.expolygons.emplace_back(std::move(state_masks[component_idx]));
+                            if (!reuse_bounds)
+                                region.bbox = get_extents(region.expolygons);
+                            layer_split = true;
+                            if (bias_mode_enabled &&
+                                std::abs(mixed_mgr.component_surface_offset(channel_id, num_physical, local_layer_index,
+                                                                            float(layer.print_z), float(layer.height))) > EPSILON)
+                                layer_has_component_bias = true;
+                        }
+                        state_masks.clear();
+                        continue;
+                    }
+                    const int          local_layer_index     = component_local_indices.size() == 1 && component_local_indices.front() >= 0 ?
+                                                                   component_local_indices.front() :
+                                                                   int(layer_id);
                     const unsigned int effective_filament_id = collapse_this_channel ?
-                        mixed_mgr.effective_painted_region_filament_id(channel_id,
-                                                                       num_physical,
-                                                                       int(layer_id),
-                                                                       float(layer.print_z),
-                                                                       float(layer.height),
-                                                                       float(preferred_a),
-                                                                       float(preferred_b),
-                                                                       float(base_height)) :
-                        channel_id;
-                    const size_t effective_idx =
-                        effective_filament_id >= 1 && effective_filament_id <= num_extruders ? size_t(effective_filament_id - 1) : size_t(channel_idx - 1);
-                    ByExtruder &region = by_extruder[effective_idx];
+                                                                   mixed_mgr.effective_painted_region_filament_id(channel_id, num_physical,
+                                                                                                                  local_layer_index,
+                                                                                                                  float(layer.print_z),
+                                                                                                                  float(layer.height),
+                                                                                                                  float(preferred_a),
+                                                                                                                  float(preferred_b),
+                                                                                                                  float(base_height)) :
+                                                                   channel_id;
+                    const size_t       effective_idx         = effective_filament_id >= 1 && effective_filament_id <= num_extruders ?
+                                                                   size_t(effective_filament_id - 1) :
+                                                                   size_t(channel_idx - 1);
+                    ByExtruder&        region                = by_extruder[effective_idx];
                     append(region.expolygons, std::move(segmentation[layer_id][channel_idx]));
-                    if (! region.expolygons.empty()) {
+                    if (!region.expolygons.empty()) {
                         if (!reuse_bounds)
                             region.bbox = get_extents(region.expolygons);
                         layer_split = true;
                     }
 
-                    if (!region.expolygons.empty() &&
-                        bias_mode_enabled &&
-                        mixed_mgr.is_mixed(channel_id, num_physical) &&
-                        !channel_uses_local_z &&
-                        !channel_uses_perimeter_modulation &&
-                        std::abs(mixed_mgr.component_surface_offset(channel_id,
-                                                                   num_physical,
-                                                                   int(layer_id),
-                                                                   float(layer.print_z),
-                                                                   float(layer.height))) > EPSILON)
+                    if (!region.expolygons.empty() && bias_mode_enabled && mixed_mgr.is_mixed(channel_id, num_physical) &&
+                        !channel_uses_local_z && !channel_uses_perimeter_modulation &&
+                        std::abs(mixed_mgr.component_surface_offset(channel_id, num_physical, local_layer_index, float(layer.print_z),
+                                                                    float(layer.height))) > EPSILON)
                         layer_has_component_bias = true;
                 }
 
