@@ -1,5 +1,7 @@
 # Local-Z indexed CPU classifier review
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 ## Scope and decision protocol
 
 This experiment compares an indexed CPU classifier with the existing Vulkan empty-path classifier. It does not implement GPU polygon construction or bypass nonempty clipping. The source checkpoint before this experiment was `c794213bf7`.

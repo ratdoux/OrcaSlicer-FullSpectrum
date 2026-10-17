@@ -1216,8 +1216,9 @@ static void cut_segmented_layers(const std::vector<ExPolygons>        &input_exp
 {
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - cutting segmented layers in parallel - begin";
     const float interlocking_cut_width = interlocking_depth > 0.f ? std::max(cut_width - interlocking_depth, 0.f) : 0.f;
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, segmented_regions.size()),
-    [&segmented_regions, &input_expolygons, &cut_width, &interlocking_depth, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, segmented_regions.size()), [&segmented_regions, &input_expolygons, &cut_width,
+                                                                                &interlocking_depth, &throw_on_cancel_callback](
+                                                                                   const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
@@ -1575,8 +1576,10 @@ static inline std::vector<std::vector<ExPolygons>> segmentation_top_and_bottom_l
     PreparationTimer                     top_merge_timer(profile, "shell_merge");
     std::vector<std::vector<ExPolygons>> triangles_by_color_merged(num_facets_states);
     triangles_by_color_merged.assign(num_facets_states, std::vector<ExPolygons>(num_layers));
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&triangles_by_color_merged, &triangles_by_color_bottom, &triangles_by_color_top, &num_layers, &throw_on_cancel_callback,
-                                                                  &shell_triangles_by_color_top, &shell_triangles_by_color_bottom](const tbb::blocked_range<size_t> &range) {
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&triangles_by_color_merged, &triangles_by_color_bottom,
+                                                                  &triangles_by_color_top, &num_layers, &throw_on_cancel_callback,
+                                                                  &shell_triangles_by_color_top, &shell_triangles_by_color_bottom](
+                                                                     const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
             throw_on_cancel_callback();
@@ -1991,10 +1994,9 @@ static std::vector<std::vector<ExPolygons>> merge_segmented_layers(const std::ve
     assert(!top_and_bottom_layers.size() || num_facets_states == top_and_bottom_layers.size());
 
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - Merging segmented layers in parallel - Begin";
-    tbb::parallel_for(
-        tbb::blocked_range<size_t>(0, num_layers),
-        [&segmented_regions, &top_and_bottom_layers, &segmented_regions_merged, &num_facets_states,
-         protected_side_state_begin, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&segmented_regions, &top_and_bottom_layers, &segmented_regions_merged,
+                                                                  &num_facets_states, protected_side_state_begin,
+                                                                  &throw_on_cancel_callback](const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             assert(segmented_regions[layer_idx].size() == num_facets_states);
@@ -2202,17 +2204,19 @@ struct PaintingSnapshot
     std::vector<std::vector<ExPolygons>> sides, shells;
 };
 
-static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const PrintObject                                               &print_object,
-                                                              const std::function<ModelVolumeFacetsInfo(const ModelVolume &)> &extract_facets_info,
-                                                              const size_t                                                     num_facets_states,
-                                                              const float                                                      segmentation_max_width,
-                                                              const float                                                      segmentation_interlocking_depth,
-                                                              const bool                                                       segmentation_interlocking_beam,
-                                                              const IncludeTopAndBottomLayers                                  include_top_and_bottom_layers,
-                                                              const size_t protected_side_state_begin,
-                                                              const PaintedLineInjector                                        &painted_line_injector,
-                                                              const std::function<void()>                                     &throw_on_cancel_callback,
-                                                              PreparationProfile* profile, PaintingSnapshot* snapshot)
+static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(
+    const PrintObject&                                              print_object,
+    const std::function<ModelVolumeFacetsInfo(const ModelVolume&)>& extract_facets_info,
+    const size_t                                                    num_facets_states,
+    const float                                                     segmentation_max_width,
+    const float                                                     segmentation_interlocking_depth,
+    const bool                                                      segmentation_interlocking_beam,
+    const IncludeTopAndBottomLayers                                 include_top_and_bottom_layers,
+    const size_t                                                    protected_side_state_begin,
+    const PaintedLineInjector&                                      painted_line_injector,
+    const std::function<void()>&                                    throw_on_cancel_callback,
+    PreparationProfile*                                             profile,
+    PaintingSnapshot*                                               snapshot)
 {
     const size_t                          num_layers    = print_object.layers().size();
     std::vector<std::vector<ExPolygons>>  segmented_regions(num_layers);
@@ -2232,7 +2236,8 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
     PreparationTimer outlines_timer(profile, "outlines");
     // Merge all regions and remove small holes
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - Slices preprocessing in parallel - Begin";
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&layers, &input_expolygons, &throw_on_cancel_callback](const tbb::blocked_range<size_t> &range) {
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&layers, &input_expolygons,
+                                                                  &throw_on_cancel_callback](const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
@@ -2319,7 +2324,11 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
                     continue;
 
                 const Transform3f tr = print_object.trafo().cast<float>() * mv->get_matrix().cast<float>();
-                tbb::parallel_for(tbb::blocked_range<size_t>(0, custom_facets.indices.size()), [&tr, &custom_facets, &print_object, &layers, &edge_grids, &input_expolygons, &painted_lines, &painted_lines_mutex, &extruder_idx](const tbb::blocked_range<size_t> &range) {
+                tbb::parallel_for(tbb::blocked_range<size_t>(0, custom_facets.indices.size()), [&tr, &custom_facets, &print_object, &layers,
+                                                                                                &edge_grids, &input_expolygons,
+                                                                                                &painted_lines, &painted_lines_mutex,
+                                                                                                &extruder_idx](
+                                                                                                   const tbb::blocked_range<size_t>& range) {
                     PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
                     for (size_t facet_idx = range.begin(); facet_idx < range.end(); ++facet_idx) {
                         float min_z = std::numeric_limits<float>::max();
@@ -2413,9 +2422,10 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
     std::atomic<size_t> checked_island_layers{0}, fast_island_layers{0};
     BOOST_LOG_TRIVIAL(debug) << "Print object segmentation - layers segmentation in parallel - begin";
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers), [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions,
-                                                                  &num_facets_states, &layers, &painted_line_injector, &throw_on_cancel_callback, split_islands,
-                                                                  &islands_mode, &checked_island_layers,
-                                                                  &fast_island_layers, profile](const tbb::blocked_range<size_t>& range) {
+                                                                  &num_facets_states, &layers, &painted_line_injector,
+                                                                  &throw_on_cancel_callback, split_islands, &islands_mode,
+                                                                  &checked_island_layers, &fast_island_layers,
+                                                                  profile](const tbb::blocked_range<size_t>& range) {
         PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Paint);
         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
             throw_on_cancel_callback();
@@ -2492,7 +2502,7 @@ static std::vector<std::vector<ExPolygons>> segmentation_by_painting_impl(const 
         snapshot->shells = top_and_bottom_layers;
     }
     top_bottom_timer.finish();
-    PreparationTimer merge_timer(profile, "merge");
+    PreparationTimer                     merge_timer(profile, "merge");
     std::vector<std::vector<ExPolygons>> segmented_regions_merged =
         merge_segmented_layers(segmented_regions,
                                std::move(top_and_bottom_layers),
@@ -2521,14 +2531,15 @@ std::vector<std::vector<ExPolygons>> segmentation_by_painting(
     float                                                           segmentation_interlocking_depth,
     bool                                                            segmentation_interlocking_beam,
     IncludeTopAndBottomLayers                                       include_top_and_bottom_layers,
-    size_t protected_side_state_begin,
-    const PaintedLineInjector& painted_line_injector,
+    size_t                                                          protected_side_state_begin,
+    const PaintedLineInjector&                                      painted_line_injector,
     const std::function<void()>&                                    throw_on_cancel_callback)
 {
     auto run = [&](PreparationProfile& profile, PaintingSnapshot* snapshot = nullptr) {
         return segmentation_by_painting_impl(print_object, extract_facets_info, num_facets_states, segmentation_max_width,
                                              segmentation_interlocking_depth, segmentation_interlocking_beam, include_top_and_bottom_layers,
-                                             protected_side_state_begin, painted_line_injector, throw_on_cancel_callback, &profile, snapshot);
+                                             protected_side_state_begin, painted_line_injector, throw_on_cancel_callback, &profile,
+                                             snapshot);
     };
     PreparationProfile profile("painting");
     if (!preparation_diagnostic("ORCA_PREP_VALIDATE_THREADS"))

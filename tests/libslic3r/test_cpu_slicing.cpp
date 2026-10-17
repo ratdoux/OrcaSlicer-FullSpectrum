@@ -22,7 +22,7 @@ ExPolygon rectangle(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
 }
 } // namespace
 
-TEST_CASE("Mixed channel snapshots preserve hidden rows and borrowed legacy edits", "[CPUSlicing][PaintPreparation]")
+TEST_CASE("Mixed channel snapshots preserve FullSpectrum virtual IDs", "[CPUSlicing][PaintPreparation]")
 {
     MixedFilamentManager       manager;
     std::vector<MixedFilament> rows(4);
@@ -34,15 +34,21 @@ TEST_CASE("Mixed channel snapshots preserve hidden rows and borrowed legacy edit
     rows[1].enabled = false;
     manager.set_mixed_filament_legacy_rows(rows, 2, {"#FFFFFF", "#000000"});
     const auto initial = mixed_filament_channel_rows(manager, 2, 7);
-    REQUIRE(initial == std::vector<int>{-1, -1, -1, 2, 3, -1, -1});
+    // FullSpectrum removes tombstoned rows from the channel map, but disabling
+    // a legacy row must not renumber the remaining canonical virtual IDs.
+    REQUIRE(initial == std::vector<int>{-1, -1, -1, 1, 2, 3, -1});
     auto& borrowed      = manager.mixed_filaments();
     borrowed[2].enabled = false;
     const auto updated  = mixed_filament_channel_rows(manager, 2, 7);
-    REQUIRE(updated == std::vector<int>{-1, -1, -1, 3, -1, -1, -1});
-    CHECK(initial[3] == 2);
+    REQUIRE(updated == initial);
+    CHECK(initial[3] == 1);
     for (size_t channel = 0; channel < updated.size(); ++channel)
         CHECK(updated[channel] == manager.mixed_index_from_filament_id(unsigned(channel), 2));
     CHECK(mixed_filament_channel_rows(manager, 2, 0).empty());
+    rows[2].deleted = true;
+    manager.set_mixed_filament_legacy_rows(rows, 2, {"#FFFFFF", "#000000"});
+    CHECK(mixed_filament_channel_rows(manager, 2, 7) == std::vector<int>{-1, -1, -1, 1, 3, -1, -1});
+    CHECK(initial[4] == 2);
 }
 
 TEST_CASE("Layer geometry batches preserve progress and neighbor halos at boundaries", "[CPUSlicing][PaintPreparation]")

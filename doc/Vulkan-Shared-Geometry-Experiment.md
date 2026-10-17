@@ -1,5 +1,7 @@
 # Shared slicing compute experiment
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-15. This follows the shared-target audit in
 [Vulkan-Compute-Acceleration-Design.md](Vulkan-Compute-Acceleration-Design.md#14-next-shared-target-fresh-profile-audit-2026-10-15).
 

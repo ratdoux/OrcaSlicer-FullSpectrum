@@ -177,7 +177,7 @@ void PolygonComputeQuery::finish(bool empty, bool skipped)
         nlohmann::json row =
             {{"stage", stage_name(m_stage)}, {"operation", int(m_operation)}, {"fill", int(m_fill)}, {"empty", empty}, {"cpu_ms", cpu_ms},
              {"subject", encode(m_subject)}, {"clip", encode(m_clip)}};
-        std::string    data = row.dump();
+        std::string data = row.dump();
         if (s.capture_bytes + data.size() + 1 <= 64u * 1024 * 1024) {
             s.capture << data << '\n';
             s.capture_bytes += data.size() + 1;

@@ -1,5 +1,7 @@
 # Starry Night CPU profile with Local-Z / SML disabled
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 On the same optimized Release build, disabling Local-Z reduced the profiled run from **309.62 to 117.25 seconds**: **192.37 seconds saved, 62.1% less elapsed time, a runtime ratio of 2.64:1**. G-code export fell from **183.09 to 30.71 seconds**; wipe-tower preparation and slicing finalization fell from **28.60 to 1.47 seconds**.
 
 This compares two different feature configurations, not an optimization producing equivalent output. The original project's gradient recipes activate Local-Z even though its global SML switch is already off. Disabling Local-Z therefore also requires disabling those gradients. The model, painting, recipe components/weights, printer, quality settings and supports remain the same.

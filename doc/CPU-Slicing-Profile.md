@@ -1,5 +1,7 @@
 # CPU slicing profile: Starry Night
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Profiled on 13 October 2026, using the optimized Release build from [the CPU optimization comparison](CPU-Slicing-Optimization-Results.md).
 
 **The main elapsed-time bottleneck is serial Local-Z geometry work during G-code export.** Export occupies about 59% of the run, averaging only 1.13 busy CPU cores. Within export, about 56% of weighted running-thread samples are in Local-Z path clipping, and another 9% are in a diagnostic intersection check. Wipe-tower preparation repeats related intersection work before export begins.

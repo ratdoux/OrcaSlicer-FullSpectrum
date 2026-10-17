@@ -348,60 +348,57 @@ void PrintObject::make_perimeters()
             continue;
 
         BOOST_LOG_TRIVIAL(debug) << "Generating extra perimeters for region " << region_id << " in parallel - start";
-        tbb::parallel_for(
-            tbb::blocked_range<size_t>(0, m_layers.size() - 1),
-            [this, &region, region_id](const tbb::blocked_range<size_t>& range) {
-                PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Walls);
-                for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
-                    m_print->throw_if_canceled();
-                    LayerRegion &layerm                     = *m_layers[layer_idx]->get_region(region_id);
-                    const LayerRegion &upper_layerm         = *m_layers[layer_idx+1]->get_region(region_id);
-                    const Polygons upper_layerm_polygons    = to_polygons(upper_layerm.slices.surfaces);
-                    // Filter upper layer polygons in intersection_ppl by their bounding boxes?
-                    // my $upper_layerm_poly_bboxes= [ map $_->bounding_box, @{$upper_layerm_polygons} ];
-                    const double total_loop_length      = total_length(upper_layerm_polygons);
-                    const coord_t perimeter_spacing     = layerm.flow(frPerimeter).scaled_spacing();
-                    const Flow ext_perimeter_flow       = layerm.flow(frExternalPerimeter);
-                    const coord_t ext_perimeter_width   = ext_perimeter_flow.scaled_width();
-                    const coord_t ext_perimeter_spacing = ext_perimeter_flow.scaled_spacing();
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size() - 1), [this, &region,
+                                                                               region_id](const tbb::blocked_range<size_t>& range) {
+            PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Walls);
+            for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+                m_print->throw_if_canceled();
+                LayerRegion&       layerm                = *m_layers[layer_idx]->get_region(region_id);
+                const LayerRegion& upper_layerm          = *m_layers[layer_idx + 1]->get_region(region_id);
+                const Polygons     upper_layerm_polygons = to_polygons(upper_layerm.slices.surfaces);
+                // Filter upper layer polygons in intersection_ppl by their bounding boxes?
+                // my $upper_layerm_poly_bboxes= [ map $_->bounding_box, @{$upper_layerm_polygons} ];
+                const double  total_loop_length     = total_length(upper_layerm_polygons);
+                const coord_t perimeter_spacing     = layerm.flow(frPerimeter).scaled_spacing();
+                const Flow    ext_perimeter_flow    = layerm.flow(frExternalPerimeter);
+                const coord_t ext_perimeter_width   = ext_perimeter_flow.scaled_width();
+                const coord_t ext_perimeter_spacing = ext_perimeter_flow.scaled_spacing();
 
-                    for (Surface &slice : layerm.slices.surfaces) {
-                        for (;;) {
-                            // compute the total thickness of perimeters
-                            const coord_t perimeters_thickness = ext_perimeter_width/2 + ext_perimeter_spacing/2
-                                + (region.config().wall_loops-1 + slice.extra_perimeters) * perimeter_spacing;
-                            // define a critical area where we don't want the upper slice to fall into
-                            // (it should either lay over our perimeters or outside this area)
-                            const coord_t critical_area_depth = coord_t(perimeter_spacing * 1.5);
-                            const Polygons critical_area = diff(
-                                offset(slice.expolygon, float(- perimeters_thickness)),
-                                offset(slice.expolygon, float(- perimeters_thickness - critical_area_depth))
+                for (Surface& slice : layerm.slices.surfaces) {
+                    for (;;) {
+                        // compute the total thickness of perimeters
+                        const coord_t perimeters_thickness = ext_perimeter_width / 2 + ext_perimeter_spacing / 2 +
+                                                             (region.config().wall_loops - 1 + slice.extra_perimeters) * perimeter_spacing;
+                        // define a critical area where we don't want the upper slice to fall into
+                        // (it should either lay over our perimeters or outside this area)
+                        const coord_t  critical_area_depth = coord_t(perimeter_spacing * 1.5);
+                        const Polygons critical_area       = diff(offset(slice.expolygon, float(-perimeters_thickness)),
+                                                                  offset(slice.expolygon, float(-perimeters_thickness - critical_area_depth)));
+                        // check whether a portion of the upper slices falls inside the critical area
+                        const Polylines intersection = intersection_pl(to_polylines(upper_layerm_polygons), critical_area);
+                        // only add an additional loop if at least 30% of the slice loop would benefit from it
+                        if (total_length(intersection) <= total_loop_length * 0.3)
+                            break;
+                        /*
+                        if (0) {
+                            require "Slic3r/SVG.pm";
+                            Slic3r::SVG::output(
+                                "extra.svg",
+                                no_arrows   => 1,
+                                expolygons  => union_ex($critical_area),
+                                polylines   => [ map $_->split_at_first_point, map $_->p, @{$upper_layerm->slices} ],
                             );
-                            // check whether a portion of the upper slices falls inside the critical area
-                            const Polylines intersection = intersection_pl(to_polylines(upper_layerm_polygons), critical_area);
-                            // only add an additional loop if at least 30% of the slice loop would benefit from it
-                            if (total_length(intersection) <=  total_loop_length*0.3)
-                                break;
-                            /*
-                            if (0) {
-                                require "Slic3r/SVG.pm";
-                                Slic3r::SVG::output(
-                                    "extra.svg",
-                                    no_arrows   => 1,
-                                    expolygons  => union_ex($critical_area),
-                                    polylines   => [ map $_->split_at_first_point, map $_->p, @{$upper_layerm->slices} ],
-                                );
-                            }
-                            */
-                            ++ slice.extra_perimeters;
                         }
-                        #ifdef DEBUG
-                            if (slice.extra_perimeters > 0)
-                                printf("  adding %d more perimeter(s) at layer %zu\n", slice.extra_perimeters, layer_idx);
-                        #endif
+                        */
+                        ++slice.extra_perimeters;
                     }
+#ifdef DEBUG
+                    if (slice.extra_perimeters > 0)
+                        printf("  adding %d more perimeter(s) at layer %zu\n", slice.extra_perimeters, layer_idx);
+                        #endif
                 }
-            });
+            }
+        });
         m_print->throw_if_canceled();
         BOOST_LOG_TRIVIAL(debug) << "Generating extra perimeters for region " << region_id << " in parallel - end";
     }
@@ -1677,7 +1674,7 @@ void PrintObject::discover_vertical_shells()
         Polygons    top_surfaces;
         Polygons    bottom_surfaces;
         Polygons    holes;
-        std::optional<Polygons> object_volume;
+        std::optional<Polygons>              object_volume;
         std::optional<std::array<double, 5>> projection_key;
         Polygons                             projected_shell, projected_holes;
         bool                                 share_geometry = false;
@@ -1686,9 +1683,9 @@ void PrintObject::discover_vertical_shells()
     const bool          reuse_projection    = !projection_mode || std::string(projection_mode) != "cpu";
     const bool          validate_projection = projection_mode && std::string(projection_mode) == "validate";
     std::atomic<size_t> projection_hits{0};
-    const char* volume_mode      = std::getenv("ORCA_SHELL_VOLUME");
-    const bool  reuse_volume     = !volume_mode || std::string(volume_mode) != "cpu";
-    const bool  validate_volume  = volume_mode && std::string(volume_mode) == "validate";
+    const char*         volume_mode      = std::getenv("ORCA_SHELL_VOLUME");
+    const bool          reuse_volume     = !volume_mode || std::string(volume_mode) != "cpu";
+    const bool          validate_volume  = volume_mode && std::string(volume_mode) == "validate";
     bool     spiral_mode      = this->print()->config().spiral_mode.value;
     size_t   num_layers       = spiral_mode ? std::min(size_t(this->printing_region(0).config().bottom_shell_layers), m_layers.size()) : m_layers.size();
     std::vector<DiscoverVerticalShellsCacheEntry> cache_top_botom_regions(num_layers, DiscoverVerticalShellsCacheEntry());
@@ -1748,68 +1745,72 @@ void PrintObject::discover_vertical_shells()
         BOOST_LOG_TRIVIAL(debug) << "Discovering vertical shells in parallel - start : cache top / bottom";
         //FIXME Improve the heuristics for a grain size.
         size_t grain_size = std::max(num_layers / 16, size_t(1));
-        tbb::parallel_for(
-            tbb::blocked_range<size_t>(0, num_layers, grain_size),
-            [this, &cache_top_botom_regions](const tbb::blocked_range<size_t>& range) {
-                PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Shells);
-                const std::initializer_list<SurfaceType> surfaces_bottom { stBottom, stBottomBridge };
-                const size_t num_regions = this->num_printing_regions();
-                for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
-                    m_print->throw_if_canceled();
-                    const Layer                      &layer = *m_layers[idx_layer];
-                    DiscoverVerticalShellsCacheEntry &cache = cache_top_botom_regions[idx_layer];
-                    // Simulate single set of perimeters over all merged regions.
-                    float                             perimeter_offset = 0.f;
-                    float                             perimeter_min_spacing = FLT_MAX;
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers, grain_size), [this, &cache_top_botom_regions](
+                                                                                     const tbb::blocked_range<size_t>& range) {
+            PolygonComputeScope                      compute_scope(PolygonComputeScope::Stage::Shells);
+            const std::initializer_list<SurfaceType> surfaces_bottom{stBottom, stBottomBridge};
+            const size_t                             num_regions = this->num_printing_regions();
+            for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++idx_layer) {
+                m_print->throw_if_canceled();
+                const Layer&                      layer = *m_layers[idx_layer];
+                DiscoverVerticalShellsCacheEntry& cache = cache_top_botom_regions[idx_layer];
+                // Simulate single set of perimeters over all merged regions.
+                float perimeter_offset      = 0.f;
+                float perimeter_min_spacing = FLT_MAX;
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
-                    static size_t debug_idx = 0;
-                    ++ debug_idx;
+                static size_t debug_idx = 0;
+                ++debug_idx;
 #endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
-                    for (size_t region_id = 0; region_id < num_regions; ++ region_id) {
-                        LayerRegion &layerm               = *layer.m_regions[region_id];
-                        float        top_bottom_expansion = float(layerm.flow(frSolidInfill).scaled_spacing()) * top_bottom_expansion_coeff;
-                        // Top surfaces.
-                        append(cache.top_surfaces, offset(layerm.slices.filter_by_type(stTop), top_bottom_expansion));
-//                        append(cache.top_surfaces, offset(layerm.fill_surfaces.filter_by_type(stTop), top_bottom_expansion));
-                        // Bottom surfaces.
-                        append(cache.bottom_surfaces, offset(layerm.slices.filter_by_types(surfaces_bottom), top_bottom_expansion));
-//                        append(cache.bottom_surfaces, offset(layerm.fill_surfaces.filter_by_types(surfaces_bottom), top_bottom_expansion));
-                        // Calculate the maximum perimeter offset as if the slice was extruded with a single extruder only.
-                        // First find the maxium number of perimeters per region slice.
-                        unsigned int perimeters = 0;
-                        for (Surface &s : layerm.slices.surfaces)
-                            perimeters = std::max<unsigned int>(perimeters, s.extra_perimeters);
-                        perimeters += layerm.region().config().wall_loops.value;
-                        // Then calculate the infill offset.
-                        if (perimeters > 0) {
-                            Flow extflow = layerm.flow(frExternalPerimeter);
-                            Flow flow    = layerm.flow(frPerimeter);
-                            perimeter_offset = std::max(perimeter_offset,
-                                0.5f * float(extflow.scaled_width() + extflow.scaled_spacing()) + (float(perimeters) - 1.f) * flow.scaled_spacing());
-                            perimeter_min_spacing = std::min(perimeter_min_spacing, float(std::min(extflow.scaled_spacing(), flow.scaled_spacing())));
-                        }
-                        polygons_append(cache.holes, to_polygons(layerm.fill_expolygons));
+                for (size_t region_id = 0; region_id < num_regions; ++region_id) {
+                    LayerRegion& layerm               = *layer.m_regions[region_id];
+                    float        top_bottom_expansion = float(layerm.flow(frSolidInfill).scaled_spacing()) * top_bottom_expansion_coeff;
+                    // Top surfaces.
+                    append(cache.top_surfaces, offset(layerm.slices.filter_by_type(stTop), top_bottom_expansion));
+                    //                        append(cache.top_surfaces, offset(layerm.fill_surfaces.filter_by_type(stTop),
+                    //                        top_bottom_expansion));
+                    // Bottom surfaces.
+                    append(cache.bottom_surfaces, offset(layerm.slices.filter_by_types(surfaces_bottom), top_bottom_expansion));
+                    //                        append(cache.bottom_surfaces, offset(layerm.fill_surfaces.filter_by_types(surfaces_bottom),
+                    //                        top_bottom_expansion));
+                    // Calculate the maximum perimeter offset as if the slice was extruded with a single extruder only.
+                    // First find the maxium number of perimeters per region slice.
+                    unsigned int perimeters = 0;
+                    for (Surface& s : layerm.slices.surfaces)
+                        perimeters = std::max<unsigned int>(perimeters, s.extra_perimeters);
+                    perimeters += layerm.region().config().wall_loops.value;
+                    // Then calculate the infill offset.
+                    if (perimeters > 0) {
+                        Flow extflow          = layerm.flow(frExternalPerimeter);
+                        Flow flow             = layerm.flow(frPerimeter);
+                        perimeter_offset      = std::max(perimeter_offset, 0.5f * float(extflow.scaled_width() + extflow.scaled_spacing()) +
+                                                                               (float(perimeters) - 1.f) * flow.scaled_spacing());
+                        perimeter_min_spacing = std::min(perimeter_min_spacing,
+                                                         float(std::min(extflow.scaled_spacing(), flow.scaled_spacing())));
                     }
-                    // Save some computing time by reducing the number of polygons.
-                    cache.top_surfaces    = union_(cache.top_surfaces);
-                    cache.bottom_surfaces = union_(cache.bottom_surfaces);
-                    // For a multi-material print, simulate perimeter / infill split as if only a single extruder has been used for the whole print.
-                    if (perimeter_offset > 0.) {
-                        // The layer.lslices are forced to merge by expanding them first.
-                        polygons_append(cache.holes, offset2(layer.lslices, 0.3f * perimeter_min_spacing, - perimeter_offset - 0.3f * perimeter_min_spacing));
-#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
-                        {
-                            Slic3r::SVG svg(debug_out_path("discover_vertical_shells-extra-holes-%d.svg", debug_idx), get_extents(layer.lslices));
-                            svg.draw(layer.lslices, "blue");
-                            svg.draw(union_ex(cache.holes), "red");
-                            svg.draw_outline(union_ex(cache.holes), "black", "blue", scale_(0.05));
-                            svg.Close();
-                        }
-#endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
-                    }
-                    cache.holes = union_(cache.holes);
+                    polygons_append(cache.holes, to_polygons(layerm.fill_expolygons));
                 }
-            });
+                // Save some computing time by reducing the number of polygons.
+                cache.top_surfaces    = union_(cache.top_surfaces);
+                cache.bottom_surfaces = union_(cache.bottom_surfaces);
+                // For a multi-material print, simulate perimeter / infill split as if only a single extruder has been used for the whole print.
+                if (perimeter_offset > 0.) {
+                    // The layer.lslices are forced to merge by expanding them first.
+                    polygons_append(cache.holes,
+                                    offset2(layer.lslices, 0.3f * perimeter_min_spacing, -perimeter_offset - 0.3f * perimeter_min_spacing));
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                    {
+                        Slic3r::SVG svg(debug_out_path("discover_vertical_shells-extra-holes-%d.svg", debug_idx),
+                                        get_extents(layer.lslices));
+                        svg.draw(layer.lslices, "blue");
+                        svg.draw(union_ex(cache.holes), "red");
+                        svg.draw_outline(union_ex(cache.holes), "black", "blue", scale_(0.05));
+                        svg.Close();
+                    }
+#endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
+                }
+                cache.holes = union_(cache.holes);
+            }
+        });
         m_print->throw_if_canceled();
         BOOST_LOG_TRIVIAL(debug) << "Discovering vertical shells in parallel - end : cache top / bottom";
     }
@@ -1827,30 +1828,31 @@ void PrintObject::discover_vertical_shells()
             // This is either a single material print, or a multi-material print and interface_shells are enabled, meaning that the vertical shell thickness
             // is calculated over a single material.
             BOOST_LOG_TRIVIAL(debug) << "Discovering vertical shells for region " << region_id << " in parallel - start : cache top / bottom";
-            tbb::parallel_for(
-                tbb::blocked_range<size_t>(0, num_layers, grain_size),
-                [this, region_id, &cache_top_botom_regions](const tbb::blocked_range<size_t>& range) {
-                    PolygonComputeScope compute_scope(PolygonComputeScope::Stage::Shells);
-                    const std::initializer_list<SurfaceType> surfaces_bottom { stBottom, stBottomBridge };
-                    for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
-                        m_print->throw_if_canceled();
-                        Layer       &layer                = *m_layers[idx_layer];
-                        LayerRegion &layerm               = *layer.m_regions[region_id];
-                        float        top_bottom_expansion = float(layerm.flow(frSolidInfill).scaled_spacing()) * top_bottom_expansion_coeff;
-                        // Top surfaces.
-                        auto &cache = cache_top_botom_regions[idx_layer];
-                        cache.top_surfaces = offset(layerm.slices.filter_by_type(stTop), top_bottom_expansion);
-//                        append(cache.top_surfaces, offset(layerm.fill_surfaces.filter_by_type(stTop), top_bottom_expansion));
-                        // Bottom surfaces.
-                        cache.bottom_surfaces = offset(layerm.slices.filter_by_types(surfaces_bottom), top_bottom_expansion);
-//                        append(cache.bottom_surfaces, offset(layerm.fill_surfaces.filter_by_types(surfaces_bottom), top_bottom_expansion));
-                        // Holes over all regions. Only collect them once, they are valid for all region_id iterations.
-                        if (cache.holes.empty()) {
-                            for (size_t region_id = 0; region_id < layer.regions().size(); ++ region_id)
-                                polygons_append(cache.holes, to_polygons(layer.regions()[region_id]->fill_expolygons));
-                        }
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers, grain_size), [this, region_id, &cache_top_botom_regions](
+                                                                                         const tbb::blocked_range<size_t>& range) {
+                PolygonComputeScope                      compute_scope(PolygonComputeScope::Stage::Shells);
+                const std::initializer_list<SurfaceType> surfaces_bottom{stBottom, stBottomBridge};
+                for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++idx_layer) {
+                    m_print->throw_if_canceled();
+                    Layer&       layer                = *m_layers[idx_layer];
+                    LayerRegion& layerm               = *layer.m_regions[region_id];
+                    float        top_bottom_expansion = float(layerm.flow(frSolidInfill).scaled_spacing()) * top_bottom_expansion_coeff;
+                    // Top surfaces.
+                    auto& cache        = cache_top_botom_regions[idx_layer];
+                    cache.top_surfaces = offset(layerm.slices.filter_by_type(stTop), top_bottom_expansion);
+                    //                        append(cache.top_surfaces, offset(layerm.fill_surfaces.filter_by_type(stTop),
+                    //                        top_bottom_expansion));
+                    // Bottom surfaces.
+                    cache.bottom_surfaces = offset(layerm.slices.filter_by_types(surfaces_bottom), top_bottom_expansion);
+                    //                        append(cache.bottom_surfaces, offset(layerm.fill_surfaces.filter_by_types(surfaces_bottom),
+                    //                        top_bottom_expansion));
+                    // Holes over all regions. Only collect them once, they are valid for all region_id iterations.
+                    if (cache.holes.empty()) {
+                        for (size_t region_id = 0; region_id < layer.regions().size(); ++region_id)
+                            polygons_append(cache.holes, to_polygons(layer.regions()[region_id]->fill_expolygons));
                     }
-                });
+                }
+            });
             m_print->throw_if_canceled();
             BOOST_LOG_TRIVIAL(debug) << "Discovering vertical shells for region " << region_id << " in parallel - end : cache top / bottom";
         }

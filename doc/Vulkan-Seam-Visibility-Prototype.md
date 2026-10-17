@@ -1,5 +1,7 @@
 # Vulkan seam visibility prototype
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 This is an opt-in experiment following `5dff53f7c0`. It accelerates the independent visibility score assigned to each seam candidate. It does not change seam alignment, ray casting, polygon clipping, Local-Z scheduling, or G-code emission.
 
 Measured on Windows on 2026-10-14. Runtime DLL SHA-256: `aa6d02e549ecbc444a6358f9b13b4e6a6a992794784ffdc2c342affa75de07ee`. Project SHA-256: `9ae317c5b99767a5f143e69e533db1588ed0e227e4d4400c56a2ff2bb9771ff2`.

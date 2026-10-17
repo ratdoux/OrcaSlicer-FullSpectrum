@@ -1,5 +1,7 @@
 # CPU follow-up after the Vulkan geometry review
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 ## Changes
 
 The follow-up implements four CPU changes that apply to ordinary and Local-Z slicing where the relevant stage is used:

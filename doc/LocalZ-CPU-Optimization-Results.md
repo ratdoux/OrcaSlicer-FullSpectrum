@@ -1,5 +1,7 @@
 # Local-Z CPU optimization and repeat profile
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 ## Scope
 
 The pre-change worktree was committed as `df79223de4` ("Optimize CPU slicing and add reproducible profiling tools"). The changes described here follow that checkpoint.

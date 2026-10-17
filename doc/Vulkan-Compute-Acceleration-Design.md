@@ -1,5 +1,7 @@
 # Vulkan compute acceleration for Snapmaker Orca
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-13. Source baseline: `9a791daff1`.
 
 Status: design proposal and source audit. No GPU slicing backend has been implemented or benchmarked as part of this document. Candidate benefits below are engineering hypotheses, not measured speedups. The existing CPU implementation remains the correctness reference and fallback.

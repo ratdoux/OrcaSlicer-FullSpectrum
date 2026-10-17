@@ -1,5 +1,7 @@
 # Painting preparation CPU experiments
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-16. Performance checkpoint: `046ef0c7af`. Subsequent commit `f0d9347251` adds only opt-in preparation snapshots; it does not change slicing algorithms or defaults.
 
 The useful CPU changes are implemented and enabled by default. They reduce repeated painting deserialization, parallelize independent surface trimming and Local-Z geometry preparation, and reduce region-tracking and graph-allocation work. Normal `build_release_vs2022.bat slicer` builds include them without a new option or build flag. No new Vulkan kernel or preference was added. These geometry caches reuse work within the current slice; they do not depend on a previous slice.

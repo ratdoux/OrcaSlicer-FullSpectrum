@@ -1,5 +1,7 @@
 # CPU geometry reuse and slicing results
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-15. Follow-up to [the shared Vulkan experiment](Vulkan-Shared-Geometry-Experiment.md).
 
 ## Changes

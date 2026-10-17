@@ -1,5 +1,7 @@
 # Vulkan candidates after the CPU follow-up
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-15. Source: `24a8e7f2f6`. This is source review and analysis of the final profiles, not a new GPU implementation or benchmark of a proposed kernel.
 
 The current Starry Night profiles do **not establish another large, low-risk Vulkan win**. Existing Vulkan acceleration remains available. The evidence favors reducing repeated CPU work and exposing independent CPU jobs before adding GPU transfers. This conclusion is specific to these workloads and this machine; it does not mean GPU compute cannot help slicing.

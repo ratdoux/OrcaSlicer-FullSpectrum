@@ -1,5 +1,7 @@
 # CPU slicing optimization review and benchmark
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 This review targets the CPU implementation in this worktree. It does not implement the optional Vulkan design in [Vulkan-Compute-Acceleration-Design.md](Vulkan-Compute-Acceleration-Design.md).
 
 ## Implemented changes

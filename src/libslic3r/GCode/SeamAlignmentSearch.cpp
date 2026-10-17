@@ -202,10 +202,10 @@ SeamAlignmentSearch::SeamAlignmentSearch(const std::vector<PrintObjectSeamData::
     if (m_impl->mode != "cpu")
         current_search = this;
 }
-SeamAlignmentSearch* SeamAlignmentSearch::active() { return current_search; }
+SeamAlignmentSearch*       SeamAlignmentSearch::active() { return current_search; }
 const std::vector<size_t>& SeamAlignmentSearch::neighbors(size_t layer, const Vec3f& center, float radius)
 {
-    auto& p = *m_impl;
+    auto&      p       = *m_impl;
     const auto started = p.detailed_timing ? Clock::now() : Clock::time_point{};
     auto       finish  = [&](const std::vector<size_t>& result) -> const std::vector<size_t>& {
         if (p.detailed_timing)

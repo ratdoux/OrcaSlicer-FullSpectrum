@@ -1,5 +1,7 @@
 # Wall generation and G-code export experiments
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-16. Baseline: `c50411f002`. These experiments follow the painting/preparation work described in [Painting-Preparation-Experiments.md](Painting-Preparation-Experiments.md).
 
 ## Scope and method

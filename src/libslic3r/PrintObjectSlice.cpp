@@ -19,7 +19,6 @@
 #include "ImageMap/VolumeData.hpp"
 #include "Layer.hpp"
 #include "MixedFilament.hpp"
-#include "MixedFilamentLayerTracker.hpp"
 #include "PreparationDiagnostics.hpp"
 #include "MixedFilamentChannelMap.hpp"
 #include "LayerGeometryBatch.hpp"
@@ -3450,7 +3449,10 @@ static void build_local_z_plan(PrintObject &print_object,
         }
     };
     auto prepare_geometry = [&](size_t layer_id, const std::vector<ExPolygons>* prepared_fixed) {
-        throw_on_cancel();
+        // The memory guard in the caller writes sampling state. Workers only
+        // read cancellation; the ordered assembly loop runs the full callback.
+        if (print->canceled())
+            throw CanceledException();
         const Layer&         layer           = *print_object.get_layer(int(layer_id));
         bool                 has_mixed_paint = false;
         PreparationTimer     scan_timer(&prep_profile, "active_scan");
@@ -3614,7 +3616,8 @@ static void build_local_z_plan(PrintObject &print_object,
             batch_fixed_masks.resize(fixed_end - fixed_begin);
             tbb::parallel_for(tbb::blocked_range<size_t>(fixed_begin, fixed_end, 1), [&](const tbb::blocked_range<size_t>& range) {
                 for (size_t i = range.begin(); i < range.end(); ++i) {
-                    throw_on_cancel();
+                    if (print->canceled())
+                        throw CanceledException();
                     batch_fixed_masks[i - fixed_begin] = collect_local_z_fixed_state_masks_by_extruder(segmentation[i], num_physical);
                 }
             });
@@ -3687,11 +3690,8 @@ static void build_local_z_plan(PrintObject &print_object,
                     row_direct_component_error_mm[row_idx].size() == row_direct_component_ids[row_idx].size()) {
                     std::fill(row_direct_component_error_mm[row_idx].begin(), row_direct_component_error_mm[row_idx].end(), 0.0);
                 }
-                const bool can_sync_to_dominant =
-                    local_z_whole_objects &&
-                    dominant_mixed_idx < mixed_definitions.size() &&
-                    dominant_mixed_idx != row_idx &&
-                    row_active_this_layer[dominant_mixed_idx] != 0;
+                const bool can_sync_to_dominant = local_z_whole_objects && dominant_mixed_idx < mixed_definitions.size() &&
+                                                  dominant_mixed_idx != row_idx && row_active_this_layer[dominant_mixed_idx] != 0;
                 if (can_sync_to_dominant) {
                     row_cadence_index[row_idx]     = row_cadence_index[dominant_mixed_idx];
                     row_layer_cycle_index[row_idx] = row_layer_cycle_index[dominant_mixed_idx];
@@ -3714,30 +3714,21 @@ static void build_local_z_plan(PrintObject &print_object,
                 continue;
             }
 
-            const int cadence_index = row_uses_layer_cycle_pair[row_idx] != 0
-                ? row_layer_cycle_index[row_idx]
-                : row_cadence_index[row_idx];
-            row_active_pairs[row_idx] =
-                derive_local_z_active_pair(mixed_definitions[row_idx], row_pair_cycles[row_idx], num_physical, cadence_index);
+            const int cadence_index = row_uses_layer_cycle_pair[row_idx] != 0 ? row_layer_cycle_index[row_idx] : row_cadence_index[row_idx];
+            row_active_pairs[row_idx] = derive_local_z_active_pair(mixed_definitions[row_idx], row_pair_cycles[row_idx], num_physical,
+                                                                   cadence_index);
         }
         if (dominant_mixed_idx < mixed_definitions.size()) {
-            const LocalZActivePair &dominant_pair = row_active_pairs[dominant_mixed_idx];
-            const int dominant_mix_b_percent =
-                dominant_pair.valid_pair(num_physical) ? dominant_pair.mix_b_percent :
-                                                          mixed_definitions[dominant_mixed_idx]
-                                                              .recipe.blend.primary_pair_or().component_b_percent;
+            const LocalZActivePair& dominant_pair          = row_active_pairs[dominant_mixed_idx];
+            const int               dominant_mix_b_percent = dominant_pair.valid_pair(num_physical) ?
+                                                                 dominant_pair.mix_b_percent :
+                                                                 mixed_definitions[dominant_mixed_idx].recipe.blend.primary_pair_or().component_b_percent;
             if (row_uses_direct_multicolor_solver[dominant_mixed_idx] == 0) {
-                dominant_is_gradient = effective_gradient_heights_for_definition(dominant_mixed_idx,
-                                                                                layer_id,
-                                                                                interval.base_height,
-                                                                                dominant_gradient_h_a,
-                                                                                dominant_gradient_h_b);
+                dominant_is_gradient = effective_gradient_heights_for_definition(dominant_mixed_idx, layer_id, interval.base_height,
+                                                                                 dominant_gradient_h_a, dominant_gradient_h_b);
                 if (!dominant_is_gradient)
-                    compute_local_z_component_heights(dominant_mix_b_percent,
-                                                      interval.base_height,
-                                                      min_sublayer_height,
-                                                      dominant_gradient_h_a,
-                                                      dominant_gradient_h_b);
+                    compute_local_z_component_heights(dominant_mix_b_percent, interval.base_height, min_sublayer_height,
+                                                      dominant_gradient_h_a, dominant_gradient_h_b);
                 dominant_gradient_valid = true;
             }
         }

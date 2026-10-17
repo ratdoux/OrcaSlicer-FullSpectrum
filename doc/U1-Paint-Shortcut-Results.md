@@ -1,5 +1,7 @@
 # Painted-island and Vulkan polygon tests on the U1 project
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 Date: 2026-10-16. Source checkpoint: `4515f26f26`. No slicing code or defaults were changed for this experiment.
 
 **Outcome:** this model exercises the uniform-island shortcut and real GPU empty-result skips in walls/shells, but neither establishes a useful complete-slice improvement. Painting-only Vulkan skips no operations. Keep both experiments opt-in; these measurements do not justify changing defaults.

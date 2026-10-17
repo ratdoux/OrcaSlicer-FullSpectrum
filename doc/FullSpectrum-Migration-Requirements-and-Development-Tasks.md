@@ -1,5 +1,7 @@
 # FullSpectrum migration: requirements and development tasks
 
+> Source-branch report from `proposal_UI_changes_GPU_Accelerate`. Measurements and conclusions below describe that branch at the cited commits, not a benchmark of this FullSpectrum port. See [FullSpectrum port notes](FullSpectrum-Slicing-Speed-Port.md).
+
 This retrospective organizes the FullSpectrum 0.9.13 to Snorca port under the four original tracker categories and a fifth category for Xipit's UI rework integration. It preserves all 24 numbered proposal requirements and their 32 development tasks, and adds 10 UI-rework requirements and 10 development tasks from `proposal_UI_changes`, for a total of 34 requirements and 42 tasks.
 
 For every development task below, use **Phase: In development** and **Status: Completed (retrospective)**. The phase identifies the type of work; the status records that development has already been completed. Completion follows the project owner's statement and the implementation records. It does not imply that every release acceptance check or physical print has been signed off.
