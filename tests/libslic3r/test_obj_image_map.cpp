@@ -1187,8 +1187,8 @@ TEST_CASE("OBJ image-map import retains texture pixels and UVs as persistent mod
 
     ImageMap::Zone zone;
     zone.stable_id = "zone-test";
-    zone.palette.push_back({RGBA{0.35f, 0.47f, 0.59f, 1.f}, 0, 1});
-    zone.palette.push_back({RGBA{0.8f, 0.2f, 0.1f, 1.f}, 0, 5});
+    zone.palette.push_back({RGBA{0.35f, 0.47f, 0.59f, 1.f}, 123, 1});
+    zone.palette.push_back({RGBA{0.8f, 0.2f, 0.1f, 1.f}, 456, 5});
     ImageMap::VolumeData data;
     std::string          warning;
     REQUIRE(build_obj_image_map_volume_data(mesh, info, ObjColorImportSource::ImageTexture, {}, std::move(zone), data, &warning));
@@ -1211,11 +1211,13 @@ TEST_CASE("OBJ image-map import retains texture pixels and UVs as persistent mod
     std::vector<unsigned int> remap(6, 0);
     remap[1] = 1;
     remap[5] = 3;
-    remap_model_filament_ids(model, remap, 5);
+    remap_model_filament_ids(model, remap, 5, {0, 0, 0, 789, 0, 0});
     const std::shared_ptr<const ImageMap::VolumeData> remapped_data = volume->image_map_data();
     REQUIRE(remapped_data);
     REQUIRE(remapped_data->zones.front().palette.size() == 2);
     CHECK(remapped_data->zones.front().palette[1].fallback_filament_id == 3);
+    CHECK(remapped_data->zones.front().palette[0].mixed_filament_stable_id == 0);
+    CHECK(remapped_data->zones.front().palette[1].mixed_filament_stable_id == 789);
     CHECK(volume->get_extruders() == std::vector<int>{1, 3});
 
     boost::filesystem::remove_all(directory);

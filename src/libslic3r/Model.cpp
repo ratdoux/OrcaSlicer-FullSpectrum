@@ -3590,7 +3590,10 @@ bool Model::obj_import_persistent_image_map_deal(ImageMap::VolumeData data,
     return volume->set_image_map_data(std::move(data));
 }
 
-void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &filament_id_map, size_t total_filaments)
+void remap_model_filament_ids(Model&                           model,
+                              const std::vector<unsigned int>& filament_id_map,
+                              size_t                           total_filaments,
+                              const std::vector<uint64_t>&     destination_stable_ids)
 {
     const size_t safe_total = std::max<size_t>(1, std::min<size_t>(total_filaments, size_t(EnforcerBlockerType::ExtruderMax)));
     auto remap_id = [&filament_id_map, safe_total](int old_id) {
@@ -3598,6 +3601,13 @@ void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &fil
             return old_id;
         const unsigned int mapped = size_t(old_id) < filament_id_map.size() ? filament_id_map[size_t(old_id)] : 0u;
         return int(mapped >= 1 && mapped <= safe_total ? mapped : 1u);
+    };
+    auto remap_config = [&remap_id](ModelConfig& config) {
+        for (const char* key : {"extruder", "wall_filament", "sparse_infill_filament", "solid_infill_filament", "support_filament",
+                                "support_interface_filament"}) {
+            if (config.has(key))
+                config.set(key, remap_id(config.opt_int(key)));
+        }
     };
 
     EnforcerBlockerStateMap state_map;
@@ -3611,22 +3621,31 @@ void remap_model_filament_ids(Model &model, const std::vector<unsigned int> &fil
     for (ModelObject *object : model.objects) {
         if (object == nullptr)
             continue;
-        if (object->config.has("extruder"))
-            object->config.set("extruder", remap_id(object->config.extruder()));
+        // An unassigned object's default is source filament 1, which may no
+        // longer be destination filament 1 after matching a foreign palette.
+        const int source_extruder = object->config.has("extruder") ? std::max(1, object->config.extruder()) : 1;
+        remap_config(object->config);
+        object->config.set("extruder", remap_id(source_extruder));
+        for (auto& range : object->layer_config_ranges)
+            remap_config(range.second);
 
         for (ModelVolume *volume : object->volumes) {
             if (volume == nullptr)
                 continue;
-            if (volume->config.has("extruder"))
-                volume->config.set("extruder", remap_id(volume->config.extruder()));
+            remap_config(volume->config);
             if (!volume->mmu_segmentation_facets.empty())
                 volume->mmu_segmentation_facets.remap_enforcer_block_types(
                     *volume, EnforcerBlockerType(safe_total), state_map);
             if (const std::shared_ptr<const ImageMap::VolumeData> image_map_data = volume->image_map_data()) {
                 ImageMap::VolumeData remapped_image_map = *image_map_data;
                 for (ImageMap::Zone &zone : remapped_image_map.zones) {
-                    for (ImageMap::PaletteEntry &entry : zone.palette)
+                    for (ImageMap::PaletteEntry& entry : zone.palette) {
                         entry.fallback_filament_id = unsigned(remap_id(int(entry.fallback_filament_id)));
+                        if (!destination_stable_ids.empty())
+                            entry.mixed_filament_stable_id = entry.fallback_filament_id < destination_stable_ids.size() ?
+                                                                 destination_stable_ids[entry.fallback_filament_id] :
+                                                                 0;
+                    }
                 }
                 const bool image_map_updated = volume->set_image_map_data(std::move(remapped_image_map));
                 assert(image_map_updated);

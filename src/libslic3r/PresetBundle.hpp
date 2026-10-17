@@ -271,6 +271,10 @@ public:
     // an optional "(modified)" suffix will be removed from the filament name.
     void                        set_filament_preset(size_t idx, const std::string &name);
 
+    // Copy filament profiles, palette and mixed recipes while retaining the
+    // destination's printer and process presets.
+    void replace_filaments_from(const PresetBundle& source);
+
     // Read out the number of extruders from an active printer preset,
     // update size and content of filament_presets.
     void                        update_multi_material_filament_presets(size_t to_delete_filament_id = size_t(-1),

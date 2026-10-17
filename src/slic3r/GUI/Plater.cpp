@@ -62,6 +62,7 @@
 #include <wx/event.h>
 #include <wx/wrapsizer.h>
 #include <wx/choice.h>
+#include <wx/choicdlg.h>
 #include <wx/gauge.h>
 #include <wx/slider.h>
 #include <wx/textctrl.h>
@@ -84,6 +85,7 @@
 #include "libslic3r/Format/Assimp.hpp"
 #include "libslic3r/Format/ImportedTexture.hpp"
 #include "libslic3r/Format/FilamentImport.hpp"
+#include "libslic3r/Format/ProjectImport.hpp"
 //#include "libslic3r/Format/3mf.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/GCode/ThumbnailData.hpp"
@@ -5768,25 +5770,68 @@ namespace {
 constexpr size_t k_import_physical_filament_limit = 4;
 constexpr size_t k_import_total_filament_limit    = MAXIMUM_FILAMENT_NUMBER;
 
-size_t map_imported_colors_to_mixed_filaments(Model                           &model,
-                                               const std::vector<std::string> &imported_colors,
-                                               bool                            preserve_leading_physical_ids,
-                                               bool                            reserve_import_capacity)
+std::optional<ProjectImportMode> prompt_3mf_project_import(wxWindow* parent, const DynamicPrintConfig& imported)
+{
+    const auto&   printer = wxGetApp().preset_bundle->printers.get_edited_preset();
+    wxArrayString choices;
+    choices.Add(_L("Import models and colors; keep current printer and print settings"));
+    choices.Add(_L("Import models, colors and compatible print settings; keep current printer"));
+    choices.Add(_L("Open full project, including its printer and all settings"));
+    wxSingleChoiceDialog dialog(parent,
+                                format_wxstr(_L("Current printer: %1%\n\n"
+                                                "The first two options keep this printer and its machine settings.\n"
+                                                "Compatible print settings include walls, infill, supports and layer heights\n"
+                                                "supported by the current printer. Speeds and machine-specific settings stay unchanged.\n\n"
+                                                "You can choose whether to keep or replace filaments next."),
+                                             printer.name),
+                                _L("Import 3MF project"), choices);
+    dialog.SetSelection(int(default_3mf_project_import_mode(imported, printer.config)));
+    wxGetApp().UpdateDlgDarkUI(&dialog);
+    if (dialog.ShowModal() != wxID_OK)
+        return std::nullopt;
+    return static_cast<ProjectImportMode>(dialog.GetSelection());
+}
+
+std::optional<FilamentImportMode> prompt_3mf_filament_import(wxWindow* parent)
+{
+    wxArrayString choices;
+    choices.Add(_L("Keep loaded filaments and match imported colors"));
+    choices.Add(_L("Replace loaded filaments with the ones from the 3MF"));
+    wxSingleChoiceDialog dialog(parent,
+                                _L("Choose how to import this 3MF's filaments.\n\n"
+                                   "Keep loaded filaments: match imported colors and mixed colors to the\n"
+                                   "closest available color, creating mixes from your loaded filaments\n"
+                                   "when needed. Saved gradients and patterns are matched by their displayed color.\n\n"
+                                   "Replace loaded filaments: use the 3MF's filament profiles, colors\n"
+                                   "and saved mixed filament recipes."),
+                                _L("Import 3MF filaments"), choices);
+    dialog.SetSelection(0);
+    wxGetApp().UpdateDlgDarkUI(&dialog);
+    if (dialog.ShowModal() != wxID_OK)
+        return std::nullopt;
+    return dialog.GetSelection() == 0 ? FilamentImportMode::KeepLoaded : FilamentImportMode::ReplaceLoaded;
+}
+
+size_t map_imported_colors_to_mixed_filaments(Model&                          model,
+                                              const std::vector<std::string>& imported_colors,
+                                              bool                            preserve_leading_physical_ids,
+                                              bool                            reserve_import_capacity,
+                                              bool                            remap_print_settings = false)
 {
     PresetBundle *preset_bundle = wxGetApp().preset_bundle;
-    if (preset_bundle == nullptr || imported_colors.size() <= k_import_physical_filament_limit)
+    if (preset_bundle == nullptr || imported_colors.empty())
         return 0;
 
     ConfigOptionStrings *color_opt = preset_bundle->project_config.option<ConfigOptionStrings>("filament_colour");
-    if (color_opt == nullptr || color_opt->values.size() < 2)
+    if (color_opt == nullptr || color_opt->values.empty())
         return 0;
 
-    const size_t physical_count = std::min(color_opt->values.size(), k_import_physical_filament_limit);
+    const size_t             physical_count = color_opt->values.size();
     std::vector<std::string> physical_colors(color_opt->values.begin(), color_opt->values.begin() + physical_count);
 
     auto &manager = preset_bundle->mixed_filaments;
     if (reserve_import_capacity) {
-        const size_t required_overflow_slots = std::min(imported_colors.size() - physical_count,
+        const size_t required_overflow_slots = std::min(imported_colors.size() - std::min(imported_colors.size(), physical_count),
                                                         k_import_total_filament_limit - physical_count);
         const size_t retained_capacity = k_import_total_filament_limit - physical_count - required_overflow_slots;
         std::vector<MixedFilamentDefinition> retained;
@@ -5821,14 +5866,27 @@ size_t map_imported_colors_to_mixed_filaments(Model                           &m
     }
 
     const size_t total_filaments = manager.total_filaments(physical_count);
-    remap_model_filament_ids(model, filament_id_map, total_filaments);
+    std::vector<uint64_t> stable_ids(total_filaments + 1, 0);
+    for (size_t id = physical_count + 1; id <= total_filaments; ++id) {
+        if (const auto definition = manager.mixed_filament_definition_from_id(unsigned(id), physical_count))
+            stable_ids[id] = definition->identity.stable_id;
+    }
+    remap_model_filament_ids(model, filament_id_map, total_filaments, stable_ids);
+    if (remap_print_settings) {
+        auto& print_config = preset_bundle->prints.get_edited_preset().config;
+        for (const char* key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament", "support_filament",
+                                "support_interface_filament", "wipe_tower_filament"}) {
+            if (auto* option = print_config.option<ConfigOptionInt>(key); option != nullptr && option->value > 0)
+                option->value = size_t(option->value) < filament_id_map.size() ? int(filament_id_map[option->value]) : 1;
+        }
+    }
     preset_bundle->sync_mixed_filament_definitions_to_project_config();
 
-    BOOST_LOG_TRIVIAL(info) << "3MF overflow colors mapped to mixed filaments"
-                            << " imported_colors=" << imported_colors.size()
-                            << " physical_colors=" << physical_count
-                            << " generated_mixes=" << generated_count
-                            << " total_filaments=" << total_filaments;
+    preset_bundle->prints.get_edited_preset().config.apply_only(preset_bundle->project_config, {"mixed_filament_definitions"}, true);
+
+    BOOST_LOG_TRIVIAL(info) << "3MF colors mapped to loaded filaments"
+                            << " imported_colors=" << imported_colors.size() << " physical_colors=" << physical_count
+                            << " generated_mixes=" << generated_count << " total_filaments=" << total_filaments;
     return generated_count;
 }
 
@@ -9770,6 +9828,8 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
     bool hasRawGeometryImport = false;
 
     for (size_t i = 0; i < input_files.size(); ++i) {
+        // An import choice applies to this archive, not the following files.
+        load_config      = strategy & LoadStrategy::LoadConfig;
         int file_percent = 0;
 
 #ifdef _WIN32
@@ -9817,6 +9877,10 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 size_t                   imported_physical_filaments = 0;
                 bool                     overflow_color_mapping_applied = false;
                 FilamentImportPlan       filament_import;
+                ProjectImportMode             project_import_mode  = ProjectImportMode::FullProject;
+                FilamentImportMode            filament_import_mode = FilamentImportMode::Automatic;
+                std::vector<std::string>      imported_color_targets;
+                std::unique_ptr<PresetBundle> loaded_filaments;
                 {
                     DynamicPrintConfig config_loaded;
 
@@ -9847,6 +9911,26 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
                     handle_newer_3mf_schema(q, config_loaded);
 
+                    auto cancel_import = [&]() {
+                        for (Preset* preset : project_presets)
+                            delete preset;
+                        release_PlateData_list(plate_data);
+                        q->skip_thumbnail_invalid = false;
+                    };
+                    if (load_model && load_config && !model.objects.empty() && !silence && !(strategy & LoadStrategy::Restore) &&
+                        en_3mf_file_type != En3mfType::From_Prusa && !config_loaded.empty() && printer_technology == ptFFF) {
+                        const auto choice = prompt_3mf_project_import(q, config_loaded);
+                        if (!choice) {
+                            cancel_import();
+                            return empty_result;
+                        }
+                        project_import_mode = *choice;
+                        if (project_import_mode != ProjectImportMode::FullProject) {
+                            load_config = false;
+                            load_aux    = false;
+                        }
+                    }
+
                     auto imported_string_count = [&config_loaded](const char *key) -> size_t {
                         if (const auto *opt = config_loaded.option<ConfigOptionStrings>(key))
                             return opt->values.size();
@@ -9871,11 +9955,42 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     if (imported_physical_filaments == 0)
                         imported_physical_filaments = imported_float_count("nozzle_diameter");
 
-                    filament_import = plan_filament_import(config_loaded, imported_physical_filaments, k_import_physical_filament_limit);
+                    if (load_model && !model.objects.empty() && !silence && !(strategy & LoadStrategy::Restore) &&
+                        !imported_filament_colors.empty() && printer_technology == ptFFF) {
+                        const auto choice = prompt_3mf_filament_import(q);
+                        if (!choice) {
+                            cancel_import();
+                            return empty_result;
+                        }
+                        filament_import_mode = *choice;
+                    }
+                    if (project_import_mode != ProjectImportMode::FullProject) {
+                        auto&       bundle                = *wxGetApp().preset_bundle;
+                        const auto& printer               = bundle.printers.get_edited_preset().config;
+                        const bool  import_print_settings = project_import_mode == ProjectImportMode::CompatiblePrintSettings;
+                        prepare_3mf_model_for_current_printer(model, config_loaded, printer, import_print_settings);
+                        if (import_print_settings) {
+                            bundle.prints.get_edited_preset().config.apply(compatible_3mf_print_settings(config_loaded, printer));
+                            wxGetApp().load_current_presets(false, false);
+                        }
+                    }
+                    const bool keep_loaded_filaments = filament_import_mode == FilamentImportMode::KeepLoaded;
+                    if (keep_loaded_filaments) {
+                        wxGetApp().preset_bundle->sync_mixed_filament_definitions_to_project_config();
+                        loaded_filaments       = std::make_unique<PresetBundle>(*wxGetApp().preset_bundle);
+                        imported_color_targets = imported_filament_color_targets(config_loaded, imported_filament_colors);
+                    }
+                    filament_import = plan_filament_import(config_loaded, imported_physical_filaments, k_import_physical_filament_limit,
+                                                           filament_import_mode, wxGetApp().preset_bundle->filament_presets.size());
+
+                    if (keep_loaded_filaments && (en_3mf_file_type == En3mfType::From_Prusa || !load_config)) {
+                        map_imported_colors_to_mixed_filaments(model, imported_color_targets, false, false);
+                        q->on_filaments_change(wxGetApp().preset_bundle->filament_presets.size());
+                    }
 
                     // 1. add extruder for prusa model if the number of existing extruders is not enough
                     // 2. add extruder for BBS or Other model if only import geometry
-                    if (en_3mf_file_type == En3mfType::From_Prusa || (load_model && !load_config)) {
+                    if (!keep_loaded_filaments && (en_3mf_file_type == En3mfType::From_Prusa || (load_model && !load_config))) {
                         std::set<int> extruderIds;
                         for (ModelObject *o : model.objects) {
                             if (o->config.option("extruder")) extruderIds.insert(o->config.extruder());
@@ -9905,7 +10020,8 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         PresetBundle *preset_bundle = wxGetApp().preset_bundle;
                         if (geometry_only_project_import && preset_bundle != nullptr) {
                             const size_t current_num_filaments = preset_bundle->filament_presets.size();
-                            const bool current_project_empty = this->model.objects.empty();
+                            const bool   current_project_empty = this->model.objects.empty() ||
+                                                               filament_import_mode == FilamentImportMode::ReplaceLoaded;
                             if (current_project_empty) {
                                 static const t_config_option_keys imported_project_option_keys = {
                                     "filament_colour",
@@ -9923,7 +10039,16 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                     "dithering_local_z_gradient_layer_height",
                                     "dithering_step_painted_zones_only"
                                 };
-                                preset_bundle->project_config.apply_only(config_loaded, imported_project_option_keys, true);
+                                if (filament_import_mode == FilamentImportMode::ReplaceLoaded) {
+                                    PresetBundle replacement(*preset_bundle);
+                                    replacement.load_config_model(filename.string(),
+                                                                  config_with_imported_filaments(preset_bundle->full_config(),
+                                                                                                 config_loaded),
+                                                                  file_version);
+                                    preset_bundle->replace_filaments_from(replacement);
+                                    wxGetApp().load_current_presets(false, false);
+                                } else
+                                    preset_bundle->project_config.apply_only(config_loaded, imported_project_option_keys, true);
                                 if (current_num_filaments != desired_physical_filaments) {
                                     q->confirm_auto_generated_gradients(desired_physical_filaments);
                                     preset_bundle->set_num_filaments(unsigned(desired_physical_filaments));
@@ -9978,7 +10103,10 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         // do not reset the model config
                         load_config = false;
                         if(load_type != LoadType::LoadGeometry)
-                            show_info(q, _L("The 3mf is not supported by Snapmaker Orca, load geometry data only."), _L("Load 3mf"));
+                            show_info(q,
+                                      _L("The Prusa 3MF's geometry, filament colors and painted regions were imported. "
+                                         "Prusa printer and process settings are not supported; current settings will be used."),
+                                      _L("Load 3mf"));
                     }
                     // else if (load_config && (file_version.maj() != app_version.maj())) {
                     //     // version mismatch, only load geometries
@@ -10061,7 +10189,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                 show_info(q, text, _L("Newer 3mf version"));
                             }
                         }
-                    } else if (!load_config) {
+                    } else if (!load_config && project_import_mode == ProjectImportMode::FullProject) {
                         // reset config except color
                         for (ModelObject *model_object : model.objects) {
                             bool has_extruder = model_object->config.has("extruder");
@@ -10113,6 +10241,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                             release_PlateData_list(plate_data);
                             sidebar->obj_list()->reload_all_plates();
                         } else {
+                            release_PlateData_list(plate_data);
                             partplate_list.reload_all_objects();
                         }
                     }
@@ -10248,9 +10377,12 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
                             preset_bundle->load_config_model(filename.string(), std::move(config), file_version);
 
-                            if (!overflow_color_mapping_applied && filament_import.map_overflow_colors &&
-                                imported_filament_colors.size() >= imported_physical_filaments) {
-                                preset_bundle->set_num_filaments(unsigned(k_import_physical_filament_limit));
+                            if (loaded_filaments) {
+                                preset_bundle->replace_filaments_from(*loaded_filaments);
+                                map_imported_colors_to_mixed_filaments(model, imported_color_targets, false, false, true);
+                            } else if (!overflow_color_mapping_applied && filament_import.map_overflow_colors &&
+                                       imported_filament_colors.size() >= imported_physical_filaments) {
+                                preset_bundle->set_num_filaments(unsigned(filament_import.physical_count));
                                 map_imported_colors_to_mixed_filaments(model, imported_filament_colors, true, true);
                                 overflow_color_mapping_applied = true;
                             }
@@ -15860,8 +15992,21 @@ void Plater::load_project(wxString const& filename2,
     }
     bool load_restore = strategy & LoadStrategy::Restore;
 
+    // Reset removes project-embedded presets, including a currently selected
+    // printer/process from an earlier project. Preserve them for the import choices.
+    std::unique_ptr<PresetBundle> previous_presets;
+    if (!load_restore && !(strategy & LoadStrategy::Silence) && filename.Lower().EndsWith(".3mf")) {
+        wxGetApp().preset_bundle->sync_mixed_filament_definitions_to_project_config();
+        previous_presets = std::make_unique<PresetBundle>(*wxGetApp().preset_bundle);
+    }
+
     // Take the Undo / Redo snapshot.
     reset();
+    if (previous_presets) {
+        *wxGetApp().preset_bundle = *previous_presets;
+        wxGetApp().preset_bundle->replace_filaments_from(*previous_presets);
+        wxGetApp().load_current_presets(false, false);
+    }
 
     Plater::TakeSnapshot snapshot(this, "Load Project", UndoRedo::SnapshotType::ProjectSeparator);
 

@@ -314,34 +314,68 @@ PresetBundle::PresetBundle()
     EnsureFilamentVolumeTypesAligned(this->project_config, this->filament_presets.size());
 }
 
-PresetBundle::PresetBundle(const PresetBundle &rhs)
-{
-    *this = rhs;
-}
+PresetBundle::PresetBundle(const PresetBundle& rhs) { *this = rhs; }
 
-PresetBundle& PresetBundle::operator=(const PresetBundle &rhs)
+PresetBundle& PresetBundle::operator=(const PresetBundle& rhs)
 {
-    prints              = rhs.prints;
-    sla_prints          = rhs.sla_prints;
-    filaments           = rhs.filaments;
-    sla_materials       = rhs.sla_materials;
-    printers            = rhs.printers;
-    physical_printers   = rhs.physical_printers;
+    if (this == &rhs)
+        return *this;
+    prints            = rhs.prints;
+    sla_prints        = rhs.sla_prints;
+    filaments         = rhs.filaments;
+    sla_materials     = rhs.sla_materials;
+    printers          = rhs.printers;
+    physical_printers = rhs.physical_printers;
 
-    filament_presets    = rhs.filament_presets;
-    project_config      = rhs.project_config;
-    vendors             = rhs.vendors;
-    obsolete_presets    = rhs.obsolete_presets;
-    m_errors    = rhs.m_errors;
+    filament_presets = rhs.filament_presets;
+    project_config   = rhs.project_config;
+    vendors          = rhs.vendors;
+    obsolete_presets = rhs.obsolete_presets;
+    m_errors         = rhs.m_errors;
 
     // Adjust Preset::vendor pointers to point to the copied vendors map.
-    prints       .update_vendor_ptrs_after_copy(this->vendors);
-    sla_prints   .update_vendor_ptrs_after_copy(this->vendors);
-    filaments    .update_vendor_ptrs_after_copy(this->vendors);
+    prints.update_vendor_ptrs_after_copy(this->vendors);
+    sla_prints.update_vendor_ptrs_after_copy(this->vendors);
+    filaments.update_vendor_ptrs_after_copy(this->vendors);
     sla_materials.update_vendor_ptrs_after_copy(this->vendors);
-    printers     .update_vendor_ptrs_after_copy(this->vendors);
+    printers.update_vendor_ptrs_after_copy(this->vendors);
+
+    // The edited/saved copies also outlive snapshots used during project import.
+    PresetCollection* collections[] = {&prints, &sla_prints, &filaments, &sla_materials, &printers};
+    for (PresetCollection* collection : collections) {
+        for (Preset* preset : {&collection->m_edited_preset, &collection->m_saved_preset}) {
+            if (preset->vendor != nullptr)
+                preset->vendor = &vendors.at(preset->vendor->id);
+        }
+    }
 
     return *this;
+}
+
+void PresetBundle::replace_filaments_from(const PresetBundle& source)
+{
+    filaments = source.filaments;
+    // The copied presets must reference our vendor storage, not the snapshot.
+    for (const auto& vendor : source.vendors)
+        vendors.emplace(vendor.first, vendor.second);
+    filaments.update_vendor_ptrs_after_copy(vendors);
+    for (Preset* preset : {&filaments.m_edited_preset, &filaments.m_saved_preset}) {
+        if (preset->vendor != nullptr)
+            preset->vendor = &vendors.at(preset->vendor->id);
+    }
+    filament_presets = source.filament_presets;
+    t_config_option_keys keys;
+    for (const std::string& key : source.project_config.keys()) {
+        if (boost::starts_with(key, "filament_") || boost::starts_with(key, "mixed_") || boost::starts_with(key, "dithering_") ||
+            boost::starts_with(key, "flush_"))
+            keys.push_back(key);
+        // GUI preset refreshes mirror these settings back into project_config.
+        // Keep that copy aligned so a refresh cannot restore the old recipes.
+        if (boost::starts_with(key, "mixed_") || boost::starts_with(key, "dithering_"))
+            prints.get_edited_preset().config.set_key_value(key, source.project_config.option(key)->clone());
+    }
+    project_config.apply_only(source.project_config, keys);
+    update_multi_material_filament_presets();
 }
 
 void PresetBundle::reset(bool delete_files)

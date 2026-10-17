@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 #include "test_utils.hpp"
 #include "libslic3r/ExtrusionEntity.hpp"
 #include "libslic3r/Format/FilamentImport.hpp"
+#include "libslic3r/Format/ProjectImport.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfConstants.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfJson.hpp"
 #include "libslic3r/Format/FullSpectrum3mf/Fs3mfLegacyBridge.hpp"
@@ -22,6 +24,7 @@
 #include <clocale>
 #include <cstdio>
 #include <map>
+#include <limits>
 #include <utility>
 #include <cstdint>
 #include <set>
@@ -738,6 +741,301 @@ TEST_CASE("Imported model filament IDs remap physical overflow to virtual colors
     REQUIRE(used_states.size() > 7);
     CHECK(used_states[5]);
     CHECK_FALSE(used_states[7]);
+}
+
+TEST_CASE("3MF filament choices preserve loaded counts or adopt the entire source palette", "[MixedFilament][Import]")
+{
+    DynamicPrintConfig config;
+    for (size_t source_count : {1u, 2u, 4u, 5u, 8u}) {
+        const auto keep = plan_filament_import(config, source_count, 4, FilamentImportMode::KeepLoaded, 2);
+        CHECK(keep.physical_count == 2);
+        CHECK_FALSE(keep.map_overflow_colors);
+        const auto replace = plan_filament_import(config, source_count, 4, FilamentImportMode::ReplaceLoaded, 2);
+        CHECK(replace.physical_count == source_count);
+        CHECK_FALSE(replace.map_overflow_colors);
+    }
+}
+
+TEST_CASE("3MF color matching includes saved mixed colors in assignment order", "[MixedFilament][Import]")
+{
+    MixedAutoGenerateGuard         guard(false);
+    const std::vector<std::string> colors = {"#FF0000", "#0000FF"};
+    PresetBundle                   source = make_bundle_with_filaments(colors);
+    source.mixed_filaments.add_custom_filament(1, 2, 25, colors);
+    source.mixed_filaments.add_custom_filament(1, 2, 75, colors);
+    source.sync_mixed_filament_definitions_to_project_config();
+    const auto targets = imported_filament_color_targets(source.project_config, colors);
+    const auto mixed   = source.mixed_filaments.display_colors();
+    REQUIRE(targets.size() == 4);
+    CHECK(targets[0] == colors[0]);
+    CHECK(targets[1] == colors[1]);
+    CHECK(targets[2] == mixed[0]);
+    CHECK(targets[3] == mixed[1]);
+    CHECK(imported_filament_color_targets(DynamicPrintConfig{}, colors) == colors);
+}
+
+TEST_CASE("3MF matching remaps the implicit first filament without changing inherited part assignments", "[MixedFilament][Import]")
+{
+    Model        model;
+    ModelObject* object = model.add_object();
+    ModelVolume* volume = object->add_volume(make_cube(1., 1., 1.));
+    object->config.set("wall_filament", 1);
+    object->config.set("support_filament", 0);
+    volume->config.set("solid_infill_filament", 1);
+    object->layer_config_ranges[{0.2, 0.4}].set("extruder", 1);
+    remap_model_filament_ids(model, {0, 3, 2}, 3);
+    CHECK(object->config.extruder() == 3);
+    CHECK_FALSE(volume->config.has("extruder"));
+    CHECK(volume->extruder_id() == 3);
+    CHECK(object->config.opt_int("wall_filament") == 3);
+    CHECK(object->config.opt_int("support_filament") == 0);
+    CHECK(volume->config.opt_int("solid_infill_filament") == 3);
+    CHECK(object->layer_config_ranges.begin()->second.extruder() == 3);
+}
+
+TEST_CASE("Replacing 3MF filaments retains printer metadata and uses imported filament profiles", "[MixedFilament][Import]")
+{
+    DynamicPrintConfig loaded;
+    loaded.set_key_value("filament_colour", new ConfigOptionStrings({"#FFFFFF", "#000000"}));
+    loaded.set_key_value("filament_settings_id", new ConfigOptionStrings({"Loaded white", "Loaded black"}));
+    loaded.set_key_value("inherits_group", new ConfigOptionStrings({"My process", "White parent", "Black parent", "My printer"}));
+    loaded.set_key_value("layer_height", new ConfigOptionFloat(0.2));
+    loaded.set_key_value("nozzle_temperature", new ConfigOptionInts({200, 205}));
+    loaded.set_key_value("mixed_filament_definitions", new ConfigOptionString("old recipes"));
+    loaded.set_key_value("filament_full_spectrum_material_id", new ConfigOptionStrings({"old-white-material", "old-black-material"}));
+    DynamicPrintConfig imported;
+    imported.set_key_value("filament_colour", new ConfigOptionStrings({"#FF0000", "#00FF00", "#0000FF"}));
+    imported.set_key_value("filament_settings_id", new ConfigOptionStrings({"Red", "Green", "Blue"}));
+    imported.set_key_value("inherits_group", new ConfigOptionStrings({"Foreign process", "R", "G", "B", "Foreign printer"}));
+    imported.set_key_value("layer_height", new ConfigOptionFloat(0.3));
+    imported.set_key_value("nozzle_temperature", new ConfigOptionInts({210, 220, 230}));
+    const auto replacement = config_with_imported_filaments(loaded, imported);
+    CHECK(replacement.option<ConfigOptionStrings>("filament_colour")->values ==
+          imported.option<ConfigOptionStrings>("filament_colour")->values);
+    CHECK(replacement.option<ConfigOptionStrings>("filament_settings_id")->values == std::vector<std::string>{"Red", "Green", "Blue"});
+    CHECK(replacement.option<ConfigOptionStrings>("inherits_group")->values ==
+          std::vector<std::string>{"My process", "R", "G", "B", "My printer"});
+    CHECK(replacement.opt_float("layer_height") == Approx(0.2));
+    CHECK(replacement.option<ConfigOptionInts>("nozzle_temperature")->values == std::vector<int>{210, 220, 230});
+    CHECK(replacement.opt_string("mixed_filament_definitions").empty());
+    CHECK(replacement.option<ConfigOptionStrings>("filament_full_spectrum_material_id")->values.front().empty());
+    CHECK(replacement.option<ConfigOptionInts>("filament_flow_step_size")->values == std::vector<int>{1, 1, 1});
+    CHECK(loaded.opt_string("mixed_filament_definitions") == "old recipes");
+}
+
+TEST_CASE("3MF replacement loads distinct filament temperatures with a different slot count", "[MixedFilament][Import]")
+{
+    MixedAutoGenerateGuard guard(false);
+    PresetBundle           bundle = make_bundle_with_filaments({"#FFFFFF", "#000000"});
+    DynamicPrintConfig     imported;
+    imported.set_key_value("filament_colour", new ConfigOptionStrings({"#FF0000", "#00FF00", "#0000FF"}));
+    imported.set_key_value("filament_settings_id", new ConfigOptionStrings({"Imported Red", "Imported Green", "Imported Blue"}));
+    imported.set_key_value("nozzle_temperature", new ConfigOptionInts({210, 220, 230}));
+    bundle.load_config_model("filament-import-test.3mf", config_with_imported_filaments(bundle.full_config(), imported));
+    REQUIRE(bundle.filament_presets.size() == 3);
+    CHECK(bundle.project_config.option<ConfigOptionStrings>("filament_colour")->values ==
+          imported.option<ConfigOptionStrings>("filament_colour")->values);
+    for (size_t i = 0; i < 3; ++i) {
+        const Preset* preset = bundle.filaments.find_preset(bundle.filament_presets[i], true);
+        REQUIRE(preset != nullptr);
+        CHECK(preset->config.option<ConfigOptionInts>("nozzle_temperature")->values.front() == 210 + int(i) * 10);
+    }
+}
+
+TEST_CASE("Keeping loaded 3MF filaments restores profiles and mixed recipes without restoring printer settings", "[MixedFilament][Import]")
+{
+    MixedAutoGenerateGuard         guard(false);
+    const std::vector<std::string> colors = {"#FF0000", "#0000FF"};
+    PresetBundle                   loaded = make_bundle_with_filaments(colors);
+    loaded.filaments.get_edited_preset().config.set_key_value("nozzle_temperature", new ConfigOptionInts({215}));
+    loaded.mixed_filaments.add_custom_filament(1, 2, 25, colors);
+    loaded.sync_mixed_filament_definitions_to_project_config();
+    // A snapshot stores serialized recipes, just as the project-open path does.
+    PresetBundle snapshot(loaded);
+    PresetBundle destination = make_bundle_with_filaments({"#FFFFFF", "#000000", "#00FF00"});
+    destination.prints.get_edited_preset().config.set_key_value("layer_height", new ConfigOptionFloat(0.28));
+    destination.printers.get_edited_preset().config.set_key_value("nozzle_diameter", new ConfigOptionFloats({0.6}));
+    destination.replace_filaments_from(snapshot);
+    CHECK(destination.filament_presets.size() == 2);
+    CHECK(destination.project_config.option<ConfigOptionStrings>("filament_colour")->values == colors);
+    CHECK(destination.filaments.get_edited_preset().config.option<ConfigOptionInts>("nozzle_temperature")->values.front() == 215);
+    CHECK(destination.mixed_filaments.serialize_custom_entries() == loaded.mixed_filaments.serialize_custom_entries());
+    CHECK(destination.prints.get_edited_preset().config.opt_string("mixed_filament_definitions") ==
+          loaded.project_config.opt_string("mixed_filament_definitions"));
+    CHECK(destination.prints.get_edited_preset().config.opt_float("layer_height") == Approx(0.28));
+    CHECK(destination.printers.get_edited_preset().config.option<ConfigOptionFloats>("nozzle_diameter")->values.front() == Approx(0.6));
+}
+
+TEST_CASE("3MF projects default to keeping the current printer when printer identities differ", "[MixedFilament][Import]")
+{
+    DynamicPrintConfig current;
+    current.set_key_value("printer_model", new ConfigOptionString("Snapmaker U1"));
+    current.set_key_value("printer_variant", new ConfigOptionString("0.4"));
+    DynamicPrintConfig source = current;
+    CHECK(default_3mf_project_import_mode(source, current) == ProjectImportMode::FullProject);
+    source.set_key_value("printer_model", new ConfigOptionString("Bambu Lab X1 Carbon"));
+    CHECK(default_3mf_project_import_mode(source, current) == ProjectImportMode::ModelOnly);
+    source = current;
+    source.set_key_value("printer_variant", new ConfigOptionString("0.6"));
+    CHECK(default_3mf_project_import_mode(source, current) == ProjectImportMode::ModelOnly);
+    source.clear();
+    CHECK(default_3mf_project_import_mode(source, current) == ProjectImportMode::ModelOnly);
+}
+
+TEST_CASE("Compatible 3MF settings exclude machine configuration and printer-dependent process options", "[MixedFilament][Import]")
+{
+    PresetBundle bundle  = make_bundle_with_filaments({"#FFFFFF", "#000000"});
+    auto&        printer = bundle.printers.get_edited_preset().config;
+    printer.set_key_value("printer_model", new ConfigOptionString("Snapmaker U1"));
+    printer.set_key_value("nozzle_diameter", new ConfigOptionFloats({0.4}));
+    printer.set_key_value("min_layer_height", new ConfigOptionFloats({0.08}));
+    printer.set_key_value("max_layer_height", new ConfigOptionFloats({0.28}));
+    DynamicPrintConfig source = bundle.full_config();
+    source.set_key_value("printer_model", new ConfigOptionString("Bambu Lab X1 Carbon"));
+    source.set_key_value("machine_start_gcode", new ConfigOptionString("FOREIGN MACHINE COMMAND"));
+    source.set_key_value("layer_height", new ConfigOptionFloat(0.16));
+    source.set_key_value("wall_loops", new ConfigOptionInt(5));
+    source.set_key_value("sparse_infill_density", new ConfigOptionPercent(35));
+    source.set_key_value("enable_support", new ConfigOptionBool(true));
+    const auto retained_printer = printer;
+    const auto retained_project = bundle.project_config;
+    const auto original_process = bundle.prints.get_edited_preset().config;
+    const auto shared           = compatible_3mf_print_settings(source, printer);
+    for (const char* key :
+         {"printer_model", "printer_settings_id", "print_settings_id", "inherits_group", "nozzle_diameter", "printable_area",
+          "printable_height", "machine_start_gcode", "machine_max_acceleration_x", "outer_wall_speed", "outer_wall_acceleration",
+          "line_width", "enable_prime_tower", "curr_bed_type", "filament_colour", "wall_filament", "support_filament", "post_process"})
+        CHECK_FALSE(shared.has(key));
+    bundle.prints.get_edited_preset().config.apply(shared);
+    CHECK(printer == retained_printer);
+    CHECK(bundle.project_config == retained_project);
+    const auto& process = bundle.prints.get_edited_preset().config;
+    CHECK(process.opt_float("layer_height") == Approx(0.16));
+    CHECK(process.opt_int("wall_loops") == 5);
+    CHECK(process.option<ConfigOptionPercent>("sparse_infill_density")->value == Approx(35));
+    CHECK(process.opt_bool("enable_support"));
+    CHECK(process.opt_serialize("outer_wall_speed") == original_process.opt_serialize("outer_wall_speed"));
+    CHECK(process.opt_serialize("line_width") == original_process.opt_serialize("line_width"));
+}
+
+TEST_CASE("3MF layer heights must fit every current nozzle and invalid values are omitted", "[MixedFilament][Import]")
+{
+    DynamicPrintConfig printer;
+    printer.set_key_value("nozzle_diameter", new ConfigOptionFloats({0.4, 0.2}));
+    printer.set_key_value("min_layer_height", new ConfigOptionFloats({0.08, 0.06}));
+    printer.set_key_value("max_layer_height", new ConfigOptionFloats({0.28, 0.0}));
+    CHECK(imported_layer_height_fits_printer(0.12, printer));
+    CHECK_FALSE(imported_layer_height_fits_printer(0.2, printer));
+    CHECK_FALSE(imported_layer_height_fits_printer(0.04, printer));
+    CHECK_FALSE(imported_layer_height_fits_printer(std::numeric_limits<double>::quiet_NaN(), printer));
+    DynamicPrintConfig source;
+    source.set_key_value("layer_height", new ConfigOptionFloat(0.2));
+    source.set_key_value("initial_layer_print_height", new ConfigOptionFloat(0.12));
+    source.set_key_value("wall_loops", new ConfigOptionInt(-5));
+    source.set_key_value("sparse_infill_density", new ConfigOptionPercent(101));
+    auto shared = compatible_3mf_print_settings(source, printer);
+    CHECK_FALSE(shared.has("layer_height"));
+    CHECK_FALSE(shared.has("wall_loops"));
+    CHECK_FALSE(shared.has("sparse_infill_density"));
+    CHECK(shared.opt_float("initial_layer_print_height") == Approx(0.12));
+}
+
+TEST_CASE("Keeping the printer filters object part and layer overrides while retaining remappable colors", "[MixedFilament][Import]")
+{
+    const bool         import_print_settings = GENERATE(false, true);
+    PresetBundle       bundle                = make_bundle_with_filaments({"#FFFFFF", "#000000"});
+    DynamicPrintConfig source;
+    source.set_key_value("wall_filament", new ConfigOptionInt(2));
+    source.set_key_value("support_filament", new ConfigOptionInt(0));
+    Model        model;
+    ModelObject* object = model.add_object();
+    ModelVolume* volume = object->add_volume(make_cube(1., 1., 1.));
+    object->config.set("wall_loops", 5);
+    object->config.set_key_value("outer_wall_speed", new ConfigOptionFloats({250.0}));
+    volume->config.set("extruder", 1);
+    volume->config.set("solid_infill_filament", 2);
+    volume->config.set("wall_loops", 6);
+    volume->config.set_key_value("outer_wall_speed", new ConfigOptionFloats({300.0}));
+    auto& range = object->layer_config_ranges[{0.2, 0.4}];
+    range.set("extruder", 2);
+    range.set("wall_loops", 7);
+    range.set_key_value("outer_wall_speed", new ConfigOptionFloats({350.0}));
+    object->layer_height_profile.set(std::vector<coordf_t>{0.0, 0.2, 1.0, 0.2});
+    model.plates_custom_gcodes[0] = CustomGCode::Info();
+    prepare_3mf_model_for_current_printer(model, source, bundle.printers.get_edited_preset().config, import_print_settings);
+    CHECK(object->config.has("wall_loops") == import_print_settings);
+    CHECK(volume->config.has("wall_loops") == import_print_settings);
+    CHECK(range.has("wall_loops") == import_print_settings);
+    CHECK_FALSE(object->config.has("outer_wall_speed"));
+    CHECK_FALSE(volume->config.has("outer_wall_speed"));
+    CHECK_FALSE(range.has("outer_wall_speed"));
+    CHECK(object->layer_height_profile.empty() == !import_print_settings);
+    CHECK(model.plates_custom_gcodes.empty());
+    remap_model_filament_ids(model, {0, 3, 1}, 3);
+    CHECK(object->config.extruder() == 3);
+    CHECK(object->config.opt_int("wall_filament") == 1);
+    CHECK(object->config.opt_int("support_filament") == 0);
+    CHECK(volume->config.extruder() == 3);
+    CHECK(volume->config.opt_int("solid_infill_filament") == 1);
+    CHECK(range.extruder() == 1);
+}
+
+TEST_CASE("Keeping the printer drops incompatible adaptive heights and preserves object color overrides", "[MixedFilament][Import]")
+{
+    PresetBundle       bundle = make_bundle_with_filaments({"#FFFFFF", "#000000"});
+    DynamicPrintConfig source;
+    source.set_key_value("wall_filament", new ConfigOptionInt(1));
+    Model        model;
+    ModelObject* object = model.add_object();
+    object->config.set("wall_filament", 2);
+    object->layer_height_profile.set(std::vector<coordf_t>{0.0, 0.6, 1.0, 0.6});
+    object->layer_config_ranges[{0.2, 0.4}].set_key_value("outer_wall_speed", new ConfigOptionFloats({350.0}));
+    prepare_3mf_model_for_current_printer(model, source, bundle.printers.get_edited_preset().config, true);
+    CHECK(object->config.opt_int("wall_filament") == 2);
+    CHECK(object->layer_height_profile.empty());
+    CHECK(object->layer_config_ranges.empty());
+}
+
+TEST_CASE("Importing global color defaults does not override explicit object filaments", "[MixedFilament][Import]")
+{
+    PresetBundle       bundle = make_bundle_with_filaments({"#FFFFFF", "#000000"});
+    DynamicPrintConfig source;
+    source.set_key_value("wall_filament", new ConfigOptionInt(1));
+    source.set_key_value("sparse_infill_filament", new ConfigOptionInt(1));
+    source.set_key_value("solid_infill_filament", new ConfigOptionInt(1));
+    Model        model;
+    ModelObject* object = model.add_object();
+    object->config.set("extruder", 2);
+    prepare_3mf_model_for_current_printer(model, source, bundle.printers.get_edited_preset().config, true);
+    remap_model_filament_ids(model, {0, 3, 2}, 3);
+    DynamicPrintConfig normalized = object->config.get();
+    normalized.normalize_fdm_1();
+    CHECK(normalized.opt_int("wall_filament") == 2);
+    CHECK(normalized.opt_int("sparse_infill_filament") == 2);
+    CHECK(normalized.opt_int("solid_infill_filament") == 2);
+}
+
+TEST_CASE("Project import snapshots retain the edited printer process and vendor ownership", "[MixedFilament][Import]")
+{
+    PresetBundle loaded = make_bundle_with_filaments({"#FFFFFF", "#000000"});
+    loaded.vendors.emplace("Snapmaker", VendorProfile("Snapmaker"));
+    loaded.printers.get_edited_preset().vendor = &loaded.vendors.at("Snapmaker");
+    loaded.prints.get_edited_preset().vendor   = &loaded.vendors.at("Snapmaker");
+    loaded.printers.get_edited_preset().config.set_key_value("printer_model", new ConfigOptionString("Snapmaker U1"));
+    loaded.prints.get_edited_preset().config.set_key_value("wall_loops", new ConfigOptionInt(5));
+    loaded.printers.update_saved_preset_from_current_preset();
+    loaded.prints.update_saved_preset_from_current_preset();
+    PresetBundle snapshot(loaded);
+    CHECK(snapshot.printers.get_edited_preset().vendor == &snapshot.vendors.at("Snapmaker"));
+    CHECK(snapshot.prints.get_edited_preset().vendor == &snapshot.vendors.at("Snapmaker"));
+    loaded.printers.get_edited_preset().config.set_key_value("printer_model", new ConfigOptionString("Bambu Lab X1 Carbon"));
+    loaded.prints.get_edited_preset().config.set_key_value("wall_loops", new ConfigOptionInt(2));
+    loaded = snapshot;
+    loaded.replace_filaments_from(snapshot);
+    CHECK(loaded.printers.get_edited_preset().config.opt_string("printer_model") == "Snapmaker U1");
+    CHECK(loaded.prints.get_edited_preset().config.opt_int("wall_loops") == 5);
+    CHECK(loaded.printers.get_edited_preset().vendor == &loaded.vendors.at("Snapmaker"));
+    CHECK(loaded.prints.get_edited_preset().vendor == &loaded.vendors.at("Snapmaker"));
 }
 
 TEST_CASE("Mixed filament bias helper maps signed bias to a one-sided safe offset pair", "[MixedFilament]")
