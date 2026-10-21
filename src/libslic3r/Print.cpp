@@ -2589,6 +2589,21 @@ void Print::process(long long *time_cost_with_cache, bool use_cache)
         }
     }
 
+    // Local-Z tower eligibility must use the same simplified paths as export.
+    // Otherwise disappearing or shifted tiny paths change the toolchange sequence.
+    for (PrintObject* obj : m_objects) {
+        if (((!use_cache) && (need_slicing_objects.count(obj) != 0)) || (use_cache && (re_slicing_objects.count(obj) != 0))) {
+            obj->simplify_extrusion_path();
+        } else {
+            if (obj->set_started(posSimplifyPath))
+                obj->set_done(posSimplifyPath);
+            if (obj->set_started(posSimplifyInfill))
+                obj->set_done(posSimplifyInfill);
+            if (obj->set_started(posSimplifySupportPath))
+                obj->set_done(posSimplifySupportPath);
+        }
+    }
+
     if (this->set_started(psWipeTower)) {
         m_wipe_tower_data.clear();
         m_tool_ordering.clear();
@@ -2687,21 +2702,6 @@ void Print::process(long long *time_cost_with_cache, bool use_cache)
         if (time_cost_with_cache) {
             end_time = (long long)Slic3r::Utils::get_current_time_utc();
             *time_cost_with_cache = *time_cost_with_cache + end_time - start_time;
-        }
-    }
-    //BBS
-    for (PrintObject *obj : m_objects) {
-        if (((!use_cache)&&(need_slicing_objects.count(obj) != 0))
-            || (use_cache &&(re_slicing_objects.count(obj) != 0))){
-            obj->simplify_extrusion_path();
-        }
-        else {
-            if (obj->set_started(posSimplifyPath))
-                obj->set_done(posSimplifyPath);
-            if (obj->set_started(posSimplifyInfill))
-                obj->set_done(posSimplifyInfill);
-            if (obj->set_started(posSimplifySupportPath))
-                obj->set_done(posSimplifySupportPath);
         }
     }
 

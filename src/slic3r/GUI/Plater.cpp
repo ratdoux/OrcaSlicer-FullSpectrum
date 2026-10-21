@@ -18100,7 +18100,7 @@ bool Plater::load_files(const wxArrayString& filenames)
 
     for (const auto& filename : filenames) {
         fs::path path(into_path(filename));
-        if (std::regex_match(path.string(), pattern_drop))
+        if (std::regex_match(path.string(), pattern_drop) || is_assimp_color_mesh_file(path.string()))
             normal_paths.push_back(std::move(path));
         else if (std::regex_match(path.string(), pattern_gcode_drop))
             gcode_paths.push_back(std::move(path));

@@ -3773,6 +3773,12 @@ static inline void apply_local_z_flow_height_override(ExtrusionPath& path, const
     path.height = float(flow_height_override);
 }
 
+static bool local_z_path_has_segment(const Polyline& polyline)
+{
+    return polyline.is_valid() && std::any_of(polyline.points.begin() + 1, polyline.points.end(),
+                                              [&polyline](const Point& point) { return point != polyline.points.front(); });
+}
+
 static inline void append_clipped_path(LocalZPathRouter&          router,
                                        const ExtrusionPath&       src_path,
                                        const LocalZClipper*       include_masks,
@@ -3784,7 +3790,7 @@ static inline void append_clipped_path(LocalZPathRouter&          router,
     router.append(src_path, include_masks, exclude_masks, flow_height_override, segments);
 
     for (ExtrusionPath& clipped : segments) {
-        if (!clipped.polyline.is_valid())
+        if (!local_z_path_has_segment(clipped.polyline))
             continue;
         dst.append(std::move(clipped));
     }
@@ -3795,6 +3801,12 @@ static inline bool local_z_clipping_keeps_path_complete(const LocalZPathRouter& 
                                                         const LocalZClipper*    include_masks,
                                                         const LocalZClipper*    exclude_masks)
 {
+    // Simplification can collapse a tiny loop to repeated copies of one point.
+    // Both intersection and difference are then empty, even outside the mask;
+    // preserving that loop would schedule a Local-Z pass with no extrusion.
+    if (!local_z_path_has_segment(src_path.polyline))
+        return false;
+
     // Preserve the closed loop and its existing seam handling. Ambiguous paths
     // still use the same exact completeness test as before the port.
     if (router.can_reuse(src_path.polyline, include_masks, exclude_masks))

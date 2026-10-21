@@ -124,8 +124,10 @@ TEST_CASE("Local-Z prime towers emit every planned layer and extrusion", "[Slici
 {
     double layer_height = .20;
     bool   gradient     = false;
+    bool   tiny_loops   = false;
     SECTION("Independent mixes at standard layer height") {}
     SECTION("Independent mixes with single-pass intervals") { layer_height = .08; }
+    SECTION("Tiny painted loops collapse before tower planning") { tiny_loops = true; }
     SECTION("Gradients with single-pass intervals")
     {
         layer_height = .08;
@@ -199,10 +201,59 @@ TEST_CASE("Local-Z prime towers emit every planned layer and extrusion", "[Slici
     print.is_BBL_printer() = false;
     print.set_status_silent();
     print.apply(model, config);
+    bool tiny_loops_inserted = false;
+    print.set_status_callback([&](const PrintBase::SlicingStatus& status) {
+        // Seed the fixture after perimeter generation, before simplification or
+        // tower planning. The infill-toolpath notification runs on the caller.
+        if (!tiny_loops || tiny_loops_inserted || status.percent != 35)
+            return;
+        tiny_loops_inserted = true;
+        auto* printed       = print.get_object(0);
+        REQUIRE(printed->is_step_done(posPerimeters));
+        auto plans = printed->local_z_sublayer_plan();
+        // A small painted island can leave a perimeter shorter than the path
+        // simplification tolerance. Its mask still exists after the path collapses.
+        const Point      origin(scale_(20.), scale_(20.));
+        const coord_t    size = scale_(.005);
+        const ExPolygons mask{ExPolygon(Points{origin, origin + Point(size, 0), origin + Point(size, size), origin + Point(0, size)})};
+        for (auto& plan : plans) {
+            if (!plan.split_interval)
+                continue;
+            plan.painted_masks_by_extruder.resize(4);
+            plan.painted_masks_by_extruder[3] = mask;
+        }
+        printed->set_local_z_plan(printed->local_z_intervals(), std::move(plans));
+        for (auto* layer : printed->layers()) {
+            if (layer->id() == 0)
+                continue;
+            auto*         island = new ExtrusionEntityCollection;
+            ExtrusionPath path(erExternalPerimeter, .09, .45f, .20f);
+            path.polyline = Polyline(Points{origin, origin + Point(size, 0), origin + Point(size, size), origin + Point(0, size), origin});
+            island->append(ExtrusionLoop(std::move(path)));
+            layer->regions().front()->perimeters.entities.push_back(island);
+        }
+    });
     print.process();
+    REQUIRE(tiny_loops_inserted == tiny_loops);
     const auto& tower = print.wipe_tower_data();
     REQUIRE(tower.tool_changes.size() > 10);
     REQUIRE(tower.local_z_tool_changes.size() == tower.tool_changes.size());
+    if (tiny_loops) {
+        for (const auto* layer : print.get_object(0)->layers()) {
+            if (layer->id() == 0)
+                continue;
+            // Verify that the fixture exercised simplification, not just an
+            // already empty mask. The fourth tool has no surviving Local-Z path.
+            Polylines paths;
+            layer->regions().front()->perimeters.entities.back()->collect_polylines(paths);
+            REQUIRE_FALSE(paths.empty());
+            for (const auto& path : paths)
+                CHECK(path.length() == 0.);
+        }
+        for (const auto& changes : tower.local_z_tool_changes)
+            for (const auto& change : changes)
+                CHECK(change.new_tool != 3);
+    }
     if (layer_height < .1) {
         const auto& intervals = print.get_object(0)->local_z_intervals();
         REQUIRE(std::any_of(intervals.begin(), intervals.end(), [](const LocalZInterval& interval) {
