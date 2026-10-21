@@ -166,3 +166,118 @@ are untracked.
 The work was performed in the separate `OrcaSlicer-FullSpectrum-speed` worktree
 on `slicing-speed-optimizations`. The original worktree's uncommitted import
 changes were not included or modified.
+
+## Local-Z whole-path reuse follow-up (2026-10-21)
+
+Implementation commit: `50c0d4f666` (one rollback unit for the dependent geometry changes).
+
+Ported the CPU geometry index (`db8987b950`), exact clipping-result cache
+(`a2a071be96`), and guarded whole-path reuse (`720a634227`) from
+`ratdouxdoux-OrcaSlicer`, branch `proposal_UI_changes_GPU_Accelerate_V2`, into
+`OrcaSlicer-FullSpectrum` on `slicing-speed-optimizations`.
+
+The index uses bounded integer predicates to prove empty operations or complete
+path containment. Repeated identical mask/path operations share a per-export-layer
+cache with a 32 MiB entry budget. A fully contained path retains its original XY
+vertices and direction instead of being reconstructed by Clipper. Ambiguous
+boundaries, holes, crossings, degenerate segments, unsupported coordinates and
+oversized masks retain exact clipping. Fitted arcs are cleared for routed open
+paths, matching the existing clipping contract. Boundary-clipped paths retain
+the existing fragment order.
+
+FullSpectrum's intact-loop handling is retained: the containment proof accelerates
+its completeness test, while the exporter still clones complete loops for normal
+seam placement. Unproven loops retain the previous exact completeness test.
+Adaptive external walls and ordinary inner-wall/infill paths continue to use their
+distinct exclusion masks. Role filtering, mask compensation, perimeter modulation,
+adaptive non-planar rendering, pass heights, dependency ordering and tower scheduling
+remain in the existing FullSpectrum pipeline. Pass flow is rescaled once before
+any downstream adaptive-height renderer applies its local height adjustment.
+
+These CPU improvements are enabled by default in a normal release build. They do
+not require Vulkan or a new preference. Developer comparison switches:
+
+- `ORCA_LOCAL_Z_CPU=legacy` disables the new CPU index/cache; `all` is the default.
+- `ORCA_LOCAL_Z_REUSE=0` disables whole-path reuse and the fast intact-loop proof;
+  `1` is the default.
+- Use both switches above to compare against the pre-port geometry path in the
+  same executable.
+- `ORCA_LOCAL_Z_VALIDATE=1` independently checks clipping against full-mask
+  Clipper operations, and reused paths for retained length and no discarded
+  geometry. Validation is deliberately expensive and excluded from benchmarks.
+
+The local build includes preexisting uncommitted changes to tiny-path/tower
+planning and mesh import. They are identical in both benchmark modes and are
+kept out of the port commits. No input project or existing GUI process is modified.
+
+### Follow-up validation
+
+Release application, libslic3r tests and FFF print tests build successfully.
+Reference-enabled core selection `[LocalZ],[CPUSlicing],[ClipIndex],
+[SlicingSpeedPort],[SMLCopy],[GradientPort]` passes **53 cases / 385,596 assertions**.
+The new role-mask regression checks that a path excluded from an adaptive external
+pass can still remain in the ordinary inner-wall pass, without reusing the wrong
+mask decision or modifying the original loop. FFF `[LocalZ]` passes **6 cases /
+684 assertions**, covering adaptive non-planar height/flow, gradient seams,
+independent heights and component ratios. The core selection includes prime-tower
+extrusion/scheduling checks, including the worktree's tiny-loop regression.
+
+The same six FFF cases also pass with both optimizations disabled, including
+reference geometry validation. Raw local evidence is in
+`build/local-z-reuse-port-20261021/`.
+
+### FullSpectrum before/after benchmark
+
+Project: `开启混色细分层高导致局部层高过小.3mf`, SHA-256
+`0747970025e0dbc758023833e51173c42395c82966ece97f44445b62e64e2f63`.
+Two fresh-process CPU-only runs per mode, sequentially, using the same Release
+DLL (`89b1b065d4d3cef542cf24e9e58435dbc2679b5016ba860c91745d6ccd5eca17`)
+and embedded project settings. Before uses `ORCA_LOCAL_Z_CPU=legacy` and
+`ORCA_LOCAL_Z_REUSE=0`; after uses the default `all`/`1`. Validation and diagnostic
+clipping timers/capture are off. Ordinary debug logs supply stage boundaries.
+
+| Measurement | Before, median of 2 | After, median of 2 | Reduction |
+| --- | ---: | ---: | ---: |
+| Complete CLI slice | 137.93 s | 18.55 s | 86.6% (7.44× faster) |
+| G-code export | 124.89 s | 5.55 s | 95.6% |
+| Local-Z path-routing windows within export | 121.75 s | 2.37 s | 98.1% |
+| Process CPU time | 180.76 CPU-s | 65.70 CPU-s | 63.7% |
+
+Individual complete times: **138.22, 137.64 s before** and **18.52, 18.58 s after**.
+The routing windows run from the existing `Local-Z context` to `clipping summary`
+log entries; they exclude earlier mask assembly and are included in export time.
+This comparison includes all three CPU changes ported here; it does not isolate
+the contribution of reuse alone. These are FullSpectrum measurements, distinct
+from the earlier source-branch results. Peak private commit overlaps across runs
+(782.8–810.7 MiB before, 781.0–793.2 MiB after); no memory improvement is claimed.
+
+Both optimized runs reuse approximately **104,000 open paths**, with the remaining
+approximately 60,000 operations using the exact-clipping interface, including its
+indexed empty-result rejection. Intact-loop proofs are
+additional and are not counted by the open-path routing counters. All four runs
+have the same Local-Z pass and Local-Z tower schedule hashes, covering the 21
+nominal layers from Z=5.4 through 9.4 mm, and no reported Local-Z leak, pass-height
+or tower-sequence mismatch.
+
+Whole-file G-code equivalence is **not** claimed. Even the two disabled baseline
+runs differ by 77.95 mm of positive XY-extrusion filament (0.54%), and their
+Z/tool/role/height groups differ. Large per-tool differences occur above the
+Local-Z section; the optimized runs also show this run-to-run variation. Total
+reported mass is 45.72/45.47 g before and 45.47/46.01 g after. Full-file tool
+sequences can differ even though the Local-Z schedules match. Reusing open paths
+also intentionally preserves their authored direction, which can change travel
+and command order. Independent per-operation full-mask validation and the
+flow/seam/tower regressions provide the correctness checks; the whole-file audit
+does not establish identical output or resolve the preexisting nondeterminism.
+
+The separate full-model run with `ORCA_LOCAL_Z_VALIDATE=1` completed successfully:
+**103,664 reused open paths**, no reference clipping/containment failure, and zero
+reported base leaks, pass-height mismatches or Local-Z tower-sequence errors.
+Its 368.31 s elapsed time includes the expensive independent reference work and
+is excluded from the benchmark table. Validation also covers fast intact-loop
+proofs, although those are not included in the open-path reuse counter.
+
+The built application is `build/src/Release/snapmaker-orca.exe`; the regular
+Windows release helper includes this code without extra flags. There has been no
+physical printer validation. The port does not fix the separately observed
+whole-slice output nondeterminism.
