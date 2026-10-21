@@ -70,6 +70,8 @@ def main():
         "local_z_profile": os.environ.get("ORCA_LOCAL_Z_PROFILE", ""),
         "local_z_capture": os.environ.get("ORCA_LOCAL_Z_CAPTURE", ""),
         "local_z_clip": os.environ.get("ORCA_LOCAL_Z_CLIP", "cpu"),
+        "local_z_cpu": os.environ.get("ORCA_LOCAL_Z_CPU", "all"),
+        "local_z_reuse": os.environ.get("ORCA_LOCAL_Z_REUSE", "1"),
         "seam_alignment": os.environ.get("ORCA_SEAM_ALIGNMENT", "cache"),
         "wall_support": os.environ.get("ORCA_WALL_SUPPORT", "cache"),
         "shell_volume": os.environ.get("ORCA_SHELL_VOLUME", "cache"),

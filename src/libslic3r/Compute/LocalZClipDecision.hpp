@@ -12,7 +12,8 @@ namespace Slic3r {
 // Bounded exact integer predicates. Coordinates outside +/- 2^29 are not
 // eligible: this bound keeps differences and cross products within int64.
 // KeepWhole proves geometric containment only, not Clipper's output order or
-// normalization. It is diagnostic and must not bypass nonempty clipping.
+// normalization. Exact clipping callers must not use it to bypass clipping;
+// the Local-Z path router may use it under its geometric-ownership contract.
 enum class ClipDecision : uint32_t { Unknown = 0, Empty = 1, KeepWhole = 2 };
 using ClipMaskEdge = std::array<int32_t, 4>;
 struct ClipSegmentQuery

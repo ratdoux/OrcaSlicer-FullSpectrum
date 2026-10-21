@@ -355,6 +355,8 @@ set(lisbslic3r_sources
     MixedFilament.hpp
     MixedFilamentLayerTracker.hpp
     LocalZClipper.cpp
+    LocalZPathRouter.hpp
+    LocalZPathRouter.cpp
     LocalZClipper.hpp
     LocalZClipAcceleration.cpp
     LocalZClipAcceleration.hpp
