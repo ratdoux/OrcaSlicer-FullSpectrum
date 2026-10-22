@@ -642,6 +642,7 @@ private:
     int m_start_gcode_filament = -1;
     const ImageMap::AdaptiveLocalZRenderer* m_adaptive_local_z_renderer { nullptr };
     const SubLayerPlan*                     m_adaptive_local_z_plan { nullptr };
+    const SubLayerPlan*                     m_local_z_mix_bridge_plan{nullptr};
 
     std::set<unsigned int>                  m_initial_layer_extruders;
     // BBS

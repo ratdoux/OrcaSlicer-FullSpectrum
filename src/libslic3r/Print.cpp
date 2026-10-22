@@ -1,6 +1,7 @@
 #include "Config.hpp"
 #include "Exception.hpp"
 #include "Print.hpp"
+#include "LocalZMixBridge.hpp"
 #include "BoundingBox.hpp"
 #include "Brim.hpp"
 #include "ClipperUtils.hpp"
@@ -88,23 +89,33 @@ static inline ExPolygons local_z_compensate_masks_for_wipe_tower(const ExPolygon
     return compensated;
 }
 
-static bool extrusion_collection_has_local_z_segment(const ExtrusionEntityCollection& source, const LocalZClipper& include_masks)
+static bool extrusion_collection_has_local_z_segment(const ExtrusionEntityCollection& source,
+                                                     const LocalZClipper&             include_masks,
+                                                     bool                             external_only    = false,
+                                                     const LocalZClipper*             external_exclude = nullptr)
 {
     if (source.entities.empty() || include_masks.empty())
         return false;
 
+    auto visible = [&](const ExtrusionPath& path) {
+        if (external_only && path.role() != erExternalPerimeter)
+            return false;
+        return external_exclude && !external_exclude->empty() ?
+                   !LocalZClipper::clip_path(path.polyline, &include_masks, external_exclude).empty() :
+                   include_masks.intersects(path.polyline);
+    };
     for (const ExtrusionEntity* entity : source.flatten_refs()) {
         if (const auto *path = dynamic_cast<const ExtrusionPath*>(entity)) {
-            if (include_masks.intersects(path->polyline))
+            if (visible(*path))
                 return true;
         } else if (const auto *multipath = dynamic_cast<const ExtrusionMultiPath*>(entity)) {
             for (const ExtrusionPath &path : multipath->paths) {
-                if (include_masks.intersects(path.polyline))
+                if (visible(path))
                     return true;
             }
         } else if (const auto *loop = dynamic_cast<const ExtrusionLoop*>(entity)) {
             for (const ExtrusionPath &path : loop->paths) {
-                if (include_masks.intersects(path.polyline))
+                if (visible(path))
                     return true;
             }
         }
@@ -113,7 +124,11 @@ static bool extrusion_collection_has_local_z_segment(const ExtrusionEntityCollec
     return false;
 }
 
-static bool layer_has_local_z_extrusions(const Layer& layer, const LocalZClipper& pass_masks, bool include_infill)
+static bool layer_has_local_z_extrusions(const Layer&         layer,
+                                         const LocalZClipper& pass_masks,
+                                         bool                 include_infill,
+                                         bool                 external_only    = false,
+                                         const LocalZClipper* external_exclude = nullptr)
 {
     if (pass_masks.empty())
         return false;
@@ -123,16 +138,16 @@ static bool layer_has_local_z_extrusions(const Layer& layer, const LocalZClipper
             const auto *extrusions = dynamic_cast<const ExtrusionEntityCollection*>(entity);
             if (extrusions == nullptr)
                 continue;
-            if (extrusion_collection_has_local_z_segment(*extrusions, pass_masks))
+            if (extrusion_collection_has_local_z_segment(*extrusions, pass_masks, external_only, external_exclude))
                 return true;
         }
-        if (!include_infill)
+        if (!include_infill || external_only)
             continue;
         for (const ExtrusionEntity *entity : layer_region->fills.entities) {
             const auto *extrusions = dynamic_cast<const ExtrusionEntityCollection*>(entity);
             if (extrusions == nullptr)
                 continue;
-            if (extrusion_collection_has_local_z_segment(*extrusions, pass_masks))
+            if (extrusion_collection_has_local_z_segment(*extrusions, pass_masks, false, external_exclude))
                 return true;
         }
     }
@@ -196,6 +211,13 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
 
         const size_t first_idx = interval_it->first_sublayer_idx;
         const size_t end_idx   = std::min(plans.size(), first_idx + interval_it->sublayer_count);
+        ExPolygons   bridge_ownership;
+        for (const auto& bridge : interval_it->mix_bridges)
+            for (const auto& zone : bridge->zones)
+                append(bridge_ownership, zone.masks);
+        if (!bridge_ownership.empty())
+            bridge_ownership = union_ex(bridge_ownership);
+        const LocalZClipper bridge_exclude(bridge_ownership);
         for (size_t plan_idx = first_idx; plan_idx < end_idx; ++plan_idx) {
             const SubLayerPlan& plan = plans[plan_idx];
             if (!plan.split_interval)
@@ -229,8 +251,10 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
 
                 ExPolygons compensated;
                 if (!mixed_raw_masks.empty()) {
-                    ExPolygons compensated_mixed = local_z_compensate_masks_for_wipe_tower(mixed_raw_masks, local_z_perimeter_mask_expand,
-                                                                                           true);
+                    ExPolygons compensated_mixed = plan.mix_bridge ?
+                                                       mixed_raw_masks :
+                                                       local_z_compensate_masks_for_wipe_tower(mixed_raw_masks,
+                                                                                               local_z_perimeter_mask_expand, true);
                     if (!fixed_compensated_guard.empty())
                         compensated_mixed = diff_ex(compensated_mixed, fixed_compensated_guard);
                     if (!compensated_mixed.empty())
@@ -252,7 +276,14 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
                 const ExPolygons& pass_masks = compensated_masks_by_extruder[extruder_id];
                 if (pass_masks.empty())
                     continue;
-                if (layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks), local_z_infill_enabled))
+                bool has_paths = false;
+                if (plan.mix_bridge_paths) {
+                    has_paths = !plan.mix_bridge_paths->perimeters.empty();
+                    has_paths |= local_z_infill_enabled && !plan.mix_bridge_paths->fills.empty();
+                } else
+                    has_paths = layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks),
+                                                             local_z_infill_enabled, false, &bridge_exclude);
+                if (has_paths)
                     pass_ref.extruders.push_back(unsigned(extruder_id));
             }
 

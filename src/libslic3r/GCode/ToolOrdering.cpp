@@ -346,6 +346,23 @@ static double calc_max_layer_height(const PrintConfig &config, double max_object
     return std::max(max_layer_height, max_object_layer_height);
 }
 
+static void register_local_z_tools(const PrintObject& object, std::vector<unsigned int>& all_tools, bool prime_multi_material)
+{
+    // Phase-B can use a physical filament that never appears in the nominal
+    // layer sequence. Register it for the writer, priming and thermal setup,
+    // without inserting a spurious nominal-layer tool change.
+    for (const SubLayerPlan& plan : object.local_z_sublayer_plan()) {
+        if (!plan.split_interval)
+            continue;
+        for (const auto* masks : {&plan.painted_masks_by_extruder, &plan.fixed_painted_masks_by_extruder})
+            for (size_t tool = 0; tool < masks->size(); ++tool)
+                if (!(*masks)[tool].empty() && std::find(all_tools.begin(), all_tools.end(), unsigned(tool)) == all_tools.end())
+                    all_tools.insert(prime_multi_material && !all_tools.empty() ? all_tools.end() - 1 : all_tools.end(), unsigned(tool));
+    }
+    if (!prime_multi_material)
+        std::sort(all_tools.begin(), all_tools.end());
+}
+
 // For the use case when each object is printed separately
 // (print->config().print_sequence == PrintSequence::ByObject is true).
 ToolOrdering::ToolOrdering(const PrintObject &object, unsigned int first_extruder, bool prime_multi_material)
@@ -392,6 +409,10 @@ ToolOrdering::ToolOrdering(const PrintObject &object, unsigned int first_extrude
     this->fill_wipe_tower_partitions(object.print()->config(), object.layers().front()->print_z - object.layers().front()->height, max_layer_height);
 
     this->collect_extruder_statistics(prime_multi_material);
+
+    register_local_z_tools(object, m_all_printing_extruders, prime_multi_material);
+    if (prime_multi_material && !m_all_printing_extruders.empty())
+        m_first_printing_extruder = m_all_printing_extruders.front();
 
     this->mark_skirt_layers(object.print()->config(), max_layer_height);
 }
@@ -515,6 +536,11 @@ ToolOrdering::ToolOrdering(const Print &print, unsigned int first_extruder, bool
     }
 
     this->collect_extruder_statistics(prime_multi_material);
+
+    for (const PrintObject* object : print.objects())
+        register_local_z_tools(*object, m_all_printing_extruders, prime_multi_material);
+    if (prime_multi_material && !m_all_printing_extruders.empty())
+        m_first_printing_extruder = m_all_printing_extruders.front();
 
     this->mark_skirt_layers(print.config(), max_layer_height);
 }

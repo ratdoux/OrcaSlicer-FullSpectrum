@@ -357,6 +357,8 @@ set(lisbslic3r_sources
     LocalZClipper.cpp
     LocalZPathRouter.hpp
     LocalZPathRouter.cpp
+    LocalZMixBridge.hpp
+    LocalZMixBridge.cpp
     LocalZClipper.hpp
     LocalZClipAcceleration.cpp
     LocalZClipAcceleration.hpp
@@ -602,6 +604,9 @@ endif ()
 encoding_check(libslic3r)
 
 target_compile_definitions(libslic3r PUBLIC -DUSE_TBB -DTBB_USE_CAPTURED_EXCEPTION=0)
+option(ORCA_LOCAL_Z_MIX_BRIDGES_DEFAULT "Enable experimental Local-Z wall bridges by default in this build" OFF)
+set_property(SOURCE LocalZMixBridge.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    ORCA_LOCAL_Z_MIX_BRIDGES_DEFAULT=$<BOOL:${ORCA_LOCAL_Z_MIX_BRIDGES_DEFAULT}>)
 # Make source directory PUBLIC so other modules (like libslic3r_gui) can include headers like SentryWrapper.hpp
 target_include_directories(libslic3r PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(libslic3r SYSTEM PUBLIC ${EXPAT_INCLUDE_DIRS})

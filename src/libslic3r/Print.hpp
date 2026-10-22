@@ -59,6 +59,9 @@ struct groupedVolumeSlices
     ExPolygons              slices;
 };
 
+struct LocalZMixBridge;
+struct LocalZMixBridgePaths;
+
 // Phase A local-Z dithering planner cache.
 struct LocalZInterval
 {
@@ -72,7 +75,12 @@ struct LocalZInterval
     size_t first_sublayer_idx { 0 };
     size_t sublayer_count { 0 };
     ExPolygons managed_masks;
+    // Ownership persists through nominal intervals with no emitted bridge pass.
+    std::vector<std::shared_ptr<const LocalZMixBridge>> mix_bridges;
 };
+
+struct LocalZMixBridge;
+struct LocalZMixBridgePaths;
 
 struct SubLayerPlan
 {
@@ -80,6 +88,10 @@ struct SubLayerPlan
     size_t pass_index { 0 };
     bool   split_interval { false };
     bool   external_perimeters_only { false };
+    // Experimental connected wall passes share immutable spatial interfaces.
+    std::shared_ptr<const LocalZMixBridge>      mix_bridge;
+    size_t                                      mix_bridge_component{0};
+    std::shared_ptr<const LocalZMixBridgePaths> mix_bridge_paths;
     double z_lo { 0.0 };
     double z_hi { 0.0 };
     double print_z { 0.0 };

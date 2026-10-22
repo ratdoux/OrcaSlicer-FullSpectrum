@@ -1,6 +1,7 @@
 #include "Layer.hpp"
 #include "ClipperUtils.hpp"
 #include "Print.hpp"
+#include "LocalZMixBridge.hpp"
 #include "Fill/Fill.hpp"
 #include "ShortestPath.hpp"
 #include "SVG.hpp"
@@ -176,40 +177,36 @@ ExPolygons Layer::merged(float offset_scaled) const
     return out;
 }
 
+static bool perimeter_configs_compatible(const PrintRegionConfig& config,
+                                         const PrintRegionConfig& other_config,
+                                         bool                     bridge_filaments = false)
+{
+    return (bridge_filaments || config.wall_filament == other_config.wall_filament) && config.wall_loops == other_config.wall_loops &&
+           config.wall_sequence == other_config.wall_sequence && config.is_infill_first == other_config.is_infill_first &&
+           config.inner_wall_speed == other_config.inner_wall_speed && config.outer_wall_speed == other_config.outer_wall_speed &&
+           config.small_perimeter_speed == other_config.small_perimeter_speed && config.gap_infill_speed == other_config.gap_infill_speed &&
+           config.filter_out_gap_fill.value == other_config.filter_out_gap_fill.value &&
+           config.detect_overhang_wall == other_config.detect_overhang_wall && config.overhang_reverse == other_config.overhang_reverse &&
+           config.overhang_reverse_threshold == other_config.overhang_reverse_threshold &&
+           config.wall_direction == other_config.wall_direction &&
+           config.opt_serialize("inner_wall_line_width") == other_config.opt_serialize("inner_wall_line_width") &&
+           config.opt_serialize("outer_wall_line_width") == other_config.opt_serialize("outer_wall_line_width") &&
+           config.detect_thin_wall == other_config.detect_thin_wall && config.infill_wall_overlap == other_config.infill_wall_overlap &&
+           config.top_bottom_infill_wall_overlap == other_config.top_bottom_infill_wall_overlap &&
+           config.seam_slope_type == other_config.seam_slope_type && config.seam_slope_conditional == other_config.seam_slope_conditional &&
+           config.scarf_angle_threshold == other_config.scarf_angle_threshold &&
+           config.scarf_overhang_threshold == other_config.scarf_overhang_threshold &&
+           config.scarf_joint_speed == other_config.scarf_joint_speed &&
+           config.scarf_joint_flow_ratio == other_config.scarf_joint_flow_ratio &&
+           config.seam_slope_start_height == other_config.seam_slope_start_height &&
+           config.seam_slope_entire_loop == other_config.seam_slope_entire_loop &&
+           config.seam_slope_min_length == other_config.seam_slope_min_length && config.seam_slope_steps == other_config.seam_slope_steps &&
+           config.seam_slope_inner_walls == other_config.seam_slope_inner_walls;
+}
+
 bool Layer::is_perimeter_compatible(const PrintRegion& a, const PrintRegion& b)
 {
-    const PrintRegionConfig& config       = a.config();
-    const PrintRegionConfig& other_config = b.config();
-
-    return config.wall_filament             == other_config.wall_filament
-		&& config.wall_loops                  == other_config.wall_loops
-		&& config.wall_sequence               == other_config.wall_sequence
-		&& config.is_infill_first             == other_config.is_infill_first
-		&& config.inner_wall_speed             == other_config.inner_wall_speed
-		&& config.outer_wall_speed    == other_config.outer_wall_speed
-		&& config.small_perimeter_speed    == other_config.small_perimeter_speed
-        && config.gap_infill_speed == other_config.gap_infill_speed
-        && config.filter_out_gap_fill.value == other_config.filter_out_gap_fill.value
-		&& config.detect_overhang_wall                   == other_config.detect_overhang_wall
-		&& config.overhang_reverse                       == other_config.overhang_reverse
-		&& config.overhang_reverse_threshold             == other_config.overhang_reverse_threshold
-		&& config.wall_direction                         == other_config.wall_direction
-		&& config.opt_serialize("inner_wall_line_width") == other_config.opt_serialize("inner_wall_line_width")
-		&& config.opt_serialize("outer_wall_line_width") == other_config.opt_serialize("outer_wall_line_width")
-		&& config.detect_thin_wall                  == other_config.detect_thin_wall
-		&& config.infill_wall_overlap              == other_config.infill_wall_overlap
-        && config.top_bottom_infill_wall_overlap              == other_config.top_bottom_infill_wall_overlap
-        && config.seam_slope_type         == other_config.seam_slope_type
-        && config.seam_slope_conditional == other_config.seam_slope_conditional
-        && config.scarf_angle_threshold  == other_config.scarf_angle_threshold
-        && config.scarf_overhang_threshold  == other_config.scarf_overhang_threshold
-        && config.scarf_joint_speed       == other_config.scarf_joint_speed
-        && config.scarf_joint_flow_ratio       == other_config.scarf_joint_flow_ratio
-        && config.seam_slope_start_height == other_config.seam_slope_start_height
-        && config.seam_slope_entire_loop  == other_config.seam_slope_entire_loop
-        && config.seam_slope_min_length   == other_config.seam_slope_min_length
-        && config.seam_slope_steps        == other_config.seam_slope_steps
-        && config.seam_slope_inner_walls  == other_config.seam_slope_inner_walls;
+    return perimeter_configs_compatible(a.config(), b.config());
 }
 
 // Here the perimeters are created cummulatively for all layer regions sharing the same parameters influencing the perimeters.
@@ -218,7 +215,22 @@ bool Layer::is_perimeter_compatible(const PrintRegion& a, const PrintRegion& b)
 void Layer::make_perimeters()
 {
     BOOST_LOG_TRIVIAL(trace) << "Generating perimeters for layer " << this->id();
-    
+
+    std::vector<const LocalZMixBridge*> mix_bridges;
+    const auto&                         intervals = object()->local_z_intervals();
+    const auto                          interval  = std::lower_bound(intervals.begin(), intervals.end(), size_t(id()),
+                                                                     [](const LocalZInterval& value, size_t layer_id) { return value.layer_id < layer_id; });
+    if (interval != intervals.end() && interval->layer_id == size_t(id()))
+        for (const auto& bridge : interval->mix_bridges)
+            mix_bridges.push_back(bridge.get());
+    const auto share_bridge = [&mix_bridges](int first, int second) {
+        return std::any_of(mix_bridges.begin(), mix_bridges.end(), [&](const LocalZMixBridge* bridge) {
+            const auto& ids = bridge->source_filament_ids;
+            return std::find(ids.begin(), ids.end(), unsigned(first)) != ids.end() &&
+                   std::find(ids.begin(), ids.end(), unsigned(second)) != ids.end();
+        });
+    };
+
     // keep track of regions whose perimeters we have already generated
     std::vector<unsigned char> done(m_regions.size(), false);
     
@@ -242,23 +254,28 @@ void Layer::make_perimeters()
 	            if (! (*it)->slices.empty()) {
 		            LayerRegion* other_layerm = *it;
 		            const PrintRegion &other_region = other_layerm->region();
-                    if (is_perimeter_compatible(this_region, other_region))
-		            {
-			 			other_layerm->perimeters.clear();
-			 			other_layerm->fills.clear();
-			 			other_layerm->thin_fills.clear();
-		                layerms.push_back(other_layerm);
+                    // Share the perimeter envelope only. The existing merged
+                    // generation path below splits fill surfaces back into
+                    // their original regions, preserving top/bottom colors and
+                    // recipe tracking. All other wall settings must still match.
+                    if (perimeter_configs_compatible(this_region.config(), other_region.config(),
+                                                     share_bridge(this_region.config().wall_filament.value,
+                                                                  other_region.config().wall_filament.value))) {
+                        other_layerm->perimeters.clear();
+                        other_layerm->fills.clear();
+                        other_layerm->thin_fills.clear();
+                        layerms.push_back(other_layerm);
 		                done[it - m_regions.begin()] = true;
-		            }
-		        }
-	        
-	        if (layerms.size() == 1) {  // optimization
-	            (*layerm)->fill_surfaces.surfaces.clear();
+                    }
+                }
+
+            if (layerms.size() == 1) { // optimization
+                (*layerm)->fill_surfaces.surfaces.clear();
                 (*layerm)->make_perimeters((*layerm)->slices, {*layerm}, &(*layerm)->fill_surfaces, &(*layerm)->fill_no_overlap_expolygons);
 	            (*layerm)->fill_expolygons = to_expolygons((*layerm)->fill_surfaces.surfaces);
-	        } else {
-	            SurfaceCollection new_slices;
-	            // Use the region with highest infill rate, as the make_perimeters() function below decides on the gap fill based on the infill existence.
+            } else {
+                SurfaceCollection new_slices;
+                // Use the region with highest infill rate, as the make_perimeters() function below decides on the gap fill based on the infill existence.
 	            LayerRegion *layerm_config = layerms.front();
 	            {
 	                // Keep surface typing intact when compatible regions are merged for perimeter generation.
@@ -291,8 +308,8 @@ void Layer::make_perimeters()
                         (*l)->fill_no_overlap_expolygons = intersection_ex((*l)->slices.surfaces, fill_no_overlap, ApplySafetyOffset::Yes);
 	                }
 	            }
-	        }
-	    }
+            }
+        }
     BOOST_LOG_TRIVIAL(trace) << "Generating perimeters for layer " << this->id() << " - Done";
 }
 

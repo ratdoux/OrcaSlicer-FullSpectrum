@@ -8,6 +8,7 @@
 #include "I18N.hpp"
 #include "ImageMap/PerimeterEnvelopeRenderer.hpp"
 #include "Layer.hpp"
+#include "LocalZMixBridge.hpp"
 #include "MutablePolygon.hpp"
 #include "PrintConfig.hpp"
 #include "Support/SupportMaterial.hpp"
@@ -413,6 +414,22 @@ void PrintObject::make_perimeters()
     });
     m_print->throw_if_canceled();
 
+    // Each physical pass needs its own closed island geometry. Source-region
+    // surface types supply skin coverage; walls and fills are regenerated
+    // inside each physical island instead of reusing clipped fragments.
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_local_z_sublayer_plan.size()), [this](const tbb::blocked_range<size_t>& range) {
+        for (size_t index = range.begin(); index < range.end(); ++index) {
+            auto& plan = m_local_z_sublayer_plan[index];
+            if (!plan.mix_bridge)
+                continue;
+            m_print->throw_if_canceled();
+            const auto& pass      = plan.mix_bridge->passes[plan.mix_bridge_component];
+            plan.mix_bridge_paths = LocalZMixBridgePaths::build(*m_layers[plan.layer_id],
+                                                                plan.painted_masks_by_extruder[pass.filament_id - 1], pass.filament_id);
+        }
+    });
+    m_print->throw_if_canceled();
+
     // Hybrid image-map modulation narrows and shifts only the already-created
     // external extrusion paths. Wall count, inner walls and infill topology
     // remain those produced from the geometry-first envelope above.
@@ -618,6 +635,18 @@ void PrintObject::infill()
         );
         m_print->throw_if_canceled();
         BOOST_LOG_TRIVIAL(debug) << "Filling layers in parallel - end";
+        if (m_print->config().dithering_local_z_infill.value)
+            tbb::parallel_for(size_t(0), m_local_z_sublayer_plan.size(), [&](size_t index) {
+                auto& plan = m_local_z_sublayer_plan[index];
+                if (!plan.mix_bridge_paths)
+                    return;
+                m_print->throw_if_canceled();
+                const auto& pass      = plan.mix_bridge->passes[plan.mix_bridge_component];
+                plan.mix_bridge_paths = LocalZMixBridgePaths::with_fills(*plan.mix_bridge_paths, *m_layers[plan.layer_id], *plan.mix_bridge,
+                                                                         pass.filament_id, adaptive_fill_octree.get(),
+                                                                         support_fill_octree.get(), m_lightning_generator.get());
+            });
+
         /*  we could free memory now, but this would make this step not idempotent
         ### $_->fill_surfaces->clear for map @{$_->regions}, @{$object->layers};
         */

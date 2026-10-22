@@ -8,6 +8,7 @@
 #include "LocalZOrderOptimizer.hpp"
 #include "LocalZClipper.hpp"
 #include "LocalZPathRouter.hpp"
+#include "LocalZMixBridge.hpp"
 #include "LocalZClipAcceleration.hpp"
 #include "Exception.hpp"
 #include "ExtrusionEntity.hpp"
@@ -4949,6 +4950,10 @@ LayerResult GCode::process_layer(const Print& print,
         ExPolygons              non_adaptive_masks_for_base_exclude;
         ExPolygons              adaptive_inner_ownership_masks;
         bool                    has_adaptive_perimeter_pass { false };
+        bool                          has_mix_bridge_pass{false};
+        ExPolygons                    bridge_ownership;
+        LocalZClipper                 bridge_exclude_clipper;
+        LocalZClipper                 empty_exclude_clipper;
         LocalZClipper                 base_exclude_clipper;
         LocalZClipper                 base_external_exclude_clipper;
         LocalZClipper                 non_adaptive_exclude_clipper;
@@ -5000,6 +5005,16 @@ LayerResult GCode::process_layer(const Print& print,
             ctx.enabled = true;
             const size_t first_idx = it_interval->first_sublayer_idx;
             const size_t end_idx   = std::min(plans.size(), first_idx + it_interval->sublayer_count);
+            for (const auto& bridge : it_interval->mix_bridges)
+                for (const auto& zone : bridge->zones)
+                    append(ctx.bridge_ownership, zone.masks);
+            if (!ctx.bridge_ownership.empty()) {
+                ctx.bridge_ownership               = union_ex(ctx.bridge_ownership);
+                ctx.has_mix_bridge_pass            = true;
+                ctx.has_adaptive_perimeter_pass    = true;
+                ctx.mixed_masks_union              = ctx.bridge_ownership;
+                ctx.non_adaptive_mixed_masks_union = ctx.bridge_ownership;
+            }
             size_t       split_plan_count                    = 0;
             size_t       split_plan_with_raw_masks           = 0;
             size_t       split_plan_with_compensated_masks   = 0;
@@ -5014,6 +5029,7 @@ LayerResult GCode::process_layer(const Print& print,
 
                 LocalZPassBucket bucket;
                 bucket.plan = &plan;
+                ctx.has_mix_bridge_pass      = ctx.has_mix_bridge_pass || bool(plan.mix_bridge);
                 const size_t plan_mask_slots = std::max(plan.painted_masks_by_extruder.size(), plan.fixed_painted_masks_by_extruder.size());
                 bucket.compensated_masks_by_extruder.assign(plan_mask_slots, ExPolygons());
                 bool pass_has_raw_masks         = false;
@@ -5043,7 +5059,12 @@ LayerResult GCode::process_layer(const Print& print,
 
                     ExPolygons compensated;
                     if (!mixed_raw_masks.empty()) {
-                        ExPolygons compensated_mixed = local_z_compensate_masks(mixed_raw_masks, local_z_perimeter_mask_expand, true);
+                        // Bridge residual branches partition one shared wall.
+                        // Expanding each branch independently would double-print
+                        // the boundary and sample a recipe outside its domain.
+                        ExPolygons compensated_mixed = plan.mix_bridge ?
+                                                           mixed_raw_masks :
+                                                           local_z_compensate_masks(mixed_raw_masks, local_z_perimeter_mask_expand, true);
                         if (!fixed_compensated_guard.empty())
                             compensated_mixed = diff_ex(compensated_mixed, fixed_compensated_guard);
                         if (!compensated_mixed.empty())
@@ -5124,6 +5145,7 @@ LayerResult GCode::process_layer(const Print& print,
             // Bind borrowed geometry after all mask vectors have reached their final
             // positions. These masks remain immutable during this process_layer call.
             if (ctx.enabled) {
+                ctx.bridge_exclude_clipper = LocalZClipper(ctx.bridge_ownership, &local_z_clip_cache);
                 ctx.base_exclude_clipper = LocalZClipper(ctx.mixed_masks_union_for_base_exclude.empty() ?
                                                              ctx.mixed_masks_union :
                                                              ctx.mixed_masks_union_for_base_exclude,
@@ -5392,6 +5414,34 @@ LayerResult GCode::process_layer(const Print& print,
                 return false;
             };
 
+            if (local_z_ctx != nullptr)
+                for (LocalZPassBucket& bucket : local_z_ctx->pass_buckets) {
+                    if (!bucket.plan || !bucket.plan->mix_bridge_paths)
+                        continue;
+                    const auto& paths  = *bucket.plan->mix_bridge_paths;
+                    const auto& band   = bucket.plan->mix_bridge->passes[bucket.plan->mix_bridge_component];
+                    const auto& region = layer.regions()[paths.region_id]->region();
+                    for (const auto type : {ObjectByExtruder::Island::Region::PERIMETERS, ObjectByExtruder::Island::Region::INFILL})
+                        for (const ExtrusionEntity* entity :
+                             (type == ObjectByExtruder::Island::Region::PERIMETERS ? paths.perimeters : paths.fills).entities) {
+                            const auto* collection = dynamic_cast<const ExtrusionEntityCollection*>(entity);
+                            if (!collection || collection->empty())
+                                continue;
+                            auto& islands = object_islands_by_extruder(bucket.by_extruder, band.filament_id - 1, layer_to_print_idx,
+                                                                       layers.size(), n_slices + 1);
+                            for (size_t i = 0; i <= n_slices; ++i) {
+                                const size_t island_index = i == n_slices ? n_slices : slices_test_order[i];
+                                if (i == n_slices || entity_matches_surface(island_index, *collection)) {
+                                    if (islands[island_index].by_region.empty())
+                                        islands[island_index].by_region.assign(print.num_print_regions(),
+                                                                               ObjectByExtruder::Island::Region());
+                                    islands[island_index].by_region[region.print_region_id()].append(type, collection, nullptr);
+                                    break;
+                                }
+                            }
+                        }
+                }
+
             for (size_t region_id = 0; region_id < layer.regions().size(); ++region_id) {
                 const LayerRegion* layerm = layer.regions()[region_id];
                 if (layerm == nullptr)
@@ -5422,19 +5472,31 @@ LayerResult GCode::process_layer(const Print& print,
                             for (LocalZPassBucket& pass_bucket : local_z_ctx->pass_buckets) {
                                 if (pass_bucket.plan == nullptr)
                                     continue;
+                                if (pass_bucket.plan->mix_bridge_paths)
+                                    continue;
                                 for (size_t pass_extruder_id = 0; pass_extruder_id < pass_bucket.plan->painted_masks_by_extruder.size();
                                      ++pass_extruder_id) {
+                                    if (pass_bucket.clippers_by_extruder[pass_extruder_id].empty())
+                                        continue;
                                     const LocalZClipper& pass_masks = pass_bucket.clippers_by_extruder[pass_extruder_id];
                                     if (pass_masks.empty())
                                         continue;
                                     auto clipped_local =
-                                        clip_extrusion_collection_for_local_z(local_z_path_router, *extrusions, &pass_masks, nullptr,
+                                        clip_extrusion_collection_for_local_z(local_z_path_router, *extrusions, &pass_masks,
+                                                                              pass_bucket.plan->mix_bridge ||
+                                                                                      local_z_ctx->bridge_ownership.empty() ?
+                                                                                  nullptr :
+                                                                                  &local_z_ctx->bridge_exclude_clipper,
                                                                               pass_bucket.plan->flow_height,
                                                                               entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
                                                                                       pass_bucket.plan->external_perimeters_only ?
                                                                                   LocalZClipRoleScope::ExternalPerimeters :
                                                                                   LocalZClipRoleScope::All,
-                                                                              nullptr, m_local_z_clip_acceleration.get());
+                                                                              pass_bucket.plan->mix_bridge ||
+                                                                                      local_z_ctx->bridge_ownership.empty() ?
+                                                                                  nullptr :
+                                                                                  &local_z_ctx->bridge_exclude_clipper,
+                                                                              m_local_z_clip_acceleration.get());
                                     if (!clipped_local)
                                         continue;
 
@@ -5475,14 +5537,16 @@ LayerResult GCode::process_layer(const Print& print,
                             // reaches. Keep the distinct exclusion masks for external and ordinary Local-Z roles.
                             const LocalZClipper*             base_external_exclude_masks = &local_z_ctx->base_external_exclude_clipper;
                             const ExtrusionEntityCollection& base_source = *extrusions;
-                            auto                             clipped_base =
-                                clip_extrusion_collection_for_local_z(local_z_path_router, base_source, nullptr,
-                                                                      base_external_exclude_masks, 0., LocalZClipRoleScope::All,
-                                                                      entity_type == ObjectByExtruder::Island::Region::PERIMETERS &&
-                                                                              local_z_ctx->has_adaptive_perimeter_pass ?
-                                                                          &local_z_ctx->non_adaptive_exclude_clipper :
-                                                                          nullptr,
-                                                                      m_local_z_clip_acceleration.get());
+                            const bool                       preserve_nominal_interior   = local_z_ctx->has_adaptive_perimeter_pass &&
+                                                                   (entity_type == ObjectByExtruder::Island::Region::PERIMETERS ||
+                                                                    local_z_ctx->has_mix_bridge_pass);
+                            auto clipped_base = clip_extrusion_collection_for_local_z(local_z_path_router, base_source, nullptr,
+                                                                                      base_external_exclude_masks, 0.,
+                                                                                      LocalZClipRoleScope::All,
+                                                                                      preserve_nominal_interior ?
+                                                                                          &local_z_ctx->non_adaptive_exclude_clipper :
+                                                                                          nullptr,
+                                                                                      m_local_z_clip_acceleration.get());
                             if (!clipped_base)
                                 continue;
                             const LocalZPathHeightStats base_height_stats = collect_local_z_path_height_stats(*clipped_base);
@@ -5742,6 +5806,9 @@ LayerResult GCode::process_layer(const Print& print,
             }
         };
 
+        const auto local_z_travel_z = [](const SubLayerPlan& plan) {
+            return plan.mix_bridge ? plan.mix_bridge->passes[plan.mix_bridge_component].ceiling : plan.print_z;
+        };
         auto emit_local_z_pass_for_extruder = [&](const LocalZPassRef& pass_ref, unsigned int local_extruder_id) {
             assert(pass_ref.bucket != nullptr && pass_ref.bucket->plan != nullptr);
             auto by_extruder_it = pass_ref.bucket->by_extruder.find(local_extruder_id);
@@ -5753,7 +5820,7 @@ LayerResult GCode::process_layer(const Print& print,
                 return;
 
             const SubLayerPlan& pass_plan = *pass_ref.bucket->plan;
-            const double pass_z           = pass_plan.print_z + m_config.z_offset.value;
+            const double        pass_z             = local_z_travel_z(pass_plan) + m_config.z_offset.value;
             const double saved_nominal_z  = m_nominal_z;
             const float  saved_last_layer_z = m_last_layer_z;
             // Ensure all travel/lift logic inside this pass references the micro-pass Z,
@@ -5820,6 +5887,7 @@ LayerResult GCode::process_layer(const Print& print,
                     ? renderer->second.get()
                     : nullptr;
                 m_adaptive_local_z_plan     = m_adaptive_local_z_renderer != nullptr ? &pass_plan : nullptr;
+                m_local_z_mix_bridge_plan   = pass_plan.mix_bridge ? &pass_plan : nullptr;
 
                 for (ObjectByExtruder::Island& island : instance_to_print.object_by_extruder.islands) {
                     gcode += this->extrude_perimeters(print, island.by_region, first_layer, false);
@@ -5829,6 +5897,7 @@ LayerResult GCode::process_layer(const Print& print,
                 }
                 m_adaptive_local_z_renderer = nullptr;
                 m_adaptive_local_z_plan     = nullptr;
+                m_local_z_mix_bridge_plan           = nullptr;
                 m_config.reduce_crossing_wall.value = saved_reduce_crossing_wall;
             }
 
@@ -5881,7 +5950,11 @@ LayerResult GCode::process_layer(const Print& print,
                                                                  preferred_last_extruder);
 
                 for (unsigned int local_extruder_id : ordered_group_extruders) {
-                    emit_local_z_toolchange(local_extruder_id, local_z_pass_refs[pass_ref_idx].bucket->plan->print_z);
+                    double toolchange_z = local_z_travel_z(*local_z_pass_refs[pass_ref_idx].bucket->plan);
+                    for (const LocalZPassTaskRef& task : pass_group_tasks)
+                        if (task.extruder_id == local_extruder_id && task.pass_ref != nullptr)
+                            toolchange_z = std::max(toolchange_z, local_z_travel_z(*task.pass_ref->bucket->plan));
+                    emit_local_z_toolchange(local_extruder_id, toolchange_z);
                     for (const LocalZPassTaskRef& task_ref : pass_group_tasks) {
                         if (task_ref.extruder_id != local_extruder_id || task_ref.pass_ref == nullptr)
                             continue;
@@ -6099,8 +6172,10 @@ LayerResult GCode::process_layer(const Print& print,
                 local_z_phase_b_active_extruder = emit_local_z_legacy(local_z_phase_b_active_extruder);
             } else {
                 for (const ScheduledPhase& scheduled_phase : scheduled_phases) {
-                    emit_local_z_toolchange(scheduled_phase.extruder_id,
-                                            pass_states[scheduled_phase.pass_state_indices.front()].pass_ref->bucket->plan->print_z);
+                    double toolchange_z = 0.;
+                    for (size_t index : scheduled_phase.pass_state_indices)
+                        toolchange_z = std::max(toolchange_z, local_z_travel_z(*pass_states[index].pass_ref->bucket->plan));
+                    emit_local_z_toolchange(scheduled_phase.extruder_id, toolchange_z);
                     for (size_t pass_state_idx : scheduled_phase.pass_state_indices)
                         emit_local_z_pass_for_extruder(*pass_states[pass_state_idx].pass_ref, scheduled_phase.extruder_id);
                 }
@@ -6773,7 +6848,7 @@ std::string GCode::extrude_loop(
         loop.split_at(last_pos, false);
 
     const auto seam_scarf_type   = m_config.seam_slope_type.value;
-    bool       enable_seam_slope = m_adaptive_local_z_renderer == nullptr &&
+    bool       enable_seam_slope = m_adaptive_local_z_renderer == nullptr && m_local_z_mix_bridge_plan == nullptr &&
                              ((seam_scarf_type == SeamScarfType::External && !is_hole) || seam_scarf_type == SeamScarfType::All) &&
                              !m_config.spiral_mode &&
                              (loop.role() == erExternalPerimeter || (loop.role() == erPerimeter && m_config.seam_slope_inner_walls)) &&
@@ -7304,6 +7379,21 @@ bool GCode::_needSAFC(const ExtrusionPath& path)
 std::string GCode::_extrude(const ExtrusionPath& path, std::string description, double speed)
 {
     std::string gcode;
+
+    if (m_local_z_mix_bridge_plan != nullptr && dynamic_cast<const ExtrusionPathSloped*>(&path) == nullptr) {
+        const SubLayerPlan& plan     = *m_local_z_mix_bridge_plan;
+        const auto          segments = plan.mix_bridge->modulate(path, plan.mix_bridge_component, m_config.z_offset.value);
+        if (!segments.empty()) {
+            gcode += "; local-z mix bridge component=" + std::to_string(plan.mix_bridge_component) + "\n";
+            for (const auto& segment : segments)
+                gcode += this->_extrude(segment, description, speed);
+            return gcode;
+        }
+        // A missing bridge profile must never emit two full-height flat beads.
+        if (local_z_path_has_segment(path.polyline))
+            throw std::runtime_error("Local-Z mix bridge produced no extrusion profile");
+        return gcode;
+    }
 
     if (m_adaptive_local_z_renderer != nullptr && m_adaptive_local_z_plan != nullptr &&
         path.role() == erExternalPerimeter && dynamic_cast<const ExtrusionPathSloped*>(&path) == nullptr) {

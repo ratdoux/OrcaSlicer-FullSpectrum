@@ -459,6 +459,8 @@ std::string GCodeWriter::toolchange(unsigned int extruder_id)
     // set the new extruder
 	auto it_extruder = Slic3r::lower_bound_by_predicate(m_extruders.begin(), m_extruders.end(), [extruder_id](const Extruder &e) { return e.id() < extruder_id; });
     assert(it_extruder != m_extruders.end() && it_extruder->id() == extruder_id);
+    if (it_extruder == m_extruders.end() || it_extruder->id() != extruder_id)
+        throw std::runtime_error("Tool change requested an unregistered extruder: " + std::to_string(extruder_id));
     m_extruder = &*it_extruder;
 
     // return the toolchange command
