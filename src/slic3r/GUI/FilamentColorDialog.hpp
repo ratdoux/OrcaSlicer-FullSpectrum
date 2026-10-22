@@ -56,6 +56,8 @@ private:
     std::string _selectedSku;
     std::string _highlightSku;
     std::vector<std::pair<wxWindow*, std::string>> _swatchBySku;
+    std::vector<FilamentColorItem> _calibratedColors;
+    std::vector<std::pair<wxWindow*, std::string>> _calibratedSwatches;
     wxStaticBitmap* _previewBitmap { nullptr };
     wxStaticText* _nameLabel { nullptr };
     wxStaticText* _skuLabel { nullptr };

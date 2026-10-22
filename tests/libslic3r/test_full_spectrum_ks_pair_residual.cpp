@@ -5,9 +5,12 @@
 #include "libslic3r/FullSpectrumKSPairResidual.hpp"
 #include "libslic3r/MixedFilament.hpp"
 
+#include <nlohmann/json.hpp>
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <fstream>
 #include <optional>
 #include <string>
 
@@ -48,18 +51,25 @@ struct PairCase
     MaterialCase b;
 };
 
-constexpr std::array<MaterialCase, 16> MEASURED_MATERIALS {{
-    {"#008BB3", 6.4}, {"#AD4A76", 5.0}, {"#EBBE00", 9.7}, {"#7B7F80", 6.8},
-    {"#00A0CC", 5.8}, {"#C34C7E", 5.2}, {"#FFB717", 4.5}, {"#E4E5E1", 6.1},
-    {"#0091B8", 6.4}, {"#C64D7A", 5.0}, {"#FFB81B", 4.5}, {"#494340", 9.5},
-    {"#B93C41", 4.8}, {"#0050A3", 5.2}, {"#E9BF00", 9.7}, {"#E3E4E0", 6.1},
+constexpr std::array<MaterialCase, 20> MEASURED_MATERIALS{{
+    {"#008BB3", 6.4}, {"#AD4A76", 5.0}, {"#EBBE00", 9.7}, {"#7B7F80", 6.8}, {"#00A0CC", 5.8},  {"#C34C7E", 5.2}, {"#FFB717", 4.5},
+    {"#E4E5E1", 6.1}, {"#0091B8", 6.4}, {"#C64D7A", 5.0}, {"#FFB81B", 4.5}, {"#494340", 9.5},  {"#B93C41", 4.8}, {"#0050A3", 5.2},
+    {"#E9BF00", 9.7}, {"#E3E4E0", 6.1}, {"#DA548F", 7.8}, {"#008FC0", 7.1}, {"#D9B500", 13.3}, {"#E2E5E0", 9.3},
 }};
 
-constexpr std::array<PairCase, 4> NATIVE_TD_PAIRS {{
+constexpr std::array<PairCase, 5> NATIVE_TD_PAIRS{{
     {{"#008BB3", 6.4}, {"#AD4A76", 5.0}},
     {{"#00A0CC", 5.8}, {"#C34C7E", 5.2}},
     {{"#0091B8", 6.4}, {"#C64D7A", 5.0}},
     {{"#B93C41", 4.8}, {"#0050A3", 5.2}},
+    {{"#DA548F", 7.8}, {"#008FC0", 7.1}},
+}};
+
+constexpr std::array<const char*, 4> CYMW_V3_MATERIAL_IDS{{
+    "cymw_v3_20261021_lh0p2_sce_black__slot_1__td_7.8",
+    "cymw_v3_20261021_lh0p2_sce_black__slot_2__td_7.1",
+    "cymw_v3_20261021_lh0p2_sce_black__slot_3__td_13.3",
+    "cymw_v3_20261021_lh0p2_sce_black__slot_4__td_9.3",
 }};
 
 constexpr const char *CYAN_MATERIAL_ID =
@@ -197,18 +207,72 @@ TEST_CASE("Removed red alias stays on the continuous ICC path",
     }
 }
 
-TEST_CASE("KM/K-S profile exposes the embedded four-profile database", "[MixedFilament][Color][FullSpectrumKS]")
+TEST_CASE("KM/K-S profile exposes the embedded five-profile database", "[MixedFilament][Color][FullSpectrumKS]")
 {
-    CHECK(std::string(full_spectrum_ks_profile_id()) ==
-          "fullspectrum_material_database_4profiles_lh0p08_sce_black_d65_10_20260701");
-    CHECK(full_spectrum_ks_profile_material_count() == 16);
-    CHECK(full_spectrum_ks_profile_pair_count() == 24);
-    CHECK(full_spectrum_ks_profile_triple_count() == 12);
-    CHECK(full_spectrum_ks_profile_quadruple_count() == 3);
-    CHECK(full_spectrum_ks_profile_higher_order_sample_count() == 229);
-    CHECK(full_spectrum_ks_profile_mixture_sample_count() == 391);
+    CHECK(std::string(full_spectrum_ks_profile_id()) == "fullspectrum_material_database_5profiles_lh0p08_lh0p2_sce_black_d65_10_20261022");
+    CHECK(full_spectrum_ks_profile_material_count() == 20);
+    CHECK(full_spectrum_ks_profile_pair_count() == 30);
+    CHECK(full_spectrum_ks_profile_triple_count() == 16);
+    CHECK(full_spectrum_ks_profile_quadruple_count() == 4);
+    CHECK(full_spectrum_ks_profile_higher_order_sample_count() == 234);
+    CHECK(full_spectrum_ks_profile_mixture_sample_count() == 426);
     CHECK(std::string(full_spectrum_ks_profile_specular_mode()) == "SCE");
     CHECK(std::string(full_spectrum_ks_profile_backing_condition()) == "black_backing");
+}
+
+TEST_CASE("CYMW V3 calibration retains all 35 validated mixture predictions", "[MixedFilament][Color][FullSpectrumKS][CYMW]")
+{
+    // Pinned from the independently run progressive benchmark before promoting
+    // its coefficients into the production profile.
+    std::ifstream fixture(std::string(TEST_DATA_DIR) + "/full_spectrum/cymw_v3_calibrated_golden.json");
+    REQUIRE(fixture.good());
+    const auto golden = nlohmann::json::parse(fixture);
+    REQUIRE(golden.at("samples").size() == 35);
+    for (const auto& sample : golden.at("samples")) {
+        CAPTURE(sample.at("swatch_id"));
+        const auto slots    = sample.at("slots").get<std::vector<int>>();
+        const auto ratios   = sample.at("ratios").get<std::vector<int>>();
+        const auto expected = sample.at("expected_hex").get<std::string>();
+        REQUIRE(slots.size() == ratios.size());
+        std::vector<FullSpectrumKSPairResidualColorInput> inferred;
+        for (size_t i = 0; i < slots.size(); ++i) {
+            REQUIRE(slots[i] >= 1);
+            REQUIRE(slots[i] <= 4);
+            const auto& material = MEASURED_MATERIALS[15 + slots[i]];
+            inferred.push_back({material.hex, ratios[i], material.td_mm, std::nullopt});
+        }
+        CHECK(full_spectrum_ks_blend_color_multi(inferred) == expected);
+        auto identified = inferred;
+        for (size_t i = 0; i < identified.size(); ++i) {
+            identified[i].material_id = CYMW_V3_MATERIAL_IDS[slots[i] - 1];
+            identified[i].color_hex   = "#FFFFFF";
+        }
+        CHECK(full_spectrum_ks_blend_color_multi(identified) == expected);
+        std::reverse(identified.begin(), identified.end());
+        CHECK(full_spectrum_ks_blend_color_multi(identified) == expected);
+        for (auto& input : inferred)
+            input.td_mm.reset();
+        CHECK(full_spectrum_ks_blend_color_multi(inferred) == expected);
+    }
+}
+
+TEST_CASE("CYMW V3 calibrated identities reach mixed-filament display prediction", "[MixedFilament][Color][FullSpectrumKS][CYMW]")
+{
+    MixedColorSettingsGuard guard(MixedFilamentColorEngine::FullSpectrumKSPairResidual, true);
+    MixedFilamentLegacyRow  row;
+    row.component_a   = 1;
+    row.component_b   = 2;
+    row.mix_b_percent = 50;
+    MixedFilamentDisplayContext context;
+    context.num_physical          = 2;
+    context.physical_colors       = {"#FFFFFF", "#FFFFFF"};
+    context.nozzle_diameters      = {0.4, 0.4};
+    context.physical_tds          = {7.8, 7.1};
+    context.physical_material_ids = {CYMW_V3_MATERIAL_IDS[0], CYMW_V3_MATERIAL_IDS[1]};
+    CHECK(compute_mixed_filament_display_color(row, context) == "#695F9C");
+    context.physical_material_ids.clear();
+    context.physical_colors = {"#DA548F", "#008FC0"};
+    CHECK(compute_mixed_filament_display_color(row, context) == "#695F9C");
 }
 
 TEST_CASE("KM/K-S higher-order calibration is independent of component input order",

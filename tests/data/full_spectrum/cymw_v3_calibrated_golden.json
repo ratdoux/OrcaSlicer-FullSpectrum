@@ -1,0 +1,438 @@
+{
+  "source": "Validated step_35 C++ predictions from the progressive CYMW benchmark, before production integration",
+  "measurement_sha256": "ad75820477b1edd98b9f0747581469607b63fe3caac4949d135eb5f819be211b",
+  "samples": [
+    {
+      "swatch_id": "1_2_1_1",
+      "slots": [
+        1,
+        2
+      ],
+      "ratios": [
+        1,
+        1
+      ],
+      "expected_hex": "#695F9C"
+    },
+    {
+      "swatch_id": "1_2_1_2",
+      "slots": [
+        1,
+        2
+      ],
+      "ratios": [
+        1,
+        2
+      ],
+      "expected_hex": "#5566A4"
+    },
+    {
+      "swatch_id": "1_2_1_3",
+      "slots": [
+        1,
+        2
+      ],
+      "ratios": [
+        1,
+        3
+      ],
+      "expected_hex": "#486CA8"
+    },
+    {
+      "swatch_id": "1_2_2_1",
+      "slots": [
+        1,
+        2
+      ],
+      "ratios": [
+        2,
+        1
+      ],
+      "expected_hex": "#7E5A96"
+    },
+    {
+      "swatch_id": "1_2_3_1",
+      "slots": [
+        1,
+        2
+      ],
+      "ratios": [
+        3,
+        1
+      ],
+      "expected_hex": "#8A5993"
+    },
+    {
+      "swatch_id": "1_3_1_1",
+      "slots": [
+        1,
+        3
+      ],
+      "ratios": [
+        1,
+        1
+      ],
+      "expected_hex": "#CF6439"
+    },
+    {
+      "swatch_id": "1_3_1_2",
+      "slots": [
+        1,
+        3
+      ],
+      "ratios": [
+        1,
+        2
+      ],
+      "expected_hex": "#CE6F31"
+    },
+    {
+      "swatch_id": "1_3_1_3",
+      "slots": [
+        1,
+        3
+      ],
+      "ratios": [
+        1,
+        3
+      ],
+      "expected_hex": "#CF772C"
+    },
+    {
+      "swatch_id": "1_3_2_1",
+      "slots": [
+        1,
+        3
+      ],
+      "ratios": [
+        2,
+        1
+      ],
+      "expected_hex": "#D05D44"
+    },
+    {
+      "swatch_id": "1_3_3_1",
+      "slots": [
+        1,
+        3
+      ],
+      "ratios": [
+        3,
+        1
+      ],
+      "expected_hex": "#D25B4C"
+    },
+    {
+      "swatch_id": "1_4_1_1",
+      "slots": [
+        1,
+        4
+      ],
+      "ratios": [
+        1,
+        1
+      ],
+      "expected_hex": "#E470A5"
+    },
+    {
+      "swatch_id": "1_4_1_2",
+      "slots": [
+        1,
+        4
+      ],
+      "ratios": [
+        1,
+        2
+      ],
+      "expected_hex": "#E781B2"
+    },
+    {
+      "swatch_id": "1_4_1_3",
+      "slots": [
+        1,
+        4
+      ],
+      "ratios": [
+        1,
+        3
+      ],
+      "expected_hex": "#E88DB9"
+    },
+    {
+      "swatch_id": "1_4_2_1",
+      "slots": [
+        1,
+        4
+      ],
+      "ratios": [
+        2,
+        1
+      ],
+      "expected_hex": "#E1649C"
+    },
+    {
+      "swatch_id": "1_4_3_1",
+      "slots": [
+        1,
+        4
+      ],
+      "ratios": [
+        3,
+        1
+      ],
+      "expected_hex": "#E05F97"
+    },
+    {
+      "swatch_id": "2_3_1_1",
+      "slots": [
+        2,
+        3
+      ],
+      "ratios": [
+        1,
+        1
+      ],
+      "expected_hex": "#448D3F"
+    },
+    {
+      "swatch_id": "2_3_1_2",
+      "slots": [
+        2,
+        3
+      ],
+      "ratios": [
+        1,
+        2
+      ],
+      "expected_hex": "#5D9234"
+    },
+    {
+      "swatch_id": "2_3_1_3",
+      "slots": [
+        2,
+        3
+      ],
+      "ratios": [
+        1,
+        3
+      ],
+      "expected_hex": "#6C962E"
+    },
+    {
+      "swatch_id": "2_3_2_1",
+      "slots": [
+        2,
+        3
+      ],
+      "ratios": [
+        2,
+        1
+      ],
+      "expected_hex": "#2A8A4D"
+    },
+    {
+      "swatch_id": "2_3_3_1",
+      "slots": [
+        2,
+        3
+      ],
+      "ratios": [
+        3,
+        1
+      ],
+      "expected_hex": "#158A57"
+    },
+    {
+      "swatch_id": "2_4_1_1",
+      "slots": [
+        2,
+        4
+      ],
+      "ratios": [
+        1,
+        1
+      ],
+      "expected_hex": "#00A7CE"
+    },
+    {
+      "swatch_id": "2_4_1_2",
+      "slots": [
+        2,
+        4
+      ],
+      "ratios": [
+        1,
+        2
+      ],
+      "expected_hex": "#2DB2D4"
+    },
+    {
+      "swatch_id": "2_4_1_3",
+      "slots": [
+        2,
+        4
+      ],
+      "ratios": [
+        1,
+        3
+      ],
+      "expected_hex": "#4BB9D6"
+    },
+    {
+      "swatch_id": "2_4_2_1",
+      "slots": [
+        2,
+        4
+      ],
+      "ratios": [
+        2,
+        1
+      ],
+      "expected_hex": "#009EC9"
+    },
+    {
+      "swatch_id": "2_4_3_1",
+      "slots": [
+        2,
+        4
+      ],
+      "ratios": [
+        3,
+        1
+      ],
+      "expected_hex": "#009BC7"
+    },
+    {
+      "swatch_id": "3_4_1_1",
+      "slots": [
+        3,
+        4
+      ],
+      "ratios": [
+        1,
+        1
+      ],
+      "expected_hex": "#E5C52A"
+    },
+    {
+      "swatch_id": "3_4_1_2",
+      "slots": [
+        3,
+        4
+      ],
+      "ratios": [
+        1,
+        2
+      ],
+      "expected_hex": "#E8CC42"
+    },
+    {
+      "swatch_id": "3_4_1_3",
+      "slots": [
+        3,
+        4
+      ],
+      "ratios": [
+        1,
+        3
+      ],
+      "expected_hex": "#E9D051"
+    },
+    {
+      "swatch_id": "3_4_2_1",
+      "slots": [
+        3,
+        4
+      ],
+      "ratios": [
+        2,
+        1
+      ],
+      "expected_hex": "#E0BF13"
+    },
+    {
+      "swatch_id": "3_4_3_1",
+      "slots": [
+        3,
+        4
+      ],
+      "ratios": [
+        3,
+        1
+      ],
+      "expected_hex": "#DEBC05"
+    },
+    {
+      "swatch_id": "1_2_3_33_33_34",
+      "slots": [
+        1,
+        2,
+        3
+      ],
+      "ratios": [
+        1,
+        1,
+        1
+      ],
+      "expected_hex": "#746747"
+    },
+    {
+      "swatch_id": "1_2_4_33_33_34",
+      "slots": [
+        1,
+        2,
+        4
+      ],
+      "ratios": [
+        1,
+        1,
+        1
+      ],
+      "expected_hex": "#7D73AC"
+    },
+    {
+      "swatch_id": "1_3_4_33_33_34",
+      "slots": [
+        1,
+        3,
+        4
+      ],
+      "ratios": [
+        1,
+        1,
+        1
+      ],
+      "expected_hex": "#DB774B"
+    },
+    {
+      "swatch_id": "2_3_4_33_33_34",
+      "slots": [
+        2,
+        3,
+        4
+      ],
+      "ratios": [
+        1,
+        1,
+        1
+      ],
+      "expected_hex": "#5A9D4E"
+    },
+    {
+      "swatch_id": "1_2_3_4_25_25_25_25",
+      "slots": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ratios": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_hex": "#837558"
+    }
+  ]
+}

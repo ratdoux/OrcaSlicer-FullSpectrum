@@ -18,8 +18,9 @@ struct FullSpectrumKSPairResidualColorInput
 };
 
 // Spectral sidewall predictor. Exact stable material IDs and unambiguous measured
-// colors in the embedded 0.08 mm SCE black-backed database use measured anchors
-// and learned pair residuals. Generic or unknown valid hex colors are converted to
+// colors in the embedded SCE black-backed database (0.08 mm families plus the
+// 0.2 mm CYMW V3 family) use measured anchors and learned interaction residuals.
+// Generic or unknown valid hex colors are converted to
 // estimated anchor spectra and mixed with plain KM/K-S so changing one filament
 // color does not silently fall back to the legacy RGB mixer.
 std::optional<std::string> full_spectrum_ks_blend_color_multi(

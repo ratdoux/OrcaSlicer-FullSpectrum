@@ -517,6 +517,23 @@ FilamentColorDialog::FilamentColorDialog(wxWindow* parent, const FilamentColorIn
     , _filament(filament)
     , _languageCode(GetLanguageCode())
 {
+    if (GetFilamentMatchName(_filament.filamentName) == "Snapmaker PLA Full Spectrum") {
+        // Four colors per kit: CYMW V3 first, then the original CMY/grey family.
+        // Keep these independent of the installed manufacturer's color catalog.
+        const std::pair<const char*, wxString> calibratedColors[] = {
+            {"#008FC0", _L("White kit") + " - " + _L("Cyan")},   {"#DA548F", _L("White kit") + " - " + _L("Magenta")},
+            {"#D9B500", _L("White kit") + " - " + _L("Yellow")}, {"#E2E5E0", _L("White kit") + " - " + _L("White")},
+            {"#008BB3", _L("Grey kit") + " - " + _L("Cyan")},    {"#AD4A76", _L("Grey kit") + " - " + _L("Magenta")},
+            {"#EBBE00", _L("Grey kit") + " - " + _L("Yellow")},  {"#7B7F80", _L("Grey kit") + " - " + _L("Grey")},
+        };
+        for (const auto& [hex, name] : calibratedColors) {
+            FilamentColorItem item;
+            item.colorNames[_languageCode] = name.ToStdString(wxConvUTF8);
+            item.colorData                 = FilamentColor::FromColors({hex}, FilamentColorMode::Segment);
+            _calibratedColors.emplace_back(std::move(item));
+        }
+    }
+
     const FilamentColor normalizedCurrent =
         FilamentColor::FromColors(currentColor.colors, currentColor.mode, "#26A69A");
     std::vector<FilamentColorItem>::const_iterator currentColorIt =
@@ -621,11 +638,52 @@ void FilamentColorDialog::BuildUi()
     cardSizer->AddSpacer(FromDIP(20));
     cardSizer->Add(swatchPanel, 0, wxLEFT | wxRIGHT, contentMargin);
 
+    if (!_calibratedColors.empty()) {
+        auto* calibratedLabel = new wxStaticText(card, wxID_ANY, _L("Calibrated Colors"));
+        calibratedLabel->SetFont(DialogFont(wxFONTWEIGHT_MEDIUM));
+        calibratedLabel->SetForegroundColour(StateColor::darkModeColorFor(wxColour("#242424")));
+        BindDragWindow(calibratedLabel);
+        cardSizer->AddSpacer(FromDIP(12));
+        cardSizer->Add(calibratedLabel, 0, wxLEFT | wxRIGHT, contentMargin);
+
+        auto* calibratedPanel = new wxPanel(card, wxID_ANY);
+        calibratedPanel->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#FFFFFF")));
+        calibratedPanel->SetMinSize(wxSize(contentWidth, -1));
+        auto*            calibratedSizer = new wxBoxSizer(wxHORIZONTAL);
+        const wxString   kitNames[]      = {_L("White kit"), _L("Grey kit")};
+        constexpr size_t colorsPerKit    = 4;
+        for (size_t kit = 0; kit < 2; ++kit) {
+            auto* kitPanel = new wxPanel(calibratedPanel, wxID_ANY);
+            kitPanel->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#FFFFFF")));
+            auto* kitSizer = new wxBoxSizer(wxVERTICAL);
+            auto* kitLabel = new wxStaticText(kitPanel, wxID_ANY, kitNames[kit]);
+            kitLabel->SetFont(DialogFont(wxFONTWEIGHT_MEDIUM));
+            kitLabel->SetForegroundColour(StateColor::darkModeColorFor(wxColour("#242424")));
+            BindDragWindow(kitLabel);
+            kitSizer->Add(kitLabel, 0, wxBOTTOM, FromDIP(8));
+
+            auto* kitSwatches = new wxGridSizer(1, colorsPerKit, swatchVGap, swatchHGap);
+            for (size_t index = kit * colorsPerKit; index < (kit + 1) * colorsPerKit; ++index) {
+                const FilamentColorItem& item   = _calibratedColors[index];
+                const std::string        hex    = item.colorData.PrimaryColor();
+                auto*                    swatch = new FilamentColorSwatch(kitPanel, item, _languageCode, swatchSize);
+                const std::string        name   = GetLocalizedColorName(item, _languageCode, item.colorData.colors);
+                swatch->SetToolTip(FromStdString(name + " (" + hex + ")"));
+                swatch->Bind(wxEVT_LEFT_UP, [this, hex](wxMouseEvent&) { SelectCustomColor(hex); });
+                kitSwatches->Add(swatch, 0);
+                _calibratedSwatches.emplace_back(swatch, hex);
+            }
+            kitSizer->Add(kitSwatches, 0);
+            kitPanel->SetSizer(kitSizer);
+            calibratedSizer->Add(kitPanel, 1, wxEXPAND | wxRIGHT, kit == 0 ? FromDIP(16) : 0);
+        }
+        calibratedPanel->SetSizer(calibratedSizer);
+        cardSizer->AddSpacer(FromDIP(8));
+        cardSizer->Add(calibratedPanel, 0, wxLEFT | wxRIGHT, contentMargin);
+    }
+
     MoreColorPanel* moreButton = new MoreColorPanel(card, wxSize(contentWidth, FromDIP(40)));
-    moreButton->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent&)
-    {
-        OpenMoreColorDialog();
-    });
+    moreButton->Bind(wxEVT_LEFT_UP, [this](wxMouseEvent&) { OpenMoreColorDialog(); });
     cardSizer->AddSpacer(FromDIP(20));
     cardSizer->Add(moreButton, 0, wxLEFT | wxRIGHT, contentMargin);
 
@@ -722,10 +780,19 @@ void FilamentColorDialog::UpdatePreview()
 
     _previewBitmap->SetBitmap(MakePreviewBitmap(_selection, FromDIP(60)));
 
-    const wxString name = FromStdString(GetSelectionDisplayName(_filament, _selection, _selectedSku, _languageCode));
+    wxString name   = FromStdString(GetSelectionDisplayName(_filament, _selection, _selectedSku, _languageCode));
+    wxString detail = _selectedSku.empty() ? wxString(wxEmptyString) : FromStdString("sku " + _selectedSku);
+    if (_selectedSku.empty()) {
+        const auto calibrated = std::find_if(_calibratedColors.begin(), _calibratedColors.end(),
+                                             [this](const FilamentColorItem& item) { return item.colorData.Matches(_selection); });
+        if (calibrated != _calibratedColors.end()) {
+            name   = FromStdString(GetLocalizedColorName(*calibrated, _languageCode, calibrated->colorData.colors));
+            detail = FromStdString(calibrated->colorData.PrimaryColor());
+        }
+    }
     _nameLabel->SetLabel(name);
-    _skuLabel->SetLabel(_selectedSku.empty() ? wxString(wxEmptyString) : FromStdString("sku " + _selectedSku));
-    _skuLabel->Show(!_selectedSku.empty());
+    _skuLabel->SetLabel(detail);
+    _skuLabel->Show(!detail.empty());
     Layout();
 }
 
@@ -736,6 +803,11 @@ void FilamentColorDialog::UpdateSwatchSelection()
         FilamentColorSwatch* swatch = dynamic_cast<FilamentColorSwatch*>(item.first);
         if (swatch != nullptr)
             swatch->SetSelected(!_highlightSku.empty() && item.second == _highlightSku);
+    }
+    for (const auto& [window, hex] : _calibratedSwatches) {
+        auto* swatch = dynamic_cast<FilamentColorSwatch*>(window);
+        if (swatch != nullptr)
+            swatch->SetSelected(_selectedSku.empty() && _selection.colors.size() == 1 && _selection.PrimaryColor() == hex);
     }
 }
 
