@@ -824,6 +824,9 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
         config->option("dithering_local_z_direct_multicolor") != nullptr &&
         config->opt_bool("dithering_local_z_direct_multicolor");
     toggle_line("dithering_local_z_independent_layer_height", direct_multicolor_enabled);
+    toggle_line("dithering_local_z_planner", local_z_dithering_enabled);
+    toggle_line("dithering_local_z_mix_bridges", local_z_dithering_enabled);
+    toggle_line("dithering_local_z_mix_transition_length", local_z_dithering_enabled);
     toggle_line("local_z_wipe_tower_purge_lines", have_prime_tower && !is_BBL_Printer && local_z_dithering_enabled);
 
     WipeTowerWallType wipe_tower_wall_type = config->opt_enum<WipeTowerWallType>("wipe_tower_wall_type");

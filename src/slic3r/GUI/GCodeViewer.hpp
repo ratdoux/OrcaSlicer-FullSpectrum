@@ -223,9 +223,10 @@ class GCodeViewer
         float layer_time{ 0.0f };
         unsigned char extruder_id{ 0 };
         unsigned char cp_color_id{ 0 };
+        int                   preview_layer_id{-1};
         std::vector<Sub_Path> sub_paths;
 
-        bool matches(const GCodeProcessorResult::MoveVertex& move) const;
+        bool   matches(const GCodeProcessorResult::MoveVertex& move, int layer_id = -1) const;
         size_t vertices_count() const {
             return sub_paths.empty() ? 0 : sub_paths.back().last.s_id - sub_paths.front().first.s_id + 1;
         }
@@ -328,7 +329,7 @@ class GCodeViewer
         // b_id index of buffer contained in this->indices
         // i_id index of first index contained in this->indices[b_id]
         // s_id index of first vertex contained in this->vertices
-        void add_path(const GCodeProcessorResult::MoveVertex& move, unsigned int b_id, size_t i_id, size_t s_id);
+        void add_path(const GCodeProcessorResult::MoveVertex& move, unsigned int b_id, size_t i_id, size_t s_id, int layer_id = -1);
 
         unsigned int max_vertices_per_segment() const {
             switch (render_primitive_type)
@@ -755,6 +756,7 @@ private:
     bool m_fold = {false};
 
     Layers m_layers;
+    GCodePreview::LayerGrid     m_preview_layer_grid;
     std::array<unsigned int, 2> m_layers_z_range;
     std::vector<ExtrusionRole> m_roles;
     size_t m_extruders_count;

@@ -91,6 +91,8 @@ struct SubLayerPlan
     // Experimental connected wall passes share immutable spatial interfaces.
     std::shared_ptr<const LocalZMixBridge>      mix_bridge;
     size_t                                      mix_bridge_component{0};
+    // Configuration owner captured before painting splits the nominal regions.
+    size_t                                      mix_bridge_region_id{size_t(-1)};
     std::shared_ptr<const LocalZMixBridgePaths> mix_bridge_paths;
     double z_lo { 0.0 };
     double z_hi { 0.0 };
@@ -464,10 +466,13 @@ public:
     void clear_tree_support_preview_cache() { m_tree_support_preview_cache.reset(); }
     const std::vector<LocalZInterval>& local_z_intervals() const { return m_local_z_intervals; }
     const std::vector<SubLayerPlan>&   local_z_sublayer_plan() const { return m_local_z_sublayer_plan; }
-    void                                set_local_z_plan(std::vector<LocalZInterval> intervals, std::vector<SubLayerPlan> sublayers)
+    void                                set_local_z_plan(std::vector<LocalZInterval> intervals, std::vector<SubLayerPlan> sublayers,
+                                                          const std::string& warning = {})
     {
         m_local_z_intervals = std::move(intervals);
         m_local_z_sublayer_plan = std::move(sublayers);
+        if (!warning.empty())
+            this->active_step_add_warning(PrintStateBase::WarningLevel::NON_CRITICAL, warning);
     }
     void                                clear_local_z_plan()
     {

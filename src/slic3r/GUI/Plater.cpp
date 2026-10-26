@@ -9920,6 +9920,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                     "dithering_local_z_whole_objects",
                                     "dithering_local_z_preserve_first_layer",
                                     "dithering_local_z_direct_multicolor",
+                                    "dithering_local_z_mix_transition_length",
                                     "dithering_local_z_gradient_layer_height",
                                     "dithering_step_painted_zones_only"
                                 };

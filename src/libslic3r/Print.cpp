@@ -213,8 +213,7 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
         const size_t end_idx   = std::min(plans.size(), first_idx + interval_it->sublayer_count);
         ExPolygons   bridge_ownership;
         for (const auto& bridge : interval_it->mix_bridges)
-            for (const auto& zone : bridge->zones)
-                append(bridge_ownership, zone.masks);
+            append(bridge_ownership, bridge->ownership(layer_id));
         if (!bridge_ownership.empty())
             bridge_ownership = union_ex(bridge_ownership);
         const LocalZClipper bridge_exclude(bridge_ownership);
@@ -251,7 +250,8 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
 
                 ExPolygons compensated;
                 if (!mixed_raw_masks.empty()) {
-                    ExPolygons compensated_mixed = plan.mix_bridge ?
+                    ExPolygons compensated_mixed = plan.mix_bridge || (independent_interval && print.full_print_config().opt_bool(
+                                                                                                   "dithering_local_z_whole_objects")) ?
                                                        mixed_raw_masks :
                                                        local_z_compensate_masks_for_wipe_tower(mixed_raw_masks,
                                                                                                local_z_perimeter_mask_expand, true);
@@ -282,7 +282,7 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
                     has_paths |= local_z_infill_enabled && !plan.mix_bridge_paths->fills.empty();
                 } else
                     has_paths = layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks),
-                                                             local_z_infill_enabled, false, &bridge_exclude);
+                                                             local_z_infill_enabled, false, plan.mix_bridge ? nullptr : &bridge_exclude);
                 if (has_paths)
                     pass_ref.extruders.push_back(unsigned(extruder_id));
             }
@@ -744,130 +744,72 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_y"
             || opt_key == "wipe_tower_rotation_angle") {
             steps.emplace_back(psSkirtBrim);
-        } else if (
-               opt_key == "initial_layer_print_height"
-            || opt_key == "nozzle_diameter"
-            || opt_key == "filament_shrink"
-            || opt_key == "filament_shrinkage_compensation_z"
-            || opt_key == "resolution"
-            || opt_key == "precise_z_height"
-            || opt_key == "dithering_z_step_size"
-            || opt_key == "dithering_local_z_mode"
-            || opt_key == "dithering_local_z_whole_objects"
-            || opt_key == "dithering_local_z_preserve_first_layer"
-            || opt_key == "dithering_local_z_direct_multicolor"
-            || opt_key == "dithering_local_z_independent_layer_height"
-            || opt_key == "dithering_local_z_gradient_layer_height"
-            || opt_key == "dithering_step_painted_zones_only"
-            || opt_key == "mixed_filament_gradient_mode"
-            || opt_key == "mixed_filament_height_lower_bound"
-            || opt_key == "mixed_filament_advanced_dithering"
-            || opt_key == "mixed_filament_component_bias_enabled"
-            || opt_key == "texture_mapping_outer_wall_gradient_global_strength"
-            || opt_key == "texture_mapping_outer_wall_gradient_max_line_width"
-            || opt_key == "texture_mapping_outer_wall_gradient_min_line_width"
-            || opt_key == "image_map_perimeter_modulation_mode"
-            || opt_key == "image_map_perimeter_printable_width"
-            || opt_key == "mixed_filament_surface_indentation"
-            || opt_key == "mixed_filament_region_collapse"
-            || opt_key == "mixed_filament_definitions"
-            // Spiral Vase forces different kind of slicing than the normal model:
-            // In Spiral Vase mode, holes are closed and only the largest area contour is kept at each layer.
-            // Therefore toggling the Spiral Vase on / off requires complete reslicing.
-            || opt_key == "spiral_mode") {
+        } else if (opt_key == "initial_layer_print_height" || opt_key == "nozzle_diameter" || opt_key == "filament_shrink" ||
+                   opt_key == "filament_shrinkage_compensation_z" || opt_key == "resolution" || opt_key == "precise_z_height" ||
+                   opt_key == "dithering_z_step_size" || opt_key == "dithering_local_z_mode" ||
+                   opt_key == "dithering_local_z_whole_objects" || opt_key == "dithering_local_z_preserve_first_layer" ||
+                   opt_key == "dithering_local_z_direct_multicolor" || opt_key == "dithering_local_z_independent_layer_height" ||
+                   opt_key == "dithering_local_z_planner" ||
+                   opt_key == "dithering_local_z_mix_bridges" || opt_key == "dithering_local_z_mix_transition_length" ||
+                   opt_key == "dithering_local_z_gradient_layer_height" || opt_key == "dithering_step_painted_zones_only" ||
+                   opt_key == "mixed_filament_gradient_mode" || opt_key == "mixed_filament_height_lower_bound" ||
+                   opt_key == "mixed_filament_advanced_dithering" || opt_key == "mixed_filament_component_bias_enabled" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_global_strength" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_max_line_width" ||
+                   opt_key == "texture_mapping_outer_wall_gradient_min_line_width" || opt_key == "image_map_perimeter_modulation_mode" ||
+                   opt_key == "image_map_perimeter_printable_width" || opt_key == "mixed_filament_surface_indentation" ||
+                   opt_key == "mixed_filament_region_collapse" ||
+                   opt_key == "mixed_filament_definitions"
+                   // Spiral Vase forces different kind of slicing than the normal model:
+                   // In Spiral Vase mode, holes are closed and only the largest area contour is kept at each layer.
+                   // Therefore toggling the Spiral Vase on / off requires complete reslicing.
+                   || opt_key == "spiral_mode") {
             osteps.emplace_back(posSlice);
-        } else if (
-               opt_key == "print_sequence"
-            || opt_key == "filament_type"
-            || opt_key == "chamber_temperature"
-            || opt_key == "nozzle_temperature_initial_layer"
-            || opt_key == "filament_minimal_purge_on_wipe_tower"
-            || opt_key == "filament_max_volumetric_speed"
-            || opt_key == "filament_loading_speed"
-            || opt_key == "filament_loading_speed_start"
-            || opt_key == "filament_unloading_speed"
-            || opt_key == "filament_unloading_speed_start"
-            || opt_key == "filament_toolchange_delay"
-            || opt_key == "filament_cooling_moves"
-            || opt_key == "filament_stamping_loading_speed"
-            || opt_key == "filament_stamping_distance"
-            || opt_key == "filament_cooling_initial_speed"
-            || opt_key == "filament_cooling_final_speed"
-            || opt_key == "filament_ramming_parameters"
-            || opt_key == "filament_multitool_ramming"
-            || opt_key == "filament_multitool_ramming_volume"
-            || opt_key == "filament_multitool_ramming_flow"
-            || opt_key == "filament_max_volumetric_speed"
-            || opt_key == "gcode_flavor"
-            || opt_key == "single_extruder_multi_material"
-            || opt_key == "nozzle_temperature"
-            // BBS
-            || opt_key == "supertack_plate_temp"
-            || opt_key == "cool_plate_temp"
-            || opt_key == "textured_cool_plate_temp"
-            || opt_key == "eng_plate_temp"
-            || opt_key == "hot_plate_temp"
-            || opt_key == "textured_plate_temp" 
-            || opt_key == "graphic_effect_plate_temp"
-            || opt_key == "enable_prime_tower"
-            || opt_key == "prime_tower_width"
-            || opt_key == "prime_tower_brim_width"
-            || opt_key == "first_layer_print_sequence"
-            || opt_key == "other_layers_print_sequence"
-            || opt_key == "other_layers_print_sequence_nums" 
-            || opt_key == "wipe_tower_bridging"
-            || opt_key == "wipe_tower_extra_flow"
-            || opt_key == "wipe_tower_no_sparse_layers"
-            || opt_key == "flush_volumes_matrix"
-            || opt_key == "prime_volume"
-            || opt_key == "prime_tower_brim_chamfer"
-            || opt_key == "prime_tower_brim_chamfer_max_width"
-            || opt_key == "flush_into_infill"
-            || opt_key == "flush_into_support"
-            || opt_key == "initial_layer_infill_speed"
-            || opt_key == "travel_speed"
-            || opt_key == "travel_speed_z"
-            || opt_key == "initial_layer_speed"
-            || opt_key == "initial_layer_travel_speed"
-            || opt_key == "slow_down_layers"
-            || opt_key == "idle_temperature" 
-            || opt_key == "filament_tower_ironing_area"
-            || opt_key == "wipe_tower_cone_angle"
-            || opt_key == "wipe_tower_extra_spacing"
-            || opt_key == "wipe_tower_max_purge_speed"
-            || opt_key == "wipe_tower_wall_type"
-            || opt_key == "wipe_tower_extra_rib_length"
-            || opt_key == "wipe_tower_rib_width"
-            || opt_key == "wipe_tower_fillet_wall"
-            || opt_key == "wipe_tower_wall_gap"
-            || opt_key == "wipe_tower_filament"
-            || opt_key == "wiping_volumes_extruders"
-            || opt_key == "dithering_local_z_infill"
-            || opt_key == "enable_filament_ramming"
-            || opt_key == "purge_in_prime_tower"
-            || opt_key == "z_offset"
-            || opt_key == "support_multi_bed_types"
-            ) {
+        } else if (opt_key == "print_sequence" || opt_key == "filament_type" || opt_key == "chamber_temperature" ||
+                   opt_key == "nozzle_temperature_initial_layer" || opt_key == "filament_minimal_purge_on_wipe_tower" ||
+                   opt_key == "filament_max_volumetric_speed" || opt_key == "filament_loading_speed" ||
+                   opt_key == "filament_loading_speed_start" || opt_key == "filament_unloading_speed" ||
+                   opt_key == "filament_unloading_speed_start" || opt_key == "filament_toolchange_delay" ||
+                   opt_key == "filament_cooling_moves" || opt_key == "filament_stamping_loading_speed" ||
+                   opt_key == "filament_stamping_distance" || opt_key == "filament_cooling_initial_speed" ||
+                   opt_key == "filament_cooling_final_speed" || opt_key == "filament_ramming_parameters" ||
+                   opt_key == "filament_multitool_ramming" || opt_key == "filament_multitool_ramming_volume" ||
+                   opt_key == "filament_multitool_ramming_flow" || opt_key == "filament_max_volumetric_speed" ||
+                   opt_key == "gcode_flavor" || opt_key == "single_extruder_multi_material" ||
+                   opt_key == "nozzle_temperature"
+                   // BBS
+                   || opt_key == "supertack_plate_temp" || opt_key == "cool_plate_temp" || opt_key == "textured_cool_plate_temp" ||
+                   opt_key == "eng_plate_temp" || opt_key == "hot_plate_temp" || opt_key == "textured_plate_temp" ||
+                   opt_key == "graphic_effect_plate_temp" || opt_key == "enable_prime_tower" || opt_key == "prime_tower_width" ||
+                   opt_key == "prime_tower_brim_width" || opt_key == "first_layer_print_sequence" ||
+                   opt_key == "other_layers_print_sequence" || opt_key == "other_layers_print_sequence_nums" ||
+                   opt_key == "wipe_tower_bridging" || opt_key == "wipe_tower_extra_flow" || opt_key == "wipe_tower_no_sparse_layers" ||
+                   opt_key == "flush_volumes_matrix" || opt_key == "prime_volume" || opt_key == "prime_tower_brim_chamfer" ||
+                   opt_key == "prime_tower_brim_chamfer_max_width" || opt_key == "flush_into_infill" || opt_key == "flush_into_support" ||
+                   opt_key == "initial_layer_infill_speed" || opt_key == "travel_speed" || opt_key == "travel_speed_z" ||
+                   opt_key == "initial_layer_speed" || opt_key == "initial_layer_travel_speed" || opt_key == "slow_down_layers" ||
+                   opt_key == "idle_temperature" || opt_key == "filament_tower_ironing_area" || opt_key == "wipe_tower_cone_angle" ||
+                   opt_key == "wipe_tower_extra_spacing" || opt_key == "wipe_tower_max_purge_speed" || opt_key == "wipe_tower_wall_type" ||
+                   opt_key == "wipe_tower_extra_rib_length" || opt_key == "wipe_tower_rib_width" || opt_key == "wipe_tower_fillet_wall" ||
+                   opt_key == "wipe_tower_wall_gap" || opt_key == "wipe_tower_filament" || opt_key == "wiping_volumes_extruders" ||
+                   opt_key == "dithering_local_z_infill" || opt_key == "enable_filament_ramming" || opt_key == "purge_in_prime_tower" ||
+                   opt_key == "z_offset" || opt_key == "support_multi_bed_types") {
             steps.emplace_back(psWipeTower);
             steps.emplace_back(psSkirtBrim);
-        } else if (opt_key == "filament_soluble"
-                || opt_key == "filament_is_support"
-                || opt_key == "independent_support_layer_height") {
+            if (opt_key == "dithering_local_z_infill")
+                osteps.emplace_back(posInfill);
+        } else if (opt_key == "filament_soluble" || opt_key == "filament_is_support" || opt_key == "independent_support_layer_height") {
             steps.emplace_back(psWipeTower);
             // Soluble support interface / non-soluble base interface produces non-soluble interface layers below soluble interface layers.
             // Thus switching between soluble / non-soluble interface layer material may require recalculation of supports.
             //FIXME Killing supports on any change of "filament_soluble" is rough. We should check for each object whether that is necessary.
             osteps.emplace_back(posSupportMaterial);
             osteps.emplace_back(posSimplifySupportPath);
-        } else if (
-               opt_key == "initial_layer_line_width"
-            || opt_key == "min_layer_height"
-            || opt_key == "max_layer_height"
-            //|| opt_key == "resolution"
-            //BBS: when enable arc fitting, we must re-generate perimeter
-            || opt_key == "enable_arc_fitting"
-            || opt_key == "print_order"
-            || opt_key == "wall_sequence") {
+        } else if (opt_key == "initial_layer_line_width" || opt_key == "min_layer_height" ||
+                   opt_key == "max_layer_height"
+                   //|| opt_key == "resolution"
+                   // BBS: when enable arc fitting, we must re-generate perimeter
+                   || opt_key == "enable_arc_fitting" || opt_key == "print_order" || opt_key == "wall_sequence") {
             osteps.emplace_back(posPerimeters);
             osteps.emplace_back(posEstimateCurledExtrusions);
             osteps.emplace_back(posInfill);
@@ -876,8 +818,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             osteps.emplace_back(posSimplifyInfill);
             osteps.emplace_back(posSimplifySupportPath);
             steps.emplace_back(psSkirtBrim);
-        }
-        else if (opt_key == "z_hop_types") {
+        } else if (opt_key == "z_hop_types") {
             osteps.emplace_back(posDetectOverhangsForLift);
         } else {
             // for legacy, if we can't handle this option let's invalidate all steps

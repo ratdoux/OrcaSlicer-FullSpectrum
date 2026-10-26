@@ -214,6 +214,11 @@ static t_config_enum_values s_keys_map_WallDirection{
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WallDirection)
 
+static t_config_enum_values s_keys_map_LocalZPlanner{
+    {"legacy", int(LocalZPlanner::Legacy)}, {"material_v1", int(LocalZPlanner::MaterialV1)}
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(LocalZPlanner)
+
 //BBS
 static t_config_enum_values s_keys_map_PrintSequence {
     { "by layer",     int(PrintSequence::ByLayer) },
@@ -4573,6 +4578,39 @@ void PrintConfigDef::init_fff_params()
                      "more thickness, it is divided into multiple equal passes while preserving the total ratio.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("dithering_local_z_planner", coEnum);
+    def->label = L("Local-Z planning");
+    def->category = L("Others");
+    def->tooltip = L("The experimental material planner chooses the smallest printable recipe for each connected region, using both "
+                     "the Local-Z minimum and the printer's minimum and maximum layer heights. It generates material island paths "
+                     "and reports unsupported contacts. Legacy cycles preserve the behavior of existing projects.");
+    def->enum_keys_map = &ConfigOptionEnum<LocalZPlanner>::get_enum_values();
+    def->enum_values = {"legacy", "material_v1"};
+    def->enum_labels = {L("Legacy cycles"), L("Minimum stacks and material islands (experimental)")};
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<LocalZPlanner>(LocalZPlanner::Legacy));
+
+    def = this->add("dithering_local_z_mix_bridges", coBool);
+    def->label = L("Continuous mixed-color islands");
+    def->category = L("Others");
+    def->tooltip = L("Experimental. Connect compatible mixed-color regions with non-planar layers of the same filament. "
+                     "Requires Local-Z subdivision and a preserved first layer. "
+                     "Regions that cannot join retain separate paths. Physical print quality needs validation.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def           = this->add("dithering_local_z_mix_transition_length", coPercent);
+    def->label    = L("Mix transition length");
+    def->category = L("Others");
+    def->tooltip  = L("Scales the length of non-planar transitions between connected mixed-color islands. "
+                       "100% keeps the standard transition length; 50% makes transitions half as long, and 200% doubles them. "
+                       "The distance in millimeters also depends on the component heights and blend ratios. "
+                       "Shorter transitions produce steeper Z ramps. This does not change the color ratios away from the transitions.");
+    def->min      = 10;
+    def->max      = 1000;
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionPercent(100));
 
     def = this->add("dithering_local_z_gradient_layer_height", coFloat);
     def->label = L("Gradient Local-Z layer height");

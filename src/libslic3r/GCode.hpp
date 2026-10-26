@@ -253,6 +253,7 @@ public:
     void            apply_print_config(const PrintConfig &print_config);
 
     std::string     travel_to(const Point& point, ExtrusionRole role, std::string comment, double z = DBL_MAX);
+    std::string     lift_for_local_z_travel(double destination_z);
     bool            needs_retraction(const Polyline& travel, ExtrusionRole role, LiftType& lift_type);
     std::string     retract(bool toolchange = false, bool is_last_retraction = false, LiftType lift_type = LiftType::NormalLift, ExtrusionRole role = erNone);
     std::string     unretract() { return m_writer.unlift() + m_writer.unretract(); }
@@ -643,6 +644,7 @@ private:
     const ImageMap::AdaptiveLocalZRenderer* m_adaptive_local_z_renderer { nullptr };
     const SubLayerPlan*                     m_adaptive_local_z_plan { nullptr };
     const SubLayerPlan*                     m_local_z_mix_bridge_plan{nullptr};
+    double                                  m_local_z_deposited_top = 0.;
 
     std::set<unsigned int>                  m_initial_layer_extruders;
     // BBS

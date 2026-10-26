@@ -414,18 +414,80 @@ void PrintObject::make_perimeters()
     });
     m_print->throw_if_canceled();
 
-    // Each physical pass needs its own closed island geometry. Source-region
-    // surface types supply skin coverage; walls and fills are regenerated
-    // inside each physical island instead of reusing clipped fragments.
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_local_z_sublayer_plan.size()), [this](const tbb::blocked_range<size_t>& range) {
-        for (size_t index = range.begin(); index < range.end(); ++index) {
-            auto& plan = m_local_z_sublayer_plan[index];
-            if (!plan.mix_bridge)
-                continue;
-            m_print->throw_if_canceled();
-            const auto& pass      = plan.mix_bridge->passes[plan.mix_bridge_component];
-            plan.mix_bridge_paths = LocalZMixBridgePaths::build(*m_layers[plan.layer_id],
-                                                                plan.painted_masks_by_extruder[pass.filament_id - 1], pass.filament_id);
+    // Nonplanar stacks retain their fitted islands. Compatible nominal fallback
+    // beads share an outline before color clipping, so sub-nozzle paint patches
+    // do not punch holes into an otherwise printable wall.
+    std::vector<std::vector<size_t>> bridge_plans(m_layers.size());
+    for (size_t index = 0; index < m_local_z_sublayer_plan.size(); ++index) {
+        auto& plan = m_local_z_sublayer_plan[index];
+        plan.mix_bridge_paths.reset();
+        if (plan.mix_bridge)
+            bridge_plans[plan.layer_id].push_back(index);
+    }
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()), [this, &bridge_plans](const tbb::blocked_range<size_t>& range) {
+        for (size_t layer_id = range.begin(); layer_id < range.end(); ++layer_id) {
+            auto& layer             = *m_layers[layer_id];
+            auto  compatible_config = [&](const SubLayerPlan& plan) -> std::optional<PrintRegionConfig> {
+                const auto& bridge = *plan.mix_bridge;
+                if (bridge.material_planner || !bridge.nominal_band || bridge.passes.size() != 1 || std::abs(bridge.passes.front().flat_height - layer.height) > 1e-6)
+                    return {};
+                std::optional<PrintRegionConfig> reference;
+                for (const auto* region : layer.regions()) {
+                    if (intersection_ex(bridge.ownership(layer_id), to_expolygons(region->slices.surfaces)).empty())
+                        continue;
+                    auto config                = region->region().config();
+                    config.wall_filament.value = config.sparse_infill_filament.value = config.solid_infill_filament.value = 1;
+                    if (!reference)
+                        reference = config;
+                    else if (*reference != config)
+                        return {};
+                }
+                return reference;
+            };
+            for (size_t index : bridge_plans[layer_id]) {
+                auto& plan = m_local_z_sublayer_plan[index];
+                if (plan.mix_bridge_paths)
+                    continue;
+                m_print->throw_if_canceled();
+                const auto&         pass      = plan.mix_bridge->passes[plan.mix_bridge_component];
+                const auto          reference = compatible_config(plan);
+                std::vector<size_t> group{index};
+                if (reference)
+                    for (size_t candidate : bridge_plans[layer_id]) {
+                        const auto& other = m_local_z_sublayer_plan[candidate];
+                        if (candidate <= index || other.mix_bridge_paths)
+                            continue;
+                        const auto  config = compatible_config(other);
+                        const auto& bead   = other.mix_bridge->passes[other.mix_bridge_component];
+                        if (config && *config == *reference && std::abs(pass.ceiling - bead.ceiling) < 1e-6 &&
+                            m_print->config().nozzle_diameter.get_at(pass.filament_id - 1) ==
+                                m_print->config().nozzle_diameter.get_at(bead.filament_id - 1))
+                            group.push_back(candidate);
+                    }
+                if (group.size() > 1) {
+                    std::vector<ExPolygons> masks;
+                    std::vector<unsigned>   tools;
+                    for (size_t member : group) {
+                        const auto&    owner = m_local_z_sublayer_plan[member];
+                        const unsigned tool  = owner.mix_bridge->passes[owner.mix_bridge_component].filament_id;
+                        masks.push_back(owner.painted_masks_by_extruder[tool - 1]);
+                        tools.push_back(tool);
+                    }
+                    const auto paths = LocalZMixBridgePaths::build_partitioned(layer, masks, tools);
+                    for (size_t member = 0; member < group.size(); ++member)
+                        m_local_z_sublayer_plan[group[member]].mix_bridge_paths = paths[member];
+                } else {
+                    try {
+                        plan.mix_bridge_paths = LocalZMixBridgePaths::build(layer, plan.painted_masks_by_extruder[pass.filament_id - 1],
+                                                                            pass.filament_id, plan.mix_bridge_region_id);
+                    } catch (const std::runtime_error& error) {
+                        throw std::runtime_error(std::string(error.what()) + " nominal=" + std::to_string(plan.mix_bridge->nominal_band) +
+                                                 " fallback=" + std::to_string(plan.mix_bridge->planar_fallback) +
+                                                 " fitted=" + std::to_string(plan.mix_bridge->follows_surface) + " span=" +
+                                                 std::to_string(plan.mix_bridge->z_lo) + "," + std::to_string(plan.mix_bridge->z_hi));
+                    }
+                }
+            }
         }
     });
     m_print->throw_if_canceled();
@@ -635,17 +697,36 @@ void PrintObject::infill()
         );
         m_print->throw_if_canceled();
         BOOST_LOG_TRIVIAL(debug) << "Filling layers in parallel - end";
-        if (m_print->config().dithering_local_z_infill.value)
+        if (m_print->config().dithering_local_z_infill.value) {
+            std::map<std::pair<double, double>, LocalZMixBridgeFillSurfaces> surfaces;
+            for (const auto& plan : m_local_z_sublayer_plan) {
+                if (!plan.mix_bridge_paths)
+                    continue;
+                const auto key = std::make_pair(plan.mix_bridge->z_lo, plan.mix_bridge->z_hi);
+                if (surfaces.find(key) == surfaces.end())
+                    surfaces.emplace(key, LocalZMixBridgeFillSurfaces::build(m_layers, *plan.mix_bridge));
+            }
+            const auto& cycle_surfaces = surfaces;
             tbb::parallel_for(size_t(0), m_local_z_sublayer_plan.size(), [&](size_t index) {
                 auto& plan = m_local_z_sublayer_plan[index];
                 if (!plan.mix_bridge_paths)
                     return;
                 m_print->throw_if_canceled();
-                const auto& pass      = plan.mix_bridge->passes[plan.mix_bridge_component];
                 plan.mix_bridge_paths = LocalZMixBridgePaths::with_fills(*plan.mix_bridge_paths, *m_layers[plan.layer_id], *plan.mix_bridge,
-                                                                         pass.filament_id, adaptive_fill_octree.get(),
-                                                                         support_fill_octree.get(), m_lightning_generator.get());
+                                                                         plan.mix_bridge_component,
+                                                                         cycle_surfaces.at({plan.mix_bridge->z_lo, plan.mix_bridge->z_hi}),
+                                                                         adaptive_fill_octree.get(), support_fill_octree.get(),
+                                                                         m_lightning_generator.get());
             });
+        } else {
+            for (auto& plan : m_local_z_sublayer_plan)
+                if (plan.mix_bridge_paths && !plan.mix_bridge_paths->fills.empty()) {
+                    auto paths = std::make_shared<LocalZMixBridgePaths>(*plan.mix_bridge_paths);
+                    paths->fills.clear();
+                    paths->fill_region_ids.clear();
+                    plan.mix_bridge_paths = std::move(paths);
+                }
+        }
 
         /*  we could free memory now, but this would make this step not idempotent
         ### $_->fill_surfaces->clear for map @{$_->regions}, @{$object->layers};
@@ -1043,6 +1124,8 @@ bool PrintObject::invalidate_state_by_config_options(
         } else if (opt_key == "layer_height" || opt_key == "dithering_z_step_size" || opt_key == "dithering_local_z_mode" ||
                    opt_key == "dithering_local_z_whole_objects" || opt_key == "dithering_local_z_preserve_first_layer" ||
                    opt_key == "dithering_local_z_direct_multicolor" || opt_key == "dithering_local_z_independent_layer_height" ||
+                   opt_key == "dithering_local_z_planner" ||
+                   opt_key == "dithering_local_z_mix_bridges" || opt_key == "dithering_local_z_mix_transition_length" ||
                    opt_key == "dithering_local_z_gradient_layer_height" || opt_key == "dithering_step_painted_zones_only" ||
                    opt_key == "mixed_filament_component_bias_enabled" || opt_key == "texture_mapping_outer_wall_gradient_global_strength" ||
                    opt_key == "texture_mapping_outer_wall_gradient_max_line_width" ||
@@ -1201,6 +1284,8 @@ bool PrintObject::invalidate_state_by_config_options(
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else if (opt_key == "flush_into_infill" || opt_key == "flush_into_objects" || opt_key == "flush_into_support" ||
                    opt_key == "dithering_local_z_infill") {
+            if (opt_key == "dithering_local_z_infill")
+                steps.emplace_back(posInfill);
             invalidated |= m_print->invalidate_step(psWipeTower);
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else {

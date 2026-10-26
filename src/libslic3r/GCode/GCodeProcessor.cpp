@@ -576,6 +576,7 @@ void GCodeProcessorResult::reset() {
     filament_densities = std::vector<float>(MIN_EXTRUDERS_COUNT, DEFAULT_FILAMENT_DENSITY);
     custom_gcode_per_print_z = std::vector<CustomGCode::Item>();
     spiral_vase_layers = std::vector<std::pair<float, std::pair<size_t, size_t>>>();
+    preview_layer_grid       = {};
     time = 0;
 
     //BBS: add mutex for protection of gcode result
@@ -609,6 +610,7 @@ void GCodeProcessorResult::reset() {
     filament_costs = std::vector<float>(MIN_EXTRUDERS_COUNT, DEFAULT_FILAMENT_COST);
     custom_gcode_per_print_z = std::vector<CustomGCode::Item>();
     spiral_vase_layers = std::vector<std::pair<float, std::pair<size_t, size_t>>>();
+    preview_layer_grid       = {};
     bed_match_result = BedMatchResult(true);
     warnings.clear();
 
@@ -713,7 +715,7 @@ GCodeProcessor::GCodeProcessor()
     m_time_processor.machines[static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Stealth)].line_m73_stop_mask = "M73 D%s\n";
 }
 
-void GCodeProcessor::apply_config(const PrintConfig& config)
+void GCodeProcessor::apply_config(const PrintConfig& config, double nominal_layer_height)
 {
     m_parser.apply_config(config);
 
@@ -804,6 +806,9 @@ void GCodeProcessor::apply_config(const PrintConfig& config)
     const ConfigOptionFloat* initial_layer_print_height = config.option<ConfigOptionFloat>("initial_layer_print_height");
     if (initial_layer_print_height != nullptr)
         m_first_layer_height = std::abs(initial_layer_print_height->value);
+    // Nominal height belongs to PrintObjectConfig, separately from PrintConfig.
+    m_result.preview_layer_grid.height = std::isfinite(nominal_layer_height) && nominal_layer_height > 0. ? nominal_layer_height : 0.;
+    m_result.preview_layer_grid.first_height = m_first_layer_height > 0. ? m_first_layer_height : m_result.preview_layer_grid.height;
 
     m_result.printable_height = config.printable_height;
 
@@ -1111,6 +1116,10 @@ void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
     const ConfigOptionFloat* initial_layer_print_height = config.option<ConfigOptionFloat>("initial_layer_print_height");
     if (initial_layer_print_height != nullptr)
         m_first_layer_height = std::abs(initial_layer_print_height->value);
+    if (const auto* nominal = config.option<ConfigOptionFloat>("layer_height")) {
+        m_result.preview_layer_grid.height       = std::isfinite(nominal->value) && nominal->value > 0. ? nominal->value : 0.;
+        m_result.preview_layer_grid.first_height = m_first_layer_height > 0. ? m_first_layer_height : m_result.preview_layer_grid.height;
+    }
 
     const ConfigOptionFloat* printable_height = config.option<ConfigOptionFloat>("printable_height");
     if (printable_height != nullptr)
@@ -1375,6 +1384,22 @@ void GCodeProcessor::finalize(bool post_process)
     if (post_process)
         run_post_process();
 
+    // Keep planar, scarf and spiral previews on their existing layer logic.
+    // Ordinary non-planar paths use spatial nominal-height bands instead of
+    // treating every small change of extrusion Z as another slider layer.
+    m_result.preview_layer_grid.enabled = false;
+    if (m_result.preview_layer_grid.height > 0. && !m_detect_layer_based_on_tag) {
+        for (size_t i = 1; i < m_result.moves.size(); ++i) {
+            const auto& move     = m_result.moves[i];
+            const auto& previous = m_result.moves[i - 1];
+            if (move.type == EMoveType::Extrude && previous.type == EMoveType::Extrude && move.extrusion_role != erCustom &&
+                move.extruder_id == previous.extruder_id && std::abs(move.position.z() - previous.position.z()) > 1e-4f &&
+                (move.position.head<2>() - previous.position.head<2>()).squaredNorm() > 1e-8f) {
+                m_result.preview_layer_grid.enabled = true;
+                break;
+            }
+        }
+    }
     m_result.release_unused_memory();
 }
 

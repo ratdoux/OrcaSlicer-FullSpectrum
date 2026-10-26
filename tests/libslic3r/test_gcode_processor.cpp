@@ -18,7 +18,7 @@ namespace {
 void initialize_processor(GCodeProcessor& processor)
 {
     processor.reset();
-    processor.apply_config(PrintConfig());
+    processor.apply_config(PrintConfig(), .2);
     processor.initialize("preview-memory-test.gcode");
     processor.process_buffer("G21\nG90\nM83\nG1 X10 Y0 Z0.2 F600\n;TYPE:External perimeter\n;WIDTH:0.4\n;HEIGHT:0.2\n");
 }
@@ -35,6 +35,101 @@ void check_non_arc_moves(const GCodeProcessorResult& result)
 }
 
 } // namespace
+
+TEST_CASE("Non-planar preview groups moves into nominal height bands", "[GCodeProcessor][PreviewLayers]")
+{
+    double nominal = .08;
+    SECTION("0.08 mm layers") {}
+    SECTION("0.12 mm layers") { nominal = .12; }
+    PrintConfig config;
+    config.initial_layer_print_height.value = .2;
+    GCodeProcessor processor;
+    processor.reset();
+    processor.apply_config(config, nominal);
+    processor.initialize("nominal-preview.gcode");
+    processor.process_buffer("G21\nG90\nM83\nG1 X0 Y0 Z0.2 F600\n;TYPE:External perimeter\n;WIDTH:0.4\n;HEIGHT:0.08\n"
+                             "G1 X1 E0.02\nG1 X2 Z0.27 E0.02\nG1 X3 Z0.34 E0.02\nG1 X4 Z0.26 E0.02\n"
+                             "G1 X5 Z0.32 E0.02\nG0 Z5\nG0 X6\nG0 Z0.28\nG1 X7 E0.02\n");
+    processor.finalize(false);
+    const auto& result = processor.get_result();
+    const auto& grid   = result.preview_layer_grid;
+    REQUIRE(grid.enabled);
+    CHECK(grid.height == Approx(nominal));
+    CHECK(grid.first_height == Approx(.2));
+    CHECK(grid.index_at(.2) == 0);
+    CHECK(grid.index_at(.27) == 1);
+    CHECK(grid.index_at(.34) == 2);
+    CHECK(grid.index_at(.26) == 1);                    // Returning to a band does not create another layer.
+    CHECK(grid.index_at(.2 + nominal + .000001) == 1); // Float/decimal roundoff.
+    CHECK(grid.index_at(.2 + nominal + .001) == 2);
+    CHECK(grid.top_z(2) == Approx(.2 + 2 * nominal));
+    std::vector<int> bands;
+    size_t           selected = 0;
+    for (const auto& move : result.moves)
+        if (move.type == EMoveType::Extrude) {
+            bands.push_back(grid.index_at(move.position.z()));
+            if (grid.contains(move.position.z(), grid.top_z(1), grid.top_z(1)))
+                ++selected;
+        }
+    CHECK(selected == (nominal == .08 ? 3 : 4));
+    sort_remove_duplicates(bands);
+    CHECK(bands == std::vector<int>{0, 1, 2}); // Travel Z hops add no layers.
+    GCodeProcessorResult copied;
+    copied = result;
+    CHECK(copied.preview_layer_grid.enabled);
+    CHECK(copied.preview_layer_grid.index_at(.34) == 2);
+    copied.reset();
+    CHECK_FALSE(copied.preview_layer_grid.enabled);
+}
+
+TEST_CASE("Planar preview retains its original layer detection", "[GCodeProcessor][PreviewLayers]")
+{
+    GCodeProcessor processor;
+    initialize_processor(processor);
+    processor.process_buffer("G1 X20 E1\nG0 Z0.4\nG1 X30 E1\nG1 X40 E1\n");
+    processor.finalize(false);
+    CHECK_FALSE(processor.get_result().preview_layer_grid.enabled);
+}
+
+TEST_CASE("Non-planar preview bands use model Z after the printer offset", "[GCodeProcessor][PreviewLayers]")
+{
+    PrintConfig config;
+    config.initial_layer_print_height.value = .2;
+    config.z_offset.value                   = .5;
+    GCodeProcessor processor;
+    processor.reset();
+    processor.apply_config(config, .08);
+    processor.initialize("offset-preview.gcode");
+    processor.process_buffer("G21\nG90\nM83\nG1 X0 Y0 Z0.7 F600\n;TYPE:External perimeter\n;WIDTH:0.4\n;HEIGHT:0.08\n"
+                             "G1 X1 E0.02\nG1 X2 Z0.77 E0.02\nG1 X3 Z0.84 E0.02\n");
+    processor.finalize(false);
+    const auto& result = processor.get_result();
+    REQUIRE(result.preview_layer_grid.enabled);
+    std::vector<int> bands;
+    for (const auto& move : result.moves)
+        if (move.type == EMoveType::Extrude)
+            bands.push_back(result.preview_layer_grid.index_at(move.position.z()));
+    CHECK(bands == std::vector<int>{0, 1, 2});
+}
+
+TEST_CASE("Preview preserves explicit scarf and vase layers", "[GCodeProcessor][PreviewLayers]")
+{
+    PrintConfig config;
+    config.initial_layer_print_height.value = .2;
+    bool tagged = true;
+    SECTION("Vase") { config.spiral_mode.value = true; }
+    SECTION("Scarf") { config.has_scarf_joint_seam.value = true; }
+    SECTION("Ordinary non-planar config") { tagged = false; }
+    GCodeProcessor processor;
+    processor.reset();
+    processor.apply_config(config, .08);
+    processor.initialize("tagged-preview.gcode");
+    processor.process_buffer("G21\nG90\nM83\nG1 X0 Y0 Z0.2 F600\n;TYPE:External perimeter\n;WIDTH:0.4\n;HEIGHT:0.08\n"
+                             "G1 X1 E0.02\nG1 X2 Z0.24 E0.02\nG1 X3 Z0.28 E0.02\n");
+    processor.finalize(false);
+    CHECK(processor.get_result().preview_layer_grid.enabled == !tagged);
+    CHECK(processor.get_result().preview_layer_grid.height == Approx(.08));
+}
 
 TEST_CASE("Replay real velocity limit commands without geometry work", "[.][VelocityLimitReplay]")
 {

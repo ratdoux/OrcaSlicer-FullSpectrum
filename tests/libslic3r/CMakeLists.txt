@@ -28,6 +28,9 @@ add_executable(${_TEST_NAME}_tests
 	test_gradient_port.cpp
 	test_local_z_clipper.cpp
 	test_local_z_mix_bridge.cpp
+	test_local_z_cadence.cpp
+    test_local_z_material_graph.cpp
+    test_local_z_material_planner.cpp
 	test_local_z_clip_replay.cpp
 	test_vulkan_seam_visibility.cpp
 	test_vulkan_shared_geometry.cpp

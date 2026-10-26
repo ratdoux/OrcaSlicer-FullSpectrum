@@ -114,6 +114,8 @@ enum class WallSequence {
 };
 
 // Orca
+enum class LocalZPlanner { Legacy = 0, MaterialV1 = 1 };
+
 enum class WallDirection
 {
     Auto,
@@ -1420,7 +1422,8 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
         (ConfigOptionFloat, dithering_z_step_size))((ConfigOptionBool, dithering_local_z_mode))(
         (ConfigOptionBool, dithering_local_z_whole_objects))((ConfigOptionBool, dithering_local_z_preserve_first_layer))(
         (ConfigOptionBool, dithering_local_z_infill))((ConfigOptionBool, dithering_local_z_direct_multicolor))(
-        (ConfigOptionBool, dithering_local_z_independent_layer_height))((ConfigOptionFloat, dithering_local_z_gradient_layer_height))(
+        (ConfigOptionBool, dithering_local_z_independent_layer_height))((ConfigOptionEnum<LocalZPlanner>, dithering_local_z_planner))((ConfigOptionBool, dithering_local_z_mix_bridges))((ConfigOptionPercent, dithering_local_z_mix_transition_length))(
+        (ConfigOptionFloat, dithering_local_z_gradient_layer_height))(
         (ConfigOptionPercent, dithering_local_z_gradient_middle_filament_window))((ConfigOptionBool, dithering_step_painted_zones_only))(
         (ConfigOptionString, printer_model))((ConfigOptionFloat, resolution))((ConfigOptionFloats, retraction_minimum_travel))(
         (ConfigOptionBools, retract_when_changing_layer))((ConfigOptionFloat, skirt_distance))((ConfigOptionInt, skirt_height))(

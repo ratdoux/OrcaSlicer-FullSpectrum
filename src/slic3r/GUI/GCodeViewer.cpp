@@ -40,6 +40,7 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <map>
 
 namespace Slic3r {
 namespace GUI {
@@ -172,8 +173,10 @@ void GCodeViewer::IBuffer::reset()
     count = 0;
 }
 
-bool GCodeViewer::Path::matches(const GCodeProcessorResult::MoveVertex& move) const
+bool GCodeViewer::Path::matches(const GCodeProcessorResult::MoveVertex& move, int layer_id) const
 {
+    if (preview_layer_id != layer_id)
+        return false;
     auto matches_percent = [](float value1, float value2, float max_percent) {
         return std::abs(value2 - value1) / value1 <= max_percent;
     };
@@ -222,14 +225,19 @@ void GCodeViewer::TBuffer::reset()
     model.reset();
 }
 
-void GCodeViewer::TBuffer::add_path(const GCodeProcessorResult::MoveVertex& move, unsigned int b_id, size_t i_id, size_t s_id)
+void GCodeViewer::TBuffer::add_path(const GCodeProcessorResult::MoveVertex& move, unsigned int b_id, size_t i_id, size_t s_id, int layer_id)
 {
     Path::Endpoint endpoint = { b_id, i_id, s_id, move.position };
     // use rounding to reduce the number of generated paths
     paths.push_back({ move.type, move.extrusion_role, move.delta_extruder,
         round_to_bin(move.height), round_to_bin(move.width),
         move.feedrate, move.fan_speed, move.temperature,
-        move.volumetric_rate(), move.layer_duration, move.extruder_id, move.cp_color_id, { { endpoint, endpoint } } });
+        move.volumetric_rate(),
+                     move.layer_duration,
+                     move.extruder_id,
+                     move.cp_color_id,
+                     layer_id,
+                     {{endpoint, endpoint}}});
 }
 
 ColorRGBA GCodeViewer::Extrusions::Range::get_color_at(float value) const
@@ -942,6 +950,7 @@ void GCodeViewer::extract_layer_metadata(const GCodeProcessorResult& gcode_resul
     m_extruder_ids.clear();
     m_roles.clear();
 
+    std::map<int, Layers::Endpoints> nominal_layers;
     size_t last_travel_s_id = 0;
     size_t seams_count      = 0;
     for (size_t i = 0; i < m_moves_count; ++i) {
@@ -954,7 +963,12 @@ void GCodeViewer::extract_layer_metadata(const GCodeProcessorResult& gcode_resul
         if (move.type == EMoveType::Extrude) {
             const double* last_z = m_layers.empty() ? nullptr : &m_layers.get_zs().back();
             const double  z      = static_cast<double>(move.position.z());
-            if (last_z == nullptr || z < *last_z - EPSILON || *last_z + EPSILON < z)
+            if (m_preview_layer_grid.enabled) {
+                auto [it, inserted] = nominal_layers.try_emplace(m_preview_layer_grid.index_at(z),
+                                                                 Layers::Endpoints{last_travel_s_id, move_id});
+                it->second.first    = std::min(it->second.first, last_travel_s_id);
+                it->second.last     = std::max(it->second.last, move_id);
+            } else if (last_z == nullptr || z < *last_z - EPSILON || *last_z + EPSILON < z)
                 m_layers.append(z, { last_travel_s_id, move_id });
             else
                 m_layers.get_endpoints().back().last = move_id;
@@ -978,6 +992,9 @@ void GCodeViewer::extract_layer_metadata(const GCodeProcessorResult& gcode_resul
         int eid = static_cast<int>(mid);
         m_plater_extruder.push_back(++eid);
     }
+
+    for (const auto& [index, endpoints] : nominal_layers)
+        m_layers.append(m_preview_layer_grid.top_z(index), endpoints);
 
     // replace layers for spiral vase mode
     if (!gcode_result.spiral_vase_layers.empty()) {
@@ -1032,6 +1049,7 @@ void GCodeViewer::load(const GCodeProcessorResult& gcode_result, const Print& pr
     //BBS: move the id to the end of reset
     m_last_result_id = gcode_result.id;
     m_gcode_result = &gcode_result;
+    m_preview_layer_grid    = gcode_result.preview_layer_grid;
     m_only_gcode_in_preview = only_gcode;
 
     m_sequential_view.gcode_window.load_gcode(gcode_result.filename, gcode_result.lines_ends);
@@ -1355,6 +1373,7 @@ void GCodeViewer::reset()
     //m_shells.volumes.clear();
     m_layers.reset();
     m_layers_z_range = { 0, 0 };
+    m_preview_layer_grid = {};
     m_roles = std::vector<ExtrusionRole>();
     m_print_statistics.reset();
     m_custom_gcode_per_print_z = std::vector<CustomGCode::Item>();
@@ -2185,11 +2204,13 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
         }
     };
     //BBS: modify a lot to support arc travel
-    auto add_indices_as_line = [](const GCodeProcessorResult::MoveVertex& prev, const GCodeProcessorResult::MoveVertex& curr, TBuffer& buffer,
+    auto add_indices_as_line = [this](const GCodeProcessorResult::MoveVertex& prev, const GCodeProcessorResult::MoveVertex& curr,
+                                      TBuffer& buffer,
         size_t& vbuffer_size, unsigned int ibuffer_id, IndexBuffer& indices, size_t move_id) {
 
-            if (buffer.paths.empty() || prev.type != curr.type || !buffer.paths.back().matches(curr)) {
-                buffer.add_path(curr, ibuffer_id, indices.size(), move_id - 1);
+            if (buffer.paths.empty() || prev.type != curr.type ||
+            !buffer.paths.back().matches(curr, m_preview_layer_grid.index_at(curr.position.z()))) {
+            buffer.add_path(curr, ibuffer_id, indices.size(), move_id - 1, m_preview_layer_grid.index_at(curr.position.z()));
                 buffer.paths.back().sub_paths.front().first.position = prev.position;
             }
 
@@ -2216,7 +2237,8 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
     };
 
     // format data into the buffers to be rendered as solid.
-    auto add_vertices_as_solid = [](const GCodeProcessorResult::MoveVertex& prev, const GCodeProcessorResult::MoveVertex& curr, TBuffer& buffer, unsigned int vbuffer_id, VertexBuffer& vertices, size_t move_id) {
+    auto add_vertices_as_solid = [this](const GCodeProcessorResult::MoveVertex& prev, const GCodeProcessorResult::MoveVertex& curr,
+                                        TBuffer& buffer, unsigned int vbuffer_id, VertexBuffer& vertices, size_t move_id) {
         auto store_vertex = [](VertexBuffer& vertices, const Vec3f& position, const Vec3f& normal) {
             // append position
             vertices.push_back(position.x());
@@ -2228,8 +2250,9 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
             vertices.push_back(normal.z());
         };
 
-        if (buffer.paths.empty() || prev.type != curr.type || !buffer.paths.back().matches(curr)) {
-            buffer.add_path(curr, vbuffer_id, vertices.size(), move_id - 1);
+        if (buffer.paths.empty() || prev.type != curr.type ||
+            !buffer.paths.back().matches(curr, m_preview_layer_grid.index_at(curr.position.z()))) {
+            buffer.add_path(curr, vbuffer_id, vertices.size(), move_id - 1, m_preview_layer_grid.index_at(curr.position.z()));
             buffer.paths.back().sub_paths.back().first.position = prev.position;
         }
 
@@ -2318,11 +2341,12 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
                 store_triangle(indices, v_offsets[4], v_offsets[5], v_offsets[6]);
             };
 
-            const bool starts_new_path = buffer.paths.empty() || prev.type != curr.type || !buffer.paths.back().matches(curr);
+            const bool starts_new_path = buffer.paths.empty() || prev.type != curr.type ||
+                                         !buffer.paths.back().matches(curr, m_preview_layer_grid.index_at(curr.position.z()));
             const bool connects_to_previous_path = starts_new_path && !buffer.paths.empty() &&
                                                    extrusion_moves_are_contiguous(prev, curr);
             if (starts_new_path) {
-                buffer.add_path(curr, ibuffer_id, indices.size(), move_id - 1);
+                buffer.add_path(curr, ibuffer_id, indices.size(), move_id - 1, m_preview_layer_grid.index_at(curr.position.z()));
                 buffer.paths.back().sub_paths.back().first.position = prev.position;
             }
 
@@ -2416,7 +2440,8 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
                 sq_prev_length = sq_length;
             }
 
-            if (next != nullptr && (curr.type != next->type || !last_path.matches(*next))) {
+            if (next != nullptr &&
+                (curr.type != next->type || !last_path.matches(*next, m_preview_layer_grid.index_at(next->position.z())))) {
                 const auto cap_offsets = (is_first_segment && !curr.is_arc_move_with_interpolation_points()) ?
                                              first_seg_v_offsets :
                                              non_first_seg_v_offsets;
@@ -2646,7 +2671,7 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
             v_multibuffer.push_back(VertexBuffer());
             if (t_buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::Triangle) {
                 Path& last_path = t_buffer.paths.back();
-                if (prev.type == curr.type && last_path.matches(curr))
+                if (prev.type == curr.type && last_path.matches(curr, m_preview_layer_grid.index_at(curr.position.z())))
                     last_path.add_sub_path(prev, static_cast<unsigned int>(v_multibuffer.size()) - 1, 0, move_id - 1);
             }
         }
@@ -3460,7 +3485,20 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
                 Travel_Colors[0] /* Move */);
     };
 
+    auto is_move_in_layers_range = [this](size_t id, size_t min_id, size_t max_id) {
+        if (m_preview_layer_grid.enabled) {
+            if (!m_gcode_result || id >= m_ssid_to_moveid_map.size())
+                return false;
+            const auto& move = m_gcode_result->moves[m_ssid_to_moveid_map[id]];
+            return m_preview_layer_grid.contains(move.position.z(), m_layers.get_z_at(min_id), m_layers.get_z_at(max_id));
+        }
+        return m_layers.get_endpoints_at(min_id).first <= id && id <= m_layers.get_endpoints_at(max_id).last;
+    };
+
     auto is_in_layers_range = [this](const Path& path, size_t min_id, size_t max_id) {
+        if (m_preview_layer_grid.enabled)
+            return m_preview_layer_grid.index_at(m_layers.get_z_at(min_id)) <= path.preview_layer_id &&
+                   path.preview_layer_id <= m_preview_layer_grid.index_at(m_layers.get_z_at(max_id));
         auto in_layers_range = [this, min_id, max_id](size_t id) {
             return m_layers.get_endpoints_at(min_id).first <= id && id <= m_layers.get_endpoints_at(max_id).last;
         };
@@ -3480,6 +3518,9 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
             return false;
 
         Path path = buffer.paths[path_id];
+        if (m_preview_layer_grid.enabled)
+            return m_preview_layer_grid.index_at(m_layers.get_z_at(min_id)) <= path.preview_layer_id &&
+                   path.preview_layer_id <= m_preview_layer_grid.index_at(m_layers.get_z_at(max_id));
         size_t first = path_id;
         size_t last = path_id;
 
@@ -3530,14 +3571,14 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
         if (buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::InstancedModel ||
             buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::BatchedModel) {
             for (size_t id : buffer.model.instances.s_ids) {
-                if (id < m_layers.get_endpoints_at(m_layers_z_range[0]).first || m_layers.get_endpoints_at(m_layers_z_range[1]).last < id)
+                if (!is_move_in_layers_range(id, m_layers_z_range[0], m_layers_z_range[1]))
                     continue;
 
                 global_endpoints.first = std::min(global_endpoints.first, id);
                 global_endpoints.last = std::max(global_endpoints.last, id);
 
                 if (top_layer_only) {
-                    if (id < m_layers.get_endpoints_at(m_layers_z_range[1]).first || m_layers.get_endpoints_at(m_layers_z_range[1]).last < id)
+                    if (!is_move_in_layers_range(id, m_layers_z_range[1], m_layers_z_range[1]))
                         continue;
 
                     top_layer_endpoints.first = std::min(top_layer_endpoints.first, id);
@@ -3800,6 +3841,25 @@ m_no_render_path = false;
 
         if (!buffer.visible || buffer.model.instances.s_ids.empty())
             continue;
+
+        if (m_preview_layer_grid.enabled) {
+            auto& ranges = buffer.model.instances.render_ranges.ranges;
+            for (size_t i = 0; i < buffer.model.instances.s_ids.size(); ++i) {
+                const size_t id = buffer.model.instances.s_ids[i];
+                if (id < m_sequential_view.current.first || id > m_sequential_view.current.last ||
+                    !is_move_in_layers_range(id, m_layers_z_range[0], m_layers_z_range[1]))
+                    continue;
+                const ColorRGBA color = top_layer_only && m_sequential_view.current.last != global_endpoints.last &&
+                                                !is_move_in_layers_range(id, m_layers_z_range[1], m_layers_z_range[1]) ?
+                                            Neutral_Color :
+                                            buffer.model.color;
+                if (!ranges.empty() && ranges.back().offset + ranges.back().count == i && ranges.back().color == color)
+                    ++ranges.back().count;
+                else
+                    ranges.push_back({static_cast<unsigned int>(i), 1, 0, color});
+            }
+            continue;
+        }
 
         buffer.model.instances.render_ranges.ranges.push_back({ 0, 0, 0, buffer.model.color });
         bool has_second_range = top_layer_only && m_sequential_view.current.last != m_sequential_view.global.last;

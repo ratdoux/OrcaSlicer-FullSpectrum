@@ -6,6 +6,7 @@
 #include "libslic3r/ExtrusionEntity.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/CustomGCode.hpp"
+#include "PreviewLayerGrid.hpp"
 
 #include <cstdint>
 #include <array>
@@ -220,6 +221,7 @@ class Print;
         PrintEstimatedStatistics print_statistics;
         std::vector<CustomGCode::Item> custom_gcode_per_print_z;
         std::vector<std::pair<float, std::pair<size_t, size_t>>> spiral_vase_layers;
+        GCodePreview::LayerGrid                                  preview_layer_grid;
         //BBS
         std::vector<SliceWarning> warnings;
         int nozzle_hrc;
@@ -257,6 +259,7 @@ class Print;
             print_statistics = other.print_statistics;
             custom_gcode_per_print_z = other.custom_gcode_per_print_z;
             spiral_vase_layers = other.spiral_vase_layers;
+            preview_layer_grid       = other.preview_layer_grid;
             warnings = other.warnings;
             bed_type = other.bed_type;
             bed_match_result = other.bed_match_result;
@@ -778,7 +781,7 @@ class Print;
     public:
         GCodeProcessor();
 
-        void apply_config(const PrintConfig& config);
+        void apply_config(const PrintConfig& config, double nominal_layer_height = 0.);
         void set_print(Print* print) { m_print = print; }
         void enable_stealth_time_estimator(bool enabled);
         bool is_stealth_time_estimator_enabled() const {

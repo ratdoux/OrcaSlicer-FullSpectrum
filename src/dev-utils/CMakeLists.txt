@@ -28,19 +28,20 @@ function(encoding_check TARGET)
         # Obtain target source files
         get_target_property(T_SOURCES ${TARGET} SOURCES)
 
-        # Define top-level encoding check target for this ${TARGET}
-        add_custom_target(encoding-check-${TARGET}
-            DEPENDS encoding-check ${T_SOURCES}
-            COMMENT "Checking source files encodings for target ${TARGET}"
-        )
-
-        # Add checking of each source file as a subcommand of encoding-check-${TARGET}
+        # One command sequence gives the VS generator one batch-file epilogue.
+        # Separate PRE_BUILD commands repeat :cmEnd/:cmDone labels, which can
+        # send later commands back to an earlier label and loop indefinitely.
+        set(CHECK_COMMANDS)
         foreach(file ${T_SOURCES})
-            add_custom_command(TARGET encoding-check-${TARGET} PRE_BUILD
-                COMMAND $<TARGET_FILE:encoding-check> ${TARGET} ${file}
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            )
+            list(APPEND CHECK_COMMANDS COMMAND $<TARGET_FILE:encoding-check> ${TARGET} ${file})
         endforeach()
+        add_custom_target(encoding-check-${TARGET}
+            ${CHECK_COMMANDS}
+            DEPENDS encoding-check ${T_SOURCES}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Checking source files encodings for target ${TARGET}"
+            VERBATIM
+        )
 
         # This adds dependency on encoding-check-${TARGET} to ${TARET}
         # via the global-encoding-check

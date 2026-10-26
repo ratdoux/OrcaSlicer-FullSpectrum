@@ -19,6 +19,7 @@
 #include "ImageMap/VolumeData.hpp"
 #include "Layer.hpp"
 #include "LocalZMixBridge.hpp"
+#include "LocalZMaterialPlanner.hpp"
 #include "MixedFilament.hpp"
 #include "MixedFilamentLayerTracker.hpp"
 #include "PreparationDiagnostics.hpp"
@@ -2390,6 +2391,28 @@ static ExPolygons collect_layer_region_slices(const Layer &layer)
     return out;
 }
 
+static size_t local_z_owner_region(const PrintObject& object, const LocalZMixBridge& bridge, size_t layer_id)
+{
+    auto owner = [&](size_t id, const ExPolygons& masks) -> size_t {
+        for (const auto* region : object.get_layer(int(id))->regions())
+            if (!intersection_ex(masks, to_expolygons(region->slices.surfaces)).empty())
+                return region->region().print_object_region_id();
+        return size_t(-1);
+    };
+    const size_t current = owner(layer_id, bridge.ownership(layer_id));
+    if (current != size_t(-1))
+        return current;
+    // The fitted contour can outlive its nominal footprint at the top of a
+    // tapered island. Use a validated footprint in the same fitted span;
+    // region indices are shared across layers and survive paint segmentation.
+    for (const auto& footprint : bridge.layer_footprints) {
+        const size_t original = owner(footprint.layer_id, footprint.masks);
+        if (original != size_t(-1))
+            return original;
+    }
+    return size_t(-1);
+}
+
 static bool apply_mixed_region_surface_offsets(PrintObject &print_object)
 {
     const Print *print = print_object.print();
@@ -2987,6 +3010,166 @@ static std::vector<ExPolygons> build_local_z_transition_fixed_masks_for_pass(
     return pass_masks_by_extruder;
 }
 
+static void build_local_z_material_plan(PrintObject&                                object,
+                                        const std::vector<std::vector<ExPolygons>>& segmentation,
+                                        const std::vector<std::vector<ExPolygons>>* painted,
+                                        const std::vector<MixedFilamentDefinition>& definitions,
+                                        const std::vector<uint8_t>&                 enabled,
+                                        double                                      minimum_height,
+                                        const std::function<void()>&                cancel)
+{
+    const auto&                        config  = object.print()->config();
+    const auto&                        manager = object.print()->mixed_filament_manager();
+    const size_t                       tools   = config.filament_colour.size();
+    std::vector<LocalZCadence::Limits> limits;
+    for (size_t i = 0; i < tools; ++i)
+        limits.push_back(LocalZCadence::resolve_limits(minimum_height, config.min_layer_height.get_at(i), config.max_layer_height.get_at(i),
+                                                       config.nozzle_diameter.get_at(i)));
+    auto recipe = [&](unsigned source) {
+        std::vector<LocalZCadence::Component> result;
+        if (source > 0 && source <= tools)
+            return std::vector<LocalZCadence::Component>{{source, 1., limits[source - 1]}};
+        const int index = manager.mixed_index_from_filament_id(source, tools);
+        if (index < 0 || size_t(index) >= definitions.size() || !enabled[index] || definitions[index].recipe.manual_pattern ||
+            definitions[index].behavior.gradient.enabled)
+            throw std::runtime_error(
+                "Material Local-Z currently supports automatic fixed recipes. Select Legacy cycles for manual patterns or gradients.");
+        const auto ids     = decode_blend_component_ids(definitions[index], tools);
+        const auto weights = decode_blend_component_weights(definitions[index], tools, ids.size());
+        if (ids.empty() || weights.size() != ids.size())
+            throw std::runtime_error("Material Local-Z recipe has no valid component weights");
+        double sum = std::accumulate(weights.begin(), weights.end(), 0.);
+        for (size_t i = 0; i < ids.size(); ++i) {
+            if (ids[i] == 0 || ids[i] > tools || weights[i] < 0 || sum <= 0.)
+                throw std::runtime_error("Material Local-Z recipe has an invalid physical component");
+            if (weights[i] > 0)
+                result.push_back({ids[i], weights[i] / sum, limits[ids[i] - 1]});
+        }
+        std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) { return a.tool < b.tool; });
+        return result;
+    };
+    std::vector<LocalZMaterialGraph::Slice> samples;
+    for (size_t index = 1; index < object.layer_count(); ++index) {
+        cancel();
+        const auto&                layer = *object.get_layer(int(index));
+        LocalZMaterialGraph::Slice sample;
+        sample.layer_id = index;
+        sample.bottom   = layer.bottom_z();
+        sample.top      = layer.print_z;
+        // slice_z is model-relative, whereas cell interfaces use print Z.
+        sample.sample_z = .5 * (sample.bottom + sample.top);
+        sample.outline  = collect_layer_region_slices(layer);
+        for (const auto* region : layer.regions()) {
+            const auto domain = to_expolygons(region->slices.surfaces);
+            ExPolygons assigned;
+            auto       add = [&](unsigned source, const ExPolygons& masks) {
+                auto owned = diff_ex(intersection_ex(masks, domain), assigned);
+                if (owned.empty())
+                    return;
+                append(assigned, owned);
+                assigned = union_ex(assigned);
+                sample.regions.push_back({source, size_t(region->region().print_object_region_id()), recipe(source), std::move(owned)});
+            };
+            for (size_t channel = 1; channel < segmentation[index].size(); ++channel) {
+                const auto& masks = painted && channel <= tools && channel < (*painted)[index].size() ? (*painted)[index][channel] :
+                                                                                                        segmentation[index][channel];
+                add(segmentation_channel_filament_id(channel), masks);
+            }
+            const auto remaining = diff_ex(domain, assigned);
+            if (!remaining.empty())
+                add(region->region().config().wall_filament.value, remaining);
+        }
+        samples.push_back(std::move(sample));
+    }
+    if (samples.empty())
+        return;
+    auto                           graph = LocalZMaterialGraph::build(std::move(samples), cancel);
+    LocalZMaterialPlanner::Options options;
+    options.nozzle_diameter                = *std::min_element(config.nozzle_diameter.values.begin(), config.nozzle_diameter.values.end());
+    options.transition_factor              = .01 * config.dithering_local_z_mix_transition_length.value;
+    options.join_equal_periods             = config.dithering_local_z_mix_bridges.value;
+    const auto                    material = LocalZMaterialPlanner::build(graph, options, cancel);
+    std::map<std::string, size_t> reasons;
+    for (const auto& diagnostic : material.diagnostics) {
+        ++reasons[diagnostic.reason];
+        BOOST_LOG_TRIVIAL(debug) << "Local-Z material domain=" << diagnostic.domain << " reason=" << diagnostic.reason
+                                 << " source_domain=" << diagnostic.source_domain << " bottom=" << diagnostic.bottom
+                                 << " top=" << diagnostic.top << " ideal_period=" << diagnostic.ideal_period
+                                 << " selected_period=" << diagnostic.chosen_period;
+    }
+    for (const auto& reason : reasons)
+        BOOST_LOG_TRIVIAL(info) << "Local-Z material classification reason=" << reason.first << " domains=" << reason.second;
+    BOOST_LOG_TRIVIAL(info) << "Local-Z material planner domains=" << graph.domains.size() << " cells=" << material.cells.size()
+                            << " minimum_cycles=" << material.minimum_cycles << " closure_cycles=" << material.closure_cycles
+                            << " nominal_cells=" << material.nominal_cells << " joined_cycles=" << material.joined_cycles;
+    BOOST_LOG_TRIVIAL(info) << "Local-Z material volumes_mm3 mixed=" << material.mixed_volume << " minimum=" << material.minimum_volume
+                            << " closure=" << material.closure_volume << " nominal=" << material.nominal_volume
+                            << " joined=" << material.joined_volume;
+    size_t fallback_domains = 0, unequal_contacts = 0;
+    for (const auto& diagnostic : material.diagnostics)
+        fallback_domains += diagnostic.reason != "minimum_cadence" && diagnostic.reason != "finite_domain_closure";
+    for (const auto& contact : material.contacts)
+        unequal_contacts += contact.kind == LocalZMaterialPlanner::ContactKind::unequal_period;
+    std::string warning;
+    if (fallback_domains || unequal_contacts)
+        warning = (boost::format(L("Experimental Local-Z material planning: %1% regions retain nominal material islands; %2% contacts have "
+                                   "unequal periods and remain separate. These regions are not continuous mix bridges.")) %
+                   fallback_domains % unequal_contacts)
+                      .str();
+
+    std::vector<LocalZInterval> intervals(object.layer_count());
+    std::vector<SubLayerPlan>   plans;
+    for (size_t index = 0; index < object.layer_count(); ++index) {
+        const auto& layer    = *object.get_layer(int(index));
+        auto&       interval = intervals[index];
+        interval.layer_id    = index;
+        interval.z_lo        = layer.bottom_z();
+        interval.z_hi        = layer.print_z;
+        interval.base_height = interval.sublayer_height = layer.height;
+    }
+    for (const auto& cell : material.cells)
+        for (auto& interval : intervals)
+            if (cell.geometry->z_hi > interval.z_lo + 1e-6 && cell.geometry->z_lo < interval.z_hi - 1e-6)
+                interval.mix_bridges.push_back(cell.geometry);
+    for (auto& interval : intervals) {
+        cancel();
+        interval.first_sublayer_idx = plans.size();
+        interval.has_mixed_paint = interval.independent_layer_height = !interval.mix_bridges.empty();
+        for (size_t group = 0; group < interval.mix_bridges.size(); ++group) {
+            const auto& bridge = interval.mix_bridges[group];
+            append(interval.managed_masks, bridge->ownership(interval.layer_id));
+            for (size_t i = 0; i < bridge->passes.size(); ++i) {
+                const auto&  bead = bridge->passes[i];
+                const double z    = bridge->schedule_z(bead);
+                if (z <= interval.z_lo + 1e-6 || z > interval.z_hi + 1e-6)
+                    continue;
+                SubLayerPlan pass;
+                pass.layer_id             = interval.layer_id;
+                pass.split_interval       = true;
+                pass.mix_bridge           = bridge;
+                pass.mix_bridge_component = i;
+                pass.mix_bridge_region_id = bridge->material_configuration;
+                pass.z_lo                 = bridge->z_lo;
+                pass.z_hi                 = bridge->z_hi;
+                pass.print_z              = z;
+                pass.flow_height          = interval.base_height;
+                pass.dependency_group     = definitions.size() + 2 + group;
+                pass.dependency_order     = i;
+                pass.painted_masks_by_extruder.resize(tools);
+                pass.painted_masks_by_extruder[bead.filament_id - 1] = bridge->masks(bead, interval.layer_id);
+                plans.push_back(std::move(pass));
+            }
+        }
+        interval.managed_masks = union_ex(interval.managed_masks);
+        std::stable_sort(plans.begin() + interval.first_sublayer_idx, plans.end(),
+                         [](const auto& a, const auto& b) { return a.print_z < b.print_z; });
+        interval.sublayer_count = plans.size() - interval.first_sublayer_idx;
+        for (size_t i = 0; i < interval.sublayer_count; ++i)
+            plans[interval.first_sublayer_idx + i].pass_index = i;
+    }
+    object.set_local_z_plan(std::move(intervals), std::move(plans), warning);
+}
+
 template<typename ThrowOnCancel>
 static void build_local_z_plan(PrintObject&                                print_object,
                                const std::vector<std::vector<ExPolygons>>& segmentation,
@@ -3076,6 +3259,16 @@ static void build_local_z_plan(PrintObject&                                print
     if (enabled_row_count == 0) {
         BOOST_LOG_TRIVIAL(debug) << "Local-Z plan skipped: no enabled mixed rows"
                                  << " object=" << object_name;
+        return;
+    }
+
+    if (print_cfg.dithering_local_z_planner.value == LocalZPlanner::MaterialV1) {
+        if (!local_z_whole_objects || !local_z_preserve_first_layer || print_cfg.spiral_mode.value ||
+            print_object.slicing_parameters().raft_layers() != 0 || preferred_a > EPSILON || preferred_b > EPSILON ||
+            std::any_of(adaptive_independent_rows.begin(), adaptive_independent_rows.end(), [](auto enabled) { return enabled != 0; }))
+            throw std::runtime_error("Material Local-Z requires whole-object automatic recipes, a preserved first layer, and no raft or spiral mode.");
+        build_local_z_material_plan(print_object, segmentation, painted_segmentation, mixed_definitions, row_uses_local_z,
+                                    min_sublayer_height, throw_on_cancel);
         return;
     }
 
@@ -3195,19 +3388,61 @@ static void build_local_z_plan(PrintObject&                                print
     // Eligibility belongs to each recipe, not to the entire object. Preflight
     // every active layer so a selected row never switches back to an unfinished
     // independent cadence halfway up its wall.
-    const bool mix_bridges = LocalZMixBridge::enabled_from_environment() && local_z_preserve_first_layer && !print_cfg.spiral_mode.value &&
+    const bool mix_bridges = print_cfg.dithering_local_z_mix_bridges.value && LocalZMixBridge::enabled_from_environment() &&
+                             local_z_preserve_first_layer && !print_cfg.spiral_mode.value &&
                              print_object.slicing_parameters().raft_layers() == 0 && preferred_a <= EPSILON && preferred_b <= EPSILON;
+    bool bridge_geometry_varies = false;
+    if (mix_bridges && print_object.layer_count() > 2) {
+        const auto reference = collect_layer_region_slices(*print_object.get_layer(1));
+        const auto expanded  = offset_ex(reference, scale_(.00001));
+        for (size_t layer = 2; !bridge_geometry_varies && layer < print_object.layer_count(); ++layer) {
+            const auto masks       = collect_layer_region_slices(*print_object.get_layer(int(layer)));
+            bridge_geometry_varies = !diff_ex(masks, expanded).empty() || !diff_ex(reference, offset_ex(masks, scale_(.00001))).empty();
+        }
+    }
     std::vector<LocalZMixBridge::Zone> bridge_recipes(mixed_definitions.size());
-    size_t                             bridge_cycle_span = 1;
+    std::vector<bool>                  bridge_gradient_rows(mixed_definitions.size(), false);
+    size_t                             bridge_cycle_span  = 1;
+    auto                               sparse_fits_height = [&](std::vector<LocalZMixBridge::Zone> recipes, double height) {
+        recipes.erase(std::remove_if(recipes.begin(), recipes.end(), [](const auto& r) { return r.component_ids.empty(); }), recipes.end());
+        if (recipes.size() < 2)
+            return true;
+        bool equal  = true;
+        auto common = recipes.front().component_ids;
+        std::sort(common.begin(), common.end());
+        const auto first = common;
+        for (auto& recipe : recipes) {
+            auto ids = recipe.component_ids;
+            std::sort(ids.begin(), ids.end());
+            equal &= ids == first;
+            std::vector<unsigned> intersection;
+            std::set_intersection(common.begin(), common.end(), ids.begin(), ids.end(), std::back_inserter(intersection));
+            common = std::move(intersection);
+            for (double& h : recipe.heights)
+                h *= height;
+        }
+        // Disjoint groups still get independent stacks. A common multi-cycle
+        // group must leave printable room for every extra-color island.
+        return equal || common.empty() || LocalZMixBridge::sparse_stack_fits(recipes, min_sublayer_height, gradient_max_layer_heights);
+    };
     if (mix_bridges) {
         for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
-            const auto& definition = mixed_definitions[row_idx];
-            auto        ids        = decode_blend_component_ids(definition, num_physical);
-            auto        weights    = decode_blend_component_weights(definition, num_physical, ids.size());
+            const auto& definition        = mixed_definitions[row_idx];
+            auto        ids               = decode_blend_component_ids(definition, num_physical);
+            auto        weights           = decode_blend_component_weights(definition, num_physical, ids.size());
+            bridge_gradient_rows[row_idx] = row_uses_local_z[row_idx] != 0 && definition.behavior.gradient.enabled &&
+                                            !definition.recipe.manual_pattern.has_value() &&
+                                            !(row_idx < adaptive_independent_rows.size() && adaptive_independent_rows[row_idx] != 0);
             if (row_uses_local_z[row_idx] == 0 || ids.size() < 2 || weights.size() != ids.size() || definition.behavior.gradient.enabled ||
                 definition.recipe.manual_pattern.has_value() ||
-                (row_idx < adaptive_independent_rows.size() && adaptive_independent_rows[row_idx] != 0))
+                (row_idx < adaptive_independent_rows.size() && adaptive_independent_rows[row_idx] != 0)) {
+                BOOST_LOG_TRIVIAL(debug) << "Local-Z bridge recipe excluded row=" << row_idx + 1
+                                         << " local_z=" << int(row_uses_local_z[row_idx]) << " components=" << ids.size()
+                                         << " gradient=" << definition.behavior.gradient.enabled
+                                         << " manual=" << definition.recipe.manual_pattern.has_value() << " adaptive="
+                                         << (row_idx < adaptive_independent_rows.size() && adaptive_independent_rows[row_idx] != 0);
                 continue;
+            }
             bool   valid = true;
             double total = 0.;
             for (size_t i = 0; i < ids.size(); ++i) {
@@ -3234,68 +3469,153 @@ static void build_local_z_plan(PrintObject&                                print
             if (!valid || recipe.source_filament_id == 0)
                 recipe = LocalZMixBridge::Zone{};
         }
-        // Choose a shared cycle in nominal intervals, rather than insisting
-        // that every constituent bead fit inside one interval. Keep the shortest
-        // span admitting the most recipes; unprintable ratios stay independent.
-        size_t best_count = 0;
-        auto   fits_span  = [&](const LocalZMixBridge::Zone& recipe, size_t span) {
+        // Equal physical component sets may need multiple consecutive beads
+        // of a dominant filament. All zones share the same slot count so the
+        // resulting cumulative interfaces remain ordered and connectable.
+        std::vector<unsigned> shared_ids;
+        bool                  shared_components = true;
+        for (const auto& recipe : bridge_recipes) {
+            if (recipe.component_ids.empty())
+                continue;
+            auto ids = recipe.component_ids;
+            std::sort(ids.begin(), ids.end());
+            if (shared_ids.empty())
+                shared_ids = std::move(ids);
+            else if (ids != shared_ids)
+                shared_components = false;
+        }
+        size_t              best_count = 0;
+        std::vector<size_t> best_slots(num_physical, 1);
+        auto                fits_span = [&](const LocalZMixBridge::Zone& recipe, size_t span, const std::vector<size_t>& slots) {
             if (recipe.component_ids.empty())
                 return false;
             for (size_t layer = 1; layer < print_object.layer_count(); ++layer) {
                 const double height = print_object.get_layer(int(layer))->height * span;
-                for (size_t i = 0; i < recipe.heights.size(); ++i)
-                    if (height * recipe.heights[i] < min_sublayer_height - EPSILON ||
-                        height * recipe.heights[i] > gradient_max_layer_heights[recipe.component_ids[i] - 1] + EPSILON)
+                for (size_t i = 0; i < recipe.heights.size(); ++i) {
+                    const unsigned id          = recipe.component_ids[i];
+                    const double   bead_height = height * recipe.heights[i] / slots[id - 1];
+                    if (bead_height < min_sublayer_height - EPSILON || bead_height > gradient_max_layer_heights[id - 1] + EPSILON)
                         return false;
+                }
             }
             return true;
         };
         const size_t max_span = std::min<size_t>(32, print_object.layer_count() - 1);
         for (size_t span = 1; span <= max_span; ++span) {
-            const size_t count = std::count_if(bridge_recipes.begin(), bridge_recipes.end(),
-                                               [&](const auto& recipe) { return fits_span(recipe, span); });
-            if (count > best_count) {
-                best_count        = count;
-                bridge_cycle_span = span;
+            auto consider = [&](const std::vector<size_t>& slots) {
+                const size_t count = std::count_if(bridge_recipes.begin(), bridge_recipes.end(),
+                                                   [&](const auto& recipe) { return fits_span(recipe, span, slots); });
+                if (count > best_count) {
+                    if (!bridge_geometry_varies && !shared_components && span > 1) {
+                        std::vector<LocalZMixBridge::Zone> candidates;
+                        for (const auto& recipe : bridge_recipes) {
+                            if (!fits_span(recipe, span, slots))
+                                continue;
+                            LocalZMixBridge::Zone expanded;
+                            for (size_t i = 0; i < recipe.heights.size(); ++i) {
+                                const unsigned id = recipe.component_ids[i];
+                                expanded.component_ids.insert(expanded.component_ids.end(), slots[id - 1], id);
+                                expanded.heights.insert(expanded.heights.end(), slots[id - 1], recipe.heights[i] / slots[id - 1]);
+                            }
+                            candidates.push_back(std::move(expanded));
+                        }
+                        for (size_t layer = 1; layer < print_object.layer_count(); ++layer)
+                            if (!sparse_fits_height(candidates, print_object.get_layer(int(layer))->height * span))
+                                return;
+                    }
+                    best_count        = count;
+                    bridge_cycle_span = span;
+                    best_slots        = slots;
+                }
+            };
+            // Preserve a feasible unsplit subset even if an incompatible
+            // extreme recipe would force too many slots onto its neighbors.
+            consider(std::vector<size_t>(num_physical, 1));
+            std::vector<bool> candidates(bridge_recipes.size(), true);
+            bool              changed = true;
+            while (changed) {
+                std::vector<size_t> slots(num_physical, 1);
+                for (size_t row = 0; row < bridge_recipes.size(); ++row) {
+                    if (!candidates[row])
+                        continue;
+                    const auto& recipe = bridge_recipes[row];
+                    for (size_t i = 0; i < recipe.heights.size(); ++i) {
+                        const unsigned id = recipe.component_ids[i];
+                        if (gradient_max_layer_heights[id - 1] <= EPSILON)
+                            continue;
+                        for (size_t layer = 1; layer < print_object.layer_count(); ++layer) {
+                            const double total_height = print_object.get_layer(int(layer))->height * span * recipe.heights[i];
+                            const size_t count        = size_t(
+                                std::ceil(std::max(0., total_height - EPSILON) / gradient_max_layer_heights[id - 1]));
+                            slots[id - 1] = std::max(slots[id - 1], count);
+                        }
+                    }
+                }
+                consider(slots);
+                changed = false;
+                for (size_t row = 0; row < bridge_recipes.size(); ++row)
+                    if (candidates[row] && !fits_span(bridge_recipes[row], span, slots)) {
+                        candidates[row] = false;
+                        changed         = true;
+                    }
             }
         }
-        for (auto& recipe : bridge_recipes)
-            if (!fits_span(recipe, bridge_cycle_span))
+        for (auto& recipe : bridge_recipes) {
+            if (!fits_span(recipe, bridge_cycle_span, best_slots)) {
                 recipe = LocalZMixBridge::Zone{};
+                continue;
+            }
+            std::vector<unsigned> ids;
+            std::vector<double>   heights;
+            for (size_t i = 0; i < recipe.heights.size(); ++i) {
+                const unsigned id = recipe.component_ids[i];
+                ids.insert(ids.end(), best_slots[id - 1], id);
+                heights.insert(heights.end(), best_slots[id - 1], recipe.heights[i] / best_slots[id - 1]);
+            }
+            recipe.component_ids = std::move(ids);
+            recipe.heights       = std::move(heights);
+        }
+        if (best_count == 0 && std::any_of(bridge_gradient_rows.begin(), bridge_gradient_rows.end(), [](bool active) { return active; }))
+            bridge_cycle_span = std::max<size_t>(1, size_t(std::ceil(gradient_nominal_height / print_object.config().layer_height.value)));
+        BOOST_LOG_TRIVIAL(info) << "Local-Z bridge preflight object=" << object_name << " eligible_recipes="
+                                << std::count_if(bridge_recipes.begin(), bridge_recipes.end(),
+                                                 [](const auto& recipe) { return !recipe.component_ids.empty(); })
+                                << " cycle_span=" << bridge_cycle_span;
     }
 
     std::vector<LocalZInterval> intervals;
     std::vector<SubLayerPlan>   plans;
     intervals.reserve(print_object.layer_count());
-    size_t mixed_intervals              = 0;
-    size_t split_intervals              = 0;
-    size_t non_split_mixed_intervals    = 0;
-    size_t total_generated_sublayer_cnt = 0;
-    size_t total_mixed_state_layers     = 0;
-    size_t forced_height_resolve_calls  = 0;
-    size_t forced_height_resolve_invalid_target   = 0;
-    size_t split_passes_total                     = 0;
-    size_t split_passes_with_painted_masks        = 0;
-    size_t split_intervals_without_painted_masks  = 0;
-    size_t strict_ab_assignments                  = 0;
-    size_t alternating_height_intervals           = 0;
-    size_t shared_multi_row_fallback_intervals    = 0;
-    constexpr size_t LOCAL_Z_MAX_ISOLATED_ACTIVE_ROWS = 2;
-    constexpr size_t LOCAL_Z_MAX_ISOLATED_MASK_COMPONENTS = 24;
-    constexpr size_t LOCAL_Z_MAX_ISOLATED_MASK_VERTICES = 1200;
-    constexpr bool   LOCAL_Z_SHARED_FALLBACK_ENABLED = false;
-    struct IndependentCadenceState {
-        bool                                      active { false };
-        double                                    z_cursor { 0.0 };
-        size_t                                    cadence_index { 0 };
-        size_t                                    emitted_passes { 0 };
+    size_t           mixed_intervals                       = 0;
+    size_t           split_intervals                       = 0;
+    size_t           non_split_mixed_intervals             = 0;
+    size_t           total_generated_sublayer_cnt          = 0;
+    size_t           total_mixed_state_layers              = 0;
+    size_t           forced_height_resolve_calls           = 0;
+    size_t           forced_height_resolve_invalid_target  = 0;
+    size_t           split_passes_total                    = 0;
+    size_t           split_passes_with_painted_masks       = 0;
+    size_t           split_intervals_without_painted_masks = 0;
+    size_t           strict_ab_assignments                 = 0;
+    size_t           alternating_height_intervals          = 0;
+    size_t           shared_multi_row_fallback_intervals   = 0;
+    constexpr size_t LOCAL_Z_MAX_ISOLATED_ACTIVE_ROWS      = 2;
+    constexpr size_t LOCAL_Z_MAX_ISOLATED_MASK_COMPONENTS  = 24;
+    constexpr size_t LOCAL_Z_MAX_ISOLATED_MASK_VERTICES    = 1200;
+    constexpr bool   LOCAL_Z_SHARED_FALLBACK_ENABLED       = false;
+    struct IndependentCadenceState
+    {
+        bool                                     active{false};
+        double                                   z_cursor{0.0};
+        size_t                                   cadence_index{0};
+        size_t                                   emitted_passes{0};
         std::vector<LocalZIndependentDirectPass> gradient_cadence;
-        size_t                                    gradient_pass_index { 0 };
-        unsigned int                              last_extruder { 0 };
-        double                                    adaptive_cycle_z_lo { 0.0 };
-        double                                    adaptive_cycle_z_hi { 0.0 };
-        double                                    adaptive_sample_z { 0.0 };
-        size_t                                    adaptive_cycle_end_layer { 0 };
+        size_t                                   gradient_pass_index{0};
+        unsigned int                             last_extruder{0};
+        double                                   adaptive_cycle_z_lo{0.0};
+        double                                   adaptive_cycle_z_hi{0.0};
+        double                                   adaptive_sample_z{0.0};
+        size_t                                   adaptive_cycle_end_layer{0};
     };
     std::vector<IndependentCadenceState> row_independent_states(mixed_definitions.size());
     // Keep local-Z cadence isolated per mixed row so independent painted zones
@@ -3307,7 +3627,7 @@ static void build_local_z_plan(PrintObject&                                print
     // Painted-only Local-Z keeps cadence isolated per zone. Whole-object Local-Z
     // instead syncs newly introduced painted rows to the dominant mixed cadence
     // so painted islands do not restart their phase at the boundary.
-    std::vector<uint8_t> row_active_prev_layer(mixed_definitions.size(), uint8_t(0));
+    std::vector<uint8_t>      row_active_prev_layer(mixed_definitions.size(), uint8_t(0));
     std::vector<unsigned int> row_last_gradient_extruder(mixed_definitions.size(), 0);
 
     std::vector<std::vector<int>> per_row_gradient_layers(mixed_definitions.size());
@@ -3652,6 +3972,1466 @@ static void build_local_z_plan(PrintObject&                                print
                                       dominant_mixed_idx,
                                       has_mixed_paint};
     };
+    // Resolve island ownership before planning the independent cadence. Every
+    // ownership handover closes that cadence on a nominal plane.
+    std::vector<std::vector<std::shared_ptr<const LocalZMixBridge>>> layer_bridges(print_object.layer_count());
+    // A moving outline needs a complete nominal wall, not a sub-width ribbon
+    // clipped out of a wall whose centerline still belongs to the fixed island.
+    const bool partition_curved_shell = bridge_geometry_varies && local_z_whole_objects && local_z_independent_layer_height &&
+                                        local_z_direct_multicolor &&
+                                        std::none_of(adaptive_independent_rows.begin(), adaptive_independent_rows.end(),
+                                                     [](auto value) { return value != 0; }) &&
+                                        std::all_of(print_object.layers().begin() + 1, print_object.layers().end(),
+                                                    [&](const auto* layer) { return layer->height >= min_sublayer_height - EPSILON; });
+    std::vector<ExPolygons>                                          moving_shells(print_object.layer_count());
+    std::set<unsigned>                                               selected_sources;
+    std::vector<std::pair<size_t, size_t>>                           cycles;
+    // Geometry is immutable until this plan is complete. Reusing these unions
+    // avoids rebuilding the full layer for every disconnected candidate.
+    std::unordered_map<const Layer*, ExPolygons> original_outlines;
+    if (mix_bridges || partition_curved_shell)
+        for (const auto* layer : print_object.layers())
+            original_outlines.emplace(layer, collect_layer_region_slices(*layer));
+    auto original_outline = [&](const Layer& layer) -> const ExPolygons& { return original_outlines.at(&layer); };
+    for (size_t layer_id = 0; layer_id < print_object.layer_count(); ++layer_id) {
+        const auto*    layer = print_object.get_layer(int(layer_id));
+        LocalZInterval interval;
+        interval.layer_id    = layer_id;
+        interval.z_lo        = layer->bottom_z();
+        interval.z_hi        = layer->print_z;
+        interval.base_height = layer->height;
+        intervals.push_back(std::move(interval));
+    }
+    if (mix_bridges) {
+        const auto bridge_eligible = [&](size_t channel) {
+            const int row = channel < mixed_rows.size() ? mixed_rows[channel] : -1;
+            return row >= 0 && size_t(row) < bridge_recipes.size() && !bridge_recipes[row].component_ids.empty();
+        };
+        // Cycle masks deliberately bypass the original fixed-color guard: a
+        // guard is useful for independently printed ends, but breaks adjacency.
+        auto cycle_zones = [&](size_t layer_id, double height) {
+            std::vector<LocalZMixBridge::Zone> zones;
+            ExPolygons                         painted;
+            const auto&                        regions       = print_object.get_layer(int(layer_id))->regions();
+            const bool                         physical_base = std::any_of(regions.begin(), regions.end(), [&](const LayerRegion* region) {
+                const unsigned id = region->region().config().wall_filament.value;
+                return id >= 1 && id <= num_physical;
+            });
+            if (physical_base && painted_segmentation)
+                for (size_t channel = 1; channel < (*painted_segmentation)[layer_id].size(); ++channel)
+                    append(painted, (*painted_segmentation)[layer_id][channel]);
+            for (size_t channel = 1; channel < segmentation[layer_id].size(); ++channel) {
+                const auto& masks = painted_segmentation && channel <= num_physical && channel < (*painted_segmentation)[layer_id].size() ?
+                                        (*painted_segmentation)[layer_id][channel] :
+                                        segmentation[layer_id][channel];
+                if (masks.empty())
+                    continue;
+                if (physical_base)
+                    append(painted, masks);
+                const unsigned id  = segmentation_channel_filament_id(channel);
+                const int      row = mixed_mgr.mixed_index_from_filament_id(id, num_physical);
+                if (row >= 0 && size_t(row) < bridge_gradient_rows.size() && bridge_gradient_rows[row]) {
+                    LocalZActivePair pair;
+                    if (!effective_gradient_active_pair_for_z(size_t(row), print_object.get_layer(int(layer_id))->slice_z, 0, pair))
+                        continue;
+                    LocalZMixBridge::Zone zone;
+                    zone.masks              = masks;
+                    zone.source_filament_id = id;
+                    if (pair.single_component) {
+                        zone.component_ids = {pair.component_a};
+                        zone.heights       = {height};
+                    } else {
+                        zone.component_ids = {pair.component_a, pair.component_b};
+                        zone.heights       = {height * (100 - pair.mix_b_percent) * .01, height * pair.mix_b_percent * .01};
+                    }
+                    bool fits = true;
+                    for (size_t i = 0; i < zone.heights.size(); ++i)
+                        fits &= zone.heights[i] >= min_sublayer_height - EPSILON &&
+                                zone.heights[i] <= gradient_max_layer_heights[zone.component_ids[i] - 1] + EPSILON;
+                    if (fits)
+                        zones.push_back(std::move(zone));
+                } else if (row >= 0 && size_t(row) < bridge_recipes.size() && !bridge_recipes[row].component_ids.empty()) {
+                    auto zone  = bridge_recipes[row];
+                    zone.masks = masks;
+                    for (double& h : zone.heights)
+                        h *= height;
+                    zones.emplace_back(std::move(zone));
+                } else if (id >= 1 && id <= num_physical) {
+                    zones.push_back({masks, {height}, {id}, id});
+                }
+            }
+            if (physical_base)
+                painted = union_ex(painted);
+            for (const LayerRegion* region : print_object.get_layer(int(layer_id))->regions()) {
+                const unsigned id = region->region().config().wall_filament.value;
+                if (id == 0 || id > num_physical)
+                    continue;
+                auto masks = diff_ex(to_expolygons(region->slices.surfaces), painted);
+                if (masks.empty())
+                    continue;
+                auto same = std::find_if(zones.begin(), zones.end(), [id](const auto& z) { return z.source_filament_id == id; });
+                if (same == zones.end())
+                    zones.push_back({std::move(masks), {height}, {id}, id});
+                else {
+                    append(same->masks, masks);
+                    same->masks = union_ex(same->masks);
+                }
+            }
+            return zones;
+        };
+        auto fits_height = [&](double height) {
+            for (const auto& recipe : bridge_recipes)
+                for (size_t i = 0; i < recipe.heights.size(); ++i)
+                    if (height * recipe.heights[i] < min_sublayer_height - EPSILON ||
+                        height * recipe.heights[i] > gradient_max_layer_heights[recipe.component_ids[i] - 1] + EPSILON)
+                        return false;
+            return bridge_geometry_varies || bridge_cycle_span == 1 || sparse_fits_height(bridge_recipes, height);
+        };
+        std::vector<size_t> cycle_end(intervals.size() + 1, 0);
+        cycle_end.back()                        = intervals.size();
+        const bool          repeated_components = std::any_of(bridge_recipes.begin(), bridge_recipes.end(), [](const auto& recipe) {
+            return std::adjacent_find(recipe.component_ids.begin(), recipe.component_ids.end()) != recipe.component_ids.end();
+        });
+        std::vector<size_t> cycle_cost(intervals.size() + 1, std::numeric_limits<size_t>::max());
+        cycle_cost.back() = 0;
+        std::vector<size_t> unjoined_intervals(intervals.size() + 1, std::numeric_limits<size_t>::max());
+        std::vector<bool>   skip_interval(intervals.size(), false);
+        unjoined_intervals.back() = 0;
+        // Prefer complete tiling, absorbing a short tail into a longer printable
+        // cycle. Curved models can hand ownership back to the independent cadence
+        // on nominal planes: an untileable remainder must not veto every cycle.
+        for (size_t first = intervals.size(); first-- > 1;) {
+            if (bridge_geometry_varies) {
+                cycle_end[first]          = first + 1;
+                cycle_cost[first]         = cycle_cost[first + 1];
+                unjoined_intervals[first] = unjoined_intervals[first + 1] + 1;
+                skip_interval[first]      = true;
+            }
+            for (size_t end = first + bridge_cycle_span; end <= intervals.size() && end <= first + 32; ++end) {
+                if (cycle_end[end] != 0 && fits_height(intervals[end - 1].z_hi - intervals[first].z_lo)) {
+                    const size_t extra = end - first - bridge_cycle_span;
+                    const size_t cost  = cycle_cost[end] + extra * extra;
+                    if (unjoined_intervals[end] < unjoined_intervals[first] ||
+                        (unjoined_intervals[end] == unjoined_intervals[first] &&
+                         (cost < cycle_cost[first] || (cost == cycle_cost[first] && skip_interval[first])))) {
+                        cycle_end[first]          = end;
+                        cycle_cost[first]         = cost;
+                        unjoined_intervals[first] = unjoined_intervals[end];
+                        skip_interval[first]      = false;
+                    }
+                    // Spread a short remainder across nearby cycles instead
+                    // of forcing a large closing stack back to uniform splits.
+                    if (!repeated_components && !bridge_geometry_varies)
+                        break;
+                }
+                if (bridge_cycle_span == 1)
+                    break;
+            }
+        }
+        for (size_t first = 1; first < intervals.size() && cycle_end[first] != 0; first = cycle_end[first])
+            if (!skip_interval[first])
+                cycles.emplace_back(first, cycle_end[first]);
+        // Rank terminal colors once by contact with mixed paint, including
+        // unpainted base regions. A distant pure body must not decide the phase,
+        // nor may a local neighbor disappearing in a retry reverse the stack.
+        std::vector<double> pure_contact(num_physical, 0.);
+        for (const auto& [first, end] : cycles) {
+            throw_on_cancel();
+            const double height = intervals[end - 1].z_hi - intervals[first].z_lo;
+            const auto   zones  = cycle_zones(first + (end - first - 1) / 2, height);
+            ExPolygons   mixed;
+            for (const auto& zone : zones)
+                if (zone.component_ids.size() > 1)
+                    append(mixed, zone.masks);
+            const auto contact = offset_ex(union_ex(mixed), scale_(.01));
+            for (const auto& zone : zones)
+                if (zone.component_ids.size() == 1)
+                    pure_contact[zone.component_ids.front() - 1] += std::abs(area(intersection_ex(contact, zone.masks))) * height;
+        }
+        std::vector<unsigned> terminal_preference(num_physical);
+        std::iota(terminal_preference.begin(), terminal_preference.end(), 1u);
+        std::stable_sort(terminal_preference.begin(), terminal_preference.end(),
+                         [&](unsigned a, unsigned b) { return pure_contact[a - 1] > pure_contact[b - 1]; });
+        std::vector<std::vector<LocalZMixBridge>> generated(cycles.size());
+        // Spatial fields and masks depend only on this cycle's immutable input.
+        // Build them concurrently, then select and schedule in cycle order.
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, cycles.size()), [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t cycle = range.begin(); cycle < range.end(); ++cycle) {
+                throw_on_cancel();
+                const auto [first, end] = cycles[cycle];
+                const size_t sample     = first + (end - first - 1) / 2;
+                const double bottom = intervals[first].z_lo, top = intervals[end - 1].z_hi;
+                auto         zones = cycle_zones(sample, top - bottom);
+                // Preserve short painted runs missed by the middle sample. Like
+                // the rest of the cycle's paint they are quantized to this cycle,
+                // but never lost or handed back to a half-finished old cadence.
+                if (end - first > 1)
+                    for (const auto& recipe : bridge_recipes) {
+                        if (recipe.component_ids.empty() || std::any_of(zones.begin(), zones.end(), [&](const auto& zone) {
+                                return zone.source_filament_id == recipe.source_filament_id;
+                            }))
+                            continue;
+                        size_t nearest = end;
+                        for (size_t layer = first; layer < end; ++layer)
+                            if (recipe.source_filament_id < segmentation[layer].size() &&
+                                !segmentation[layer][recipe.source_filament_id].empty() &&
+                                (nearest == end || std::abs(int(layer) - int(sample)) < std::abs(int(nearest) - int(sample))))
+                                nearest = layer;
+                        if (nearest == end)
+                            continue;
+                        auto zone  = recipe;
+                        zone.masks = segmentation[nearest][recipe.source_filament_id];
+                        for (double& h : zone.heights)
+                            h *= top - bottom;
+                        for (auto& existing : zones)
+                            existing.masks = diff_ex(existing.masks, zone.masks);
+                        zones.erase(std::remove_if(zones.begin(), zones.end(), [](const auto& existing) { return existing.masks.empty(); }),
+                                    zones.end());
+                        zones.push_back(std::move(zone));
+                    }
+                std::vector<double> nominal_heights;
+                for (size_t layer = first; layer < end; ++layer)
+                    nominal_heights.push_back(intervals[layer].z_hi - intervals[layer].z_lo);
+                bool follow_surface = false;
+                if (bridge_geometry_varies) {
+                    auto       outline     = original_outline(*print_object.get_layer(int(sample)));
+                    ExPolygons swept       = outline;
+                    double     shell_width = 0.;
+                    // Every bead spans more than its scheduling layer. Reserve
+                    // one common footprint over the entire cycle so fallback
+                    // paths cannot occupy the lower part of a thicker bead.
+                    for (size_t layer = first - 1; layer < end; ++layer) {
+                        const auto* nominal = print_object.get_layer(int(layer));
+                        auto        actual  = original_outline(*nominal);
+                        outline             = intersection_ex(outline, actual);
+                        if (partition_curved_shell) {
+                            append(swept, std::move(actual));
+                            for (const auto* region : nominal->regions())
+                                shell_width = std::max(shell_width, double(region->flow(frExternalPerimeter).width()));
+                        }
+                    }
+                    if (partition_curved_shell) {
+                        swept = union_ex(swept);
+                        // Shape limits are checked for each actual bead below.
+                        // A steep pure-color bow printing at nominal height must
+                        // not veto thicker joined paint on the gently sloping hull.
+                        const auto moving    = LocalZMixBridge::clean_residual(diff_ex(swept, outline));
+                        // Opening can retain tiny integer-coordinate remnants;
+                        // they are not evidence of a changing printable outline.
+                        follow_surface       = end - first > 1 && area(moving) > scale_(.01) * double(scale_(.01));
+                        moving_shells[first] = offset_ex(moving, scale_(shell_width));
+                        if (follow_surface) {
+                            // Keep the shared recipe interfaces through the shell.
+                            // Extend the middle-slice paint only into previously
+                            // unowned contour strips, with one owner per XY point.
+                            ExPolygons claimed;
+                            for (const auto& zone : zones)
+                                append(claimed, zone.masks);
+                            claimed = union_ex(claimed);
+                            for (size_t layer = first; layer < end; ++layer)
+                                for (const auto& actual : cycle_zones(layer, top - bottom)) {
+                                    auto zone = std::find_if(zones.begin(), zones.end(), [&](const auto& reference) {
+                                        return reference.source_filament_id == actual.source_filament_id;
+                                    });
+                                    if (zone == zones.end())
+                                        continue;
+                                    auto added = diff_ex(actual.masks, claimed);
+                                    append(claimed, added);
+                                    append(zone->masks, std::move(added));
+                                    zone->masks = union_ex(zone->masks);
+                                }
+                            outline = swept;
+                        } else {
+                            // Ignore only clipping noise. Expand the swept contour
+                            // inward far enough to keep the complete external bead
+                            // in one owner on every layer of the cycle. Stable parts
+                            // of the outline still carry joined nonplanar walls.
+                            outline = diff_ex(outline, moving_shells[first]);
+                        }
+                    }
+                    for (auto& zone : zones)
+                        zone.masks = intersection_ex(zone.masks, outline);
+                    zones.erase(std::remove_if(zones.begin(), zones.end(), [](const auto& zone) { return zone.masks.empty(); }),
+                                zones.end());
+                }
+                generated[cycle] = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights, zones,
+                                                          nominal_heights, print_cfg.dithering_local_z_mix_transition_length.value * .01,
+                                                          .75 * *std::max_element(print_cfg.nozzle_diameter.values.begin(),
+                                                                                  print_cfg.nozzle_diameter.values.end()) +
+                                                              .1,
+                                                          terminal_preference);
+                for (auto& bridge : generated[cycle])
+                    bridge.follows_surface = follow_surface;
+                if (bridge_geometry_varies) {
+                    std::vector<LocalZMixBridge> clipped;
+                    for (auto& candidate : generated[cycle]) {
+                        ExPolygons foreign;
+                        auto       collect_foreign = [&](const auto& masks) {
+                            for (size_t channel = 1; channel < masks.size(); ++channel)
+                                if (!(candidate.follows_surface && bridge_eligible(channel)) &&
+                                    std::find(candidate.source_filament_ids.begin(), candidate.source_filament_ids.end(),
+                                              segmentation_channel_filament_id(channel)) == candidate.source_filament_ids.end())
+                                    append(foreign, masks[channel]);
+                        };
+                        for (size_t layer = first; layer < end; ++layer) {
+                            collect_foreign(segmentation[layer]);
+                            if (painted_segmentation)
+                                collect_foreign((*painted_segmentation)[layer]);
+                        }
+                        foreign              = union_ex(foreign);
+                        const auto original  = candidate.ownership(size_t(-1));
+                        auto       usable    = diff_ex(original, foreign);
+                        double     tolerance = std::numeric_limits<double>::max();
+                        for (const auto& zone : candidate.zones)
+                            for (unsigned id : zone.component_ids)
+                                tolerance = std::min(tolerance, .25 * print_cfg.nozzle_diameter.get_at(id - 1));
+                        // A fragment supported by some other region of the
+                        // model is not necessarily supported by this island.
+                        // Contract to its own support, retaining all other
+                        // components of the same source as one cheap zone.
+                        for (size_t iteration = 0; !follow_surface && iteration < 3 && !usable.empty(); ++iteration) {
+                            const auto previous = usable;
+                            for (size_t layer = first - 1; layer < end && !usable.empty(); ++layer) {
+                                const auto present = intersection_ex(usable, original_outline(*print_object.get_layer(int(layer))));
+                                usable             = intersection_ex(usable, offset_ex(present, scale_(tolerance * .99)));
+                            }
+                            if (diff_ex(previous, offset_ex(usable, scale_(.00001))).empty())
+                                break;
+                        }
+                        if (diff_ex(original, usable).empty()) {
+                            clipped.push_back(std::move(candidate));
+                            continue;
+                        }
+                        std::vector<LocalZMixBridge::Zone> local;
+                        for (const auto& zone : zones)
+                            if (std::find(candidate.source_filament_ids.begin(), candidate.source_filament_ids.end(),
+                                          zone.source_filament_id) != candidate.source_filament_ids.end()) {
+                                auto copy  = zone;
+                                copy.masks = intersection_ex(copy.masks, usable);
+                                if (!copy.masks.empty())
+                                    local.push_back(std::move(copy));
+                            }
+                        auto rebuilt = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights,
+                                                              std::move(local), nominal_heights,
+                                                              print_cfg.dithering_local_z_mix_transition_length.value * .01,
+                                                              candidate.nozzle_clearance, terminal_preference);
+                        for (auto& bridge : rebuilt) {
+                            bridge.follows_surface = follow_surface;
+                            clipped.push_back(std::move(bridge));
+                        }
+                    }
+                    generated[cycle] = std::move(clipped);
+                }
+            }
+        });
+        std::vector<std::set<unsigned>> accepted_sources(cycles.size());
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, cycles.size()), [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t cycle = range.begin(); cycle < range.end(); ++cycle) {
+                throw_on_cancel();
+                const auto [first, end]      = cycles[cycle];
+                const size_t          sample = first + (end - first - 1) / 2;
+                const double          bottom = intervals[first].z_lo, top = intervals[end - 1].z_hi;
+                auto&                 bridges = generated[cycle];
+                std::vector<unsigned> retry_depth(bridges.size(), 0);
+                for (size_t candidate = 0; candidate < bridges.size(); ++candidate) {
+                    auto       bridge     = std::move(bridges[candidate]);
+                    bool       compatible = true;
+                    ExPolygons neighbors;
+                    ExPolygons group_masks;
+                    double     clearance = 0.;
+                    for (const auto& zone : bridge.zones) {
+                        append(group_masks, zone.masks);
+                        for (unsigned id : zone.component_ids)
+                            clearance = std::max(clearance, .5 * print_cfg.nozzle_diameter.get_at(id - 1) + .1);
+                    }
+                    for (const auto& extra : bridge.extra_colors)
+                        clearance = std::max(clearance, .5 * print_cfg.nozzle_diameter.get_at(extra.filament_id - 1) + .1);
+                    group_masks      = union_ex(group_masks);
+                    const auto guard = offset_ex(group_masks, scale_(clearance));
+                    // Bound the additional stair step to a quarter nozzle diameter.
+                    // Test only this candidate's footprint, not unrelated islands
+                    // elsewhere on the object or at other heights.
+                    const double tolerance         = std::max(.00001, (clearance - .1) * .5);
+                    bool         changing_geometry = false;
+                    for (size_t layer = (bridge_geometry_varies && bridge_cycle_span > 1 && !bridge.follows_surface ? first - 1 : first);
+                         compatible && layer < end; ++layer) {
+                        const auto actual_zones = cycle_zones(layer, top - bottom);
+                        const auto actual       = original_outline(*print_object.get_layer(int(layer)));
+                        auto       owned        = intersection_ex(group_masks, actual);
+                        owned                   = union_ex(owned);
+                        // Heal sub-resolution cracks before offsetting a rounded
+                        // intersection: an offset of a self-touching crack can
+                        // otherwise manufacture a much larger false obstacle.
+                        const auto stable_owned = closing_ex(owned, scale_(.005));
+                        const auto outside      = LocalZMixBridge::clean_residual(diff_ex(actual, offset_ex(stable_owned, scale_(.00001))));
+                        append(neighbors, intersection_ex(guard, outside));
+                        // Rounded boolean intersections can leave needle-shaped
+                        // residuals even inside a common footprint. Apply the same
+                        // sub-resolution test used for foreign residual obstacles.
+                        const auto unsupported = LocalZMixBridge::clean_residual(
+                            diff_ex(group_masks, offset_ex(stable_owned, scale_((bridge.follows_surface ? 2. : 1.) * tolerance + .00001))));
+                        compatible = !owned.empty() && (bridge.follows_surface || area(unsupported) < scale_(.001) * scale_(.001));
+                        changing_geometry |= !diff_ex(owned, offset_ex(group_masks, scale_(.00001))).empty() ||
+                                             !diff_ex(group_masks, offset_ex(owned, scale_(.00001))).empty();
+                        LocalZMixBridge::LayerFootprint footprint;
+                        footprint.layer_id = layer;
+                        footprint.slice_z  = print_object.get_layer(int(layer))->slice_z;
+                        footprint.height   = print_object.get_layer(int(layer))->height;
+                        footprint.masks    = std::move(owned);
+                        for (const auto& reference_zone : bridge.zones) {
+                            ExPolygons masks;
+                            for (const auto& zone : actual_zones)
+                                if (zone.source_filament_id == reference_zone.source_filament_id)
+                                    append(masks, zone.masks);
+                            footprint.zones.push_back(intersection_ex(union_ex(masks), footprint.masks));
+                        }
+                        bridge.layer_footprints.push_back(std::move(footprint));
+                    }
+                    if (!changing_geometry && !bridge_geometry_varies)
+                        bridge.layer_footprints.clear();
+                    else
+                        bridge.boundary_tolerance = tolerance;
+                    // Optional lower beads currently have a sampled, fixed domain.
+                    // Growing that domain without rebuilding their height fields
+                    // would leave an over-height terminal bead in the added ring.
+                    if (changing_geometry && !bridge.follows_surface && !bridge.split_runs.empty())
+                        compatible = false;
+                    const bool geometry_compatible = compatible;
+                    const char* rejection_stage     = compatible ? "foreign_overlap" : "geometry";
+
+                    // Foreign paint may border a flat plateau. Only an advancing
+                    // surface inside nozzle clearance requires rejecting this island.
+                    for (size_t layer = first; compatible && layer < end; ++layer) {
+                        const auto interior = offset_ex(bridge.ownership(layer), -scale_(.00001));
+                        for (size_t channel = 1; channel < segmentation[layer].size(); ++channel)
+                            if (std::find(bridge.source_filament_ids.begin(), bridge.source_filament_ids.end(),
+                                          segmentation_channel_filament_id(channel)) == bridge.source_filament_ids.end()) {
+                                auto foreign = intersection_ex(guard, segmentation[layer][channel]);
+                                // Eligible mixed paint already has one spatial
+                                // owner for this cycle. Apply that quantization
+                                // consistently when its paint moves in Z; only
+                                // the part outside this owner remains foreign.
+                                if (bridge.follows_surface && bridge_eligible(channel))
+                                    foreign = diff_ex(foreign, bridge.ownership(layer));
+                                if (!intersection_ex(interior, foreign).empty())
+                                    compatible = false;
+                                append(neighbors, foreign);
+                            }
+                        if (painted_segmentation)
+                            for (size_t channel = 1; channel < (*painted_segmentation)[layer].size(); ++channel)
+                                if (std::find(bridge.source_filament_ids.begin(), bridge.source_filament_ids.end(),
+                                              segmentation_channel_filament_id(channel)) == bridge.source_filament_ids.end()) {
+                                    auto foreign = intersection_ex(guard, (*painted_segmentation)[layer][channel]);
+                                    if (bridge.follows_surface && bridge_eligible(channel))
+                                        foreign = diff_ex(foreign, bridge.ownership(layer));
+                                    if (!intersection_ex(interior, foreign).empty())
+                                        compatible = false;
+                                    append(neighbors, foreign);
+                                }
+                    }
+                    // Pure regions attached for nominal ownership are still obstacles
+                    // for the mixed passes, even though they are inside group_masks.
+                    ExPolygons unjoined;
+                    for (const auto& zone : bridge.zones)
+                        if (zone.preserve_nominal_layers && !zone.join_terminal_pass)
+                            append(unjoined, zone.masks);
+                    const bool foreign_neighbors = !neighbors.empty();
+                    append(neighbors, unjoined);
+                    if (compatible && !neighbors.empty()) {
+                        rejection_stage = "foreign_clearance";
+                        neighbors = union_ex(neighbors);
+                        if ((foreign_neighbors && (!bridge_geometry_varies || bridge_cycle_span == 1)) ||
+                            (!bridge.pin_foreign_boundary(neighbors, bridge.nozzle_clearance) &&
+                             bridge.advances_near(neighbors, bridge.nozzle_clearance)))
+                            compatible = false;
+                        if (!compatible && retry_depth[candidate] == 0 &&
+                            (!bridge.extra_colors.empty() || !bridge.tongue_planes.empty() || !bridge.split_runs.empty())) {
+                            // Optional colors cannot currently be pinned at a
+                            // foreign boundary. Retry the shared carrier alone
+                            // before abandoning all continuous connections.
+                            std::vector<double> nominal_heights;
+                            for (size_t layer = first; layer < end; ++layer)
+                                nominal_heights.push_back(print_object.get_layer(int(layer))->height);
+                            auto simpler = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights,
+                                                                  bridge.authored_zones, nominal_heights,
+                                                                  print_cfg.dithering_local_z_mix_transition_length.value * .01,
+                                                                  bridge.nozzle_clearance, terminal_preference, false);
+                            for (auto& retry : simpler) {
+                                retry.follows_surface = bridge.follows_surface;
+                                bridges.push_back(std::move(retry));
+                                retry_depth.push_back(1);
+                            }
+                        }
+                    }
+                    // Boundary pinning may raise a scheduling plane above a nominal
+                    // pure bead. Export dependencies must reflect the final field.
+                    std::stable_sort(bridge.passes.begin(), bridge.passes.end(),
+                                     [&](const auto& a, const auto& b) { return bridge.schedule_z(a) < bridge.schedule_z(b); });
+                    std::vector<LocalZMixBridge> local_cycles;
+                    if (compatible && bridge.follows_surface) {
+                        rejection_stage            = "contour_fit";
+                        bridge.lower_support_masks = original_outline(*print_object.get_layer(int(first - 1)));
+                        std::vector<double> nominal_heights;
+                        for (size_t layer = first; layer < end; ++layer)
+                            nominal_heights.push_back(print_object.get_layer(int(layer))->height);
+                        // A coarse bead may fail the staircase/support bound
+                        // even though the shortest printable repeat fits. Test
+                        // the actual fine beads before rejecting their domain.
+                        ExPolygons rejected;
+                        local_cycles = bridge.shorter_cycles(nominal_heights, gradient_max_layer_heights, terminal_preference,
+                                                             print_cfg.dithering_local_z_mix_transition_length.value * .01, neighbors,
+                                                             2. * (clearance - .1), &rejected);
+                        // Keep the connected coarse owner when a fine contour
+                        // cannot print one of its features. Trimming only that
+                        // feature can strand a narrow nominal remainder and
+                        // lose shell coverage beside the replacement.
+                        compatible = !local_cycles.empty() || bridge.fit_contours(tolerance, &rejected, 2. * (clearance - .1));
+                        if (!compatible && !rejected.empty() && retry_depth[candidate] < 2) {
+                            // Keep a local topology change from disabling the
+                            // whole painted hull. Rebuild outside its clearance
+                            // guard, then repeat all ownership and pinning checks.
+                            const auto                         guard = offset_ex(rejected, scale_(bridge.nozzle_clearance + tolerance));
+                            std::vector<LocalZMixBridge::Zone> local;
+                            for (auto zone : bridge.authored_zones) {
+                                zone.masks = diff_ex(zone.masks, guard);
+                                if (!zone.masks.empty())
+                                    local.push_back(std::move(zone));
+                            }
+                            std::vector<double> nominal_heights;
+                            for (size_t layer = first; layer < end; ++layer)
+                                nominal_heights.push_back(print_object.get_layer(int(layer))->height);
+                            auto rebuilt = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights,
+                                                                  std::move(local), nominal_heights,
+                                                                  print_cfg.dithering_local_z_mix_transition_length.value * .01,
+                                                                  bridge.nozzle_clearance, terminal_preference);
+                            for (auto& retry : rebuilt) {
+                                retry.follows_surface = true;
+                                bridges.push_back(std::move(retry));
+                                retry_depth.push_back(retry_depth[candidate] + 1);
+                            }
+                        }
+                    }
+                    const bool                       boundary_compatible = compatible;
+                    if (compatible)
+                        rejection_stage = "region_config";
+                    std::optional<PrintRegionConfig> reference;
+                    for (size_t layer = first; compatible && layer < end; ++layer)
+                        for (const LayerRegion* region : print_object.get_layer(int(layer))->regions()) {
+                            if (intersection_ex(bridge.ownership(layer), to_expolygons(region->slices.surfaces)).empty())
+                                continue;
+                            auto config                = region->region().config();
+                            config.wall_filament.value = config.sparse_infill_filament.value = config.solid_infill_filament.value = 1;
+                            if (!reference)
+                                reference = config;
+                            else
+                                compatible &= Layer::is_perimeter_compatible(PrintRegion(*reference), PrintRegion(config));
+                        }
+                    // Local cadence handovers also allow a bounded common anchor
+                    // to span intervals; residual islands keep their own ratios.
+                    if (end - first > 1 && !bridge.shared_stack && !bridge_geometry_varies)
+                        compatible = false;
+                    if (!compatible) {
+                        if (bridge_cycle_span > 1)
+                            BOOST_LOG_TRIVIAL(debug)
+                                << "Bridge cycle rejected first=" << first << " end=" << end
+                                << " sources=" << bridge.source_filament_ids.size() << " shared_stack=" << bridge.shared_stack
+                                << " geometry=" << geometry_compatible << " boundary=" << boundary_compatible
+                                << " stage=" << rejection_stage << " neighbors=" << area(neighbors) * SCALING_FACTOR * SCALING_FACTOR
+                                << " tongues=" << bridge.tongue_planes.size() << " extras=" << bridge.extra_colors.size();
+                        // For a one-interval cycle the original nominal experiment
+                        // can still close an isolated selected row with flat beads.
+                        if (bridge_cycle_span == 1)
+                            for (const auto& zone : bridge.authored_zones) {
+                                if (zone.source_filament_id <= num_physical)
+                                    continue;
+                                auto single = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights, {zone},
+                                                                     {}, 1., 0., terminal_preference);
+                                for (auto& isolated : single)
+                                    layer_bridges[first].push_back(std::make_shared<LocalZMixBridge>(std::move(isolated)));
+                            }
+                        continue;
+                    }
+                    if (std::any_of(bridge.passes.begin(), bridge.passes.end(),
+                                    [](const auto& pass) { return pass.flat_height == 0. && pass.zones.size() > 1; }))
+                        accepted_sources[cycle].insert(bridge.source_filament_ids.begin(), bridge.source_filament_ids.end());
+                    if (local_cycles.empty() && !bridge.follows_surface && end - first > 1) {
+                        std::vector<double> nominal_heights;
+                        for (size_t layer = first; layer < end; ++layer)
+                            nominal_heights.push_back(print_object.get_layer(int(layer))->height);
+                        local_cycles = bridge.shorter_cycles(nominal_heights, gradient_max_layer_heights, terminal_preference,
+                                                             print_cfg.dithering_local_z_mix_transition_length.value * .01, neighbors,
+                                                             2. * (clearance - .1));
+                    }
+                    if (local_cycles.empty())
+                        local_cycles.push_back(std::move(bridge));
+                    for (auto& local : local_cycles) {
+                        auto shared = std::make_shared<LocalZMixBridge>(std::move(local));
+                        for (size_t layer = first; layer < end; ++layer)
+                            if (intervals[layer].z_lo < shared->z_hi - EPSILON && intervals[layer].z_hi > shared->z_lo + EPSILON)
+                                layer_bridges[layer].push_back(shared);
+                    }
+                }
+            }
+        });
+        for (const auto& sources : accepted_sources)
+            selected_sources.insert(sources.begin(), sources.end());
+        // Painted-only Local-Z may subdivide layer zero even with the preserve
+        // option. Replace selected outer walls there with a full-height flat
+        // bead so their original cadence cannot leave a straddling partial bead.
+        if (!local_z_whole_objects && !selected_sources.empty() && !intervals.empty()) {
+            auto flat  = std::make_shared<LocalZMixBridge>();
+            flat->z_lo = intervals.front().z_lo;
+            flat->z_hi = intervals.front().z_hi;
+            for (auto zone : cycle_zones(0, flat->z_hi - flat->z_lo)) {
+                if (selected_sources.count(zone.source_filament_id) == 0)
+                    continue;
+                const unsigned id  = zone.component_ids.front();
+                zone.heights       = {flat->z_hi - flat->z_lo};
+                zone.component_ids = {id};
+                auto pass = std::find_if(flat->passes.begin(), flat->passes.end(), [id](const auto& p) { return p.filament_id == id; });
+                if (pass == flat->passes.end())
+                    flat->passes.push_back({{flat->zones.size()}, 0, id, flat->z_hi});
+                else
+                    pass->zones.push_back(flat->zones.size());
+                flat->source_filament_ids.push_back(zone.source_filament_id);
+                flat->zones.push_back(std::move(zone));
+            }
+            if (!flat->zones.empty())
+                layer_bridges[0].push_back(std::move(flat));
+        }
+    }
+    for (auto& bridges : layer_bridges)
+        bridges.erase(std::remove_if(bridges.begin(), bridges.end(),
+                                     [&](const auto& bridge) {
+                                         return std::any_of(bridge->source_filament_ids.begin(), bridge->source_filament_ids.end(),
+                                                            [&](unsigned id) { return selected_sources.count(id) == 0; });
+                                     }),
+                      bridges.end());
+    intervals.clear();
+
+    // A planar independent bead cannot follow paint that moves inside its
+    // height span. Partition each short block into constant recipe cores and
+    // nominal-height moving bands before generating either set of paths.
+    if (partition_curved_shell) {
+        auto              fallback_recipes = bridge_recipes;
+        std::vector<bool> order_found(fallback_recipes.size(), false);
+        for (const auto& bridges : layer_bridges)
+            for (const auto& bridge : bridges)
+                if (bridge->shared_stack && bridge->extra_colors.empty())
+                    for (const auto& zone : bridge->zones) {
+                        const int row = mixed_mgr.mixed_index_from_filament_id(zone.source_filament_id, num_physical);
+                        if (row < 0 || size_t(row) >= fallback_recipes.size() || order_found[row])
+                            continue;
+                        auto& recipe = fallback_recipes[row];
+                        if (!std::is_permutation(recipe.component_ids.begin(), recipe.component_ids.end(), zone.component_ids.begin(),
+                                                 zone.component_ids.end()))
+                            continue;
+                        std::vector<double> heights;
+                        std::vector<bool>   used(recipe.heights.size(), false);
+                        for (unsigned tool : zone.component_ids)
+                            for (size_t i = 0; i < recipe.component_ids.size(); ++i)
+                                if (!used[i] && recipe.component_ids[i] == tool) {
+                                    heights.push_back(recipe.heights[i]);
+                                    used[i] = true;
+                                    break;
+                                }
+                        recipe.component_ids = zone.component_ids;
+                        recipe.heights       = std::move(heights);
+                        order_found[row]     = true;
+                    }
+        std::vector<std::vector<double>> core_error(mixed_definitions.size(), std::vector<double>(num_physical, 0.));
+        auto                             band_error = core_error;
+        std::vector<size_t>              block_end(print_object.layer_count(), 0);
+        for (const auto& [first, end] : cycles)
+            block_end[first] = end;
+        double core_volume = 0., band_volume = 0.;
+        auto   weights_at = [&](size_t row, double z) {
+            std::vector<double> weights(num_physical, 0.);
+            if (row_is_gradient_definition[row]) {
+                LocalZActivePair pair;
+                if (effective_gradient_active_pair_for_z(row, z, 0, pair)) {
+                    weights[pair.component_a - 1] = pair.single_component ? 1. : (100 - pair.mix_b_percent) * .01;
+                    if (!pair.single_component)
+                        weights[pair.component_b - 1] = pair.mix_b_percent * .01;
+                }
+            } else {
+                for (const auto& pass : row_independent_direct_cadences[row])
+                    weights[pass.extruder_id - 1] += pass.height;
+            }
+            const double sum = std::accumulate(weights.begin(), weights.end(), 0.);
+            if (sum > 0.)
+                for (double& weight : weights)
+                    weight /= sum;
+            return weights;
+        };
+        auto flat_stack = [&](double lo, double hi, ExPolygons masks, unsigned source,
+                              const std::vector<std::pair<unsigned, double>>& beads) {
+            auto stack                 = std::make_shared<LocalZMixBridge>();
+            stack->z_lo                = lo;
+            stack->z_hi                = hi;
+            stack->minimum_height      = min_sublayer_height;
+            stack->planar_fallback     = true;
+            stack->source_filament_ids = {source};
+            LocalZMixBridge::Zone zone;
+            zone.masks              = std::move(masks);
+            zone.source_filament_id = source;
+            double top              = lo;
+            for (const auto& [id, height] : beads) {
+                zone.component_ids.push_back(id);
+                zone.heights.push_back(height);
+                top += height;
+                LocalZMixBridge::Pass pass;
+                pass.zones       = {0};
+                pass.component   = stack->passes.size();
+                pass.filament_id = id;
+                pass.ceiling     = top;
+                pass.flat_height = height;
+                stack->passes.push_back(std::move(pass));
+            }
+            stack->zones.push_back(std::move(zone));
+            return stack;
+        };
+        for (size_t first = 1; first < print_object.layer_count();) {
+            throw_on_cancel();
+            // The selected cycles already close on nominal planes. A leftover
+            // interval is its own flat block, so it cannot veto lower joins.
+            const size_t end        = block_end[first] ? block_end[first] : first + 1;
+            const double lo         = print_object.get_layer(int(first))->bottom_z();
+            const double hi         = print_object.get_layer(int(end - 1))->print_z;
+            const size_t count      = end - first;
+            const double nozzle     = *std::min_element(print_cfg.nozzle_diameter.values.begin(), print_cfg.nozzle_diameter.values.end());
+            const auto   core_support = offset_ex(original_outline(*print_object.get_layer(int(first - 1))), scale_(nozzle * .25));
+            std::vector<std::vector<ExPolygons>> domains(count, std::vector<ExPolygons>(mixed_definitions.size()));
+            std::vector<ExPolygons>              joined_guards(count);
+            std::vector<unsigned>                sources(mixed_definitions.size(), 0);
+            for (size_t layer = first; layer < end; ++layer) {
+                ExPolygons claimed;
+                for (const auto& bridge : layer_bridges[layer]) {
+                    const auto owned = bridge->ownership(layer);
+                    append(claimed, owned);
+                    if (!bridge->planar_fallback)
+                        append(joined_guards[layer - first], owned);
+                }
+                joined_guards[layer - first] = offset_ex(union_ex(joined_guards[layer - first]), scale_(nozzle));
+                claimed           = union_ex(claimed);
+                const auto actual            = original_outline(*print_object.get_layer(int(layer)));
+                for (size_t channel = 1; channel < segmentation[layer].size(); ++channel) {
+                    const int row = mixed_rows[channel];
+                    if (row < 0 || !row_uses_local_z[size_t(row)] ||
+                        (row_independent_direct_cadences[size_t(row)].empty() && !row_is_gradient_definition[size_t(row)]))
+                        continue;
+                    append(domains[layer - first][size_t(row)], segmentation[layer][channel]);
+                    sources[size_t(row)] = segmentation_channel_filament_id(channel);
+                }
+                // Keep a single owner even at integer clipping boundaries.
+                for (auto& domain : domains[layer - first]) {
+                    domain = diff_ex(intersection_ex(union_ex(domain), actual), claimed);
+                    append(claimed, domain);
+                }
+            }
+            for (size_t row = 0; row < mixed_definitions.size(); ++row) {
+                if (!sources[row])
+                    continue;
+                std::vector<unsigned> band_order;
+                std::vector<std::pair<unsigned, double>> band_cadence;
+                bool                                     repeated_cadence = false;
+                size_t                                   cadence_repeats  = 1;
+                std::vector<const LocalZMixBridge*>      nearby_joins;
+                std::set<const LocalZMixBridge*>         seen_joins;
+                for (size_t i = 0; i < count; ++i) {
+                    if (intersection_ex(domains[i][row], joined_guards[i]).empty())
+                        continue;
+                    const auto nearby = offset_ex(domains[i][row], scale_(nozzle));
+                    for (const auto& bridge : layer_bridges[first + i])
+                        if (!bridge->planar_fallback && seen_joins.count(bridge.get()) == 0 &&
+                            !intersection_ex(nearby, bridge->ownership(first + i)).empty()) {
+                            seen_joins.insert(bridge.get());
+                            nearby_joins.push_back(bridge.get());
+                        }
+                }
+                auto repeat_nearby = [&](const std::vector<std::pair<unsigned, double>>& beads, size_t limit = 0) {
+                    if (beads.empty())
+                        return beads;
+                    auto repeated = LocalZMixBridge::repeat_flat_layers(beads, min_sublayer_height, gradient_max_layer_heights, limit);
+                    std::vector<unsigned> order;
+                    for (const auto& bead : beads)
+                        order.push_back(bead.first);
+                    for (size_t repeats = repeated.size() / beads.size(); repeats > 1; --repeats)
+                        if (std::all_of(nearby_joins.begin(), nearby_joins.end(), [&](const auto* joined) {
+                                // Same-source fragments retain one color cadence.
+                                // Foreign flat beads may use independent planes
+                                // beside a field pinned to its scheduling keys.
+                                // Keep the veto for unpinned optional fields.
+                                if (std::find(joined->source_filament_ids.begin(), joined->source_filament_ids.end(), sources[row]) ==
+                                    joined->source_filament_ids.end())
+                                    return joined->boundary_anchor > 0. && joined->extra_colors.empty() && joined->tongue_planes.empty() &&
+                                           joined->split_runs.empty();
+                                return joined->shares_cadence(lo, hi, repeats, order);
+                            }))
+                            return LocalZMixBridge::repeat_flat_layers(beads, min_sublayer_height, gradient_max_layer_heights, repeats);
+                    return beads;
+                };
+                // If a shared join cannot cross a local feature, retain the
+                // same physical color order and real component heights in each
+                // remaining recipe before resorting to nominal color dithering.
+                if (count > 1 && row < fallback_recipes.size() && !row_is_gradient_definition[row] &&
+                    !fallback_recipes[row].component_ids.empty()) {
+                    auto recipe           = fallback_recipes[row];
+                    bool aligned          = false;
+                    auto use_nearby_order = [&](size_t layer_id) {
+                        for (const auto& bridge : layer_bridges[layer_id]) {
+                            if (!bridge->shared_stack || !bridge->extra_colors.empty() || bridge->planar_fallback)
+                                continue;
+                            for (const auto& zone : bridge->zones) {
+                                if (zone.source_filament_id != sources[row] ||
+                                    !std::is_permutation(recipe.component_ids.begin(), recipe.component_ids.end(),
+                                                         zone.component_ids.begin(), zone.component_ids.end()) ||
+                                    intersection_ex(offset_ex(zone.masks, scale_(nozzle)), domains.front()[row]).empty())
+                                    continue;
+                                std::vector<double> heights;
+                                std::vector<bool>   used(recipe.heights.size(), false);
+                                for (unsigned tool : zone.component_ids)
+                                    for (size_t i = 0; i < recipe.component_ids.size(); ++i)
+                                        if (!used[i] && recipe.component_ids[i] == tool) {
+                                            heights.push_back(recipe.heights[i]);
+                                            used[i] = true;
+                                            break;
+                                        }
+                                recipe.component_ids = zone.component_ids;
+                                recipe.heights       = std::move(heights);
+                                aligned              = true;
+                                return;
+                            }
+                        }
+                    };
+                    for (size_t distance = 0; !aligned && distance < layer_bridges.size(); ++distance) {
+                        if (distance <= first)
+                            use_nearby_order(first - distance);
+                        if (!aligned && end - 1 + distance < layer_bridges.size())
+                            use_nearby_order(end - 1 + distance);
+                    }
+                    std::vector<std::pair<unsigned, double>> beads;
+                    bool                                     fits = true;
+                    for (size_t component = 0; component < recipe.heights.size(); ++component) {
+                        const unsigned tool   = recipe.component_ids[component];
+                        const double   height = (hi - lo) * recipe.heights[component];
+                        fits &= height >= min_sublayer_height - 1e-6 && height <= gradient_max_layer_heights[tool - 1] + 1e-6;
+                        if (!beads.empty() && beads.back().first == tool &&
+                            beads.back().second + height <= gradient_max_layer_heights[tool - 1] + 1e-6)
+                            beads.back().second += height;
+                        else
+                            beads.emplace_back(tool, height);
+                    }
+                    if (fits) {
+                        // A fallback recipe does not need to inherit the cycle
+                        // of a distant rare-color recipe. Preserve the existing
+                        // envelope, but print the shortest whole repeats inside
+                        // it. Keep an adjoining joined stack's cadence intact.
+                        const auto coarse_beads = beads;
+                        auto       repeated     = repeat_nearby(beads);
+                        if (repeated.size() > beads.size()) {
+                            cadence_repeats  = repeated.size() / beads.size();
+                            repeated_cadence = true;
+                            beads            = std::move(repeated);
+                        }
+                        ExPolygons                       swept, foreign;
+                        std::optional<PrintRegionConfig> reference;
+                        for (size_t i = 0; i < count; ++i) {
+                            append(swept, domains[i][row]);
+                            const auto* layer = print_object.get_layer(int(first + i));
+                            append(foreign, diff_ex(original_outline(*layer), domains[i][row]));
+                            for (const auto* region : layer->regions()) {
+                                if (intersection_ex(domains[i][row], to_expolygons(region->slices.surfaces)).empty())
+                                    continue;
+                                auto config                = region->region().config();
+                                config.wall_filament.value = 1;
+                                if (!reference)
+                                    reference = config;
+                                else
+                                    fits &= Layer::is_perimeter_compatible(PrintRegion(*reference), PrintRegion(config));
+                            }
+                        }
+                        // Freeze only boundaries with other owners. The exterior
+                        // can move because outside the model there is no neighbor
+                        // whose volume could be replaced by this thicker bead.
+                        auto envelope = diff_ex(union_ex(swept), union_ex(foreign));
+                        for (unsigned retry = 0; fits && retry < 3 && !opening_ex(envelope, float(scale_(nozzle * .5))).empty(); ++retry) {
+                            auto stack                 = flat_stack(lo, hi, envelope, sources[row], coarse_beads);
+                            stack->follows_surface     = true;
+                            stack->lower_support_masks = original_outline(*print_object.get_layer(int(first - 1)));
+                            for (size_t i = 0; i < count; ++i) {
+                                const auto* layer = print_object.get_layer(int(first + i));
+                                stack->layer_footprints.push_back(
+                                    {first + i, intersection_ex(domains[i][row], envelope), {}, layer->slice_z, layer->height});
+                            }
+                            ExPolygons rejected;
+                            if (stack->fit_contours(nozzle * .25, &rejected, nozzle)) {
+                                // Refine inside the validated coarse ownership.
+                                // Finer contours can otherwise accept a larger
+                                // island and strand an unprintably narrow band.
+                                if (repeated_cadence) {
+                                    auto refined                 = flat_stack(lo, hi, envelope, sources[row], beads);
+                                    refined->follows_surface     = true;
+                                    refined->lower_support_masks = stack->lower_support_masks;
+                                    refined->layer_footprints    = stack->layer_footprints;
+                                    if (refined->fit_contours(nozzle * .25, nullptr, nozzle))
+                                        stack = std::move(refined);
+                                    else {
+                                        beads            = coarse_beads;
+                                        repeated_cadence = false;
+                                        cadence_repeats  = 1;
+                                    }
+                                }
+                                band_cadence = beads;
+                                band_order   = recipe.component_ids;
+                                for (size_t i = 0; i < count; ++i) {
+                                    domains[i][row] = diff_ex(domains[i][row], stack->ownership(first + i));
+                                    layer_bridges[first + i].push_back(stack);
+                                }
+                                break;
+                            }
+                            if (rejected.empty())
+                                break;
+                            // A disappearing fragment must not force the entire
+                            // recipe on an otherwise smooth hull into dithering.
+                            envelope = diff_ex(envelope, offset_ex(rejected, scale_(nozzle + .1)));
+                        }
+                    }
+                }
+                ExPolygons core = domains.front()[row];
+                for (size_t i = 1; i < count && !core.empty(); ++i)
+                    core = intersection_ex(core, domains[i][row]);
+                const auto weights = weights_at(row, .5 * (lo + hi));
+                if (std::accumulate(weights.begin(), weights.end(), 0.) <= 0.)
+                    continue;
+                double core_width = nozzle;
+                for (size_t layer_id = first; layer_id < end && !core.empty(); ++layer_id) {
+                    const auto* layer = print_object.get_layer(int(layer_id));
+                    for (const auto* region : layer->regions()) {
+                        if (intersection_ex(core, to_expolygons(region->slices.surfaces)).empty())
+                            continue;
+                        for (size_t tool = 0; tool < weights.size(); ++tool) {
+                            if (weights[tool] <= 0.)
+                                continue;
+                            auto config = region->region().config();
+                            config.wall_filament.value = int(tool + 1);
+                            core_width = std::max(core_width, double(PrintRegion(config).flow(print_object, frExternalPerimeter,
+                                                                                            layer->height, false).width()));
+                        }
+                    }
+                }
+                core = LocalZMixBridge::fallback_core(core, core_support, moving_shells[first], core_width);
+                if (!core.empty()) {
+                    auto beads = LocalZMixBridge::allocate_flat_layers(weights, hi - lo, min_sublayer_height, gradient_max_layer_heights,
+                                                                       core_error[row], area(core) * SCALING_FACTOR * SCALING_FACTOR);
+                    beads      = repeat_nearby(beads, band_cadence.empty() ? 0 : cadence_repeats);
+                    auto       stack = flat_stack(lo, hi, core, sources[row], beads);
+                    for (size_t layer = first; layer < end; ++layer)
+                        layer_bridges[layer].push_back(stack);
+                    core_volume += area(core) * (hi - lo);
+                }
+                std::vector<std::pair<size_t, std::shared_ptr<LocalZMixBridge>>> nominal_bands;
+                for (size_t layer = first; layer < end; ++layer) {
+                    auto band = diff_ex(domains[layer - first][row], core);
+                    if (band.empty())
+                        continue;
+                    const auto* nominal = print_object.get_layer(int(layer));
+                    const auto  target  = weights_at(row, nominal->slice_z);
+                    if (std::accumulate(target.begin(), target.end(), 0.) <= 0.)
+                        continue;
+                    const auto beads = LocalZMixBridge::allocate_flat_layers(target, nominal->height, min_sublayer_height,
+                                                                             gradient_max_layer_heights, band_error[row],
+                                                                             area(band) * SCALING_FACTOR * SCALING_FACTOR);
+                    band_volume += area(band) * nominal->height;
+                    auto strip          = flat_stack(nominal->bottom_z(), nominal->print_z, std::move(band), sources[row], beads);
+                    strip->nominal_band = true;
+                    nominal_bands.emplace_back(layer, std::move(strip));
+                }
+                // The same recipe must not meet an exact C/Y/M stack as an
+                // unrelated M/C/M/Y/M nominal cadence. Keep the allocated slots
+                // but align their order, carrying any volume redistribution.
+                // A row can also border a joined stack elsewhere. Do not
+                // improve one handover by reversing that existing neighbour.
+                if (!band_order.empty()) {
+                    ExPolygons band_masks;
+                    for (const auto& [layer, band] : nominal_bands)
+                        append(band_masks, band->zones.front().masks);
+                    const auto near_bands = offset_ex(union_ex(band_masks), scale_(nozzle));
+                    std::set<const LocalZMixBridge*> checked;
+                    for (size_t layer = first; layer < end && !band_order.empty(); ++layer)
+                        for (const auto& joined : layer_bridges[layer]) {
+                            if (joined->planar_fallback || !checked.insert(joined.get()).second ||
+                                std::none_of(joined->zones.begin(), joined->zones.end(), [&](const auto& zone) {
+                                    return zone.source_filament_id == sources[row] && !intersection_ex(zone.masks, near_bands).empty();
+                                }))
+                                continue;
+                            size_t previous = 0;
+                            if (repeated_cadence && !joined->shares_cadence(lo, hi, cadence_repeats, band_order)) {
+                                band_order.clear();
+                                break;
+                            }
+                            for (const auto& pass : joined->passes) {
+                                const auto found = std::find(band_order.begin(), band_order.end(), pass.filament_id);
+                                if (found == band_order.end())
+                                    continue;
+                                const size_t rank = found - band_order.begin();
+                                if (rank < previous) {
+                                    band_order.clear();
+                                    break;
+                                }
+                                previous = rank;
+                            }
+                        }
+                }
+                if (!band_order.empty() && std::all_of(nominal_bands.begin(), nominal_bands.end(),
+                                                       [](const auto& band) { return band.second->passes.size() == 1; })) {
+                    std::vector<std::pair<unsigned, double>> beads;
+                    std::vector<double>                      areas, starts;
+                    for (const auto& [layer, band] : nominal_bands) {
+                        const auto& pass = band->passes.front();
+                        beads.emplace_back(pass.filament_id, pass.flat_height);
+                        areas.push_back(area(band->zones.front().masks) * SCALING_FACTOR * SCALING_FACTOR);
+                        starts.push_back(band->z_lo - lo);
+                    }
+                    const bool aligned = repeated_cadence ?
+                                             LocalZMixBridge::align_flat_layers_to_cadence(beads, areas, starts, band_cadence,
+                                                                                           gradient_max_layer_heights, band_error[row]) :
+                                             LocalZMixBridge::align_flat_layers(beads, areas, band_order, gradient_max_layer_heights,
+                                                                                band_error[row]);
+                    if (aligned)
+                        for (size_t i = 0; i < nominal_bands.size(); ++i) {
+                            auto& band = *nominal_bands[i].second;
+                            band.passes.front().filament_id = beads[i].first;
+                            band.zones.front().component_ids.front() = beads[i].first;
+                        }
+                }
+                for (auto& [layer, band] : nominal_bands)
+                    layer_bridges[layer].push_back(std::move(band));
+            }
+            // Adjacent recipes often select the same physical bead on a nominal
+            // layer. Generate one shell across that paint boundary instead of
+            // closing two separate walls and introducing a seam on both sides.
+            for (size_t layer = first; layer < end; ++layer) {
+                auto& bridges = layer_bridges[layer];
+                for (size_t i = 0; i < bridges.size(); ++i) {
+                    if (!bridges[i]->nominal_band)
+                        continue;
+                    for (size_t j = i + 1; j < bridges.size();) {
+                        const auto& a    = *bridges[i];
+                        const auto& b    = *bridges[j];
+                        bool        same = b.nominal_band && a.passes.size() == b.passes.size();
+                        for (size_t pass = 0; same && pass < a.passes.size(); ++pass)
+                            same = a.passes[pass].filament_id == b.passes[pass].filament_id &&
+                                   std::abs(a.passes[pass].ceiling - b.passes[pass].ceiling) < 1e-6 &&
+                                   std::abs(a.passes[pass].flat_height - b.passes[pass].flat_height) < 1e-6;
+                        if (same) {
+                            auto masks = a.ownership(layer);
+                            append(masks, b.ownership(layer));
+                            std::optional<PrintRegionConfig> reference;
+                            for (const auto* region : print_object.get_layer(int(layer))->regions()) {
+                                if (intersection_ex(masks, to_expolygons(region->slices.surfaces)).empty())
+                                    continue;
+                                auto config                = region->region().config();
+                                config.wall_filament.value = 1;
+                                if (!reference)
+                                    reference = config;
+                                else if (!Layer::is_perimeter_compatible(PrintRegion(*reference), PrintRegion(config))) {
+                                    same = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!same) {
+                            ++j;
+                            continue;
+                        }
+                        auto merged = std::make_shared<LocalZMixBridge>(a);
+                        for (size_t pass = 0; pass < b.passes.size(); ++pass)
+                            for (size_t zone : b.passes[pass].zones)
+                                merged->passes[pass].zones.push_back(a.zones.size() + zone);
+                        append(merged->zones, b.zones);
+                        append(merged->source_filament_ids, b.source_filament_ids);
+                        bridges[i] = std::move(merged);
+                        bridges.erase(bridges.begin() + j);
+                    }
+                }
+            }
+            first = end;
+        }
+        // Match physical islands, not the object-wide set of recipes which
+        // happened to select this tool on a nominal layer.
+        for (auto& bridges : layer_bridges) {
+            std::vector<std::shared_ptr<const LocalZMixBridge>> islands;
+            for (const auto& bridge : bridges) {
+                if (!bridge->nominal_band || bridge->passes.size() != 1) {
+                    islands.push_back(bridge);
+                    continue;
+                }
+                const auto components = closing_ex(bridge->ownership(size_t(-1)), coord_t(10));
+                if (components.size() <= 1) {
+                    islands.push_back(bridge);
+                    continue;
+                }
+                std::vector<ExPolygons> domains;
+                ExPolygons              thin;
+                const double            minimum_width = .5 * print_cfg.nozzle_diameter.get_at(bridge->passes.front().filament_id - 1);
+                for (const auto& component : components)
+                    if (offset_ex(ExPolygons{component}, -scale_(minimum_width * .5)).empty())
+                        thin.push_back(component);
+                    else
+                        domains.push_back({component});
+                if (!thin.empty())
+                    domains.push_back(std::move(thin));
+                for (const auto& domain : domains) {
+                    auto island = std::make_shared<LocalZMixBridge>(*bridge);
+                    island->zones.clear();
+                    island->source_filament_ids.clear();
+                    island->passes.front().zones.clear();
+                    for (auto zone : bridge->zones) {
+                        zone.masks = intersection_ex(zone.masks, domain);
+                        if (zone.masks.empty())
+                            continue;
+                        island->passes.front().zones.push_back(island->zones.size());
+                        island->source_filament_ids.push_back(zone.source_filament_id);
+                        island->zones.push_back(std::move(zone));
+                    }
+                    if (!island->zones.empty())
+                        islands.push_back(std::move(island));
+                }
+            }
+            bridges = std::move(islands);
+        }
+        // Coalesce consecutive fallback strips of the same physical material
+        // when only their exterior moves. Internal ownership must agree at
+        // every covered layer, otherwise thickening would overwrite a neighbor.
+        struct BandFootprint
+        {
+            ExPolygons  masks;
+            BoundingBox bounds;
+            bool        printable;
+        };
+        std::map<std::pair<std::shared_ptr<const LocalZMixBridge>, size_t>, BandFootprint> band_footprints;
+        auto band_footprint = [&](const std::shared_ptr<const LocalZMixBridge>& owner, size_t layer) -> const BandFootprint& {
+            const auto key   = std::make_pair(owner, layer);
+            auto       found = band_footprints.find(key);
+            if (found == band_footprints.end()) {
+                auto         masks     = owner->ownership(layer);
+                const auto   bounds    = get_extents(masks);
+                const double width     = .5 * print_cfg.nozzle_diameter.get_at(owner->passes.front().filament_id - 1);
+                const bool   printable = !offset_ex(masks, -scale_(width * .5)).empty();
+                found                  = band_footprints.emplace(key, BandFootprint{std::move(masks), bounds, printable}).first;
+            }
+            return found->second;
+        };
+        for (size_t first = 1; first + 1 < layer_bridges.size(); ++first) {
+            for (size_t index = 0; index < layer_bridges[first].size(); ++index) {
+                auto current = layer_bridges[first][index];
+                if (!current->nominal_band || current->passes.size() != 1)
+                    continue;
+                if (!band_footprint(current, first).printable)
+                    continue;
+                const unsigned tool = current->passes.front().filament_id;
+                for (size_t next = first + 1; next < layer_bridges.size(); ++next) {
+                    if (print_object.get_layer(int(next))->print_z - current->z_lo > gradient_max_layer_heights[tool - 1] + 1e-6)
+                        break;
+                    auto found = std::find_if(layer_bridges[next].begin(), layer_bridges[next].end(), [&](const auto& candidate) {
+                        if (!candidate->nominal_band || candidate->passes.size() != 1 || candidate->passes.front().filament_id != tool ||
+                            std::abs(candidate->z_lo - current->z_hi) >= 1e-6)
+                            return false;
+                        const auto& lower = band_footprint(current, next - 1);
+                        const auto& upper = band_footprint(candidate, next);
+                        return upper.printable && lower.bounds.overlap(upper.bounds) && !intersection_ex(lower.masks, upper.masks).empty();
+                    });
+                    if (found == layer_bridges[next].end())
+                        break;
+                    auto merged             = std::make_shared<LocalZMixBridge>(*current);
+                    merged->z_hi            = (*found)->z_hi;
+                    merged->nominal_band    = false;
+                    merged->follows_surface = true;
+                    if (merged->layer_footprints.empty()) {
+                        const auto* layer = print_object.get_layer(int(first));
+                        merged->layer_footprints.push_back({first, current->ownership(first), {}, layer->slice_z, layer->height});
+                    }
+                    const auto* layer = print_object.get_layer(int(next));
+                    merged->layer_footprints.push_back({next, (*found)->ownership(next), {}, layer->slice_z, layer->height});
+                    ExPolygons swept;
+                    for (const auto& footprint : merged->layer_footprints)
+                        append(swept, footprint.masks);
+                    swept                                       = union_ex(swept);
+                    bool                             compatible = true;
+                    bool                             ownership_matches = true;
+                    double                           wall_width        = print_cfg.nozzle_diameter.get_at(tool - 1);
+                    std::vector<ExPolygons>          footprints, actual_footprints;
+                    std::optional<PrintRegionConfig> reference;
+                    for (const auto& footprint : merged->layer_footprints) {
+                        const auto* nominal = print_object.get_layer(int(footprint.layer_id));
+                        const auto  actual  = original_outline(*nominal);
+                        ownership_matches &= LocalZMixBridge::clean_residual(diff_ex(intersection_ex(swept, actual), footprint.masks))
+                                                 .empty();
+                        footprints.push_back(footprint.masks);
+                        actual_footprints.push_back(actual);
+                        for (const auto* region : nominal->regions()) {
+                            if (intersection_ex(footprint.masks, to_expolygons(region->slices.surfaces)).empty())
+                                continue;
+                            auto config                = region->region().config();
+                            wall_width                 = std::max(wall_width, double(region->flow(frExternalPerimeter).width()));
+                            config.wall_filament.value = config.sparse_infill_filament.value = config.solid_infill_filament.value = tool;
+                            if (!reference)
+                                reference = config;
+                            else
+                                compatible &= *reference == config;
+                        }
+                    }
+                    if (!compatible)
+                        break;
+                    if (ownership_matches &&
+                        !LocalZMixBridge::clean_residual(diff_ex(swept, opening_ex(swept, scale_(wall_width * .5)))).empty())
+                        break;
+                    ExPolygons common_core;
+                    if (!ownership_matches) {
+                        // Partial merging starts from two untouched nominal
+                        // slabs. Leave their changing edges at nominal height;
+                        // do not cut a previously fitted thick bead into slivers.
+                        if (next != first + 1 || !current->nominal_band)
+                            break;
+                        common_core = LocalZMixBridge::coalescing_core(footprints, actual_footprints, wall_width);
+                        if (common_core.empty())
+                            break;
+                        for (auto& footprint : merged->layer_footprints)
+                            footprint.masks = intersection_ex(footprint.masks, common_core);
+                    }
+                    for (const auto& added : (*found)->zones) {
+                        auto zone = std::find_if(merged->zones.begin(), merged->zones.end(), [&](const auto& existing) {
+                            return existing.source_filament_id == added.source_filament_id;
+                        });
+                        if (zone == merged->zones.end()) {
+                            merged->passes.front().zones.push_back(merged->zones.size());
+                            merged->zones.push_back(added);
+                            merged->source_filament_ids.push_back(added.source_filament_id);
+                        } else
+                            append(zone->masks, added.masks);
+                    }
+                    for (auto& zone : merged->zones) {
+                        zone.masks = union_ex(zone.masks);
+                        if (!common_core.empty())
+                            zone.masks = intersection_ex(zone.masks, common_core);
+                        zone.heights = {merged->z_hi - merged->z_lo};
+                    }
+                    merged->passes.front().ceiling     = merged->z_hi;
+                    merged->passes.front().flat_height = merged->z_hi - merged->z_lo;
+                    merged->lower_support_masks        = original_outline(*print_object.get_layer(int(first - 1)));
+                    if (!merged->fit_contours(.25 * print_cfg.nozzle_diameter.get_at(tool - 1), nullptr, wall_width))
+                        break;
+                    if (!common_core.empty()) {
+                        auto remainder = [&](const auto& original) {
+                            auto rest = std::make_shared<LocalZMixBridge>(*original);
+                            for (auto& zone : rest->zones)
+                                zone.masks = diff_ex(zone.masks, common_core);
+                            return rest;
+                        };
+                        auto lower = remainder(current), upper = remainder(*found);
+                        // Publish all three owners only after contour fitting.
+                        // The remainders still share the complete nominal wall
+                        // outline with other colors during path generation.
+                        if (lower->ownership(first).empty())
+                            layer_bridges[first][index] = merged;
+                        else {
+                            layer_bridges[first][index] = std::move(lower);
+                            layer_bridges[first].push_back(merged);
+                        }
+                        if (upper->ownership(next).empty())
+                            *found = merged;
+                        else {
+                            *found = std::move(upper);
+                            layer_bridges[next].push_back(merged);
+                        }
+                        break;
+                    }
+                    for (size_t previous = first; previous < next; ++previous)
+                        for (auto& owner : layer_bridges[previous])
+                            if (owner == current)
+                                owner = merged;
+                    *found  = merged;
+                    current = std::move(merged);
+                }
+            }
+        }
+        // Island identity is needed while matching vertically. Once that work
+        // is done, compatible nominal islands can share their original layer
+        // outline again; publishing one plan per clipping fragment makes both
+        // perimeter partitioning and travel scheduling needlessly quadratic.
+        for (size_t layer_id = 0; layer_id < layer_bridges.size(); ++layer_id) {
+            struct NominalGroup
+            {
+                PrintRegionConfig                config;
+                std::shared_ptr<LocalZMixBridge> bridge;
+            };
+            std::vector<NominalGroup>                           groups;
+            std::vector<std::shared_ptr<const LocalZMixBridge>> retained;
+            for (const auto& bridge : layer_bridges[layer_id]) {
+                if (!bridge->nominal_band || bridge->passes.size() != 1) {
+                    retained.push_back(bridge);
+                    continue;
+                }
+                const auto                       masks = bridge->ownership(layer_id);
+                std::optional<PrintRegionConfig> config;
+                bool                             compatible = true;
+                for (const auto* region : print_object.get_layer(int(layer_id))->regions()) {
+                    if (intersection_ex(masks, to_expolygons(region->slices.surfaces)).empty())
+                        continue;
+                    auto physical                = region->region().config();
+                    physical.wall_filament.value = physical.sparse_infill_filament.value = physical.solid_infill_filament.value =
+                        bridge->passes.front().filament_id;
+                    if (!config)
+                        config = std::move(physical);
+                    else
+                        compatible &= *config == physical;
+                }
+                if (!config || !compatible) {
+                    retained.push_back(bridge);
+                    continue;
+                }
+                auto group = std::find_if(groups.begin(), groups.end(), [&](const auto& candidate) {
+                    return candidate.config == *config && std::abs(candidate.bridge->z_lo - bridge->z_lo) < 1e-6 &&
+                           std::abs(candidate.bridge->z_hi - bridge->z_hi) < 1e-6;
+                });
+                if (group == groups.end()) {
+                    groups.push_back({std::move(*config), std::make_shared<LocalZMixBridge>(*bridge)});
+                    continue;
+                }
+                for (const auto& zone : bridge->zones) {
+                    auto found = std::find_if(group->bridge->zones.begin(), group->bridge->zones.end(),
+                                              [&](const auto& existing) { return existing.source_filament_id == zone.source_filament_id; });
+                    if (found == group->bridge->zones.end()) {
+                        group->bridge->passes.front().zones.push_back(group->bridge->zones.size());
+                        group->bridge->source_filament_ids.push_back(zone.source_filament_id);
+                        group->bridge->zones.push_back(zone);
+                    } else
+                        append(found->masks, zone.masks);
+                }
+            }
+            for (auto& group : groups) {
+                for (auto& zone : group.bridge->zones)
+                    zone.masks = union_ex(zone.masks);
+                retained.push_back(std::move(group.bridge));
+            }
+            layer_bridges[layer_id] = std::move(retained);
+        }
+        size_t joining_passes = 0, fallback_passes = 0;
+        for (size_t layer_id = 0; layer_id < print_object.layer_count(); ++layer_id) {
+            const auto*    layer = print_object.get_layer(int(layer_id));
+            LocalZInterval interval;
+            interval.layer_id    = layer_id;
+            interval.z_lo        = layer->bottom_z();
+            interval.z_hi        = layer->print_z;
+            interval.base_height = interval.sublayer_height = layer->height;
+            interval.first_sublayer_idx                     = plans.size();
+            interval.mix_bridges                            = layer_bridges[layer_id];
+            interval.has_mixed_paint = interval.independent_layer_height = !interval.mix_bridges.empty();
+            for (size_t group = 0; group < interval.mix_bridges.size(); ++group) {
+                const auto& bridge = interval.mix_bridges[group];
+                append(interval.managed_masks, bridge->ownership(layer_id));
+                for (size_t pass = 0; pass < bridge->passes.size(); ++pass) {
+                    const auto&  bead = bridge->passes[pass];
+                    const double z    = bridge->schedule_z(bead);
+                    if (z <= interval.z_lo + EPSILON || z > interval.z_hi + EPSILON)
+                        continue;
+                    SubLayerPlan plan;
+                    plan.layer_id             = layer_id;
+                    plan.split_interval       = true;
+                    plan.mix_bridge           = bridge;
+                    plan.mix_bridge_component = pass;
+                    plan.mix_bridge_region_id = local_z_owner_region(print_object, *bridge, layer_id);
+                    plan.z_lo                 = bridge->z_lo;
+                    plan.z_hi                 = bridge->z_hi;
+                    plan.print_z              = z;
+                    plan.flow_height          = layer->height;
+                    plan.dependency_group     = mixed_definitions.size() + 2 + group;
+                    plan.dependency_order     = pass;
+                    plan.painted_masks_by_extruder.resize(num_physical);
+                    plan.painted_masks_by_extruder[bead.filament_id - 1] = bridge->masks(bead, layer_id);
+                    plans.push_back(std::move(plan));
+                    bridge->planar_fallback ? ++fallback_passes : ++joining_passes;
+                }
+            }
+            interval.managed_masks = union_ex(interval.managed_masks);
+            auto begin             = plans.begin() + interval.first_sublayer_idx;
+            std::stable_sort(begin, plans.end(), [](const auto& a, const auto& b) { return a.print_z < b.print_z; });
+            interval.sublayer_count = plans.size() - interval.first_sublayer_idx;
+            for (size_t i = 0; i < interval.sublayer_count; ++i)
+                plans[interval.first_sublayer_idx + i].pass_index = i;
+            intervals.push_back(std::move(interval));
+        }
+        BOOST_LOG_TRIVIAL(info) << "Local-Z volume partition object=" << object_name << " joining_passes=" << joining_passes
+                                << " fallback_passes=" << fallback_passes
+                                << " core_volume_mm3=" << core_volume * SCALING_FACTOR * SCALING_FACTOR
+                                << " band_volume_mm3=" << band_volume * SCALING_FACTOR * SCALING_FACTOR;
+        print_object.set_local_z_plan(std::move(intervals), std::move(plans));
+        return;
+    }
+
+    std::vector<std::vector<uint8_t>> bridge_handovers(mixed_definitions.size(), std::vector<uint8_t>(layer_bridges.size(), 2));
+    std::vector<uint8_t>              bridge_geometry_breaks(layer_bridges.size(), 2);
+    auto                              bridge_handover = [&](size_t row, size_t layer) {
+        if (layer == 0 || layer >= layer_bridges.size())
+            return false;
+        auto& cached = bridge_handovers[row][layer];
+        if (cached != 2)
+            return cached != 0;
+        auto owners = [&](size_t index) {
+            std::vector<const LocalZMixBridge*> result;
+            for (const auto& bridge : layer_bridges[index])
+                if (std::any_of(bridge->source_filament_ids.begin(), bridge->source_filament_ids.end(),
+                                                             [&](unsigned id) { return mixed_mgr.mixed_index_from_filament_id(id, num_physical) == int(row); }))
+                    result.push_back(bridge.get());
+            return result;
+        };
+        const auto before = owners(layer - 1), after = owners(layer);
+        cached = 0;
+        if (bridge_geometry_varies && (!before.empty() || !after.empty())) {
+            auto& geometry_break = bridge_geometry_breaks[layer];
+            if (geometry_break == 2) {
+                const auto   a         = collect_layer_region_slices(*print_object.get_layer(int(layer - 1)));
+                const auto   b         = collect_layer_region_slices(*print_object.get_layer(int(layer)));
+                const double tolerance = .25 * *std::min_element(print_cfg.nozzle_diameter.values.begin(),
+                                                                                              print_cfg.nozzle_diameter.values.end());
+                geometry_break         = !diff_ex(a, offset_ex(b, scale_(tolerance))).empty() ||
+                                 !diff_ex(b, offset_ex(a, scale_(tolerance))).empty();
+            }
+            if (geometry_break) {
+                cached = 1;
+                return true;
+            }
+        }
+        if (before == after)
+            return false;
+        ExPolygons previous, next;
+        for (const auto* bridge : before)
+            append(previous, bridge->ownership(layer - 1));
+        for (const auto* bridge : after)
+            append(next, bridge->ownership(layer));
+        const auto common = intersection_ex(collect_layer_region_slices(*print_object.get_layer(int(layer - 1))),
+                                                                         collect_layer_region_slices(*print_object.get_layer(int(layer))));
+        previous = intersection_ex(union_ex(previous), common);
+        next     = intersection_ex(union_ex(next), common);
+        cached = !diff_ex(previous, offset_ex(next, scale_(.00001))).empty() || !diff_ex(next, offset_ex(previous, scale_(.00001))).empty();
+        return cached != 0;
+    };
+    std::vector<std::vector<double>> bridge_run_ends(mixed_definitions.size());
+    auto                             bridge_run_end = [&](size_t row, size_t layer) {
+        auto& ends = bridge_run_ends[row];
+        if (ends.empty()) {
+            ends.resize(layer_bridges.size(), std::numeric_limits<double>::infinity());
+            double end = std::numeric_limits<double>::infinity();
+            for (size_t i = ends.size(); i-- > 0;) {
+                ends[i] = end;
+                if (bridge_handover(row, i))
+                    end = print_object.get_layer(int(i))->print_z - print_object.get_layer(int(i))->height;
+            }
+        }
+        return ends[layer];
+    };
+
     const bool                             parallel_geometry = preparation_experiment("local_z_geometry");
     const bool                             reuse_fixed_masks = preparation_experiment("fixed_masks") && !parallel_geometry;
     const bool                             validate_geometry = preparation_diagnostic("ORCA_PREP_VALIDATE_REUSE");
@@ -3979,7 +5759,7 @@ static void build_local_z_plan(PrintObject&                                print
                     continue;
                 }
 
-                if (!state.active || row_active_prev_layer[row_idx] == 0 ||
+                if (!state.active || row_active_prev_layer[row_idx] == 0 || bridge_handover(row_idx, layer_id) ||
                     state.z_cursor > interval.z_hi + EPSILON) {
                     state = IndependentCadenceState{};
                     state.active   = true;
@@ -4057,17 +5837,29 @@ static void build_local_z_plan(PrintObject&                                print
                 };
 
                 while (true) {
-                    const LocalZIndependentDirectPass *cadence_pass = current_cadence_pass();
+                    const LocalZIndependentDirectPass* cadence_pass = current_cadence_pass();
                     if (cadence_pass == nullptr)
                         break;
-                    const double next_z = state.z_cursor + cadence_pass->height;
+                    double height = cadence_pass->height;
+                    if (bridge_geometry_varies && !selected_sources.empty()) {
+                        const double remaining = bridge_run_end(row_idx, layer_id) - state.z_cursor;
+                        if (remaining >= min_sublayer_height - EPSILON) {
+                            height            = std::min(height, remaining);
+                            const double tail = remaining - height;
+                            if (tail > EPSILON && tail < min_sublayer_height - EPSILON) {
+                                if (remaining <= gradient_max_layer_heights[cadence_pass->extruder_id - 1] + EPSILON)
+                                    height = remaining;
+                                else if (remaining - min_sublayer_height >= min_sublayer_height - EPSILON)
+                                    height = remaining - min_sublayer_height;
+                            }
+                        }
+                    }
+                    const double next_z = state.z_cursor + height;
                     if (next_z > interval.z_hi + EPSILON)
                         break;
 
-                    append_independent_pass(std::min(next_z, interval.z_hi),
-                                            cadence_pass->height,
-                                            cadence_pass->extruder_id);
-                    state.z_cursor = next_z;
+                    append_independent_pass(std::min(next_z, interval.z_hi), height, cadence_pass->extruder_id);
+                    state.z_cursor      = next_z;
                     state.last_extruder = cadence_pass->extruder_id;
                     if (gradient_row)
                         ++state.gradient_pass_index;
@@ -4077,12 +5869,10 @@ static void build_local_z_plan(PrintObject&                                print
                         break;
                 }
 
-                const bool continues_next_layer =
-                    layer_id + 1 < print_object.layer_count() &&
-                    mixed_filament_local_z_should_subdivide_layer(layer_id + 1,
-                                                                  local_z_whole_objects,
-                                                                  local_z_preserve_first_layer) &&
-                    row_is_active_on_layer(row_idx, layer_id + 1);
+                const bool continues_next_layer = layer_id + 1 < print_object.layer_count() &&
+                                                  mixed_filament_local_z_should_subdivide_layer(layer_id + 1, local_z_whole_objects,
+                                                                                                local_z_preserve_first_layer) &&
+                                                  row_is_active_on_layer(row_idx, layer_id + 1) && !bridge_handover(row_idx, layer_id + 1);
                 if (!continues_next_layer) {
                     const double remaining_height = interval.z_hi - state.z_cursor;
                     if (remaining_height > EPSILON) {
@@ -4823,260 +6613,6 @@ static void build_local_z_plan(PrintObject&                                print
     }
 
     if (mix_bridges) {
-        // Cycle masks deliberately bypass the original fixed-color guard: a
-        // guard is useful for independently printed ends, but breaks adjacency.
-        auto cycle_zones = [&](size_t layer_id, double height) {
-            std::vector<LocalZMixBridge::Zone> zones;
-            ExPolygons                         painted;
-            if (painted_segmentation)
-                for (size_t channel = 1; channel < (*painted_segmentation)[layer_id].size(); ++channel)
-                    append(painted, (*painted_segmentation)[layer_id][channel]);
-            for (size_t channel = 1; channel < segmentation[layer_id].size(); ++channel) {
-                const auto& masks = painted_segmentation && channel <= num_physical && channel < (*painted_segmentation)[layer_id].size() ?
-                                        (*painted_segmentation)[layer_id][channel] :
-                                        segmentation[layer_id][channel];
-                if (masks.empty())
-                    continue;
-                append(painted, masks);
-                const unsigned id  = segmentation_channel_filament_id(channel);
-                const int      row = mixed_mgr.mixed_index_from_filament_id(id, num_physical);
-                if (row >= 0 && size_t(row) < bridge_recipes.size() && !bridge_recipes[row].component_ids.empty()) {
-                    auto zone  = bridge_recipes[row];
-                    zone.masks = masks;
-                    for (double& h : zone.heights)
-                        h *= height;
-                    zones.emplace_back(std::move(zone));
-                } else if (id >= 1 && id <= num_physical) {
-                    zones.push_back({masks, {height}, {id}, id});
-                }
-            }
-            painted = union_ex(painted);
-            for (const LayerRegion* region : print_object.get_layer(int(layer_id))->regions()) {
-                const unsigned id = region->region().config().wall_filament.value;
-                if (id == 0 || id > num_physical)
-                    continue;
-                auto masks = diff_ex(to_expolygons(region->slices.surfaces), painted);
-                if (masks.empty())
-                    continue;
-                auto same = std::find_if(zones.begin(), zones.end(), [id](const auto& z) { return z.source_filament_id == id; });
-                if (same == zones.end())
-                    zones.push_back({std::move(masks), {height}, {id}, id});
-                else {
-                    append(same->masks, masks);
-                    same->masks = union_ex(same->masks);
-                }
-            }
-            return zones;
-        };
-        auto fits_height = [&](double height) {
-            for (const auto& recipe : bridge_recipes)
-                for (size_t i = 0; i < recipe.heights.size(); ++i)
-                    if (height * recipe.heights[i] < min_sublayer_height - EPSILON ||
-                        height * recipe.heights[i] > gradient_max_layer_heights[recipe.component_ids[i] - 1] + EPSILON)
-                        return false;
-            return true;
-        };
-        std::vector<size_t> cycle_end(intervals.size() + 1, 0);
-        cycle_end.back() = intervals.size();
-        // Tile the full active height, absorbing a short tail into a longer
-        // printable cycle. Never hand an unfinished independent cadence back
-        // to the original external-wall planner halfway through a run.
-        for (size_t first = intervals.size(); first-- > 1;) {
-            for (size_t end = first + bridge_cycle_span; end <= intervals.size() && end <= first + 32; ++end) {
-                if (cycle_end[end] != 0 && fits_height(intervals[end - 1].z_hi - intervals[first].z_lo)) {
-                    cycle_end[first] = end;
-                    break;
-                }
-                if (bridge_cycle_span == 1)
-                    break;
-            }
-        }
-        bool multi_cycle_geometry = true;
-        if (bridge_cycle_span > 1 && intervals.size() > 1) {
-            const auto reference = collect_layer_region_slices(*print_object.get_layer(1));
-            for (size_t layer = 1; multi_cycle_geometry && layer < intervals.size(); ++layer) {
-                const auto masks = collect_layer_region_slices(*print_object.get_layer(int(layer)));
-                // Frozen paint is sampled once per cycle. The actual wall
-                // centerline must be supported throughout that entire cycle.
-                multi_cycle_geometry = diff_ex(masks, offset_ex(reference, scale_(.00001))).empty() &&
-                                       diff_ex(reference, offset_ex(masks, scale_(.00001))).empty();
-            }
-        }
-        std::vector<std::vector<std::shared_ptr<const LocalZMixBridge>>> layer_bridges(intervals.size());
-        std::set<unsigned>                                               selected_sources;
-        for (size_t first = 1; multi_cycle_geometry && first < intervals.size() && cycle_end[first] != 0;) {
-            throw_on_cancel();
-            const size_t end    = cycle_end[first];
-            const size_t sample = first + (end - first - 1) / 2;
-            const double bottom = intervals[first].z_lo, top = intervals[end - 1].z_hi;
-            auto         zones = cycle_zones(sample, top - bottom);
-            // Preserve short painted runs missed by the middle sample. Like
-            // the rest of the cycle's paint they are quantized to this cycle,
-            // but never lost or handed back to a half-finished old cadence.
-            if (end - first > 1)
-                for (const auto& recipe : bridge_recipes) {
-                    if (recipe.component_ids.empty() || std::any_of(zones.begin(), zones.end(), [&](const auto& zone) {
-                            return zone.source_filament_id == recipe.source_filament_id;
-                        }))
-                        continue;
-                    size_t nearest = end;
-                    for (size_t layer = first; layer < end; ++layer)
-                        if (recipe.source_filament_id < segmentation[layer].size() &&
-                            !segmentation[layer][recipe.source_filament_id].empty() &&
-                            (nearest == end || std::abs(int(layer) - int(sample)) < std::abs(int(nearest) - int(sample))))
-                            nearest = layer;
-                    if (nearest == end)
-                        continue;
-                    auto zone  = recipe;
-                    zone.masks = segmentation[nearest][recipe.source_filament_id];
-                    for (double& h : zone.heights)
-                        h *= top - bottom;
-                    for (auto& existing : zones)
-                        existing.masks = diff_ex(existing.masks, zone.masks);
-                    zones.erase(std::remove_if(zones.begin(), zones.end(), [](const auto& existing) { return existing.masks.empty(); }),
-                                zones.end());
-                    zones.push_back(std::move(zone));
-                }
-            std::vector<double> nominal_heights;
-            for (size_t layer = first; layer < end; ++layer)
-                nominal_heights.push_back(intervals[layer].z_hi - intervals[layer].z_lo);
-            auto bridges = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights, std::move(zones),
-                                                  nominal_heights);
-            for (auto& bridge : bridges) {
-                bool       compatible = true;
-                ExPolygons group_masks;
-                double     clearance = 0.;
-                for (const auto& zone : bridge.zones) {
-                    append(group_masks, zone.masks);
-                    for (unsigned id : zone.component_ids)
-                        clearance = std::max(clearance, .5 * print_cfg.nozzle_diameter.get_at(id - 1) + .1);
-                }
-                group_masks      = union_ex(group_masks);
-                const auto guard = offset_ex(group_masks, scale_(clearance));
-                if (end - first > 1)
-                    for (size_t layer = first; compatible && layer < end; ++layer)
-                        for (unsigned id : bridge.source_filament_ids)
-                            if (id > num_physical && id < segmentation[layer].size() &&
-                                !diff_ex(segmentation[layer][id], offset_ex(group_masks, scale_(.00001))).empty())
-                                compatible = false;
-                // Check every covered interval, including foreign paint that
-                // appears between the sampled cycle masks.
-                for (size_t layer = first; compatible && layer < end; ++layer) {
-                    for (size_t channel = num_physical + 1; compatible && channel < segmentation[layer].size(); ++channel)
-                        if (std::find(bridge.source_filament_ids.begin(), bridge.source_filament_ids.end(), unsigned(channel)) ==
-                                bridge.source_filament_ids.end() &&
-                            !intersection_ex(guard, segmentation[layer][channel]).empty())
-                            compatible = false;
-                    if (painted_segmentation)
-                        for (size_t channel = num_physical + 1; compatible && channel < (*painted_segmentation)[layer].size(); ++channel)
-                            if (std::find(bridge.source_filament_ids.begin(), bridge.source_filament_ids.end(), unsigned(channel)) ==
-                                    bridge.source_filament_ids.end() &&
-                                !intersection_ex(guard, (*painted_segmentation)[layer][channel]).empty())
-                                compatible = false;
-                }
-                std::optional<PrintRegionConfig> reference;
-                for (const LayerRegion* region : print_object.get_layer(int(sample))->regions()) {
-                    if (!compatible || intersection_ex(group_masks, to_expolygons(region->slices.surfaces)).empty())
-                        continue;
-                    auto config                = region->region().config();
-                    config.wall_filament.value = 1;
-                    if (!reference)
-                        reference = config;
-                    else
-                        compatible = Layer::is_perimeter_compatible(PrintRegion(*reference), PrintRegion(config));
-                }
-                // Unlike sets keep their existing single-interval restriction.
-                // Equal sets use the shared non-planar interfaces even across
-                // nominal planes, scheduled by their lowest local top below.
-                if (end - first > 1 && !bridge.shared_stack)
-                    compatible = false;
-                if (!compatible) {
-                    if (bridge_cycle_span > 1)
-                        BOOST_LOG_TRIVIAL(debug)
-                            << "Bridge cycle rejected first=" << first << " end=" << end << " sources=" << bridge.source_filament_ids.size()
-                            << " shared_stack=" << bridge.shared_stack;
-                    // For a one-interval cycle the original nominal experiment
-                    // can still close an isolated selected row with flat beads.
-                    if (bridge_cycle_span == 1)
-                        for (auto& zone : bridge.zones) {
-                            if (zone.source_filament_id <= num_physical)
-                                continue;
-                            auto single = LocalZMixBridge::build(bottom, top, min_sublayer_height, gradient_max_layer_heights,
-                                                                 {std::move(zone)});
-                            layer_bridges[first].push_back(std::make_shared<LocalZMixBridge>(std::move(single.front())));
-                        }
-                    continue;
-                }
-                if (std::any_of(bridge.passes.begin(), bridge.passes.end(),
-                                [](const auto& pass) { return pass.flat_height == 0. && pass.zones.size() > 1; }))
-                    selected_sources.insert(bridge.source_filament_ids.begin(), bridge.source_filament_ids.end());
-                auto shared = std::make_shared<LocalZMixBridge>(std::move(bridge));
-                for (size_t layer = first; layer < end; ++layer)
-                    layer_bridges[layer].push_back(shared);
-            }
-            first = end;
-        }
-        // Multi-interval rows must be covered for the entire run. A rejected
-        // cycle restores the original run, not a fragment of its old phase.
-        if (bridge_cycle_span > 1) {
-            bool changed = true;
-            while (changed) {
-                const size_t previous_count = selected_sources.size();
-                for (auto& bridges : layer_bridges)
-                    bridges.erase(std::remove_if(bridges.begin(), bridges.end(),
-                                                 [&](const auto& bridge) {
-                                                     return std::any_of(bridge->source_filament_ids.begin(),
-                                                                        bridge->source_filament_ids.end(),
-                                                                        [&](unsigned id) { return selected_sources.count(id) == 0; });
-                                                 }),
-                                  bridges.end());
-                for (auto it = selected_sources.begin(); it != selected_sources.end();) {
-                    const unsigned id = *it;
-                    if (id <= num_physical) {
-                        ++it;
-                        continue;
-                    }
-                    bool complete = true;
-                    for (size_t layer = 1; complete && layer < intervals.size(); ++layer) {
-                        if (id >= segmentation[layer].size() || segmentation[layer][id].empty())
-                            continue;
-                        complete = std::any_of(layer_bridges[layer].begin(), layer_bridges[layer].end(), [&](const auto& bridge) {
-                            return std::find(bridge->source_filament_ids.begin(), bridge->source_filament_ids.end(), id) !=
-                                   bridge->source_filament_ids.end();
-                        });
-                    }
-                    if (!complete)
-                        it = selected_sources.erase(it);
-                    else
-                        ++it;
-                }
-                changed = previous_count != selected_sources.size();
-            }
-        }
-        // Painted-only Local-Z may subdivide layer zero even with the preserve
-        // option. Replace selected outer walls there with a full-height flat
-        // bead so their original cadence cannot leave a straddling partial bead.
-        if (!local_z_whole_objects && !selected_sources.empty() && !intervals.empty()) {
-            auto flat  = std::make_shared<LocalZMixBridge>();
-            flat->z_lo = intervals.front().z_lo;
-            flat->z_hi = intervals.front().z_hi;
-            for (auto zone : cycle_zones(0, flat->z_hi - flat->z_lo)) {
-                if (selected_sources.count(zone.source_filament_id) == 0)
-                    continue;
-                const unsigned id  = zone.component_ids.front();
-                zone.heights       = {flat->z_hi - flat->z_lo};
-                zone.component_ids = {id};
-                auto pass = std::find_if(flat->passes.begin(), flat->passes.end(), [id](const auto& p) { return p.filament_id == id; });
-                if (pass == flat->passes.end())
-                    flat->passes.push_back({{flat->zones.size()}, 0, id, flat->z_hi});
-                else
-                    pass->zones.push_back(flat->zones.size());
-                flat->source_filament_ids.push_back(zone.source_filament_id);
-                flat->zones.push_back(std::move(zone));
-            }
-            if (!flat->zones.empty())
-                layer_bridges[0].push_back(std::move(flat));
-        }
         std::vector<SubLayerPlan> rebuilt;
         size_t                    bridge_pass_count = 0;
         for (LocalZInterval& interval : intervals) {
@@ -5097,8 +6633,7 @@ static void build_local_z_plan(PrintObject&                                print
                 interval.has_mixed_paint          = true;
                 interval.independent_layer_height = true;
                 for (const auto& bridge : bridges)
-                    for (const auto& zone : bridge->zones)
-                        append(interval.managed_masks, zone.masks);
+                    append(interval.managed_masks, bridge->ownership(interval.layer_id));
                 interval.managed_masks = union_ex(interval.managed_masks);
             }
             for (size_t group = 0; group < bridges.size(); ++group) {
@@ -5117,6 +6652,7 @@ static void build_local_z_plan(PrintObject&                                print
                     plan.external_perimeters_only = false;
                     plan.mix_bridge               = bridge;
                     plan.mix_bridge_component     = pass;
+                    plan.mix_bridge_region_id     = local_z_owner_region(print_object, *bridge, interval.layer_id);
                     plan.z_lo                     = bridge->z_lo;
                     plan.z_hi                     = bridge->z_hi;
                     plan.print_z                  = schedule_z;
@@ -5125,7 +6661,7 @@ static void build_local_z_plan(PrintObject&                                print
                     plan.dependency_order         = pass;
                     plan.painted_masks_by_extruder.resize(num_physical);
                     auto& masks = plan.painted_masks_by_extruder[band.filament_id - 1];
-                    masks       = bridge->masks(band);
+                    masks       = bridge->masks(band, interval.layer_id);
                     replacement.emplace_back(std::move(plan));
                     ++bridge_pass_count;
                 }
@@ -5147,7 +6683,8 @@ static void build_local_z_plan(PrintObject&                                print
         plans                        = std::move(rebuilt);
         total_generated_sublayer_cnt = plans.size();
         BOOST_LOG_TRIVIAL(info) << "Local-Z mix bridges object=" << object_name << " selected_recipes=" << selected_sources.size()
-                                << " cycle_span=" << bridge_cycle_span << " passes=" << bridge_pass_count;
+                                << " cycle_span=" << bridge_cycle_span
+                                << " cycles=" << cycles.size() << " passes=" << bridge_pass_count;
     }
 
     if (!intervals.empty() && !plans.empty()) {

@@ -2245,6 +2245,9 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "dithering_local_z_preserve_first_layer" ||
          opt_key == "dithering_local_z_direct_multicolor" ||
          opt_key == "dithering_local_z_independent_layer_height" ||
+         opt_key == "dithering_local_z_planner" ||
+         opt_key == "dithering_local_z_mix_bridges" ||
+         opt_key == "dithering_local_z_mix_transition_length" ||
          opt_key == "dithering_local_z_gradient_layer_height" ||
          opt_key == "dithering_local_z_gradient_middle_filament_window" ||
          opt_key == "dithering_step_painted_zones_only" ||
@@ -3026,6 +3029,9 @@ void TabPrint::build()
         optgroup->append_single_option_line("dithering_local_z_infill");
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
+        optgroup->append_single_option_line("dithering_local_z_planner");
+        optgroup->append_single_option_line("dithering_local_z_mix_bridges");
+        optgroup->append_single_option_line("dithering_local_z_mix_transition_length");
         optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
 
     page = add_options_page(L("Others"), "custom-gcode_other"); // ORCA: icon only visible on placeholders
@@ -3079,6 +3085,9 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
+        optgroup->append_single_option_line("dithering_local_z_planner");
+        optgroup->append_single_option_line("dithering_local_z_mix_bridges");
+        optgroup->append_single_option_line("dithering_local_z_mix_transition_length");
         optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
         optgroup->append_single_option_line("dithering_local_z_gradient_middle_filament_window");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");

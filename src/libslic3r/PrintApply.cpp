@@ -1283,6 +1283,9 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     new_full_config.option("dithering_local_z_infill", true);
     new_full_config.option("dithering_local_z_direct_multicolor", true);
     new_full_config.option("dithering_local_z_independent_layer_height", true);
+    new_full_config.option("dithering_local_z_planner", true);
+    new_full_config.option("dithering_local_z_mix_bridges", true);
+    new_full_config.option("dithering_local_z_mix_transition_length", true);
     new_full_config.option("dithering_local_z_gradient_layer_height", true);
     new_full_config.option("dithering_step_painted_zones_only", true);
     new_full_config.option("mixed_filament_gradient_mode", true);
@@ -1304,6 +1307,9 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_config.option("dithering_local_z_infill", true);
     m_config.option("dithering_local_z_direct_multicolor", true);
     m_config.option("dithering_local_z_independent_layer_height", true);
+    m_config.option("dithering_local_z_planner", true);
+    m_config.option("dithering_local_z_mix_bridges", true);
+    m_config.option("dithering_local_z_mix_transition_length", true);
     m_config.option("dithering_local_z_gradient_layer_height", true);
     m_config.option("dithering_step_painted_zones_only", true);
     m_config.option("mixed_filament_gradient_mode", true);
@@ -1325,6 +1331,9 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     m_default_object_config.option("dithering_local_z_infill", true);
     m_default_object_config.option("dithering_local_z_direct_multicolor", true);
     m_default_object_config.option("dithering_local_z_independent_layer_height", true);
+    m_default_object_config.option("dithering_local_z_planner", true);
+    m_default_object_config.option("dithering_local_z_mix_bridges", true);
+    m_default_object_config.option("dithering_local_z_mix_transition_length", true);
     m_default_object_config.option("dithering_local_z_gradient_layer_height", true);
     m_default_object_config.option("dithering_step_painted_zones_only", true);
     m_default_object_config.option("mixed_filament_gradient_mode", true);

@@ -256,6 +256,7 @@ set(lisbslic3r_sources
     GCode/FanMover.hpp
     GCode/GCodeProcessor.cpp
     GCode/PreviewMemory.hpp
+    GCode/PreviewLayerGrid.hpp
     GCode/GCodeProcessor.hpp
     GCode.hpp
     GCode/PchipInterpolatorHelper.cpp
@@ -359,6 +360,12 @@ set(lisbslic3r_sources
     LocalZPathRouter.cpp
     LocalZMixBridge.hpp
     LocalZMixBridge.cpp
+    LocalZCadence.hpp
+    LocalZCadence.cpp
+    LocalZMaterialGraph.hpp
+    LocalZMaterialGraph.cpp
+    LocalZMaterialPlanner.hpp
+    LocalZMaterialPlanner.cpp
     LocalZClipper.hpp
     LocalZClipAcceleration.cpp
     LocalZClipAcceleration.hpp

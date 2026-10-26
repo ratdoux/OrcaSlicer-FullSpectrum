@@ -987,6 +987,9 @@ static std::vector<std::string> s_Preset_print_options {
      "dithering_local_z_whole_objects",
      "dithering_local_z_preserve_first_layer",
      "dithering_local_z_infill",
+     "dithering_local_z_planner",
+     "dithering_local_z_mix_bridges",
+     "dithering_local_z_mix_transition_length",
      "calib_flowrate_topinfill_special_order",
      "process_flow_support",
 };
