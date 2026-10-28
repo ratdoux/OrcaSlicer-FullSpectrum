@@ -235,29 +235,46 @@ SCENARIO("DynamicPrintConfig serialization", "[Config]") {
         FullPrintConfig full_print_config;
         DynamicPrintConfig cfg;
         cfg.apply(full_print_config, false);
+        cfg.option<ConfigOptionFloatsOrPercents>("overhang_1_4_speed")->values = { { 17.5, false }, { 62.5, true } };
 
         std::string serialized;
-        try {
+        REQUIRE_NOTHROW([&] {
             std::ostringstream ss;
             cereal::BinaryOutputArchive oarchive(ss);
             oarchive(cfg);
             serialized = ss.str();
-        } catch (const std::runtime_error & /* e */) {
-            // e.what();
-        }
+        }());
 
         THEN("Config object contains ini file options.") {
             DynamicPrintConfig cfg2;
-            try {
+            REQUIRE_NOTHROW([&] {
                 std::stringstream ss(serialized);
                 cereal::BinaryInputArchive iarchive(ss);
                 iarchive(cfg2);
-            } catch (const std::runtime_error & /* e */) {
-                // e.what();
-            }
+            }());
             REQUIRE(cfg == cfg2);
         }
     }
+}
+
+TEST_CASE("Nullable float or percent vectors survive undo archives", "[Config]")
+{
+    ConfigOptionDef definition;
+    definition.opt_key = "nullable_float_or_percent";
+    definition.type = coFloatsOrPercents;
+    definition.nullable = true;
+    const ConfigOptionFloatsOrPercentsNullable original{
+        { 17.5, false }, { 62.5, true }, ConfigOptionFloatsOrPercentsNullable::nil_value()
+    };
+    std::stringstream stream;
+    {
+        cereal::BinaryOutputArchive archive(stream);
+        definition.save_option_to_archive(archive, &original);
+    }
+    cereal::BinaryInputArchive archive(stream);
+    const std::unique_ptr<ConfigOption> restored(definition.load_option_from_archive(archive));
+    REQUIRE(*restored == original);
+    REQUIRE(restored->nullable());
 }
 
 TEST_CASE("DynamicPrintConfig normalizes support filament types from filament_ids", "[Config]")

@@ -1,0 +1,552 @@
+{
+  "date": "2026-10-27",
+  "scope": "Dense-infill extension and nine original downloaded-project regression audits",
+  "default_engine": "legacy",
+  "physical_qualification": false,
+  "supported_new_infill": [
+    "monotonic",
+    "rectilinear",
+    "concentric"
+  ],
+  "production_pattern_angle_configurations": 18,
+  "new_engine_density_percent": 100,
+  "new_engine_real_model_acceptances": 0,
+  "tests": {
+    "ordinary_cases": 55,
+    "ordinary_assertions": 1508406,
+    "stress_cases": 64,
+    "stress_assertions": 1606539,
+    "ctest_total": 443,
+    "ctest_passed": 435,
+    "ctest_failed": 8,
+    "new_ctest_failures": [],
+    "new_ctest_cases_passed": 56
+  },
+  "test_binary_notes": "CTest, stress and enabled benchmarks used build11. Build12 only formats the opt-in real-model audit and adds outside-path assertions. Production sources and ordinary tests are unchanged; ordinary tests and all nine project exports use build12.",
+  "enabled_performance": {
+    "workloads": 21,
+    "measured_runs_each": 5,
+    "warmups": 1,
+    "passed": true,
+    "summary": "infill-benchmarks.json",
+    "comparison_limit": "Holed plates now use concentric fill and the mixed taper is accepted; not an identical-workload speedup comparison."
+  },
+  "feature_off_functional": {
+    "cases": 6,
+    "commands_identical": true,
+    "move_vertex_bytes": 104,
+    "summary": "infill-feature-off-functional.json",
+    "performance_claim": false
+  },
+  "real_models": [
+    {
+      "file": "Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture.3mf",
+      "source_sha256": "d7036560c0648238fbffc7cfc2150c7389afd2fbbbf700c31ffa05172b84960b",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 103176,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 671,
+        "infill_mm": 60426.54392795241,
+        "layers": 748,
+        "ordered_point_fnv1a64": "10011688562845038790",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 146903,
+        "perimeter_mm": 346753.1917567997,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "4870368035138491777"
+      },
+      "gcode": {
+        "extrusions": 969808,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 1765132,
+        "positive_filament_mm": 53410.598579938356
+      },
+      "slice_seconds": 63.0695686,
+      "elapsed_seconds": 130.2116038000022
+    },
+    {
+      "file": "1_Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture.3mf",
+      "source_sha256": "f682d3b7e00814942d8a400afc5347393f38934e2eaf792a01ffc09ff8d71f13",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 103176,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 671,
+        "infill_mm": 60426.54392795241,
+        "layers": 748,
+        "ordered_point_fnv1a64": "10011688562845038790",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 146903,
+        "perimeter_mm": 346753.1917567997,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "4870368035138491777"
+      },
+      "gcode": {
+        "extrusions": 969808,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 1765132,
+        "positive_filament_mm": 53410.598579938356
+      },
+      "slice_seconds": 66.5224154,
+      "elapsed_seconds": 125.01306690000638
+    },
+    {
+      "file": "3DBenchy.3mf",
+      "source_sha256": "92e44b529c7857c3909f62c1b8aee4a1cfd85bf772ff2808eefceb38c38ee62b",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 225154,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 420,
+        "infill_mm": 110264.97672254675,
+        "layers": 599,
+        "ordered_point_fnv1a64": "18432948513540464255",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 55800,
+        "perimeter_mm": 221308.8940394843,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "9809854195355678863"
+      },
+      "gcode": {
+        "extrusions": 588059,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 763724,
+        "positive_filament_mm": 22378.644327149213
+      },
+      "slice_seconds": 16.5397697,
+      "elapsed_seconds": 31.657169000005524
+    },
+    {
+      "file": "TestCylinder.3mf",
+      "source_sha256": "6ea86e68bf17a254971eb41e8a05c6b92cda6201630ca48348d815aa24181deb",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 720,
+      "objects": 1,
+      "settings": {
+        "enable_support": "1",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "10%",
+        "sparse_infill_pattern": "adaptivecubic",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 1,
+        "infill_mm": 213389.8764294233,
+        "layers": 553,
+        "ordered_point_fnv1a64": "743308393488597161",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 38643,
+        "perimeter_mm": 324148.8582581293,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "223829452662259322"
+      },
+      "gcode": {
+        "extrusions": 386236,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 485415,
+        "positive_filament_mm": 23136.673073552673
+      },
+      "slice_seconds": 6.1004364,
+      "elapsed_seconds": 11.134984199998144
+    },
+    {
+      "file": "CubeTest.3mf",
+      "source_sha256": "8fe938b4c145cd0d02ea3d4e1c6682d0957f15d2c57ea57878e1590ad874700c",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 12,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "rectilinear",
+        "layer_height": "0.2",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 0,
+        "infill_mm": 44825.52213298604,
+        "layers": 135,
+        "ordered_point_fnv1a64": "9502293261421649519",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 1253,
+        "perimeter_mm": 46506.55471112374,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "17989532847678841183"
+      },
+      "gcode": {
+        "extrusions": 90969,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 118708,
+        "positive_filament_mm": 15339.92662131341
+      },
+      "slice_seconds": 0.1345165,
+      "elapsed_seconds": 0.9208016000047792
+    },
+    {
+      "file": "SlicerProblem_Painting.3mf",
+      "source_sha256": "cbd990a0e288d560718fa32103f65e0cdf6385706dc99f0009f381a1c811bd05",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 64904,
+      "objects": 2,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.2",
+        "sparse_infill_density": "25%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "6"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 164,
+        "infill_mm": 22432.48650149172,
+        "layers": 100,
+        "ordered_point_fnv1a64": "14392681189618212968",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 9351,
+        "perimeter_mm": 73882.34049488485,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "17882551727906767746"
+      },
+      "gcode": {
+        "extrusions": 98301,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 114101,
+        "positive_filament_mm": 3136.4517049608694
+      },
+      "slice_seconds": 1.5102097,
+      "elapsed_seconds": 3.7461717999976827
+    },
+    {
+      "file": "Multi-color Cute Dragon by IK3Digital.3mf",
+      "source_sha256": "a22b77b66459ae8ffc87a5281f1b43474346fcd2d8c17be3bf830d9fd2f60cb8",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 1371217,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "rectilinear",
+        "layer_height": "0.2",
+        "sparse_infill_density": "5%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 111,
+        "infill_mm": 71560.4752690379,
+        "layers": 300,
+        "ordered_point_fnv1a64": "15545254306206767220",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 44833,
+        "perimeter_mm": 137100.1702049913,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "15436405788296041639"
+      },
+      "gcode": {
+        "extrusions": 709893,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 794309,
+        "positive_filament_mm": 29024.619500700843
+      },
+      "slice_seconds": 20.6901178,
+      "elapsed_seconds": 32.76491399999941
+    },
+    {
+      "file": "Chibi Panther Chameleon by Raki-Box.3mf",
+      "source_sha256": "06f200f1bc58230649c0c9443f23cbf5898e5157dc7793071ad8ed698e6ecd5a",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 811700,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.24",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 61,
+        "infill_mm": 38928.866000138405,
+        "layers": 114,
+        "ordered_point_fnv1a64": "12537367382776919573",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 20394,
+        "perimeter_mm": 70420.93766629566,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "6396920614991155772"
+      },
+      "gcode": {
+        "extrusions": 609245,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 751771,
+        "positive_filament_mm": 18297.17851023082
+      },
+      "slice_seconds": 24.4428505,
+      "elapsed_seconds": 38.86660880000272
+    },
+    {
+      "file": "1MPolygonBridge.3mf",
+      "source_sha256": "e7f5810db93300928eec92c6f648b731d1c49995266411d62b45a4c770e11f2a",
+      "source_unchanged": true,
+      "test_binary_sha256": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+      "result": "completed",
+      "triangles": 2179126,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.12",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "new_engine_accepted": false,
+      "fallback": "stationary_reprap_tool_selection_required",
+      "geometry": {
+        "centerline_tolerance_mm": 0.06,
+        "hole_sections": 3070,
+        "infill_mm": 2842863.3934243405,
+        "layers": 737,
+        "ordered_point_fnv1a64": "8125572520854893985",
+        "outside_infill_mm": 0.0,
+        "outside_perimeter_mm": 0.0,
+        "paths": 360517,
+        "perimeter_mm": 1131639.7238347547,
+        "slicing_error_layers": 0,
+        "sorted_segment_fnv1a64": "15677167370301680771"
+      },
+      "gcode": {
+        "extrusions": 6791041,
+        "invalid_moves": 0,
+        "material_band_cycles": 0,
+        "moves": 7051877,
+        "positive_filament_mm": 82073.77201587253
+      },
+      "slice_seconds": 276.592128,
+      "elapsed_seconds": 325.43723339999997
+    }
+  ],
+  "real_models_totals": {
+    "projects": 9,
+    "triangles": 4859185,
+    "layers": 4034,
+    "paths": 824597,
+    "parsed_moves": 13610169,
+    "invalid_moves": 0
+  },
+  "real_model_limitations": [
+    "All nine use explicit legacy fallback under their original profiles.",
+    "Centerline containment uses a 0.06 mm tolerance and is not a bead-volume or physical adhesion proof.",
+    "Tyranid has repeat-run legacy nondeterminism. A repeated legacy run exactly matches the fallback geometry and noncomment G-code."
+  ],
+  "gui": {
+    "application": "build/src/Release/material-band-verify.exe",
+    "project": "MB02-transition-concentric.3mf",
+    "loaded_and_sliced": true,
+    "logical_cycles": 10,
+    "top_z_mm": 2.4,
+    "inspected_cycle": 5,
+    "inspected_cycle_top_z_mm": 1.2,
+    "concentric_interior_visible": true,
+    "method": "Native computer-use skill; rendered top and perspective views inspected after actual GUI slicing.",
+    "hardware_actions": false,
+    "left_open_for_inspection": true
+  },
+  "source_sha256": {
+    "scripts/material_band_baseline.py": "5e0d7dfe58cfff1bc2d3bf408942772b2786e62d2f016c36f1090ea9f6a2a6ac",
+    "scripts/material_band_benchmark.py": "97c99426780188134f3ad66e27294a0e60cadeed4efc7b7abc147dd2b6c53e6c",
+    "scripts/material_band_real_models.py": "e580a1383a0a6033cb85584cb568f780274e1ad867b07debaf73e07616e66d1e",
+    "scripts/material_band_stress.py": "023ab14c6d21bd085539b005b078c6eb26256d07c1d6ba980a171e761cb6e6ec",
+    "scripts/material_band_visual_audit.py": "848c22463edb7e8cb380b4c4aad178a299edaa30463538ec4d8249e178ae601c",
+    "src/libslic3r/MaterialBand/BoxPlanner.cpp": "dedd33a8b58167a2d23524e02ece50fc7c0efbaf1bdad26d12bfe930bdc86280",
+    "src/libslic3r/MaterialBand/BoxPlanner.hpp": "8fdb3b82f80fec94ed2b57599bf09cadbeb769de7b73c6ced6b0772528f6c22c",
+    "src/libslic3r/MaterialBand/ClippedPlanner.cpp": "79f6a955a34fc5910e43a195a71cbf475b96fb3c36e5f00866d4308a42bc002b",
+    "src/libslic3r/MaterialBand/ClippedPlanner.hpp": "49f2eb2fd16bb10608271a7867dc863ca7f33005e1bbfda936d19874c2926e64",
+    "src/libslic3r/MaterialBand/Contracts.cpp": "9d5302357b8233bb5fb6a1a4607cf68eba03c9522997585c0b29fde58ce1b4a0",
+    "src/libslic3r/MaterialBand/Contracts.hpp": "69c5957bc93b7a0c23ad2baa7864d09c87c15409fe3547cbe6e993ee8c9f010f",
+    "src/libslic3r/MaterialBand/FinalPrintPlan.cpp": "adfe3c09564c56b2b600423ba302c779f5fe143ecad8eb6dea277ca83dad9310",
+    "src/libslic3r/MaterialBand/FinalPrintPlan.hpp": "346d2368538ae92b16408757bfb31c55f4ac21fb41c33a107472568274731b47",
+    "src/libslic3r/MaterialBand/InputAdapter.cpp": "6d6d3be131bf40753a825335792b451f4bf902ba1490a396b2718514dbfa27a6",
+    "src/libslic3r/MaterialBand/InputAdapter.hpp": "530916e4eb0ee9980dc930b0e10007565f9da0a146b0d33729eeec9ad50b8301",
+    "src/libslic3r/MaterialBand/PaintedBox.cpp": "99ffb97ace9687f5bb799abd5d367a0a25956ce57454eb36fc4628f5834d8e3e",
+    "src/libslic3r/MaterialBand/PaintedBox.hpp": "8ea0be80b88262064f88db484f24aabd87e312fa88e3516c97fbfffe85562c52",
+    "src/libslic3r/MaterialBand/Production.cpp": "c66bc6b0d8ebe07901aea2d26887c370ce30e5f1a8d15beba96021c42b653102",
+    "src/libslic3r/MaterialBand/Production.hpp": "e1a16911e58a782cf1d189c63b91ec81ecbeb2c9501710a7c736af4fdf001e23",
+    "src/libslic3r/MaterialBand/ScheduleExport.cpp": "0e49a72650dc29081b3f3c24be46255408b1128f65e2aceba4db65b563bd522f",
+    "src/libslic3r/MaterialBand/Scheduler.cpp": "4029ed0b20dfdb3c18a175729a943df87feb578b1c76e1f66e318d5af543778d",
+    "src/libslic3r/MaterialBand/Scheduler.hpp": "9baa001f06abbabadca9d57af75710af9601918e14a3df94b615efa921bfa14b",
+    "src/libslic3r/MaterialBand/SlabSolver.cpp": "3dc08acf94df2901ad3d869f5e06ddef4983764b87fa52e6f85e02706125c643",
+    "src/libslic3r/MaterialBand/SlabSolver.hpp": "05bb81a687d5c34ebab3a8272b4668e4c6f948033823989806c08e2bccc81d46",
+    "src/libslic3r/MaterialBand/SolidClipper.cpp": "3a2720e5937b26734daa43428d35152d11e247dfaa2b813c0f3f7fc2aee18727",
+    "src/libslic3r/MaterialBand/SolidClipper.hpp": "61e71116e952ca5749ec8667e8056b3fab88732718ad7b34a584ddae248022da",
+    "src/libslic3r/MaterialBand/Topology.cpp": "9b7a32a63094a5778fafcb73dca0116fa068ae9909740d63e0f196fb67663205",
+    "src/libslic3r/MaterialBand/Topology.hpp": "62aa77e359b465a2f7d742404328f3524a518f656ada23bf980b67110ce445f0",
+    "tests/libslic3r/material_band_fixtures.cpp": "4a3c765d4209f534215c09ea541602620da1f5838c0176d0cd77728efe8f7b8a",
+    "tests/libslic3r/material_band_fixtures.hpp": "71a4438abbb37379f2acbfaeb56c1474ba576983aed15a165e371f8c743c4216",
+    "tests/libslic3r/test_material_band_clipping.cpp": "ac60d569d90a648b1db16ee930f3dc6603cf2500eb0be02b338e0c350222c697",
+    "tests/libslic3r/test_material_band_corpus.cpp": "2673e5ba85503a4fa8b4c66c6942af55dd3af156eb71c3f4c2cbb399dea0f79b",
+    "tests/libslic3r/test_material_band_final.cpp": "609efb41bb05206037718272743ef8408e96b6df8b11b42d2c0b02549e77efed",
+    "tests/libslic3r/test_material_band_fixtures.cpp": "e6c7d91d0fb07e04ebb281224b300706a33dea086044ac6170fd066aa17adcdc",
+    "tests/libslic3r/test_material_band_input.cpp": "b7db6dba43db65efcb6f8d87acc982289fd83bf851a0ca0ea0ae2fd3199c8831",
+    "tests/libslic3r/test_material_band_paths.cpp": "3e5c2719353c667e7b9e09383127f039e3d473fd35427196cfdccb84383bc2db",
+    "tests/libslic3r/test_material_band_production.cpp": "a83af01a01f2a503a30666fd9bebff30b699633211fe4db24ffbdc32aeaa0d9d",
+    "tests/libslic3r/test_material_band_real_models.cpp": "c256ac41b58a5081c61a2d4e430c288d6170efc9ee49dfb9cbc81cd1b2350132",
+    "tests/libslic3r/test_material_band_schedule.cpp": "9b83647b8ecd8d407046356b493c2b27ebc49226a797bafbc96da333052c7537",
+    "tests/libslic3r/test_material_band_solver.cpp": "e6e74447ed387859519a1179cc9d35ac193781f1c88f23d39f18c5bc28ea111f",
+    "tests/libslic3r/test_material_band_stress.cpp": "ee1fd1749cc627ee99feb30ed17c4b0e4e9321af448456d197ad9edc6fa79bba",
+    "tests/libslic3r/test_material_band_topology.cpp": "8f7a33b3d5f9fc1ccc1c417928cba5691227a19162369ce8ee8546530e9a7afd"
+  },
+  "binaries_sha256": {
+    "build-material-band/tests/libslic3r/Release/libslic3r_tests.exe": "75317dcf208433cd47a3dccfacb76992bc2f2eda3637353a8c99da71b82716e2",
+    "build-material-band/tests/fff_print/Release/fff_print_tests.exe": "60c14c51ce367237f63a0455e8e290ca05529a82fbb9be4ba09fe6678ec23c1a",
+    "build/src/Release/snapmaker-orca.exe": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+    "build/src/Release/material-band-verify.exe": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+    "build/src/Release/Snapmaker_Orca.dll": "c844c00c98ba088c044586012f36d0037f9b246a4959c70f3f0455ce627aa5b4"
+  },
+  "logs": [
+    {
+      "path": "infill-ordinary.log.gz",
+      "sha256": "4f2185ec46ad0d55e74e66483507cc04cf4374f35f8076e407b410ae45d4bd02"
+    },
+    {
+      "path": "infill-ctest.log.gz",
+      "sha256": "99c0959ed5ebf256750a48a9261a4fbb6f7d3fe4488309eb4518b9d863156c08"
+    },
+    {
+      "path": "infill-stress.log.gz",
+      "sha256": "a9af8b78d40fadbf09a7494a53c2cf8b593eec0a1d6020ab0963b25ea97a1caf"
+    },
+    {
+      "path": "infill-gui-build.log.gz",
+      "sha256": "9380e6f802fd6725b957b72a3daaeb6b7792a613c6cf52e04fdc0576a6f6f969"
+    },
+    {
+      "path": "infill-test-build.log.gz",
+      "sha256": "69ba93dd26e75785c9b95e692cd90758c95f327293a51ea110057537434bb7a8"
+    },
+    {
+      "path": "infill-benchmarks.log.gz",
+      "sha256": "024aa89a90d496e13e94598fbbf8b9347f6fb890191de2e3cc9f0d5774a39642"
+    },
+    {
+      "path": "infill-real-models.log.gz",
+      "sha256": "752ddb3338feb5cc39ddbf6223f214a19a370951ce717cde819e7b947ce1a1a0"
+    }
+  ],
+  "projects_manifest": "../production/infill/manifest.json",
+  "images": [
+    "mb02-infill-comparison.png",
+    "real-model-middle-layers.png"
+  ],
+  "slice_samples_archive": "infill-real-model-slices.tar.gz"
+}

@@ -1,0 +1,455 @@
+{
+  "diagnostic_only": true,
+  "original_brim_included": false,
+  "matching_candidate_checkpoints": 64,
+  "comparisons": [
+    {
+      "total_cells": 2712994,
+      "checked_cells": 100000,
+      "candidates": 2875127,
+      "build115_index_visits": 42278297,
+      "build118_index_visits": 25973307
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 200000,
+      "candidates": 3281889,
+      "build115_index_visits": 66516244,
+      "build118_index_visits": 39084236
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 300000,
+      "candidates": 3712770,
+      "build115_index_visits": 91909360,
+      "build118_index_visits": 52737270
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 400000,
+      "candidates": 4768541,
+      "build115_index_visits": 138242336,
+      "build118_index_visits": 78089950
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 500000,
+      "candidates": 6016563,
+      "build115_index_visits": 185193007,
+      "build118_index_visits": 105466397
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 600000,
+      "candidates": 6942214,
+      "build115_index_visits": 224598203,
+      "build118_index_visits": 128265323
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 700000,
+      "candidates": 7668808,
+      "build115_index_visits": 261302079,
+      "build118_index_visits": 149643999
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 800000,
+      "candidates": 8312872,
+      "build115_index_visits": 296977040,
+      "build118_index_visits": 170448886
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 900000,
+      "candidates": 8962441,
+      "build115_index_visits": 333469912,
+      "build118_index_visits": 191622128
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1000000,
+      "candidates": 10003901,
+      "build115_index_visits": 379169015,
+      "build118_index_visits": 218145757
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1100000,
+      "candidates": 10787275,
+      "build115_index_visits": 419000394,
+      "build118_index_visits": 241808722
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1200000,
+      "candidates": 11937224,
+      "build115_index_visits": 470168841,
+      "build118_index_visits": 273657685
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1300000,
+      "candidates": 13028333,
+      "build115_index_visits": 512508118,
+      "build118_index_visits": 301802408
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1400000,
+      "candidates": 13848897,
+      "build115_index_visits": 554069864,
+      "build118_index_visits": 325851492
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1500000,
+      "candidates": 15233584,
+      "build115_index_visits": 601373564,
+      "build118_index_visits": 353309344
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1600000,
+      "candidates": 15990874,
+      "build115_index_visits": 644634065,
+      "build118_index_visits": 377422263
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1700000,
+      "candidates": 16767412,
+      "build115_index_visits": 687802709,
+      "build118_index_visits": 401405005
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1800000,
+      "candidates": 17504804,
+      "build115_index_visits": 726587398,
+      "build118_index_visits": 423008594
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 1900000,
+      "candidates": 18576341,
+      "build115_index_visits": 773792054,
+      "build118_index_visits": 449468220
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2000000,
+      "candidates": 19529849,
+      "build115_index_visits": 825010150,
+      "build118_index_visits": 477247504
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2100000,
+      "candidates": 21679202,
+      "build115_index_visits": 874860716,
+      "build118_index_visits": 506829938
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2200000,
+      "candidates": 23488953,
+      "build115_index_visits": 932390942,
+      "build118_index_visits": 542678362
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2300000,
+      "candidates": 26449510,
+      "build115_index_visits": 1008637605,
+      "build118_index_visits": 591946197
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2400000,
+      "candidates": 28747086,
+      "build115_index_visits": 1086455486,
+      "build118_index_visits": 639929308
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2500000,
+      "candidates": 30819620,
+      "build115_index_visits": 1142276194,
+      "build118_index_visits": 676481900
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2600000,
+      "candidates": 32131823,
+      "build115_index_visits": 1176711114,
+      "build118_index_visits": 699010880
+    },
+    {
+      "total_cells": 2712994,
+      "checked_cells": 2700000,
+      "candidates": 33291248,
+      "build115_index_visits": 1207998726,
+      "build118_index_visits": 719334220
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 100000,
+      "candidates": 2790264,
+      "build115_index_visits": 48360023,
+      "build118_index_visits": 26868035
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 200000,
+      "candidates": 3066466,
+      "build115_index_visits": 95665358,
+      "build118_index_visits": 42415396
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 300000,
+      "candidates": 3308539,
+      "build115_index_visits": 139281443,
+      "build118_index_visits": 57495833
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 400000,
+      "candidates": 3603385,
+      "build115_index_visits": 180132756,
+      "build118_index_visits": 72760878
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 500000,
+      "candidates": 4003987,
+      "build115_index_visits": 225646846,
+      "build118_index_visits": 89337728
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 600000,
+      "candidates": 5252775,
+      "build115_index_visits": 281712587,
+      "build118_index_visits": 119136767
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 700000,
+      "candidates": 6176710,
+      "build115_index_visits": 328351415,
+      "build118_index_visits": 143242655
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 800000,
+      "candidates": 6925846,
+      "build115_index_visits": 374207678,
+      "build118_index_visits": 165711916
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 900000,
+      "candidates": 7545626,
+      "build115_index_visits": 415440956,
+      "build118_index_visits": 186349622
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1000000,
+      "candidates": 8080307,
+      "build115_index_visits": 459232407,
+      "build118_index_visits": 206418025
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1100000,
+      "candidates": 8606521,
+      "build115_index_visits": 501624368,
+      "build118_index_visits": 226567382
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1200000,
+      "candidates": 9167949,
+      "build115_index_visits": 546683306,
+      "build118_index_visits": 247514998
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1300000,
+      "candidates": 10047917,
+      "build115_index_visits": 599359029,
+      "build118_index_visits": 273197533
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1400000,
+      "candidates": 10688758,
+      "build115_index_visits": 645392268,
+      "build118_index_visits": 294960946
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1500000,
+      "candidates": 11438283,
+      "build115_index_visits": 701261306,
+      "build118_index_visits": 321193186
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1600000,
+      "candidates": 12390239,
+      "build115_index_visits": 754172624,
+      "build118_index_visits": 349116788
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1700000,
+      "candidates": 13238792,
+      "build115_index_visits": 801403967,
+      "build118_index_visits": 374028613
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1800000,
+      "candidates": 13867184,
+      "build115_index_visits": 850169257,
+      "build118_index_visits": 396940763
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 1900000,
+      "candidates": 15080157,
+      "build115_index_visits": 903292214,
+      "build118_index_visits": 422067470
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2000000,
+      "candidates": 15730922,
+      "build115_index_visits": 953741483,
+      "build118_index_visits": 445177453
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2100000,
+      "candidates": 16276652,
+      "build115_index_visits": 1005129978,
+      "build118_index_visits": 467279660
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2200000,
+      "candidates": 16854199,
+      "build115_index_visits": 1058106343,
+      "build118_index_visits": 489528539
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2300000,
+      "candidates": 17338716,
+      "build115_index_visits": 1110965892,
+      "build118_index_visits": 509956518
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2400000,
+      "candidates": 17745209,
+      "build115_index_visits": 1167562992,
+      "build118_index_visits": 529805614
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2500000,
+      "candidates": 18391950,
+      "build115_index_visits": 1224658661,
+      "build118_index_visits": 552979447
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2600000,
+      "candidates": 18983026,
+      "build115_index_visits": 1285293395,
+      "build118_index_visits": 576545275
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2700000,
+      "candidates": 19589847,
+      "build115_index_visits": 1343227806,
+      "build118_index_visits": 601939718
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2800000,
+      "candidates": 20526735,
+      "build115_index_visits": 1402256890,
+      "build118_index_visits": 626693470
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 2900000,
+      "candidates": 22160283,
+      "build115_index_visits": 1460759528,
+      "build118_index_visits": 651928932
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3000000,
+      "candidates": 23766080,
+      "build115_index_visits": 1531186638,
+      "build118_index_visits": 688433830
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3100000,
+      "candidates": 26502428,
+      "build115_index_visits": 1615813508,
+      "build118_index_visits": 733680044
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3200000,
+      "candidates": 28454011,
+      "build115_index_visits": 1686768122,
+      "build118_index_visits": 777452272
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3300000,
+      "candidates": 30340716,
+      "build115_index_visits": 1746998802,
+      "build118_index_visits": 815404758
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3400000,
+      "candidates": 31531711,
+      "build115_index_visits": 1799953750,
+      "build118_index_visits": 839284998
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3500000,
+      "candidates": 32145498,
+      "build115_index_visits": 1848988881,
+      "build118_index_visits": 859808933
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3600000,
+      "candidates": 32957637,
+      "build115_index_visits": 1899380358,
+      "build118_index_visits": 879907016
+    },
+    {
+      "total_cells": 3713794,
+      "checked_cells": 3700000,
+      "candidates": 33527941,
+      "build115_index_visits": 1949778900,
+      "build118_index_visits": 899308954
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "date": "2026-10-27",
+  "baseline_revision": "63117732a0683220530cf690f385055d1f3dd54d",
+  "branch": "material-band-kernel",
+  "all_software_milestones_complete": true,
+  "production_engine_enabled": true,
+  "default_engine": "legacy",
+  "physical_qualification": false,
+  "baseline_tests": {
+    "run": 387,
+    "passed": 379,
+    "failed": 8
+  },
+  "final_tests": {
+    "run": 438,
+    "passed": 430,
+    "failed": 8,
+    "new_tests_passed": 51,
+    "ordinary_assertions": 1389741,
+    "stress_assertions": 1605891
+  },
+  "preexisting_failures": [
+    "fff_print:Brim-introduced extruder is covered when wall_loops is zero",
+    "fff_print:Mixed print uses the highest bed temperature",
+    "fff_print:Persistent image maps generate geometry-first perimeter path modulation V2",
+    "fff_print:bed_temperature_initial_layer_single expands to the max",
+    "libslic3r:Complete cached slots override direct nozzle data atomically",
+    "libslic3r:Scenario: DynamicPrintConfig serialization",
+    "libslic3r:Scenario: Placeholder parser scripting",
+    "libslic3r:m1: compute uses num_physical bound, remove_physical uses kMax=64 (differential)"
+  ],
+  "new_failure_names": [],
+  "environment": {
+    "os": "Windows 11 Pro 10.0.26200",
+    "cpu": "Intel Core Ultra 9 285H",
+    "logical_processors": 16,
+    "visible_memory_KiB": 66516344,
+    "cmake": "3.28.4",
+    "compiler": "MSVC 19.44.35227",
+    "configuration": "x64 Release",
+    "capture_tbb_threads": 2,
+    "ctest_parallelism": 4,
+    "boost": "1.84",
+    "cgal": "5.4",
+    "eigen": "3.3.7",
+    "tbb": "2021.5",
+    "opencv": "4.6",
+    "catch2": "3.7.1"
+  },
+  "source_sha256": {
+    "scripts/material_band_baseline.py": "5e0d7dfe58cfff1bc2d3bf408942772b2786e62d2f016c36f1090ea9f6a2a6ac",
+    "scripts/material_band_benchmark.py": "3a31cc65a1049fcbf26b36a0b1995c54f13d733653babf7508d85be16b4d2b14",
+    "scripts/material_band_stress.py": "023ab14c6d21bd085539b005b078c6eb26256d07c1d6ba980a171e761cb6e6ec",
+    "src/libslic3r/CMakeLists.txt": "6e0d1a8636c579324fd0c24fa5172f08dc2724dd6119c0c073a3c405bf88fea6",
+    "src/libslic3r/GCode.cpp": "e1cba3c44c75210cd97cf3a0de11edc9facb1878b7d15e912d8eebaf2ff8f3e5",
+    "src/libslic3r/GCode/GCodeProcessor.cpp": "19980de4e79611b2599fb9c98a71928d2b201a4c555f56482d506ff2f8512e29",
+    "src/libslic3r/GCode/GCodeProcessor.hpp": "ea0b30db470c6a8f47cd3816cdd88fbbd652037b10362d46900650c694b92410",
+    "src/libslic3r/MaterialBand/BoxPlanner.cpp": "dedd33a8b58167a2d23524e02ece50fc7c0efbaf1bdad26d12bfe930bdc86280",
+    "src/libslic3r/MaterialBand/BoxPlanner.hpp": "981e1090c4a6d4064289128368aa2a38c9ed7010aaf306a457cab4192df40c55",
+    "src/libslic3r/MaterialBand/ClippedPlanner.cpp": "e14e76710dffc532dd92182586808c8f5478f89da3254d582e08b3bd6652e8e2",
+    "src/libslic3r/MaterialBand/ClippedPlanner.hpp": "15bee229e34f7cebd114bdbf91db2e1ee9be0d4eb2577615290bb1b4efaa05e7",
+    "src/libslic3r/MaterialBand/Contracts.cpp": "9d5302357b8233bb5fb6a1a4607cf68eba03c9522997585c0b29fde58ce1b4a0",
+    "src/libslic3r/MaterialBand/Contracts.hpp": "69c5957bc93b7a0c23ad2baa7864d09c87c15409fe3547cbe6e993ee8c9f010f",
+    "src/libslic3r/MaterialBand/FinalPrintPlan.cpp": "adfe3c09564c56b2b600423ba302c779f5fe143ecad8eb6dea277ca83dad9310",
+    "src/libslic3r/MaterialBand/FinalPrintPlan.hpp": "346d2368538ae92b16408757bfb31c55f4ac21fb41c33a107472568274731b47",
+    "src/libslic3r/MaterialBand/InputAdapter.cpp": "6d6d3be131bf40753a825335792b451f4bf902ba1490a396b2718514dbfa27a6",
+    "src/libslic3r/MaterialBand/InputAdapter.hpp": "530916e4eb0ee9980dc930b0e10007565f9da0a146b0d33729eeec9ad50b8301",
+    "src/libslic3r/MaterialBand/PaintedBox.cpp": "36a1a15ce4b067cc6fd4c88f95886af3e9027cfa23923d80898f6ff765a961f6",
+    "src/libslic3r/MaterialBand/PaintedBox.hpp": "cd9f7ba69f3f9fe65743fe0491846327d55c5e0657c0fc04a6660c58dec489c8",
+    "src/libslic3r/MaterialBand/Production.cpp": "fb72f95e5d20daae627ebafa7dc22574bef67947386d09f9621b2eac09c48be4",
+    "src/libslic3r/MaterialBand/Production.hpp": "e1a16911e58a782cf1d189c63b91ec81ecbeb2c9501710a7c736af4fdf001e23",
+    "src/libslic3r/MaterialBand/ScheduleExport.cpp": "0e49a72650dc29081b3f3c24be46255408b1128f65e2aceba4db65b563bd522f",
+    "src/libslic3r/MaterialBand/Scheduler.cpp": "5f88d5d9b3ab7d9633ae9edeb618d67b2a9bfb9fa3d7a584e227068f070ad5fe",
+    "src/libslic3r/MaterialBand/Scheduler.hpp": "9baa001f06abbabadca9d57af75710af9601918e14a3df94b615efa921bfa14b",
+    "src/libslic3r/MaterialBand/SlabSolver.cpp": "3dc08acf94df2901ad3d869f5e06ddef4983764b87fa52e6f85e02706125c643",
+    "src/libslic3r/MaterialBand/SlabSolver.hpp": "05bb81a687d5c34ebab3a8272b4668e4c6f948033823989806c08e2bccc81d46",
+    "src/libslic3r/MaterialBand/SolidClipper.cpp": "3a2720e5937b26734daa43428d35152d11e247dfaa2b813c0f3f7fc2aee18727",
+    "src/libslic3r/MaterialBand/SolidClipper.hpp": "61e71116e952ca5749ec8667e8056b3fab88732718ad7b34a584ddae248022da",
+    "src/libslic3r/MaterialBand/Topology.cpp": "9b7a32a63094a5778fafcb73dca0116fa068ae9909740d63e0f196fb67663205",
+    "src/libslic3r/MaterialBand/Topology.hpp": "62aa77e359b465a2f7d742404328f3524a518f656ada23bf980b67110ce445f0",
+    "src/libslic3r/Preset.cpp": "e035b5c187649f7b85f6b169a0f9372ebef0cd1d5c954b3f2a9fb6321ac00e75",
+    "src/libslic3r/Print.cpp": "e22eea02031a3a9eefc396e248d98c8ee4ef61e6889123214e65338cecae6ae7",
+    "src/libslic3r/Print.hpp": "45e9938ed0ae311dd7941faac7a82f80f6a06598b3e9f62a180afc561b5610aa",
+    "src/libslic3r/PrintApply.cpp": "4ddf5a1b5b35ef9f009f44fb015505aad428eec557ddf0ab787e7c93a09466e4",
+    "src/libslic3r/PrintConfig.cpp": "e11e4d0486dd1282a849c9520ecc8364eb0fd8b5540f719aff75bf9259cd06a8",
+    "src/libslic3r/PrintConfig.hpp": "84421b16b09c31155c2b638d3dbe5b45337677879fc8bb7ebd12a160f72e53fc",
+    "src/slic3r/GUI/GCodeViewer.cpp": "d7444067618146252cd2a7488f9a184ccc21e49f7472e1177b8e8678ee51a3bc",
+    "src/slic3r/GUI/GCodeViewer.hpp": "4f94b2cf33bb5c6d1b5b2fbaa5b95cccea01d9ca03d89893082a04f1ac1300f0",
+    "src/slic3r/GUI/Tab.cpp": "f95bc01f85c5e5b00773743c6383173e82c9e9cf65a426deee57adb1cad743fe",
+    "tests/data/material_band/fixtures.json": "0ced7ac0441ab77e46a35083d16f40c42c12ff70de80298e2d5b319670633ac7",
+    "tests/libslic3r/CMakeLists.txt": "54c07bdea4f0482c76827642810ae7e46e647bec1e03e9e3b056e012c6ea232f",
+    "tests/libslic3r/material_band_fixtures.cpp": "4a3c765d4209f534215c09ea541602620da1f5838c0176d0cd77728efe8f7b8a",
+    "tests/libslic3r/material_band_fixtures.hpp": "71a4438abbb37379f2acbfaeb56c1474ba576983aed15a165e371f8c743c4216",
+    "tests/libslic3r/test_material_band_clipping.cpp": "ac60d569d90a648b1db16ee930f3dc6603cf2500eb0be02b338e0c350222c697",
+    "tests/libslic3r/test_material_band_corpus.cpp": "2673e5ba85503a4fa8b4c66c6942af55dd3af156eb71c3f4c2cbb399dea0f79b",
+    "tests/libslic3r/test_material_band_final.cpp": "609efb41bb05206037718272743ef8408e96b6df8b11b42d2c0b02549e77efed",
+    "tests/libslic3r/test_material_band_fixtures.cpp": "e6c7d91d0fb07e04ebb281224b300706a33dea086044ac6170fd066aa17adcdc",
+    "tests/libslic3r/test_material_band_input.cpp": "b7db6dba43db65efcb6f8d87acc982289fd83bf851a0ca0ea0ae2fd3199c8831",
+    "tests/libslic3r/test_material_band_paths.cpp": "3e5c2719353c667e7b9e09383127f039e3d473fd35427196cfdccb84383bc2db",
+    "tests/libslic3r/test_material_band_production.cpp": "ed298ec49ad171b5e6d09f4daccc727334af869015082bba55389119c87cb6e8",
+    "tests/libslic3r/test_material_band_schedule.cpp": "3ddd717da96827bab4e453fe2139a15d91b514f4991f1bc65ff80d2469727484",
+    "tests/libslic3r/test_material_band_solver.cpp": "e6e74447ed387859519a1179cc9d35ac193781f1c88f23d39f18c5bc28ea111f",
+    "tests/libslic3r/test_material_band_stress.cpp": "683a8d1d17cfd45724d3a202e0cf72ea1c73f7eadffa80cf6b88e7eb0783f714",
+    "tests/libslic3r/test_material_band_topology.cpp": "8f7a33b3d5f9fc1ccc1c417928cba5691227a19162369ce8ee8546530e9a7afd"
+  },
+  "binaries_sha256": {
+    "build-material-band/tests/libslic3r/Release/libslic3r_tests.exe": "b5c067e1d4dd2712c3211c6e5c4c0d0bfbf7ff7eb179b87520724c64c852c597",
+    "build-material-band/tests/fff_print/Release/fff_print_tests.exe": "60c14c51ce367237f63a0455e8e290ca05529a82fbb9be4ba09fe6678ec23c1a",
+    "build/src/Release/Snapmaker_Orca.dll": "4ec79dfab8ecb2890905fee4dcd3bf23b6df9dbd8e8141c85eab73fea90aef1e"
+  },
+  "baseline_provenance": {
+    "pinned_revision": "63117732a0683220530cf690f385055d1f3dd54d",
+    "production_code_changes": false,
+    "harness_files_sha256": {
+      "tests/libslic3r/material_band_fixtures.cpp": "a7810660f52208f0871afc6a1d2042b5c1b31ade99ed5233fad951ea3b638aa1",
+      "tests/libslic3r/material_band_fixtures.hpp": "71a4438abbb37379f2acbfaeb56c1474ba576983aed15a165e371f8c743c4216",
+      "tests/libslic3r/test_material_band_fixtures.cpp": "e6c7d91d0fb07e04ebb281224b300706a33dea086044ac6170fd066aa17adcdc",
+      "tests/data/material_band/fixtures.json": "485812b3a4cf91e62c9bf61cea0ba684527dd61b162bdff063f224a58f5dafb5"
+    },
+    "runtime_fields": "Both harnesses explicitly set zero plate origin and the requested BBL/generic printer family; these were uninitialized in pinned Print."
+  },
+  "feature_off_goldens": {
+    "OFF-solid": {
+      "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+      "measured_matches": 100
+    },
+    "OFF-painted": {
+      "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+      "measured_matches": 100
+    },
+    "OFF-tapered": {
+      "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+      "measured_matches": 100
+    }
+  },
+  "test_run_binary": {
+    "libslic3r_tests_sha256": "4872c5d3781dd957fb08bc8a79d186e6ef323975a39c89f5d761427c2b53e8a4",
+    "note": "Binary used for the combined 50-case and 64-case stress assertion logs. Subsequent changes only correct spacing in the hidden benchmark fixture and hoist the engine lookup from the export config loop. The complete 438-case CTest selection and all 10 production/export tests were rerun on the final binary, whose hash is recorded separately."
+  },
+  "final_ctest_binary_sha256": "b5c067e1d4dd2712c3211c6e5c4c0d0bfbf7ff7eb179b87520724c64c852c597",
+  "performance_gate_qualified": true,
+  "performance_qualification": "Paired median time overhead and ratio of median peak working sets are each at most 5 percent. Separate time medians are retained as a diagnostic and reach about 5.1 percent for one small case; this is not a confidence-bound or universal overhead claim.",
+  "benchmark_summary": "benchmarks.json",
+  "stress_summary": "stress-coverage.json",
+  "gui_summary": "gui-verification.json",
+  "support_matrix": "../../../../doc/FullSpectrum-Material-Band-Kernel.md",
+  "production_demonstrations": {
+    "absolute.gcode": "7c12d6d2929e08af3f9232a8c4ae918dbc06ea91729d1b6dd3f78106e58082ed",
+    "MB01.3mf": "b267a1c666a327f6ddd1830dd986b4fb4003909daadfdbcd18b77dfec9844b27",
+    "MB01.gcode": "7c12d6d2929e08af3f9232a8c4ae918dbc06ea91729d1b6dd3f78106e58082ed",
+    "MB02-transition.3mf": "86a354c3983514a39c08b333922b9a3a1e6f41c97cb765ac6ac2b454ad1911c8",
+    "MB02-transition.gcode": "8bec341fe10ebe58933fcf59f9c929b69eb363653344184d762c5b404e43aa24",
+    "MB03.3mf": "582935615c10a37f7055221f94502588f716dd668e3293835a710a4323da0bda",
+    "MB03.gcode": "d3c3a23daf75df00a555c8874418ab02a0d0c9519f4388512392fa864c0d1f5f",
+    "relative.gcode": "3101aeb6745547ee2af791dc7b8ad67382d145cc36864554abdd5efec3f43b7e"
+  },
+  "ready_to_open_projects": {
+    "tests/data/material_band/production/MB01.3mf": "b267a1c666a327f6ddd1830dd986b4fb4003909daadfdbcd18b77dfec9844b27",
+    "tests/data/material_band/production/MB02-transition.3mf": "86a354c3983514a39c08b333922b9a3a1e6f41c97cb765ac6ac2b454ad1911c8",
+    "tests/data/material_band/production/MB03.3mf": "582935615c10a37f7055221f94502588f716dd668e3293835a710a4323da0bda"
+  },
+  "scope": "M0-M7 within the documented experimental support matrix; unsupported geometry/processes assert precise atomic legacy fallback. M8 physical qualification is deferred."
+}

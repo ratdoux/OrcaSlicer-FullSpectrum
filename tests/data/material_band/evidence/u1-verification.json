@@ -1,0 +1,276 @@
+{
+  "date": "2026-10-27",
+  "baseline_revision": "63117732a0683220530cf690f385055d1f3dd54d",
+  "adapter": "SnapmakerU1",
+  "physical_qualification": false,
+  "firmware_contract": {
+    "repository": "https://github.com/Snapmaker/u1-klipper",
+    "revision": "93cb12faebf6e74c51bbc5f0be66e95124af14c8",
+    "source_review": [
+      "klippy/kinematics/extruder.py",
+      "lava/fluidd.cfg",
+      "klippy/extras/print_stats.py",
+      "klippy/extras/print_task_config.py"
+    ],
+    "tool_selection": "Tn may leave XY at dock and change logical tool offset; restore absolute Z, then full XY before scheduled travel.",
+    "startup_mapping": "Check physical heads 0..3 for feed/calibration; firmware skips unused heads. Select and bin-prime used logical tools through the existing firmware map.",
+    "service_operations": "Empty-bed startup and ending macros are not expanded into preview segments. Calibration and bin waste are excluded from object/tower estimates."
+  },
+  "scope": {
+    "materials": [
+      2,
+      3,
+      4
+    ],
+    "mixes": [
+      "constant whole-solid blends",
+      "whole-solid height gradients"
+    ],
+    "gradient_execution": "Saved-setting decoding only is shared; kernel owns curve, dose solve, clipping, toolpaths, schedule and export. No legacy gradient sampler or Local-Z planner.",
+    "printer": "Snapmaker U1, Klipper, four independent nozzles of matching diameter; verified at 0.4 mm",
+    "stationary_toolchange_required": false,
+    "process": [
+      "Classic walls",
+      "100% dense fill",
+      "fixed layer height",
+      "by-layer printing",
+      "no brim/skirt/supports"
+    ],
+    "default_envelope": {
+      "radius_mm": 72.5,
+      "height_mm": 140,
+      "coplanar_tip_contact": true,
+      "measured_or_qualified": false
+    },
+    "docking_clearance_mm": 2,
+    "unsupported": [
+      "sparse infill",
+      "Arachne",
+      "general painted or image-mapped mesh material regions",
+      "arbitrary custom machine/filament scripts",
+      "unqualified physical printing"
+    ],
+    "tower_note": "Demos place the prime tower at (220,220) mm. Nearby placement can fail conservative access checks."
+  },
+  "final_binaries": {
+    "launcher": {
+      "path": "build/src/Release/snapmaker-orca.exe",
+      "sha256": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+      "bytes": 409088
+    },
+    "application_dll": {
+      "path": "build/src/Release/Snapmaker_Orca.dll",
+      "sha256": "0c50aaa4fed53c10c25d0c99fb54cfbc9cb6d34e025863b71bca83a15d77c082",
+      "bytes": 88556032
+    },
+    "test_binary": {
+      "path": "build-material-band/tests/libslic3r/Release/libslic3r_tests.exe",
+      "sha256": "efc3e18fb0ecece26b45371e75e2c4cbcb519224ad1d6af04bbdceda156ca7a2",
+      "bytes": 38832128
+    },
+    "gui_test_launcher": {
+      "path": "build/src/Release/material-stack-verify.exe",
+      "sha256": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+      "bytes": 409088
+    }
+  },
+  "u1_tests": {
+    "cases": 6,
+    "assertions": 466376,
+    "passed": true,
+    "log": {
+      "path": "tests/data/material_band/evidence/u1/u1-tests.log",
+      "sha256": "d986a87331a0eadc193f025cb3f8f0b8eecf7feb40de73550530c3af9cd84b19",
+      "bytes": 374
+    },
+    "coverage": [
+      "2/3/4 blends and gradients in relative/absolute E",
+      "3/4 material cylinders, annuli and plates with holes",
+      "incompatible firmware/shared-nozzle/custom-script/height/nozzle-diameter rejection",
+      "coplanar contact versus 1e-6 mm raised obstruction",
+      "forced cross-object dependency order",
+      "installed 20260605 stock script recognition",
+      "four physical feed checks for 2/3/4 logical jobs"
+    ]
+  },
+  "gcode_audit": {
+    "jobs": 18,
+    "dock_returns": 320,
+    "passed": true,
+    "report": {
+      "path": "tests/data/material_band/evidence/u1/gcode-audit.json",
+      "sha256": "d4f5ed71f2435e3ec80b10e904f31232f5ef5c9758e98ffd3d8cb8b7895c070d",
+      "bytes": 8425
+    },
+    "artifact_directory": "build-material-band/evidence/u1/production",
+    "model": "Replay emitted body G-code; simulate Tn leaving XY at dock plus 0.15 mm Z displacement; assert exact Z/XY restoration, absolute XYZ, E mode, heating, bounds and 2 mm clearance."
+  },
+  "application_cli": {
+    "jobs": 6,
+    "identical_executable_commands": 215034,
+    "passed": true,
+    "report": {
+      "path": "tests/data/material_band/evidence/u1/application-audit.json",
+      "sha256": "29d713b21f9362e8017405986a2041685beaeeb549189dcb9b66fd2b5a71f8f4",
+      "bytes": 3040
+    },
+    "artifact_directory": "build-material-band/evidence/u1/application",
+    "version_note": "CLI needs --allow-newer-file for this checkout's own newer 3MF project format."
+  },
+  "gui": {
+    "project": "U1-4-gradient.3mf",
+    "logical_cycles": 10,
+    "no_fallback_warning": true,
+    "command_count": 28404,
+    "gcode": {
+      "path": "build-material-band/evidence/u1/U1-4-gradient-gui-final.gcode",
+      "sha256": "0fdb7654de20e9041669415ebb93971d0a5144893b73f6c7ba245864e9b253ee",
+      "bytes": 3905550
+    },
+    "comparison": "All commands match headless except three bed-temperature settings: GUI selected bed is 45 C, fixture input is 35 C.",
+    "report": {
+      "path": "tests/data/material_band/evidence/u1/gui-audit.json",
+      "sha256": "d426e7b61ae4c8e7ec3104b9bab39beca9122492abaa4b10d83fb88d2adeb50d",
+      "bytes": 853
+    }
+  },
+  "earlier_regressions": {
+    "libslic3r_binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "provenance": "Captured earlier in this U1 implementation. Subsequent changes are confined to U1 startup/script/nozzle checks and U1 fixture metadata. These captures are not attributed to the final binaries.",
+    "material_band_cases": 63,
+    "material_band_assertions": 2444463,
+    "material_band_passed": true,
+    "material_band_log": {
+      "path": "tests/data/material_band/evidence/u1/material-band-regression.log",
+      "sha256": "9034c894abe9069b5788755e151e08e35bcaf63470298482f49da4ff7984cb59",
+      "bytes": 11702
+    },
+    "broader_cases": 388,
+    "broader_passed": 381,
+    "broader_failed": 7,
+    "preexisting_failures": [
+      "libslic3r:m1: compute uses num_physical bound, remove_physical uses kMax=64 (differential)",
+      "libslic3r:Scenario: Placeholder parser scripting",
+      "libslic3r:Complete cached slots override direct nozzle data atomically",
+      "fff_print:Persistent image maps generate geometry-first perimeter path modulation V2",
+      "fff_print:Mixed print uses the highest bed temperature",
+      "fff_print:Brim-introduced extruder is covered when wall_loops is zero",
+      "fff_print:bed_temperature_initial_layer_single expands to the max"
+    ],
+    "broader_log": {
+      "path": "tests/data/material_band/evidence/u1/ctest.log",
+      "sha256": "098ff7c82d475af1b8e9325bc2e44fb09295a96ce142c83916cb4e9472d49fc8",
+      "bytes": 1005250
+    },
+    "feature_off": {
+      "paired_runs_per_profile": 5,
+      "profiles": 6,
+      "total_pairs": 30,
+      "normalized_gcode_identical": true,
+      "five_percent_time_and_memory_gates_passed": true,
+      "report": {
+        "path": "tests/data/material_band/evidence/u1/feature-off-summary.json",
+        "sha256": "04222ec2742354015006f84a61491386ee23539959a017745b11625b19ed0dc1",
+        "bytes": 97492
+      }
+    },
+    "downloads": {
+      "projects": 9,
+      "accepted_by_new_kernel": 0,
+      "source_files_unchanged": true,
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "note": "Includes Tyranid projects; passed the U1 firmware gate but original brim/process settings remain outside supported scope.",
+      "report": {
+        "path": "tests/data/material_band/evidence/u1/downloads-summary.json",
+        "sha256": "82502ef34c07fc772e9b497460e443d3310ea15ef2f2b86547b07a3437fb3b98",
+        "bytes": 11542
+      }
+    }
+  },
+  "build_logs": [
+    {
+      "path": "tests/data/material_band/evidence/u1/test-build.log",
+      "sha256": "954a9ce14b402af49eed76c9c77b3e920bb45c3d577c81e1de25bc30c1a4a8b8",
+      "bytes": 5930
+    },
+    {
+      "path": "tests/data/material_band/evidence/u1/application-build.log",
+      "sha256": "641abe9bcce8d6666dc885853863a63fb32896e6b737e9a4bdfadb90a65d8610",
+      "bytes": 7532
+    }
+  ],
+  "demo_projects": [
+    {
+      "path": "tests/data/material_band/production/u1/U1-2-blend.3mf",
+      "sha256": "e91411943145ed2353159f23b5c178d9323a747479906915828724c38f762e8c",
+      "bytes": 13187
+    },
+    {
+      "path": "tests/data/material_band/production/u1/U1-2-gradient.3mf",
+      "sha256": "de87c14337b8cf5260feeb0faab6bec458b40fc6dcaffe75440957b50f9f6737",
+      "bytes": 13292
+    },
+    {
+      "path": "tests/data/material_band/production/u1/U1-3-blend.3mf",
+      "sha256": "125b523079c7c933ec2e2790be8c0fa178569a5220d4b8abd68c0240a3025c82",
+      "bytes": 13379
+    },
+    {
+      "path": "tests/data/material_band/production/u1/U1-3-gradient.3mf",
+      "sha256": "6d3f21fa761bc6b108852a195b5e576a1aa45cdb139e0173704cddb6e8e75ecc",
+      "bytes": 13463
+    },
+    {
+      "path": "tests/data/material_band/production/u1/U1-4-blend.3mf",
+      "sha256": "632df8c855db03084937491abbd6d97e70e44eb0b2847bded64229a31a7813ef",
+      "bytes": 13543
+    },
+    {
+      "path": "tests/data/material_band/production/u1/U1-4-gradient.3mf",
+      "sha256": "8d8a56143707860586a27a6c8895d3bedc51cab138913677cf3300da665bf2a3",
+      "bytes": 13662
+    }
+  ],
+  "adapter_sources": [
+    {
+      "path": "src/libslic3r/MaterialBand/SnapmakerU1.hpp",
+      "sha256": "1b372f78e2bdd594166b2a33937b09ee7b72094d4e488d6cd00c2595bd9af06b",
+      "bytes": 704
+    },
+    {
+      "path": "src/libslic3r/MaterialBand/SnapmakerU1.cpp",
+      "sha256": "3fc051d88784c3e2edcb2ce77b8361f0628129459372a866edd5e1cc9c4e169f",
+      "bytes": 6768
+    },
+    {
+      "path": "src/libslic3r/MaterialBand/SnapmakerU1Scripts.inc",
+      "sha256": "3841bef90c6468e141b79ea12af6997895f61bd3575142a4d9213ddd073d83cb",
+      "bytes": 8052
+    },
+    {
+      "path": "src/libslic3r/MaterialBand/Production.cpp",
+      "sha256": "eed7060532355f4882d2f1cfe09040ce58ce920486fd297d4bcaa7612217f3c4",
+      "bytes": 37034
+    },
+    {
+      "path": "src/libslic3r/MaterialBand/FinalPrintPlan.cpp",
+      "sha256": "b2d30c231ef9bf539c297b6619ffc794ef411e0e2b1b60d7031a44e1a0101f77",
+      "bytes": 34762
+    },
+    {
+      "path": "src/libslic3r/MaterialBand/FinalPrintPlan.hpp",
+      "sha256": "d7f51bdf16c03b170c102f1befa8e5ba3bbabedcdb035408b6a767ebd9f0f3a5",
+      "bytes": 5397
+    },
+    {
+      "path": "src/libslic3r/MaterialBand/Scheduler.cpp",
+      "sha256": "cadfc8b6249cff45c9541e6e6bf375034ec58c43f81baf4b3b3ffd9515ec1b71",
+      "bytes": 41177
+    },
+    {
+      "path": "scripts/material_band_u1_audit.py",
+      "sha256": "7d3ad8b3e70c2c93a4f2c53571d9618b7b14d9bbdb7fa6651318cf8eed8e487e",
+      "bytes": 5297
+    }
+  ]
+}

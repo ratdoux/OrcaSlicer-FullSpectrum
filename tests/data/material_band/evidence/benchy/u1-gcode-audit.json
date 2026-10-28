@@ -1,0 +1,602 @@
+{
+  "physical_qualification": false,
+  "results": [
+    {
+      "file": "U1-2-blend-absolute.gcode",
+      "sha256": "861476ac54966a1865c117890531194746d0b6e9d529bdabfff31872dfc4479f",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 3520,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        172.80001996463557,
+        172.80001996463557,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        21.383966090735306,
+        21.383966090735306,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-2-blend.gcode",
+      "sha256": "15745244b1282d639c9193404a909f757839adefa72357292d7b52a8c42dacb8",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 3520,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        172.79761468276044,
+        172.79761468276044,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        21.384399041472907,
+        21.384399041472907,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-2-gradient-absolute.gcode",
+      "sha256": "785133a2799b5a42c846f609fa791794e33ad186f6b00cb5eb964bd61198e855",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 16,
+      "deposit_segments": 3146,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.8000440174555,
+        172.8000199646349,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        17.495972256056156,
+        17.495972256056156,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 9,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-2-gradient.gcode",
+      "sha256": "25d1897f37827555e3bf831b4260e26d10262986cc3bbcfcb0d91fadc19816d1",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 16,
+      "deposit_segments": 3146,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.80179987322424,
+        172.80179987322373,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        17.496308995518742,
+        17.496308995518742,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 9,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-annulus.gcode",
+      "sha256": "e485698e5e1b532b4c2da5740d125c8efda17547695db8c6e45085ff773c2caf",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 1308,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        5.466315748500961,
+        5.466315748500961,
+        5.630740817503616,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-blend-absolute.gcode",
+      "sha256": "3b1b9659f3ca8d5b4d11495ef8e229be0b0aed1195b80c6d4c6c6e27bedd7dbe",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 30,
+      "deposit_segments": 5280,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        114.04812381962536,
+        114.04812381962535,
+        117.5040328182086,
+        0.0
+      ],
+      "tower_mm3": [
+        19.439969173395728,
+        21.383966090735306,
+        23.32796300807488,
+        0.0
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-blend.gcode",
+      "sha256": "6ff99414c45f6617bf00413fcca0fa12625fc23b7f498dc50a05d162d2b25e5f",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 30,
+      "deposit_segments": 5280,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        114.03609741025032,
+        114.03609741025032,
+        117.50619757189759,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        21.384399041472907,
+        23.328395958812504,
+        0.0
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-cylinder.gcode",
+      "sha256": "6cf9c6a3c69fee5468eb9cb6ec68bfc1cc9c75d64d192b4da088569a3da4d863",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 1098,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        12.420154020027187,
+        12.420154020027187,
+        12.796003365877901,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-gradient-absolute.gcode",
+      "sha256": "24df156dc53349614b51601176dedfb23ce44e3a975f6af1e885c0dcce52bdc2",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 19,
+      "deposit_segments": 3518,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        86.40003403513695,
+        172.80004401745677,
+        86.40000998231811,
+        0.0
+      ],
+      "tower_mm3": [
+        9.719984586697873,
+        19.439969173395735,
+        13.607978421377013,
+        0.0
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-gradient.gcode",
+      "sha256": "a01ccdd9ada53dde5404b59869f4b7854d0e979c158da7c5848d245275d42b18",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 19,
+      "deposit_segments": 3518,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        86.3998897182238,
+        172.79977943644988,
+        86.39988971822399,
+        0.0
+      ],
+      "tower_mm3": [
+        9.720225114885414,
+        19.440354018495828,
+        13.608122738289545,
+        0.0
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-hole_plate.gcode",
+      "sha256": "cb6ddebda81a0cec0b059c7fa5ca7cdb826f770754ba3000cfddb462bdd248fd",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 2652,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        20.82367973067859,
+        20.82367973067859,
+        21.451746933984452,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-annulus.gcode",
+      "sha256": "8c5a9f519d7508a88f594ae50baf3491e64e071d8437c1e5d65be81d0aeb029f",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 1744,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        4.141053540790451,
+        4.141053540790451,
+        4.141053540790451,
+        4.141053540790451
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-blend-absolute.gcode",
+      "sha256": "cabcd0cdefcd58c8273512e57f78b4f7ff5360a42a45004fb1c54bd1042e96ec",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 40,
+      "deposit_segments": 7040,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        86.40013024641138,
+        86.40013024641138,
+        86.40013024641138,
+        86.4001061935926
+      ],
+      "tower_mm3": [
+        19.439969173395728,
+        19.439969173395728,
+        21.383966090735306,
+        25.271983978233212
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-blend.gcode",
+      "sha256": "ff2ea2ff17d64709a78b5d47f39c5f7753ac360bbd165ec039f520f7a6c75669",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 40,
+      "deposit_segments": 7040,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        86.40421922559916,
+        86.40421922559916,
+        86.40421922559916,
+        86.40421922559916
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        21.384399041472907,
+        25.272296664877064
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-cylinder.gcode",
+      "sha256": "032efb3f29df58f598900ffcced284f71ebaac17f582625e65130ec51123901e",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 1464,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        9.409703224770698,
+        9.409703224770698,
+        9.409703224770698,
+        9.409703224770698
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-gradient-absolute.gcode",
+      "sha256": "9d500aaa3aac9144d3d5dd5843d41c1c43ce6bda06dab133e1f371a39735a165",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 14,
+      "deposit_segments": 3186,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        57.02815088900099,
+        115.77189312845287,
+        115.77186907563474,
+        57.02815088900111
+      ],
+      "tower_mm3": [
+        5.831990752018726,
+        7.775987669358302,
+        15.551999391535338,
+        13.608002474195768
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-gradient.gcode",
+      "sha256": "0ec71e4bcd89733e4c3c6cbed969989c14731a53d44422962a9a7687f32ccb59",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 14,
+      "deposit_segments": 3186,
+      "minimum_dock_z": 4.64,
+      "highest_deposition_z": 2.64,
+      "object_mm3": [
+        57.02978648067616,
+        115.77273497710958,
+        115.77273497710902,
+        57.02978648067634
+      ],
+      "tower_mm3": [
+        5.832135068931247,
+        7.776180091908329,
+        15.552071549991618,
+        13.608026527014532
+      ],
+      "tower_layer_count": 11,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-hole_plate.gcode",
+      "sha256": "fabb0311fe1f34d0b5dad2b7d074b045b334cce22fe9245932d6e732ca9e8f48",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 3536,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        15.772780214878635,
+        15.772780214878635,
+        15.772780214878635,
+        15.772780214878635
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

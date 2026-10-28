@@ -1,0 +1,51 @@
+{
+  "physical_qualification": false,
+  "results": [
+    {
+      "file": "plate_1.gcode",
+      "sha256": "a585ff8f8a3f715b0a4559942ba6d6c93df4aff89671c67a562df9297381a264",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 403,
+      "deposit_segments": 108021,
+      "minimum_dock_z": 29.12,
+      "highest_deposition_z": 27.12,
+      "object_mm3": [
+        19387.2041921923,
+        323.1993611897991,
+        173.98281732686527,
+        143.4218830856239
+      ],
+      "tower_mm3": [
+        285.77461837763366,
+        482.11320783136625,
+        213.84196997795516,
+        116.6407771531253
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 113,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 311408.2396320349,
+      "travel_z_mm": 21611.76799999997,
+      "planar_travels": 13643,
+      "lifted_travels": 1428,
+      "retractions": 10351,
+      "deposition_mm": 199106.38200011963
+    }
+  ]
+}

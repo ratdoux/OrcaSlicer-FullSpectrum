@@ -1,0 +1,41 @@
+{
+  "file": "U1-4-gradient-gui-final.gcode",
+  "sha256": "0fdb7654de20e9041669415ebb93971d0a5144893b73f6c7ba245864e9b253ee",
+  "tools": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "dock_returns": 14,
+  "deposit_segments": 12645,
+  "minimum_dock_z": 4.4,
+  "highest_deposition_z": 2.4,
+  "object_mm3": [
+    57.028896526380905,
+    115.78151425595225,
+    115.78151425595134,
+    57.02889652638348
+  ],
+  "headless_commands": 28404,
+  "gui_commands": 28404,
+  "differences": [
+    {
+      "index": 7,
+      "headless": "M140 S35",
+      "gui": "M140 S45"
+    },
+    {
+      "index": 65,
+      "headless": "M190 S35",
+      "gui": "M190 S45"
+    },
+    {
+      "index": 79,
+      "headless": "M190 S35",
+      "gui": "M190 S45"
+    }
+  ],
+  "no_fallback_warning": true,
+  "original_gui_filename": "MB01_PLA_19m9s.gcode"
+}

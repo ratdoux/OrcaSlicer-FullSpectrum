@@ -1803,6 +1803,7 @@ public:
     template<class Archive> ConfigOption* load_option_from_archive(Archive &archive) const {
     	if (this->nullable) {
 		    switch (this->type) {
+		    case coFloatsOrPercents: { auto opt = new ConfigOptionFloatsOrPercentsNullable(); archive(*opt); return opt; }
 		    case coFloats:          { auto opt = new ConfigOptionFloatsNullable();	archive(*opt); return opt; }
 		    case coInts:            { auto opt = new ConfigOptionIntsNullable();	archive(*opt); return opt; }
 		    case coPercents:        { auto opt = new ConfigOptionPercentsNullable();archive(*opt); return opt; }
@@ -1820,6 +1821,7 @@ public:
 		    case coPercent:         { auto opt = new ConfigOptionPercent(); 		archive(*opt); return opt; }
 		    case coPercents:        { auto opt = new ConfigOptionPercents(); 		archive(*opt); return opt; }
 		    case coFloatOrPercent:  { auto opt = new ConfigOptionFloatOrPercent(); 	archive(*opt); return opt; }
+		    case coFloatsOrPercents: { auto opt = new ConfigOptionFloatsOrPercents(); archive(*opt); return opt; }
 		    case coPoint:           { auto opt = new ConfigOptionPoint(); 			archive(*opt); return opt; }
 		    case coPoints:          { auto opt = new ConfigOptionPoints(); 			archive(*opt); return opt; }
 		    case coPoint3:          { auto opt = new ConfigOptionPoint3(); 			archive(*opt); return opt; }
@@ -1836,6 +1838,7 @@ public:
     template<class Archive> ConfigOption* save_option_to_archive(Archive &archive, const ConfigOption *opt) const {
     	if (this->nullable) {
 		    switch (this->type) {
+		    case coFloatsOrPercents: archive(*static_cast<const ConfigOptionFloatsOrPercentsNullable*>(opt)); break;
 		    case coFloats:          archive(*static_cast<const ConfigOptionFloatsNullable*>(opt));  break;
 		    case coInts:            archive(*static_cast<const ConfigOptionIntsNullable*>(opt));    break;
 		    case coPercents:        archive(*static_cast<const ConfigOptionPercentsNullable*>(opt));break;
@@ -1853,6 +1856,7 @@ public:
 		    case coPercent:         archive(*static_cast<const ConfigOptionPercent*>(opt)); 		break;
 		    case coPercents:        archive(*static_cast<const ConfigOptionPercents*>(opt)); 		break;
 		    case coFloatOrPercent:  archive(*static_cast<const ConfigOptionFloatOrPercent*>(opt));	break;
+		    case coFloatsOrPercents: archive(*static_cast<const ConfigOptionFloatsOrPercents*>(opt)); break;
 		    case coPoint:           archive(*static_cast<const ConfigOptionPoint*>(opt)); 			break;
 		    case coPoints:          archive(*static_cast<const ConfigOptionPoints*>(opt)); 			break;
 		    case coPoint3:          archive(*static_cast<const ConfigOptionPoint3*>(opt)); 			break;

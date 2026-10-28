@@ -1,0 +1,88 @@
+[
+  {
+    "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\04-dense-zero-area-removed.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\mesh-cleaned-audit\\01-04-dense-zero-area-removed",
+    "binary_sha256": "7303358c47fcae3ad5b61bfbacba4c826cd798effef6324e7a4b2e9d26640456",
+    "sha256": "d40c2df528dfc35d36c876ed3e6481329cfadbb0154559e49a9cfd532015d72e",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.8406485000014072,
+    "report": {
+      "engine_requested": "material_bands",
+      "failure_band": {
+        "cycle": 0,
+        "domain": 3,
+        "material": 1
+      },
+      "fallback": "pure_slab_admission",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "paint_stream_bits": 1429240,
+      "settings": {
+        "brim_type": "no_brim",
+        "brim_width": "0",
+        "enable_prime_tower": "1",
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "prime_volume": "18",
+        "print_sequence": "by layer",
+        "sparse_infill_density": "100%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\04-dense-zero-area-removed.3mf",
+      "stage": "loaded",
+      "triangles": 225143,
+      "unsupported_settings": []
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\05-dense-024-zero-area-removed.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\mesh-cleaned-audit\\02-05-dense-024-zero-area-removed",
+    "binary_sha256": "7303358c47fcae3ad5b61bfbacba4c826cd798effef6324e7a4b2e9d26640456",
+    "sha256": "864ac636ace7eb5d611835cfc2b481a758183e7f58881d33b74853bb5e03021d",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.7949112000060268,
+    "report": {
+      "engine_requested": "material_bands",
+      "failure_band": {
+        "cycle": 0,
+        "domain": 3,
+        "material": 1
+      },
+      "fallback": "pure_slab_admission",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "paint_stream_bits": 1429240,
+      "settings": {
+        "brim_type": "no_brim",
+        "brim_width": "0",
+        "enable_prime_tower": "1",
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.24",
+        "prime_volume": "18",
+        "print_sequence": "by layer",
+        "sparse_infill_density": "100%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\05-dense-024-zero-area-removed.3mf",
+      "stage": "loaded",
+      "triangles": 225143,
+      "unsupported_settings": []
+    },
+    "source_unchanged": true
+  }
+]

@@ -1,0 +1,49 @@
+{
+  "physical_qualification": false,
+  "results": [
+    {
+      "file": "slice.gcode",
+      "sha256": "6b40f62aa40e4999c6b2c1cf0df68d3e0032feaff80f87adff79f91cc39af0d9",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 470,
+      "deposit_segments": 1001959,
+      "minimum_dock_z": 50.0,
+      "highest_deposition_z": 48.0,
+      "object_mm3": [
+        7353.379740063654,
+        955.4966615712751,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        12267.225621113337,
+        20396.98003198973,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        112.64942835625936,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 600,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 1490278.5535331862,
+      "travel_z_mm": 98863.5400000002,
+      "planar_travels": 373852,
+      "lifted_travels": 3752,
+      "retractions": 89372,
+      "deposition_mm": 1164036.4590383423
+    }
+  ]
+}

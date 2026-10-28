@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-26",
+  "passed": true,
+  "application": "build/src/Release/material-band-verify.exe loading the rebuilt Snapmaker_Orca.dll",
+  "build_log": "final-gui-build.log.gz",
+  "method": "Native Windows app interaction through the computer-use skill; observed rendered screenshots after each action.",
+  "checks": [
+    "MB01.3mf loads with the regenerated prime volume of 1 mm3 and no invalid-setting error.",
+    "Multimaterial settings display the material-band engine, boundary policy, width, dose allowance, comma-separated envelope and stationary tool selection declaration without the former TextCtrl crash.",
+    "Native Slice plate completes using Planning material bands and shows MB_CYCLE / MB_BEAD / MB_OPERATION in the G-code view.",
+    "MB01 preview displays 10 logical cycles, top 2.40 mm, two physical filament colors and 19 tool changes.",
+    "Dragging the upper cycle slider to 5 displays 1.20 mm and filters the visible geometry and operation range.",
+    "MB01 deposited-height mode shows 0.12 mm; line-width mode shows 0.44 and 0.45 mm bins.",
+    "MB02-transition.3mf reload preserves two virtual mixes, Allow transition, 2 mm width and 25 percent dose allowance.",
+    "Native slicing of MB02-transition completes and displays 10 logical cycles at 2.40 mm despite varying extrusion Z.",
+    "Transition deposited-height legend spans 0.06 through 0.24 mm, including the pure-material interior.",
+    "The verification app was closed after inspection; no print or upload was initiated."
+  ],
+  "fixed_findings": [
+    "An empty coFloats default crashed TextCtrl::BUILD and its numeric list UI could not edit the full envelope. The setting now uses coString with bounded strict numeric parsing.",
+    "The original demo prime volume of 0.5 mm3 violated the existing GUI minimum; numerical fixture profiles now use 1 mm3."
+  ],
+  "physical_qualification": false,
+  "subsequent_change": "After native inspection, the engine lookup in GCode::append_full_config was hoisted out of the per-key loop. UI and preview sources did not change. Both builds, the complete CTest selection and production/export tests passed again (with the same eight baseline CTest failures)."
+}

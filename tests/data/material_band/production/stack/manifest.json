@@ -1,0 +1,23 @@
+{
+  "generator": "test_material_band_stack.cpp: Material stacks export all physical tools and shared interfaces",
+  "expected_engine": "material_bands",
+  "cycles": 10,
+  "macro_height_mm": 0.24,
+  "gradient_band_dose_allowance_percentage_points": 10,
+  "dense_percent": 100,
+  "qualification": "Virtual numerical profiles. No physical printer qualification.",
+  "files_sha256": {
+    "MB-3-blend.3mf": "6fc05d15ef08427f7a36313558c5bf887cfdf5b7c2e14c384137030ffbddad5e",
+    "MB-3-blend.gcode": "2d647086be2e4125f54b18556b25dd0854959a4102a5ab816f55ca02b82987a0",
+    "MB-3-gradient.3mf": "94997086e7c490262325033728869eae1b74986fcc08cd350a968c00cca65547",
+    "MB-3-gradient.gcode": "db2281e6e337aef6574e70c181298b5b5e9aace1d1ec27008090a11e0677dc04",
+    "MB-4-blend.3mf": "34e01f937e2f835850c6f8e696b609bbde5dba9f7e584ca3f4bbdf5414cb29dd",
+    "MB-4-blend.gcode": "8a4522275ed9fa96a4584e5e592da9bd97f00f649ceb5917885110410c6d8ee6",
+    "MB-4-gradient.3mf": "bb9e6871521c91f2ceee4b2a137d987ef3a7e63626874e43d0cac2f507f35147",
+    "MB-4-gradient.gcode": "8075ca9cd16a206a697d286efc31ad9cebd7baf04b1748ce89e7ab0ed259d8cc"
+  },
+  "native_gui_verified": [
+    "MB-4-gradient.3mf",
+    "MB-3-blend.3mf"
+  ]
+}

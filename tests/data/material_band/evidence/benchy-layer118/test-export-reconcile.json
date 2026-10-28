@@ -1,0 +1,131 @@
+{
+  "passed": true,
+  "physical_qualification": false,
+  "capture": "build-material-band\\evidence\\benchy-layer-process-118\\01-3DBenchy\\cycle-paths.json",
+  "report": "build-material-band\\evidence\\benchy-layer-process-118\\01-3DBenchy\\report.json",
+  "gcode": "build-material-band\\evidence\\benchy-layer-process-118\\01-3DBenchy\\slice.gcode",
+  "gcode_sha256": "6b40f62aa40e4999c6b2c1cf0df68d3e0032feaff80f87adff79f91cc39af0d9",
+  "planned_object_segments": 500027,
+  "domain_id_mapping": {
+    "1539": 1539,
+    "1538": 1538,
+    "1540": 1540,
+    "1537": 1537,
+    "2046": 2046
+  },
+  "object_segments": 500027,
+  "maximum_xyz_component_error_mm": 0.0005000000000165983,
+  "maximum_segment_e_error_mm": 4.999985349880666e-06,
+  "zero_length_object_segments": 0,
+  "zero_extrusion_object_segments": 0,
+  "dose": [
+    {
+      "category": "object",
+      "tool": 0,
+      "segments": 391365,
+      "planned_mm3": 7353.388718826533,
+      "exported_mm3": 7353.379740063654,
+      "absolute_error_mm3": 0.008978762878541602,
+      "accumulated_rounding_bound_mm3": 4.706715705791494
+    },
+    {
+      "category": "object",
+      "tool": 1,
+      "segments": 108662,
+      "planned_mm3": 955.4792967021832,
+      "exported_mm3": 955.4966615712751,
+      "absolute_error_mm3": 0.01736486909192081,
+      "accumulated_rounding_bound_mm3": 1.3068136957267895
+    },
+    {
+      "category": "object",
+      "tool": 2,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    },
+    {
+      "category": "object",
+      "tool": 3,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    },
+    {
+      "category": "brim",
+      "tool": 0,
+      "segments": 1532,
+      "planned_mm3": 112.64969926083833,
+      "exported_mm3": 112.64942835625935,
+      "absolute_error_mm3": 0.0002709045789828224,
+      "accumulated_rounding_bound_mm3": 0.018424459165600125
+    },
+    {
+      "category": "brim",
+      "tool": 1,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    },
+    {
+      "category": "brim",
+      "tool": 2,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    },
+    {
+      "category": "brim",
+      "tool": 3,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    },
+    {
+      "category": "purge",
+      "tool": 0,
+      "segments": 187928,
+      "planned_mm3": 12265.343999977866,
+      "exported_mm3": 12267.225621113337,
+      "absolute_error_mm3": 1.8816211354715051,
+      "accumulated_rounding_bound_mm3": 2.260099061401694
+    },
+    {
+      "category": "purge",
+      "tool": 1,
+      "segments": 312472,
+      "planned_mm3": 20393.85599994044,
+      "exported_mm3": 20396.98003198973,
+      "absolute_error_mm3": 3.1240320492906903,
+      "accumulated_rounding_bound_mm3": 3.757916190826937
+    },
+    {
+      "category": "purge",
+      "tool": 2,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    },
+    {
+      "category": "purge",
+      "tool": 3,
+      "segments": 0,
+      "planned_mm3": 0.0,
+      "exported_mm3": 0.0,
+      "absolute_error_mm3": 0.0,
+      "accumulated_rounding_bound_mm3": 0.0
+    }
+  ]
+}

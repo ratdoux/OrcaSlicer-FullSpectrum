@@ -1,0 +1,17 @@
+{
+  "origin": "Native Orca GUI painting and Save Project As; independently saved during this implementation",
+  "physical_materials": [
+    1,
+    2
+  ],
+  "virtual_recipe_fractions_a": [
+    0.25,
+    0.75
+  ],
+  "files": {
+    "triangle-boundary.3mf": "First diagonal top-face capsule painted with the 25/75 virtual mix; crosses source triangles",
+    "multiple-virtual-mixes.3mf": "Second intersecting top-face capsule painted with the 75/25 virtual mix"
+  },
+  "verification": "Production bbs_3mf loader, more painted leaf facets than source triangles, preserved physical recipe fractions and explicit top_or_bottom_paint_requires_domain_adapter fallback",
+  "physical_qualification": false
+}

@@ -24,6 +24,7 @@
 #include "MixedFilament.hpp"
 #include "MixedFilament/PerimeterModulation.hpp"
 #include "Print.hpp"
+#include "MaterialBand/Production.hpp"
 #include "Utils.hpp"
 #include "ClipperUtils.hpp"
 #include "libslic3r.h"
@@ -2214,6 +2215,32 @@ void GCode::_do_export(Print& print, GCodeOutputStream& file, ThumbnailsGenerato
 
     // modifies m_silent_time_estimator_enabled
     DoExport::init_gcode_processor(print.config(), m_processor, m_silent_time_estimator_enabled);
+    if (const auto result = print.material_band_result(); result && result->used_material_bands()) {
+        apply_print_config(print.config());
+        m_writer.set_is_bbl_machine(false);
+        m_layer_count = result->plan->cycles.size();
+        for (size_t i = 0; i < result->plan->machine.material_count; ++i)
+            if (result->plan->object_volume_mm3[i] + result->plan->purge_volume_mm3[i] + result->plan->brim_volume_mm3[i] > 0.)
+                m_initial_layer_extruders.insert(unsigned(i));
+        MaterialBand::emit_print(*result->plan, m_writer, [&file](const std::string& text) { file.write(text); },
+            [&print] { return print.canceled(); });
+        file.write(DoExport::update_print_stats_and_format_filament_stats(false, print.wipe_tower_data(),
+            m_writer.extruders(), print.m_print_statistics));
+        print.m_print_statistics.initial_tool = result->plan->transitions.front().to.value - 1;
+        print.m_print_statistics.total_toolchanges = result->plan->transitions.size() - 1;
+        for (const auto& extruder : m_writer.extruders()) {
+            const double purge_volume = result->plan->purge_volume_mm3.at(extruder.id());
+            print.m_print_statistics.total_wipe_tower_filament += purge_volume / extruder.filament_crossection();
+            print.m_print_statistics.total_wipe_tower_cost += purge_volume * extruder.filament_density() *
+                extruder.filament_cost() * 1e-6;
+        }
+        std::string full_config;
+        append_full_config(print, full_config);
+        file.write("; CONFIG_BLOCK_START\n");
+        file.write(full_config);
+        file.write("; CONFIG_BLOCK_END\n");
+        return;
+    }
     const bool is_bbl_printers = print.is_BBL_printer();
     m_calib_config.clear();
     // resets analyzer's tracking data
@@ -6593,7 +6620,9 @@ void GCode::append_full_config(const Print& print, std::string& str)
                                                          "printhost_user"sv, "printhost_password"sv, "printhost_port"sv});
     auto                                    is_banned = [](const std::string& key) { return banned_keys.find(key) != banned_keys.end(); };
     std::ostringstream                      ss;
+    const bool material_bands_enabled = MaterialBand::enabled(cfg);
     for (const std::string& key : cfg.keys()) {
+        if (!material_bands_enabled && MaterialBand::is_engine_option(key)) continue;
         if (!is_banned(key) && !cfg.option(key)->is_nil()) {
             if (key == "wipe_tower_x" || key == "wipe_tower_y") {
                 ss << std::fixed << std::setprecision(3) << "; " << key << " = "

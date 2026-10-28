@@ -1,0 +1,459 @@
+{
+  "passed": true,
+  "common_full_model_checkpoints": 64,
+  "matching_fields": [
+    "candidate_pairs",
+    "index_visits",
+    "estimated_temporary_bytes"
+  ],
+  "checks": [
+    {
+      "cells_checked": 100000,
+      "total_cells": 2726325,
+      "candidates": 2814174,
+      "index_visits": 25862520,
+      "estimated_temporary_bytes": 2137130844
+    },
+    {
+      "cells_checked": 100000,
+      "total_cells": 3727125,
+      "candidates": 2042820,
+      "index_visits": 23272999,
+      "estimated_temporary_bytes": 2880577470
+    },
+    {
+      "cells_checked": 200000,
+      "total_cells": 2726325,
+      "candidates": 3234386,
+      "index_visits": 39241993,
+      "estimated_temporary_bytes": 2137126796
+    },
+    {
+      "cells_checked": 200000,
+      "total_cells": 3727125,
+      "candidates": 3040732,
+      "index_visits": 41621291,
+      "estimated_temporary_bytes": 2880595454
+    },
+    {
+      "cells_checked": 300000,
+      "total_cells": 2726325,
+      "candidates": 3675553,
+      "index_visits": 53106249,
+      "estimated_temporary_bytes": 2137099788
+    },
+    {
+      "cells_checked": 300000,
+      "total_cells": 3727125,
+      "candidates": 3283452,
+      "index_visits": 56790462,
+      "estimated_temporary_bytes": 2880550382
+    },
+    {
+      "cells_checked": 400000,
+      "total_cells": 2726325,
+      "candidates": 4578913,
+      "index_visits": 76271678,
+      "estimated_temporary_bytes": 2137148364
+    },
+    {
+      "cells_checked": 400000,
+      "total_cells": 3727125,
+      "candidates": 3576287,
+      "index_visits": 71828387,
+      "estimated_temporary_bytes": 2880622814
+    },
+    {
+      "cells_checked": 500000,
+      "total_cells": 2726325,
+      "candidates": 5931617,
+      "index_visits": 104140712,
+      "estimated_temporary_bytes": 2137421276
+    },
+    {
+      "cells_checked": 500000,
+      "total_cells": 3727125,
+      "candidates": 3865334,
+      "index_visits": 86786727,
+      "estimated_temporary_bytes": 2880599054
+    },
+    {
+      "cells_checked": 600000,
+      "total_cells": 2726325,
+      "candidates": 6851612,
+      "index_visits": 128043505,
+      "estimated_temporary_bytes": 2137839564
+    },
+    {
+      "cells_checked": 600000,
+      "total_cells": 3727125,
+      "candidates": 5018610,
+      "index_visits": 115779489,
+      "estimated_temporary_bytes": 2880638894
+    },
+    {
+      "cells_checked": 700000,
+      "total_cells": 2726325,
+      "candidates": 7590904,
+      "index_visits": 149416485,
+      "estimated_temporary_bytes": 2137703884
+    },
+    {
+      "cells_checked": 700000,
+      "total_cells": 3727125,
+      "candidates": 6065313,
+      "index_visits": 140811076,
+      "estimated_temporary_bytes": 2880895326
+    },
+    {
+      "cells_checked": 800000,
+      "total_cells": 2726325,
+      "candidates": 8248930,
+      "index_visits": 169900616,
+      "estimated_temporary_bytes": 2137298060
+    },
+    {
+      "cells_checked": 800000,
+      "total_cells": 3727125,
+      "candidates": 6843016,
+      "index_visits": 163685627,
+      "estimated_temporary_bytes": 2880968878
+    },
+    {
+      "cells_checked": 900000,
+      "total_cells": 2726325,
+      "candidates": 8898512,
+      "index_visits": 191150624,
+      "estimated_temporary_bytes": 2137118396
+    },
+    {
+      "cells_checked": 900000,
+      "total_cells": 3727125,
+      "candidates": 7494218,
+      "index_visits": 184350262,
+      "estimated_temporary_bytes": 2880702926
+    },
+    {
+      "cells_checked": 1000000,
+      "total_cells": 2726325,
+      "candidates": 9907673,
+      "index_visits": 216716574,
+      "estimated_temporary_bytes": 2137237500
+    },
+    {
+      "cells_checked": 1000000,
+      "total_cells": 3727125,
+      "candidates": 8019834,
+      "index_visits": 204456871,
+      "estimated_temporary_bytes": 2881124702
+    },
+    {
+      "cells_checked": 1100000,
+      "total_cells": 2726325,
+      "candidates": 10698270,
+      "index_visits": 239966769,
+      "estimated_temporary_bytes": 2137329948
+    },
+    {
+      "cells_checked": 1100000,
+      "total_cells": 3727125,
+      "candidates": 8549306,
+      "index_visits": 224998508,
+      "estimated_temporary_bytes": 2880958990
+    },
+    {
+      "cells_checked": 1200000,
+      "total_cells": 2726325,
+      "candidates": 11774678,
+      "index_visits": 271433273,
+      "estimated_temporary_bytes": 2137981404
+    },
+    {
+      "cells_checked": 1200000,
+      "total_cells": 3727125,
+      "candidates": 9092981,
+      "index_visits": 246104916,
+      "estimated_temporary_bytes": 2880992142
+    },
+    {
+      "cells_checked": 1300000,
+      "total_cells": 2726325,
+      "candidates": 12912517,
+      "index_visits": 300363450,
+      "estimated_temporary_bytes": 2137107052
+    },
+    {
+      "cells_checked": 1300000,
+      "total_cells": 3727125,
+      "candidates": 9990154,
+      "index_visits": 271612663,
+      "estimated_temporary_bytes": 2880932286
+    },
+    {
+      "cells_checked": 1400000,
+      "total_cells": 2726325,
+      "candidates": 13747483,
+      "index_visits": 325459070,
+      "estimated_temporary_bytes": 2137180908
+    },
+    {
+      "cells_checked": 1400000,
+      "total_cells": 3727125,
+      "candidates": 10614387,
+      "index_visits": 293716459,
+      "estimated_temporary_bytes": 2880922558
+    },
+    {
+      "cells_checked": 1500000,
+      "total_cells": 2726325,
+      "candidates": 15125709,
+      "index_visits": 352312613,
+      "estimated_temporary_bytes": 2137204860
+    },
+    {
+      "cells_checked": 1500000,
+      "total_cells": 3727125,
+      "candidates": 11275075,
+      "index_visits": 318896890,
+      "estimated_temporary_bytes": 2880921838
+    },
+    {
+      "cells_checked": 1600000,
+      "total_cells": 2726325,
+      "candidates": 15920296,
+      "index_visits": 377364606,
+      "estimated_temporary_bytes": 2137728108
+    },
+    {
+      "cells_checked": 1600000,
+      "total_cells": 3727125,
+      "candidates": 12298153,
+      "index_visits": 346890091,
+      "estimated_temporary_bytes": 2880867950
+    },
+    {
+      "cells_checked": 1700000,
+      "total_cells": 2726325,
+      "candidates": 16661470,
+      "index_visits": 400907788,
+      "estimated_temporary_bytes": 2137085708
+    },
+    {
+      "cells_checked": 1700000,
+      "total_cells": 3727125,
+      "candidates": 13152319,
+      "index_visits": 372202432,
+      "estimated_temporary_bytes": 2880775950
+    },
+    {
+      "cells_checked": 1800000,
+      "total_cells": 2726325,
+      "candidates": 17417703,
+      "index_visits": 422927061,
+      "estimated_temporary_bytes": 2137060412
+    },
+    {
+      "cells_checked": 1800000,
+      "total_cells": 3727125,
+      "candidates": 13782795,
+      "index_visits": 394706226,
+      "estimated_temporary_bytes": 2881137214
+    },
+    {
+      "cells_checked": 1900000,
+      "total_cells": 2726325,
+      "candidates": 18493598,
+      "index_visits": 449160852,
+      "estimated_temporary_bytes": 2137300604
+    },
+    {
+      "cells_checked": 1900000,
+      "total_cells": 3727125,
+      "candidates": 15016589,
+      "index_visits": 419873555,
+      "estimated_temporary_bytes": 2881285294
+    },
+    {
+      "cells_checked": 2000000,
+      "total_cells": 2726325,
+      "candidates": 19398587,
+      "index_visits": 476416976,
+      "estimated_temporary_bytes": 2137018380
+    },
+    {
+      "cells_checked": 2000000,
+      "total_cells": 3727125,
+      "candidates": 15686190,
+      "index_visits": 443175469,
+      "estimated_temporary_bytes": 2880920894
+    },
+    {
+      "cells_checked": 2100000,
+      "total_cells": 2726325,
+      "candidates": 21449286,
+      "index_visits": 506293103,
+      "estimated_temporary_bytes": 2137069036
+    },
+    {
+      "cells_checked": 2100000,
+      "total_cells": 3727125,
+      "candidates": 16234780,
+      "index_visits": 464986808,
+      "estimated_temporary_bytes": 2880672430
+    },
+    {
+      "cells_checked": 2200000,
+      "total_cells": 2726325,
+      "candidates": 23370734,
+      "index_visits": 541043161,
+      "estimated_temporary_bytes": 2137036844
+    },
+    {
+      "cells_checked": 2200000,
+      "total_cells": 3727125,
+      "candidates": 16776271,
+      "index_visits": 486627336,
+      "estimated_temporary_bytes": 2880637518
+    },
+    {
+      "cells_checked": 2300000,
+      "total_cells": 2726325,
+      "candidates": 26280760,
+      "index_visits": 589739241,
+      "estimated_temporary_bytes": 2137165900
+    },
+    {
+      "cells_checked": 2300000,
+      "total_cells": 3727125,
+      "candidates": 17295341,
+      "index_visits": 507537676,
+      "estimated_temporary_bytes": 2880593902
+    },
+    {
+      "cells_checked": 2400000,
+      "total_cells": 2726325,
+      "candidates": 28503282,
+      "index_visits": 637975517,
+      "estimated_temporary_bytes": 2137627868
+    },
+    {
+      "cells_checked": 2400000,
+      "total_cells": 3727125,
+      "candidates": 17690024,
+      "index_visits": 527050688,
+      "estimated_temporary_bytes": 2880449662
+    },
+    {
+      "cells_checked": 2500000,
+      "total_cells": 2726325,
+      "candidates": 30569491,
+      "index_visits": 676878071,
+      "estimated_temporary_bytes": 2137111228
+    },
+    {
+      "cells_checked": 2500000,
+      "total_cells": 3727125,
+      "candidates": 18307054,
+      "index_visits": 549506017,
+      "estimated_temporary_bytes": 2880617070
+    },
+    {
+      "cells_checked": 2600000,
+      "total_cells": 2726325,
+      "candidates": 31953023,
+      "index_visits": 699665040,
+      "estimated_temporary_bytes": 2136992460
+    },
+    {
+      "cells_checked": 2600000,
+      "total_cells": 3727125,
+      "candidates": 18934409,
+      "index_visits": 572839082,
+      "estimated_temporary_bytes": 2880458590
+    },
+    {
+      "cells_checked": 2700000,
+      "total_cells": 2726325,
+      "candidates": 33209059,
+      "index_visits": 720032054,
+      "estimated_temporary_bytes": 2137127900
+    },
+    {
+      "cells_checked": 2700000,
+      "total_cells": 3727125,
+      "candidates": 19514131,
+      "index_visits": 598083206,
+      "estimated_temporary_bytes": 2880548654
+    },
+    {
+      "cells_checked": 2800000,
+      "total_cells": 3727125,
+      "candidates": 20359945,
+      "index_visits": 622458269,
+      "estimated_temporary_bytes": 2880406190
+    },
+    {
+      "cells_checked": 2900000,
+      "total_cells": 3727125,
+      "candidates": 22050466,
+      "index_visits": 648579238,
+      "estimated_temporary_bytes": 2880429086
+    },
+    {
+      "cells_checked": 3000000,
+      "total_cells": 3727125,
+      "candidates": 23589396,
+      "index_visits": 682518461,
+      "estimated_temporary_bytes": 2880522766
+    },
+    {
+      "cells_checked": 3100000,
+      "total_cells": 3727125,
+      "candidates": 25757734,
+      "index_visits": 726612231,
+      "estimated_temporary_bytes": 2880394030
+    },
+    {
+      "cells_checked": 3200000,
+      "total_cells": 3727125,
+      "candidates": 28320488,
+      "index_visits": 773000260,
+      "estimated_temporary_bytes": 2880700142
+    },
+    {
+      "cells_checked": 3300000,
+      "total_cells": 3727125,
+      "candidates": 30086169,
+      "index_visits": 811289141,
+      "estimated_temporary_bytes": 2880662126
+    },
+    {
+      "cells_checked": 3400000,
+      "total_cells": 3727125,
+      "candidates": 31501957,
+      "index_visits": 836737041,
+      "estimated_temporary_bytes": 2880460574
+    },
+    {
+      "cells_checked": 3500000,
+      "total_cells": 3727125,
+      "candidates": 32100991,
+      "index_visits": 857133968,
+      "estimated_temporary_bytes": 2880378238
+    },
+    {
+      "cells_checked": 3600000,
+      "total_cells": 3727125,
+      "candidates": 32923407,
+      "index_visits": 877344474,
+      "estimated_temporary_bytes": 2880375614
+    },
+    {
+      "cells_checked": 3700000,
+      "total_cells": 3727125,
+      "candidates": 33474523,
+      "index_visits": 896415580,
+      "estimated_temporary_bytes": 2880400702
+    }
+  ]
+}

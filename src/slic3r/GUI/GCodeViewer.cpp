@@ -174,6 +174,7 @@ void GCodeViewer::IBuffer::reset()
 
 bool GCodeViewer::Path::matches(const GCodeProcessorResult::MoveVertex& move) const
 {
+    if (material_band_cycle != move.material_band_cycle) return false;
     auto matches_percent = [](float value1, float value2, float max_percent) {
         return std::abs(value2 - value1) / value1 <= max_percent;
     };
@@ -229,7 +230,7 @@ void GCodeViewer::TBuffer::add_path(const GCodeProcessorResult::MoveVertex& move
     paths.push_back({ move.type, move.extrusion_role, move.delta_extruder,
         round_to_bin(move.height), round_to_bin(move.width),
         move.feedrate, move.fan_speed, move.temperature,
-        move.volumetric_rate(), move.layer_duration, move.extruder_id, move.cp_color_id, { { endpoint, endpoint } } });
+        move.volumetric_rate(), move.layer_duration, move.extruder_id, move.cp_color_id, { { endpoint, endpoint } }, move.material_band_cycle });
 }
 
 ColorRGBA GCodeViewer::Extrusions::Range::get_color_at(float value) const
@@ -984,6 +985,12 @@ void GCodeViewer::extract_layer_metadata(const GCodeProcessorResult& gcode_resul
         m_layers.reset();
         for (const auto& layer : gcode_result.spiral_vase_layers)
             m_layers.append(layer.first, { layer.second.first, layer.second.second });
+    }
+
+    if (!gcode_result.material_band_cycles.empty()) {
+        m_layers.reset();
+        for (const auto& cycle : gcode_result.material_band_cycles)
+            m_layers.append_logical(cycle.top_z, cycle.ranges);
     }
 
     if (!m_layers.empty())
@@ -3461,8 +3468,10 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
     };
 
     auto is_in_layers_range = [this](const Path& path, size_t min_id, size_t max_id) {
+        if (path.material_band_cycle != uint32_t(-1))
+            return min_id <= path.material_band_cycle && path.material_band_cycle <= max_id;
         auto in_layers_range = [this, min_id, max_id](size_t id) {
-            return m_layers.get_endpoints_at(min_id).first <= id && id <= m_layers.get_endpoints_at(max_id).last;
+            return m_layers.contains(min_id, max_id, id);
         };
 
         return in_layers_range(path.sub_paths.front().first.s_id) && in_layers_range(path.sub_paths.back().last.s_id);
@@ -3480,6 +3489,8 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
             return false;
 
         Path path = buffer.paths[path_id];
+        if (path.material_band_cycle != uint32_t(-1))
+            return min_id <= path.material_band_cycle && path.material_band_cycle <= max_id;
         size_t first = path_id;
         size_t last = path_id;
 
@@ -3530,14 +3541,14 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
         if (buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::InstancedModel ||
             buffer.render_primitive_type == TBuffer::ERenderPrimitiveType::BatchedModel) {
             for (size_t id : buffer.model.instances.s_ids) {
-                if (id < m_layers.get_endpoints_at(m_layers_z_range[0]).first || m_layers.get_endpoints_at(m_layers_z_range[1]).last < id)
+                if (!m_layers.contains(m_layers_z_range[0], m_layers_z_range[1], id))
                     continue;
 
                 global_endpoints.first = std::min(global_endpoints.first, id);
                 global_endpoints.last = std::max(global_endpoints.last, id);
 
                 if (top_layer_only) {
-                    if (id < m_layers.get_endpoints_at(m_layers_z_range[1]).first || m_layers.get_endpoints_at(m_layers_z_range[1]).last < id)
+                    if (!m_layers.contains(m_layers_z_range[1], m_layers_z_range[1], id))
                         continue;
 
                     top_layer_endpoints.first = std::min(top_layer_endpoints.first, id);

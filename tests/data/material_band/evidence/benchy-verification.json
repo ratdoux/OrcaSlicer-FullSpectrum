@@ -1,0 +1,463 @@
+{
+  "date": "2026-10-28",
+  "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+  "source_sha256": "92e44b529c7857c3909f62c1b8aee4a1cfd85bf772ff2808eefceb38c38ee62b",
+  "source_unchanged": true,
+  "git_head": "63117732a0683220530cf690f385055d1f3dd54d",
+  "working_tree_contains_uncommitted_implementation": true,
+  "binaries_sha256": {
+    "build\\src\\Release\\snapmaker-orca.exe": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+    "build\\src\\Release\\Snapmaker_Orca.dll": "da81c5c3a4828e8faf9d9746d53791606cf12a60dd0fe92fe49d6ab50ee76dbc",
+    "build-material-band\\tests\\libslic3r\\Release\\libslic3r_tests.exe": "f0a833e5db183e001e4f6a365cbde03377e9b57f315901e5ce410188409dbacf"
+  },
+  "original_material_band_accepted": true,
+  "original_engine_used": "material_bands",
+  "original_slice_report": {
+    "brim_volume_mm3": [
+      112.64969926083833,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "cycles": 232,
+    "engine_requested": "material_bands",
+    "gcode": {
+      "extrusions": 1001959,
+      "invalid_moves": 0,
+      "material_band_cycles": 232,
+      "moves": 1558782,
+      "positive_filament_mm": 17081.461977478164
+    },
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 159,
+      "infill_mm": 67274.75346109399,
+      "layers": 232,
+      "ordered_point_fnv1a64": "14695981039346656037",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 342388,
+      "perimeter_mm": 136484.63721458166,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "14695981039346656037"
+    },
+    "geometry_source": "canonical_material_band_paths",
+    "image_mapped_volumes": 0,
+    "intentional_void_mm3": 7242.7009795444565,
+    "material_band_accepted": true,
+    "object_volume_mm3": [
+      7353.388718826533,
+      955.4792967021832,
+      0.0,
+      0.0
+    ],
+    "objects": 1,
+    "operations": 1844131,
+    "paint_stream_bits": 1429240,
+    "path_coverage": [
+      {
+        "deposited_mm3": 7353.388718826325,
+        "excess_mm3": 4.112346076134976e-05,
+        "material": 1,
+        "missing_mm3": 1.6274014401366426,
+        "object": 6,
+        "target_mm3": 7355.016082888597
+      },
+      {
+        "deposited_mm3": 955.4792967021948,
+        "excess_mm3": 4.804728606144781e-06,
+        "material": 2,
+        "missing_mm3": 0.35654517312053075,
+        "object": 6,
+        "target_mm3": 955.835837070576
+      },
+      {
+        "deposited_mm3": 0.0,
+        "excess_mm3": 0.0,
+        "material": 3,
+        "missing_mm3": 0.0,
+        "object": 6,
+        "target_mm3": 0.0
+      },
+      {
+        "deposited_mm3": 0.0,
+        "excess_mm3": 0.0,
+        "material": 4,
+        "missing_mm3": 0.0,
+        "object": 6,
+        "target_mm3": 0.0
+      }
+    ],
+    "planning_ms": {
+      "finalize": 2004335.0982,
+      "paths": 2849583.7199,
+      "snapshot": 56.9582
+    },
+    "purge_volume_mm3": [
+      12265.343999977866,
+      20393.85599994044,
+      0.0,
+      0.0
+    ],
+    "samples": [
+      {
+        "bottom": 0.0,
+        "cycle": 0,
+        "fill_mm": 699.1605647974292,
+        "islands": 2,
+        "object": 6,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "top": 0.2,
+        "wall_mm": 830.0302016924485
+      },
+      {
+        "bottom": 11.267785234899328,
+        "cycle": 58,
+        "fill_mm": 456.04709623007636,
+        "islands": 3,
+        "object": 6,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "top": 11.588590604026844,
+        "wall_mm": 1931.2302879938286
+      },
+      {
+        "bottom": 25.543624161073822,
+        "cycle": 116,
+        "fill_mm": 17.941550495570937,
+        "islands": 5,
+        "object": 6,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "top": 25.704026845637582,
+        "wall_mm": 314.4862547390158
+      },
+      {
+        "bottom": 37.73422818791946,
+        "cycle": 174,
+        "fill_mm": 1443.6694691315047,
+        "islands": 1,
+        "object": 6,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "top": 38.05503355704698,
+        "wall_mm": 565.6800884397765
+      },
+      {
+        "bottom": 47.83959731543624,
+        "cycle": 231,
+        "fill_mm": 44.2287744307138,
+        "islands": 1,
+        "object": 6,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "top": 48.0,
+        "wall_mm": 159.3129211646443
+      }
+    ],
+    "settings": {
+      "brim_type": "auto_brim",
+      "brim_width": "5",
+      "enable_prime_tower": "1",
+      "enable_support": "0",
+      "filament_diameter": "1.75,1.75,1.75,1.75",
+      "gcode_flavor": "klipper",
+      "initial_layer_infill_speed": "105",
+      "initial_layer_print_height": "0.2",
+      "initial_layer_speed": "50",
+      "internal_solid_infill_pattern": "monotonic",
+      "layer_height": "0.08",
+      "mixed_filament_height_lower_bound": "0.06",
+      "prime_volume": "18",
+      "print_sequence": "by layer",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "gyroid",
+      "wall_generator": "classic",
+      "wall_loops": "2"
+    },
+    "slice_seconds": 4853.9779826,
+    "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+    "sparse_infill_mm": 24988.660214661057,
+    "sparse_segments": 44649,
+    "stage": "complete",
+    "triangles": 225154,
+    "unsupported_settings": []
+  },
+  "legacy_geometry_equal": null,
+  "fixed_paint_bit_count": {
+    "bits": 1429240,
+    "triangles": 225154,
+    "old_triangle_limit": 400000,
+    "new_rule": "Decode and count leaf triangles before selector expansion; retain 400000 triangle limit."
+  },
+  "remaining_blockers": [],
+  "application_cli": {
+    "application_build": 119,
+    "source": "C:/Users/radug/Downloads/3DBenchy.3mf",
+    "command_arguments": [
+      "--allow-newer-file",
+      "--slice",
+      "1",
+      "--local-z-engine",
+      "material_bands",
+      "--outputdir",
+      "build-material-band\\evidence\\layer119-application-benchy",
+      "C:/Users/radug/Downloads/3DBenchy.3mf"
+    ],
+    "exit_code": 0,
+    "engine_used": "material_bands",
+    "u1_audit_passed": true,
+    "gcode_sha256": "102f24689f3bf2c8cb2e43263f9f6f44391d40490ff929a52427e822ea4c7123",
+    "gcode_bytes": 360137854,
+    "dock_returns": 470,
+    "original_object_and_brim_cells": 2726325,
+    "combined_cells": 3727125,
+    "combined_paths": 374166,
+    "combined_index_visits": 1543942747,
+    "combined_access_index_visits": 1326776030,
+    "production_index_visit_limit": 2000000000,
+    "log_caveat": "Retained loader temporary-file, bed-exclusion and Voronoi diagnostic messages; not a warning-free log claim.",
+    "qualification": "Application export and U1 command audit passed. Independent canonical geometry and segment reconciliation remain separate evidence."
+  },
+  "new_engine_tests": {
+    "cases": 112,
+    "assertions": 4690361,
+    "passed": true,
+    "log": "build-material-band-layer118-tests.log"
+  },
+  "broader_regression": {
+    "cases": 388,
+    "passed": 381,
+    "failed": 7,
+    "previously_recorded_failures": true
+  },
+  "physical_qualification": false,
+  "legacy_baseline_report": {
+    "engine_requested": "material_bands",
+    "fallback": "unsupported_auxiliary_or_sequential_profile",
+    "gcode": {
+      "extrusions": 588059,
+      "invalid_moves": 0,
+      "material_band_cycles": 0,
+      "moves": 763724,
+      "positive_filament_mm": 22378.644327149213
+    },
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 420,
+      "infill_mm": 110264.97672254675,
+      "layers": 599,
+      "ordered_point_fnv1a64": "18432948513540464255",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 55800,
+      "perimeter_mm": 221308.8940394843,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "9809854195355678863"
+    },
+    "image_mapped_volumes": 0,
+    "material_band_accepted": false,
+    "objects": 1,
+    "paint_stream_bits": 1429240,
+    "samples": [
+      {
+        "fill_mm": 468.4182399286813,
+        "islands": 2,
+        "layer": 0,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 496.290285050906,
+        "z": 0.2
+      },
+      {
+        "fill_mm": 256.33944120058226,
+        "islands": 3,
+        "layer": 149,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 730.0282878599025,
+        "z": 12.120000000000008
+      },
+      {
+        "fill_mm": 78.46789478611018,
+        "islands": 5,
+        "layer": 299,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 309.65362249417683,
+        "z": 24.119999999999838
+      },
+      {
+        "fill_mm": 83.68840433881627,
+        "islands": 1,
+        "layer": 449,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 339.1771309387444,
+        "z": 36.119999999999585
+      },
+      {
+        "fill_mm": 33.99422463906895,
+        "islands": 1,
+        "layer": 598,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 33.61738481710197,
+        "z": 48.03999999999933
+      }
+    ],
+    "settings": {
+      "brim_type": "auto_brim",
+      "brim_width": "5",
+      "enable_prime_tower": "1",
+      "enable_support": "0",
+      "filament_diameter": "1.75,1.75,1.75,1.75",
+      "gcode_flavor": "klipper",
+      "internal_solid_infill_pattern": "monotonic",
+      "layer_height": "0.08",
+      "prime_volume": "18",
+      "print_sequence": "by layer",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "gyroid",
+      "wall_generator": "classic",
+      "wall_loops": "2"
+    },
+    "slice_seconds": 12.0261967,
+    "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+    "stage": "complete",
+    "triangles": 225154,
+    "unsupported_settings": [
+      "brim is not supported (brim_width=5 mm)",
+      "sparse infill is not supported (15%; gyroid)"
+    ]
+  },
+  "production_build": 119,
+  "current_status": "PASS: unchanged original Benchy, including 5 mm brim, 15% gyroid, paint, 0.2 mm first layer and 0.06 mm minimum. Full test and application planning/export accepted. All 232 canonical sections, both U1 audits and both complete segment/dose reconciliations pass. Experimental performance and physical qualification remain limitations.",
+  "historical_blockers": [
+    {
+      "kind": "unsupported_setting",
+      "detail": "5 mm automatic brim"
+    },
+    {
+      "kind": "unsupported_setting",
+      "detail": "15% gyroid sparse infill; kernel currently requires 100% dense"
+    },
+    {
+      "kind": "input_geometry",
+      "detail": "11 zero-area triangles in the imported float mesh",
+      "indices": [
+        52293,
+        129640,
+        129677,
+        150766,
+        213447,
+        213451,
+        213455,
+        213461,
+        214397,
+        219700,
+        219733
+      ]
+    },
+    {
+      "kind": "clipper_resource_limit",
+      "detail": "Removing those 11 triangles in diagnostic copies reaches pure_slab_admission: 225143 input faces exceed max_input_faces=20000."
+    },
+    {
+      "kind": "derived_configuration_constraint",
+      "detail": "Original layer height 0.08 mm and minimum active thickness 0.06 mm cannot fit two active materials in one macrocycle (minimum total 0.12 mm). This is inferred from the settings and solver constraints; the full model stops at earlier gates."
+    },
+    {
+      "kind": "unimplemented_process_setting",
+      "detail": "Original first-layer height is 0.2 mm, while current fixed kernel macrocycles derive height from nominal layer_height (0.08 mm here); separate first-layer process is not implemented."
+    }
+  ],
+  "resolved_compatibility": [
+    "5 mm automatic brim",
+    "15% normal gyroid with separate solid skins",
+    "Exact zero-area triangles excluded while preserving source facet IDs",
+    "225154-face source accepted by the U1 mesh-section process",
+    "Macrocycle allocation respecting 0.06 mm active minimum",
+    "Separate 0.2 mm first-layer process"
+  ],
+  "historical_application_cli": {
+    "exit_code": 0,
+    "source_unchanged": true,
+    "gcode": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\application\\plate_1.gcode",
+    "gcode_sha256": "c2bf49b97ca208cefc184a5436c30ffe5041f565dcd5f422f9cde6dcd1e005d6",
+    "engine_used": "legacy",
+    "stderr_empty": true,
+    "known_log_messages": "Import temporary-file/bed-exclusion warnings; no assertion that log is warning-free."
+  },
+  "build115_diagnostic_replay": {
+    "log": "build-material-band-layer115-finalize-replay.log",
+    "accepted": false,
+    "failure": "schedule_index_work_limit",
+    "combined_cells": 3713794,
+    "omits_original_brim": true,
+    "full_production_runs": "deliberately stopped after diagnostic failure"
+  },
+  "build117_diagnostic_replay": {
+    "log": "build-material-band-layer117-finalize-replay.log",
+    "accepted": false,
+    "failure": "schedule_index_work_limit",
+    "combined_cells": 3713794,
+    "omits_original_brim": true,
+    "support_checkpoint": {
+      "cells": 3700000,
+      "index_visits": 899308954,
+      "candidates": 33527941
+    },
+    "production_limit_index_visits": 2000000000
+  },
+  "build118_diagnostic_replay": {
+    "log": "build-material-band-layer118-finalize-replay.log",
+    "accepted": true,
+    "exit_code": 0,
+    "combined_cells": 3713794,
+    "paths": 374154,
+    "dependencies": 375091,
+    "operations": 2127356,
+    "index_visits": 1537041981,
+    "support_index_visits": 901914679,
+    "access_index_visits": 1323517802,
+    "production_limit_index_visits": 2000000000,
+    "omits_original_brim": true,
+    "qualification": "Diagnostic captured geometry only; original project plus brim still requires full production acceptance."
+  },
+  "test_binary_build": 118,
+  "historical_completed_rejection": "tests/data/material_band/evidence/benchy-build114-verification.json",
+  "qualification_evidence": "tests/data/material_band/evidence/benchy-layer118/",
+  "independent_geometry_and_export": {
+    "cycles": 232,
+    "outside_perimeter_mm": 0.0,
+    "outside_infill_mm": 0.0,
+    "source_centerline_tolerance_mm": 0.06,
+    "object_segments_matched_in_each_export": 500027,
+    "maximum_export_xyz_component_error_mm": 0.0005000000000165983,
+    "maximum_segment_e_error_mm": 4.999985349880666e-06,
+    "all_material_volume_rounding_bounds_passed": true,
+    "native_preview_cycles": 232,
+    "gui_inspection": "Unavailable: native desktop pipe could not be connected. Canonical section renders were viewed; native parser metadata was checked.",
+    "hole_sections_across_all_cycles": 159,
+    "legacy_fnv_fields": "Unpopulated for canonical kernel paths; not used as equality evidence. Full segment and capture comparisons are retained."
+  },
+  "performance_limitations": {
+    "application_gcode_bytes": 360137854,
+    "retractions": 89372,
+    "commanded_motion_lower_bound_hours": 19.723344542589096,
+    "legacy_recorded_time_estimate": "10h 23m 13s",
+    "time_comparison_caveat": "Different metrics: new command-only lower bound excludes acceleration, docking, heating and macros; legacy is its stored slicer estimate.",
+    "test_elapsed_seconds": 4868.828221699994,
+    "test_cpu_seconds_sampled": 3589.1875,
+    "application_cpu_seconds_sampled": 3347.609375,
+    "wall_clock_gap": "See run-context.json; an unexplained approximately 20-minute observation gap occurred. Concurrent traced runs are not controlled benchmarks.",
+    "production_ready": false
+  }
+}

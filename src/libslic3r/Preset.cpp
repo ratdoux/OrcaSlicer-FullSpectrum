@@ -984,6 +984,8 @@ static std::vector<std::string> s_Preset_print_options {
      "seam_slope_type", "seam_slope_conditional", "scarf_angle_threshold", "scarf_joint_speed", "scarf_joint_flow_ratio", "seam_slope_start_height", "seam_slope_entire_loop", "seam_slope_min_length", "seam_slope_steps", "seam_slope_inner_walls", "scarf_overhang_threshold",
      "interlocking_beam", "interlocking_orientation", "interlocking_beam_layer_count", "interlocking_depth", "interlocking_boundary_avoidance", "interlocking_beam_width",
      "dithering_local_z_mode",
+     "local_z_engine", "material_band_boundary_policy", "material_band_transition_width", "material_band_transition_error", "material_band_gradient_error",
+     "material_band_tool_sections", "material_band_stationary_toolchange",
      "dithering_local_z_whole_objects",
      "dithering_local_z_preserve_first_layer",
      "dithering_local_z_infill",

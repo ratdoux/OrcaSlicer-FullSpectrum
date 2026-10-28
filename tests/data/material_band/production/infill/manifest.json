@@ -1,0 +1,25 @@
+{
+  "generator": "test_material_band_production.cpp: dense infill honors pattern and direction",
+  "patterns": [
+    "monotonic",
+    "rectilinear",
+    "concentric"
+  ],
+  "solid_infill_direction_degrees": 45,
+  "dense_percent": 100,
+  "expected_engine": "material_bands",
+  "cycles": 10,
+  "macro_height_mm": 0.24,
+  "native_gui_verified": [
+    "MB02-transition-concentric.3mf"
+  ],
+  "files_sha256": {
+    "MB01-concentric.3mf": "4976295e03c2d8e6d790f43ed1f74652452b196e2e817a3d1493e504a9823ff5",
+    "MB01-monotonic.3mf": "96d39abbd9fc4586131c1b9a0a350e9fa9c8ac777a01782aa7893e2999b22891",
+    "MB01-rectilinear.3mf": "3f3e53c43a38aed0130f914edfdecde55ba7316416cb2844f086a259ef3a84c1",
+    "MB02-transition-concentric.3mf": "cfd18f7dd8d08ee742925bb6f89dd6fe5710f6f92f32606cdb69dccb27c1d993",
+    "MB02-transition-monotonic.3mf": "986fbc7b5fd005a3fe672503544ba57b38f1abb1ec22d792643a003593ba17a3",
+    "MB02-transition-rectilinear.3mf": "753c2f46abfbcbbeb59bb5a0e707568910dda9441a39ee6e56ce65bb80dcddca"
+  },
+  "qualification": "Virtual numerical profiles. No physical printer qualification."
+}

@@ -1,0 +1,118 @@
+[
+  {
+    "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\01-no-brim.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\corrected-input-audit\\01-01-no-brim",
+    "binary_sha256": "7303358c47fcae3ad5b61bfbacba4c826cd798effef6324e7a4b2e9d26640456",
+    "sha256": "e7eaf0c929d7abad69e181cd875f7c12ef7eaf9908c3f35b8fa3edfabc04593d",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.667969300004188,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "dense_classic_profile_required",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "paint_stream_bits": 1429240,
+      "settings": {
+        "brim_type": "no_brim",
+        "brim_width": "0",
+        "enable_prime_tower": "1",
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "prime_volume": "18",
+        "print_sequence": "by layer",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\01-no-brim.3mf",
+      "stage": "loaded",
+      "triangles": 225154,
+      "unsupported_settings": [
+        "sparse infill is not supported (15%; gyroid)"
+      ]
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\02-dense.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\corrected-input-audit\\02-02-dense",
+    "binary_sha256": "7303358c47fcae3ad5b61bfbacba4c826cd798effef6324e7a4b2e9d26640456",
+    "sha256": "a89d0ccb376d506697cb850dd9482f59d68d9afd5aa84c5d8d57f05e6b0a6cea",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.692988199996762,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "degenerate_solid_triangle",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "paint_stream_bits": 1429240,
+      "settings": {
+        "brim_type": "no_brim",
+        "brim_width": "0",
+        "enable_prime_tower": "1",
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "prime_volume": "18",
+        "print_sequence": "by layer",
+        "sparse_infill_density": "100%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\02-dense.3mf",
+      "stage": "loaded",
+      "triangles": 225154,
+      "unsupported_settings": []
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\03-dense-024.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\corrected-input-audit\\03-03-dense-024",
+    "binary_sha256": "7303358c47fcae3ad5b61bfbacba4c826cd798effef6324e7a4b2e9d26640456",
+    "sha256": "51db21c7ebe28af7a9c9ce5243b0b8f352889715b8806282b855ec640b219017",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.6754413000016939,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "degenerate_solid_triangle",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "paint_stream_bits": 1429240,
+      "settings": {
+        "brim_type": "no_brim",
+        "brim_width": "0",
+        "enable_prime_tower": "1",
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.24",
+        "prime_volume": "18",
+        "print_sequence": "by layer",
+        "sparse_infill_density": "100%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\variants\\03-dense-024.3mf",
+      "stage": "loaded",
+      "triangles": 225154,
+      "unsupported_settings": []
+    },
+    "source_unchanged": true
+  }
+]

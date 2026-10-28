@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "origin": "Programmatic Model, TriangleSelector paint and mixed-filament recipe fixtures saved by the production store_bbs_3mf path.",
+  "generator": "tests/libslic3r/test_material_band_production.cpp, MATERIAL_BAND_PRODUCTION_DIR",
+  "projects": ["MB01.3mf", "MB02-transition.3mf", "MB03.3mf"],
+  "expected_engine": "material_bands",
+  "expected_logical_cycles": 10,
+  "macro_height_mm": 0.24,
+  "nominal_bead_width_mm": 0.45,
+  "prime_mm3": 1,
+  "physical_materials": 2,
+  "native_gui_verified": ["MB01.3mf", "MB02-transition.3mf"],
+  "production_export_tests": ["MB01.3mf", "MB02-transition.3mf", "MB03.3mf"],
+  "qualification": "Numerical demonstration profiles with virtual tool envelopes. Physical qualification is deferred; these are not printer recommendations."
+}

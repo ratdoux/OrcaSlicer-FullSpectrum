@@ -83,6 +83,16 @@ static const t_config_enum_values s_keys_map_ImageMapPerimeterModulationMode = {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(ImageMapPerimeterModulationMode)
 
+static const t_config_enum_values s_keys_map_LocalZEngine = {
+    {"legacy", int(LocalZEngine::Legacy)}, {"material_bands", int(LocalZEngine::MaterialBands)}
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(LocalZEngine)
+static const t_config_enum_values s_keys_map_MaterialBandBoundaryPolicy = {
+    {"preserve_painted_edge", int(MaterialBandBoundaryPolicy::PreservePaintedEdge)},
+    {"allow_transition", int(MaterialBandBoundaryPolicy::AllowTransition)}
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(MaterialBandBoundaryPolicy)
+
 static t_config_enum_values s_keys_map_PrintHostType{{"prusalink", htPrusaLink},
                                                      {"prusaconnect", htPrusaConnect},
                                                      {"octoprint", htOctoPrint},
@@ -4518,6 +4528,61 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.0));
 
+    def = this->add("local_z_engine", coEnum);
+    def->label = L("Local Z engine");
+    def->category = L("Others");
+    def->tooltip = L("Choose the legacy Local Z planner or the experimental material-band planner. Material bands support two to four physical filaments, painted regions and supported sparse infill patterns, with a declared nozzle/head envelope. Unsupported prints use legacy planning with a diagnostic. Physical qualification is required before printing.");
+    def->enum_keys_map = &ConfigOptionEnum<LocalZEngine>::get_enum_values();
+    def->enum_values = {"legacy", "material_bands"};
+    def->enum_labels = {L("Legacy"), L("Material bands (experimental)")};
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<LocalZEngine>(LocalZEngine::Legacy));
+
+    def = this->add("material_band_boundary_policy", coEnum);
+    def->label = L("Material boundary");
+    def->category = L("Others");
+    def->tooltip = L("Preserve painted edges, or explicitly permit a bounded transition between compatible material recipes. Unsupported discontinuities use legacy planning.");
+    def->enum_keys_map = &ConfigOptionEnum<MaterialBandBoundaryPolicy>::get_enum_values();
+    def->enum_values = {"preserve_painted_edge", "allow_transition"};
+    def->enum_labels = {L("Preserve painted edge"), L("Allow transition")};
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<MaterialBandBoundaryPolicy>(MaterialBandBoundaryPolicy::PreservePaintedEdge));
+
+    def = this->add("material_band_transition_width", coFloat);
+    def->label = L("Material transition width");
+    def->category = L("Others");
+    def->tooltip = L("Width of the permitted transition around a painted boundary. Recipes outside this neighborhood retain their plateau dose.");
+    def->sidetext = L("mm"); def->min = 0.; def->max = 100.; def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(2.));
+
+    def = this->add("material_band_transition_error", coPercent);
+    def->label = L("Material transition dose allowance");
+    def->category = L("Others");
+    def->tooltip = L("Maximum absolute material-fraction change, in percentage points, permitted inside the transition. This does not relax the total material budget.");
+    def->sidetext = "%"; def->min = 0.; def->max = 100.; def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionPercent(25.));
+
+    def = this->add("material_band_gradient_error", coPercent);
+    def->label = L("Gradient band dose allowance");
+    def->category = L("Others");
+    def->tooltip = L("Maximum change in each material's fraction within a gradient macro cycle, in percentage points, to create printable bands or omit a fading band. The total volume of each material remains conserved. Zero requires exact cycle fractions.");
+    def->sidetext = "%"; def->min = 0.; def->max = 25.; def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionPercent(0.));
+
+    def = this->add("material_band_tool_sections", coString);
+    def->label = L("Material-band tool envelope");
+    def->category = L("Machine limits");
+    def->tooltip = L("Complete vertical nozzle and head envelope as comma-separated bottom height, top height, radius triples in millimeters, measured from the nozzle tip. Sections must be contiguous from zero. Snapmaker U1 uses a conservative stock clearance cylinder when empty; other printers require explicit geometry. Use geometry qualified for this printer.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionString(""));
+
+    def = this->add("material_band_stationary_toolchange", coBool);
+    def->label = L("Tool selection has no XYZ or E motion");
+    def->category = L("Machine limits");
+    def->tooltip = L("Declare that RepRapFirmware tool-selection commands do not move any nozzle or carriage in XYZ or feed/retract material. Snapmaker U1 uses its own moving-tool adapter and does not require this declaration.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("dithering_local_z_mode", coBool);
     def->label = L("Subdivide all mix layers");
     def->category = L("Others");
@@ -7937,7 +8002,8 @@ void DynamicPrintConfig::normalize_fdm(int used_filaments)
 
         ConfigOptionEnum<TimelapseType>* timelapse_opt = this->option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
         bool is_smooth_timelapse = timelapse_opt != nullptr && timelapse_opt->value == TimelapseType::tlSmooth;
-        if (!is_smooth_timelapse && (used_filaments == 1 || ps_opt->value == PrintSequence::ByObject)) {
+        const bool material_bands = this->has("local_z_engine") && this->opt_serialize("local_z_engine") == "material_bands";
+        if (!material_bands && !is_smooth_timelapse && (used_filaments == 1 || ps_opt->value == PrintSequence::ByObject)) {
             ept_opt->value = false;
         }
 
@@ -8022,7 +8088,10 @@ t_config_option_keys DynamicPrintConfig::normalize_fdm_2(int num_objects, int us
 
         ConfigOptionEnum<TimelapseType>* timelapse_opt = this->option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
         bool is_smooth_timelapse = timelapse_opt != nullptr && timelapse_opt->value == TimelapseType::tlSmooth;
-        if (!is_smooth_timelapse && (used_filaments == 1 || (ps_opt->value == PrintSequence::ByObject && num_objects > 1))) {
+        // A single virtual recipe may require both physical tools. The material
+        // band schedule determines tool eligibility before its tower is built.
+        const bool material_bands = this->has("local_z_engine") && this->opt_serialize("local_z_engine") == "material_bands";
+        if (!material_bands && !is_smooth_timelapse && (used_filaments == 1 || (ps_opt->value == PrintSequence::ByObject && num_objects > 1))) {
             if (ept_opt->value) {
                 ept_opt->value = false;
                 changed_keys.push_back("enable_prime_tower");

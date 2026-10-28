@@ -1,0 +1,146 @@
+{
+  "date": "2026-10-28",
+  "binaries_sha256": {
+    "build\\src\\Release\\snapmaker-orca.exe": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+    "build\\src\\Release\\Snapmaker_Orca.dll": "da81c5c3a4828e8faf9d9746d53791606cf12a60dd0fe92fe49d6ab50ee76dbc",
+    "build-material-band\\tests\\libslic3r\\Release\\libslic3r_tests.exe": "f0a833e5db183e001e4f6a365cbde03377e9b57f315901e5ce410188409dbacf"
+  },
+  "new_engine_tests": {
+    "cases": 112,
+    "assertions": 4690361,
+    "passed": true,
+    "log": "build-material-band-layer118-tests.log"
+  },
+  "painted_cases": 54,
+  "reported_two_object_project_accepted": true,
+  "painted_gcode_files": 55,
+  "painted_dock_returns": 1467,
+  "reported_application_cli": {
+    "exit_code": 0,
+    "tools": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "dock_returns": 403,
+    "gcode_sha256": "a585ff8f8a3f715b0a4559942ba6d6c93df4aff89671c67a562df9297381a264",
+    "bin_returns": 0
+  },
+  "priming": "Configured U1 prime_volume on each tool run, separate XY tower strips at common Z, no transition bin substitution. Firmware startup unchanged.",
+  "negative_docking_mutations": [
+    {
+      "mode": "relative",
+      "mutation": "missing_z",
+      "rejected": true
+    },
+    {
+      "mode": "relative",
+      "mutation": "missing_xy",
+      "rejected": true
+    },
+    {
+      "mode": "relative",
+      "mutation": "missing_tool",
+      "rejected": true
+    },
+    {
+      "mode": "relative",
+      "mutation": "missing_g90",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_z",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_xy",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_tool",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_g90",
+      "rejected": true
+    }
+  ],
+  "selected_fixtures_sha256": {
+    "tests\\data\\material_band\\production\\painted\\U1-painted-2-gradient-box.3mf": "deb9938d815d74267437042fd378e068f66ac0cef28ed46e6a6bc52c640e3b7b",
+    "tests\\data\\material_band\\production\\painted\\U1-painted-3-gradient-cylinder.3mf": "3fed6f8682832ff3ef887222aa28b6ee8979620a6d529c96927fb1320b004ffa",
+    "tests\\data\\material_band\\production\\painted\\U1-painted-4-recipes-annulus.3mf": "6562ca7ff8453540e2afa853d6b9a5ed6c80c35f9faf1865a41709173a5ce8b6",
+    "tests\\data\\material_band\\production\\painted\\U1-painted-4-caps-box.3mf": "c0bf97449c7e188d037e88982386bdd4cfeed0f216a0d941a580a37df5e63bdd",
+    "tests\\data\\material_band\\production\\painted\\U1-painted-4-pure-box.3mf": "d9706943a1cf735c87e2e20baa16ac0ca8e001179826ec007ff588f0a3e8259d",
+    "tests\\data\\material_band\\production\\painted\\U1-painted-4-gradient-box.3mf": "4ceef17a6db188a6e38edaafdf21e7fddf1a11d44724156eb1cf8e5465559ae0"
+  },
+  "reported_fixture_sha256": "b578435c81868c073154ba3aa9a29fb8449aa60d3650297780a1fbee0cd39856",
+  "physical_qualification": false,
+  "broader_regression": {
+    "cases": 388,
+    "passed": 381,
+    "failed": 7,
+    "previously_recorded_failures": true
+  },
+  "detailed_audits": "tests/data/material_band/evidence/u1-layer118/*.json",
+  "production_build": 119,
+  "earlier_u1_export_audit": {
+    "date": "2026-10-27",
+    "files": 18,
+    "dock_returns": 320
+  },
+  "layered_gcode_files": 6,
+  "layered_dock_returns": 171,
+  "gyroid_application_cli": {
+    "exit_code": 0,
+    "tools": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "dock_returns": 16,
+    "gcode_sha256": "1f52b54bd1855957ed6489c1912e5e17df03d79b7c8aa0bcb86a8a204339ff1f",
+    "bin_returns": 0
+  },
+  "benchy_qualification": "Not established by these fixture and application exports; tracked separately.",
+  "captured_regression_fixtures": {
+    "tests\\data\\material_band\\benchy-wall-46.json": "ea93770ef3c97644414759c290c2afc106952bf837ad62424175270bd7cc7b1c",
+    "tests\\data\\material_band\\benchy-gyroid-floor-52.json": "043893869ffbfe44a16cc858a23e3658890d887d26e495fbd6984629d258fd56",
+    "tests\\data\\material_band\\benchy-wall-57.json": "8d067a1c6afaf1fe461f1d5077902477fb51a49fb92992bcd6198ec3b039a326",
+    "tests\\data\\material_band\\benchy-wall-61.json": "ce05c27775e4a39650bc99ccce9db5fb4f672b04618c2164cc4400b66129996d",
+    "tests\\data\\material_band\\benchy-foundation-157.json": "8244ef020ef83d4aaebf69367cb3be5d032fb0698ab1b4e3f7d6d4655866cfd6",
+    "tests\\data\\material_band\\benchy-seam-182.json": "44281a3f4c0364992769090c50f317bf16a9bf6d8e8c808a4c1d422dc4f1717e",
+    "tests\\data\\material_band\\benchy-seam-28.json": "15b168cbc328c254e4ca5b1a1040ebf398021562752a84e0721cb3f46b7c3495",
+    "tests\\data\\material_band\\benchy-seam-39.json": "7c9aa80102df1c8c3f1c60ec872f6879ccecea1f8b1cc92f2b5e9ee0c5e83f8c"
+  },
+  "visual_source_gcode_sha256": "1f52b54bd1855957ed6489c1912e5e17df03d79b7c8aa0bcb86a8a204339ff1f",
+  "test_binary_build": 118,
+  "gcode_unchanged_from_build113": {
+    "painted": 55,
+    "layered": 6,
+    "application": 2
+  },
+  "gcode_unchanged_from_build114": {
+    "painted": 55,
+    "layered": 6,
+    "application": 2
+  },
+  "gcode_unchanged_from_build115": {
+    "painted": 55,
+    "layered": 6,
+    "application": 2
+  },
+  "gcode_unchanged_from_build117": {
+    "painted": 55,
+    "layered": 6,
+    "application": 2
+  },
+  "application_change_since_test_build": "Tooltip only: describe painted regions, supported sparse infill and two to four physical filaments. Kernel implementation is unchanged.",
+  "application_detailed_audits": "tests/data/material_band/evidence/u1-layer119/*.json",
+  "application_gcode_unchanged_from_build118": 2
+}

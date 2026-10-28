@@ -1,0 +1,275 @@
+{
+  "physical_qualification": false,
+  "results": [
+    {
+      "file": "U1-layer-2-blend.gcode",
+      "sha256": "f7c60a48be86ecead4906ecef44a49eafc28d183ec381f91053957ebdc3cf0cc",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 28,
+      "deposit_segments": 4752,
+      "minimum_dock_z": 4.48,
+      "highest_deposition_z": 2.48,
+      "object_mm3": [
+        97.34344119494088,
+        97.34601484654753,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        18.145446468053006,
+        17.011356063799692,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        68.00030116721584,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 31,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 17830.231896934252,
+      "travel_z_mm": 387.9600000000002,
+      "planar_travels": 564,
+      "lifted_travels": 120,
+      "retractions": 385,
+      "deposition_mm": 6938.593095065878
+    },
+    {
+      "file": "U1-layer-2-gradient.gcode",
+      "sha256": "bf6b4633865c4c49bbc35898aa81a2c14bb05be78dd54dc8e8511fec9bae0034",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 18,
+      "deposit_segments": 4086,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        104.07991414338598,
+        104.22629959832294,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        28.351105571032672,
+        35.15535936272736,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        68.00030116721584,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 28,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 12724.02266402428,
+      "travel_z_mm": 313.59400000000016,
+      "planar_travels": 649,
+      "lifted_travels": 98,
+      "retractions": 522,
+      "deposition_mm": 6213.31760643418
+    },
+    {
+      "file": "U1-layer-3-blend.gcode",
+      "sha256": "22ee152dccb5c21e233086c9b235dd3554df179060390f7c181801d6a0cd4a5f",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 33,
+      "deposit_segments": 6092,
+      "minimum_dock_z": 4.48,
+      "highest_deposition_z": 2.48,
+      "object_mm3": [
+        68.73934807625307,
+        68.74158498839721,
+        70.82633900108459,
+        0.0
+      ],
+      "tower_mm3": [
+        22.680942183591135,
+        24.948930569547738,
+        22.680942183591135,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        68.00030116721584,
+        0.0
+      ],
+      "tower_layer_count": 31,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 21867.527332837508,
+      "travel_z_mm": 426.924,
+      "planar_travels": 899,
+      "lifted_travels": 132,
+      "retractions": 645,
+      "deposition_mm": 9310.572163439261
+    },
+    {
+      "file": "U1-layer-3-gradient.gcode",
+      "sha256": "09022349d5da4d787c7b3df09068a12628a1c0d2769f0001d438dad64631534d",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 19,
+      "deposit_segments": 4287,
+      "minimum_dock_z": 4.48,
+      "highest_deposition_z": 2.48,
+      "object_mm3": [
+        64.08091840406304,
+        79.99902574985349,
+        64.2245377848431,
+        0.0
+      ],
+      "tower_mm3": [
+        15.876688391896273,
+        22.680942183591124,
+        31.753280572517607,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        68.00030116721584,
+        0.0
+      ],
+      "tower_layer_count": 31,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 13367.54685105575,
+      "travel_z_mm": 355.15600000000023,
+      "planar_travels": 704,
+      "lifted_travels": 110,
+      "retractions": 554,
+      "deposition_mm": 6607.687788259126
+    },
+    {
+      "file": "U1-layer-4-blend.gcode",
+      "sha256": "94776a3bee6562999e25c584ca03aeafc82d6486d84b00de6f2902437c2537c6",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 57,
+      "deposit_segments": 9048,
+      "minimum_dock_z": 4.48,
+      "highest_deposition_z": 2.48,
+      "object_mm3": [
+        48.67956181638325,
+        48.6808366157772,
+        48.6808366157772,
+        48.6808366157772
+      ],
+      "tower_mm3": [
+        19.279344449756287,
+        17.011259852524674,
+        17.011259852524674,
+        17.011259852524674
+      ],
+      "brim_mm3": [
+        68.00030116721584,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 31,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 36314.19033568126,
+      "travel_z_mm": 739.6399999999996,
+      "planar_travels": 1121,
+      "lifted_travels": 228,
+      "retractions": 774,
+      "deposition_mm": 13056.234402570692
+    },
+    {
+      "file": "U1-layer-4-gradient.gcode",
+      "sha256": "1964a13a94ca5ac22354e3386e9af11fcca05d3ce461f10765c3632aee2a279b",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 16,
+      "deposit_segments": 4364,
+      "minimum_dock_z": 4.48,
+      "highest_deposition_z": 2.48,
+      "object_mm3": [
+        49.6005442464765,
+        54.72785956745775,
+        53.98854807741468,
+        49.99060880821071
+      ],
+      "tower_mm3": [
+        11.340422986158035,
+        12.47451339041135,
+        24.949026780822745,
+        21.54685177933781
+      ],
+      "brim_mm3": [
+        68.00030116721584,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 31,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 11720.672303698751,
+      "travel_z_mm": 347.3240000000001,
+      "planar_travels": 724,
+      "lifted_travels": 108,
+      "retractions": 553,
+      "deposition_mm": 6825.494176514353
+    }
+  ]
+}

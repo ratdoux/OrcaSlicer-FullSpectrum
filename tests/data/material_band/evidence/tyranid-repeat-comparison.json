@@ -1,0 +1,77 @@
+[
+  {
+    "run": "controlled-export",
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 671,
+      "infill_mm": 60426.54392795241,
+      "layers": 748,
+      "ordered_point_fnv1a64": "10011688562845038790",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 146903,
+      "perimeter_mm": 346753.1917567997,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "4870368035138491777"
+    },
+    "commands": 2248292,
+    "command_sha256": "ced92357a228641f8334da6f906701176e64647de95f061f4b4950b2ff50a57c",
+    "gcode": {
+      "extrusions": 969808,
+      "invalid_moves": 0,
+      "material_band_cycles": 0,
+      "moves": 1765132,
+      "positive_filament_mm": 53410.598579938356
+    }
+  },
+  {
+    "run": "controlled-legacy",
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 671,
+      "infill_mm": 60426.637233528025,
+      "layers": 748,
+      "ordered_point_fnv1a64": "9224796410779095150",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 146905,
+      "perimeter_mm": 346754.07912719576,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "7100668077680415168"
+    },
+    "commands": 2248310,
+    "command_sha256": "13a6dee215073711dfcfc77d44f4710d2edd82f5ff3ca8b9376ac7a9504cc5f1",
+    "gcode": {
+      "extrusions": 969819,
+      "invalid_moves": 0,
+      "material_band_cycles": 0,
+      "moves": 1765148,
+      "positive_filament_mm": 53410.578389942784
+    }
+  },
+  {
+    "run": "controlled-legacy-repeat",
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 671,
+      "infill_mm": 60426.54392795241,
+      "layers": 748,
+      "ordered_point_fnv1a64": "10011688562845038790",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 146903,
+      "perimeter_mm": 346753.1917567997,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "4870368035138491777"
+    },
+    "commands": 2248292,
+    "command_sha256": "ced92357a228641f8334da6f906701176e64647de95f061f4b4950b2ff50a57c",
+    "gcode": {
+      "extrusions": 969808,
+      "invalid_moves": 0,
+      "material_band_cycles": 0,
+      "moves": 1765132,
+      "positive_filament_mm": 53410.598579938356
+    }
+  }
+]

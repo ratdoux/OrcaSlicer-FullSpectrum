@@ -224,6 +224,7 @@ class GCodeViewer
         unsigned char extruder_id{ 0 };
         unsigned char cp_color_id{ 0 };
         std::vector<Sub_Path> sub_paths;
+        uint32_t material_band_cycle{uint32_t(-1)};
 
         bool matches(const GCodeProcessorResult::MoveVertex& move) const;
         size_t vertices_count() const {
@@ -470,6 +471,7 @@ Range layer_duration_log;
     private:
         std::vector<double> m_zs;
         std::vector<Endpoints> m_endpoints;
+        std::vector<std::vector<std::pair<size_t, size_t>>> m_ranges;
 
     public:
         void append(double z, Endpoints endpoints) {
@@ -480,6 +482,20 @@ Range layer_duration_log;
         void reset() {
             m_zs = std::vector<double>();
             m_endpoints = std::vector<Endpoints>();
+            m_ranges.clear();
+        }
+
+        void append_logical(double z, const std::vector<std::pair<size_t, size_t>>& ranges) {
+            if (ranges.empty()) return;
+            append(z, {ranges.front().first, ranges.back().second});
+            m_ranges.push_back(ranges);
+        }
+        bool contains(size_t min_layer, size_t max_layer, size_t sequence) const {
+            if (m_ranges.empty()) return get_endpoints_at(min_layer).first <= sequence && sequence <= get_endpoints_at(max_layer).last;
+            for (size_t row = min_layer; row <= max_layer && row < m_ranges.size(); ++row)
+                for (const auto& range : m_ranges[row])
+                    if (range.first <= sequence && sequence <= range.second) return true;
+            return false;
         }
 
         size_t size() const { return m_zs.size(); }
@@ -500,6 +516,7 @@ Range layer_duration_log;
                 return true;
             if (m_endpoints != other.m_endpoints)
                 return true;
+            if (m_ranges != other.m_ranges) return true;
             return false;
         }
     };

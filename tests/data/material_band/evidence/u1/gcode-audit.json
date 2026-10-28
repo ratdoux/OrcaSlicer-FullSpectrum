@@ -1,0 +1,350 @@
+{
+  "physical_qualification": false,
+  "results": [
+    {
+      "file": "U1-2-blend-absolute.gcode",
+      "sha256": "e52115a39317a8325246ff0cbb322a4a658d7badaf4dac36728dd3fde0b8664e",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 12974,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.8000199646415,
+        172.8000199646415,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-2-blend.gcode",
+      "sha256": "684e3d0d14c4815670697be79758eea11c7bdfbee31f038048dc61a12459afd7",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 12974,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.7622570391932,
+        172.7622570391932,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-2-gradient-absolute.gcode",
+      "sha256": "5d56e8954547210cf5c65d889736ea6608adce1b7ae3788cc5135b38e31999cd",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 16,
+      "deposit_segments": 11668,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.8000199646393,
+        172.79999591182022,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-2-gradient.gcode",
+      "sha256": "0ab86eb658f94fdf3362e76f01d81f523e1a88bd243c0568ebec10245990c870",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 16,
+      "deposit_segments": 11668,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.80497484530952,
+        172.80497484529982,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-annulus.gcode",
+      "sha256": "66c06d67412eef77c3caeb722a8e2fc442f705a94ea394896bf3fe9c2fed4d9b",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 2259,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        5.46633980131969,
+        5.46633980131969,
+        5.630620553409812,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-blend-absolute.gcode",
+      "sha256": "46d43740bcb95e35af989b81458f0896ff40935431ffa7d360513d6e995feba6",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 30,
+      "deposit_segments": 19515,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        114.04790734425512,
+        114.04790734425511,
+        117.50403281820905,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-blend.gcode",
+      "sha256": "6da8c0911d2565eb3c459b624309c531496981de1f6e414d40e0cc73fce85a2f",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 30,
+      "deposit_segments": 19515,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        114.00266399219308,
+        114.00266399219308,
+        117.52111031952629,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-cylinder.gcode",
+      "sha256": "ebf065751b95885ee6e61d573234e9378b2c6f8036e6124c9485fe06cfdad535",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 2859,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        12.418566533989376,
+        12.418566533989376,
+        12.796291999702913,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-gradient-absolute.gcode",
+      "sha256": "6f6659f5971d5891302fe1792e828b28ce78e620914aad038756299b28454527",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 19,
+      "deposit_segments": 13699,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        86.4000099823198,
+        172.7999959118191,
+        86.39998592949956,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-gradient.gcode",
+      "sha256": "fbcafe82e4077b7ca70de028929bb62ea544d59174739ee94db1b4c9bb47f055",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 19,
+      "deposit_segments": 13699,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        86.40354574667717,
+        172.8070914933553,
+        86.40354574667627,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-3-hole_plate.gcode",
+      "sha256": "90df2f5b95072311db64484ab389d8a96d316b6bcc477c22375f511a0a38f4c8",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 5187,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        20.822910040478668,
+        20.822910040478668,
+        21.452420412909596,
+        0.0
+      ]
+    },
+    {
+      "file": "U1-4-annulus.gcode",
+      "sha256": "54e365accff46146f8ea2c85a754fe48ffbb6207ac30f339fc9232b5c4aeac21",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 3084,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        4.141029487971741,
+        4.141029487971741,
+        4.141029487971741,
+        4.141029487971741
+      ]
+    },
+    {
+      "file": "U1-4-blend-absolute.gcode",
+      "sha256": "45426bc41783ee2062f529e5decd21c5f7f2a0cca86a105a35068ac25c1c6360",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 40,
+      "deposit_segments": 26092,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        86.39993782386458,
+        86.39993782386458,
+        86.39993782386458,
+        86.39993782386458
+      ]
+    },
+    {
+      "file": "U1-4-blend.gcode",
+      "sha256": "1b0395988843bb670436ac21e414a830a1da60d8ddb5012a4b9a85a7844c8f61",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 40,
+      "deposit_segments": 26092,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        86.42033461417292,
+        86.42033461417292,
+        86.42033461417292,
+        86.42033461417292
+      ]
+    },
+    {
+      "file": "U1-4-cylinder.gcode",
+      "sha256": "7e3ecae411f0922a0417c74fcb87fcbeb57416eee1f9e6e4b06d96a43ed98799",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 3884,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        9.409462696583217,
+        9.409462696583217,
+        9.409462696583217,
+        9.409462696583217
+      ]
+    },
+    {
+      "file": "U1-4-gradient-absolute.gcode",
+      "sha256": "58973c296f65bd23fa28e333d467bd7e9b353cac6a195adb8954093014f5031b",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 14,
+      "deposit_segments": 12645,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        57.028150889000045,
+        115.7718690756358,
+        115.7718690756317,
+        57.028126836182004
+      ]
+    },
+    {
+      "file": "U1-4-gradient.gcode",
+      "sha256": "92f5289a6011e74b31874f34df8e47448d2bace3629515d030a03f568b80bebf",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 14,
+      "deposit_segments": 12645,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        57.028896526380905,
+        115.78151425595225,
+        115.78151425595134,
+        57.02889652638348
+      ]
+    },
+    {
+      "file": "U1-4-hole_plate.gcode",
+      "sha256": "c2fa907846a919a40bece959afc5a29807cdf557f9cd38ef9daa1e057cbd3d4c",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 6988,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        15.769605242803015,
+        15.769605242803015,
+        15.769605242803015,
+        15.769605242803015
+      ]
+    }
+  ]
+}

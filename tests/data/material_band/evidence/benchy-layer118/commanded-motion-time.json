@@ -1,0 +1,23 @@
+{
+  "gcode": "build-material-band\\evidence\\layer119-application-benchy\\plate_1.gcode",
+  "qualification": "Lower bound from commanded feed rates only. Excludes acceleration, tool-docking macros, startup, temperature waits, firmware dynamics and end macros. Not a physical print-time prediction.",
+  "seconds_by_role": {
+    "TRAVEL": 22555.53802705524,
+    "RECOVER": 4468.600000007491,
+    "PRIME": 53.27200000000064,
+    "RETRACT": 4468.600000007491,
+    "DEPOSITION": 7502.090448039084,
+    "BRIM": 45.0598780090001,
+    "PURGE": 31910.880000202436
+  },
+  "motion_commands_by_role": {
+    "TRAVEL": 377604,
+    "RECOVER": 89372,
+    "PRIME": 834,
+    "RETRACT": 89372,
+    "DEPOSITION": 500027,
+    "BRIM": 1532,
+    "PURGE": 499566
+  },
+  "total_commanded_motion_hours": 19.723344542589096
+}

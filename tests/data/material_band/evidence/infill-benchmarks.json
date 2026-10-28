@@ -1,0 +1,5181 @@
+{
+  "binary_sha256": "44d99d87577e4610be87f130c18bc5d29c5367bbe22338653f32d54c2a22f696",
+  "threads": 2,
+  "warmups": 1,
+  "measured_runs": 5,
+  "cpu_affinity": null,
+  "p95_published": false,
+  "enabled": {
+    "P1-slab": {
+      "spec": {
+        "id": "P1-slab",
+        "shape": "MB01",
+        "height": 0.48,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 180252,
+          "min": 180252,
+          "max": 180252
+        },
+        "cells": {
+          "median": 5888,
+          "min": 5888,
+          "max": 5888
+        },
+        "dependencies": {
+          "median": 882,
+          "min": 882,
+          "max": 882
+        },
+        "export_ms": {
+          "median": 10.3455,
+          "min": 9.8044,
+          "max": 17.0623
+        },
+        "finalize_ms": {
+          "median": 491.2669,
+          "min": 474.8106,
+          "max": 511.392
+        },
+        "gcode_bytes": {
+          "median": 923622,
+          "min": 923622,
+          "max": 923622
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 1460563,
+          "min": 1460563,
+          "max": 1460563
+        },
+        "interface_faces": {
+          "median": 22,
+          "min": 22,
+          "max": 22
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 172,
+          "min": 172,
+          "max": 172
+        },
+        "paths_ms": {
+          "median": 29.7259,
+          "min": 29.1951,
+          "max": 33.8683
+        },
+        "peak_working_set_bytes": {
+          "median": 25796608,
+          "min": 25751552,
+          "max": 25890816
+        },
+        "process_wall_ms": {
+          "median": 589.120600001479,
+          "min": 575.1333000007435,
+          "max": 612.1904000028735
+        },
+        "segments": {
+          "median": 2944,
+          "min": 2944,
+          "max": 2944
+        },
+        "snapshot_ms": {
+          "median": 0.0478,
+          "min": 0.0345,
+          "max": 0.0553
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 521.4509,
+          "min": 504.6483,
+          "max": 540.9369
+        }
+      },
+      "samples": [
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 17.0623,
+          "fallback": "",
+          "finalize_ms": 474.8106,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-slab",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 29.5897,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0345,
+          "tool_changes": 4,
+          "wall_ms": 504.6483,
+          "peak_working_set_bytes": 25878528,
+          "process_wall_ms": 575.1333000007435
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 9.8044,
+          "fallback": "",
+          "finalize_ms": 499.115,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-slab",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 31.292,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0478,
+          "tool_changes": 4,
+          "wall_ms": 530.7681,
+          "peak_working_set_bytes": 25796608,
+          "process_wall_ms": 598.4208000008948
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 9.8883,
+          "fallback": "",
+          "finalize_ms": 491.2669,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-slab",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 29.7259,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0553,
+          "tool_changes": 4,
+          "wall_ms": 521.4509,
+          "peak_working_set_bytes": 25890816,
+          "process_wall_ms": 589.120600001479
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 10.3455,
+          "fallback": "",
+          "finalize_ms": 482.0195,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-slab",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 33.8683,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0364,
+          "tool_changes": 4,
+          "wall_ms": 516.132,
+          "peak_working_set_bytes": 25772032,
+          "process_wall_ms": 576.6714999990654
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 12.3292,
+          "fallback": "",
+          "finalize_ms": 511.392,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-slab",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 29.1951,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0549,
+          "tool_changes": 4,
+          "wall_ms": 540.9369,
+          "peak_working_set_bytes": 25751552,
+          "process_wall_ms": 612.1904000028735
+        }
+      ]
+    },
+    "P1-transition": {
+      "spec": {
+        "id": "P1-transition",
+        "shape": "MB02-transition",
+        "height": 0.48,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 86085,
+          "min": 86085,
+          "max": 86085
+        },
+        "cells": {
+          "median": 3040,
+          "min": 3040,
+          "max": 3040
+        },
+        "dependencies": {
+          "median": 491,
+          "min": 491,
+          "max": 491
+        },
+        "export_ms": {
+          "median": 5.1402,
+          "min": 5.0928,
+          "max": 13.5387
+        },
+        "finalize_ms": {
+          "median": 210.6976,
+          "min": 205.5701,
+          "max": 253.4006
+        },
+        "gcode_bytes": {
+          "median": 494594,
+          "min": 494594,
+          "max": 494594
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 625147,
+          "min": 625147,
+          "max": 625147
+        },
+        "interface_faces": {
+          "median": 48,
+          "min": 48,
+          "max": 48
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 92,
+          "min": 92,
+          "max": 92
+        },
+        "paths_ms": {
+          "median": 6.0787,
+          "min": 4.7171,
+          "max": 11.0596
+        },
+        "peak_working_set_bytes": {
+          "median": 23400448,
+          "min": 23105536,
+          "max": 23502848
+        },
+        "process_wall_ms": {
+          "median": 304.4975000011618,
+          "min": 270.997300001909,
+          "max": 343.6790999985533
+        },
+        "segments": {
+          "median": 1520,
+          "min": 1520,
+          "max": 1520
+        },
+        "snapshot_ms": {
+          "median": 0.0489,
+          "min": 0.0372,
+          "max": 0.1033
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 220.8068,
+          "min": 210.5164,
+          "max": 258.5186
+        }
+      },
+      "samples": [
+        {
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "expected": "",
+          "export_ms": 5.1402,
+          "fallback": "",
+          "finalize_ms": 208.1531,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-transition",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 6.0787,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0489,
+          "tool_changes": 4,
+          "wall_ms": 214.623,
+          "peak_working_set_bytes": 23457792,
+          "process_wall_ms": 270.997300001909
+        },
+        {
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "expected": "",
+          "export_ms": 5.0928,
+          "fallback": "",
+          "finalize_ms": 205.5701,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-transition",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 4.7171,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0372,
+          "tool_changes": 4,
+          "wall_ms": 210.5164,
+          "peak_working_set_bytes": 23400448,
+          "process_wall_ms": 280.32480000547366
+        },
+        {
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "expected": "",
+          "export_ms": 5.1142,
+          "fallback": "",
+          "finalize_ms": 210.6976,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-transition",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 9.5063,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.1033,
+          "tool_changes": 4,
+          "wall_ms": 220.8068,
+          "peak_working_set_bytes": 23502848,
+          "process_wall_ms": 304.4975000011618
+        },
+        {
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "expected": "",
+          "export_ms": 13.5387,
+          "fallback": "",
+          "finalize_ms": 253.4006,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-transition",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 4.8075,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0451,
+          "tool_changes": 4,
+          "wall_ms": 258.5186,
+          "peak_working_set_bytes": 23126016,
+          "process_wall_ms": 334.64680000179214
+        },
+        {
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "expected": "",
+          "export_ms": 5.8064,
+          "fallback": "",
+          "finalize_ms": 246.5955,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-transition",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 11.0596,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0891,
+          "tool_changes": 4,
+          "wall_ms": 258.1507,
+          "peak_working_set_bytes": 23105536,
+          "process_wall_ms": 343.6790999985533
+        }
+      ]
+    },
+    "P1-cylinder": {
+      "spec": {
+        "id": "P1-cylinder",
+        "shape": "cylinder",
+        "height": 0.48,
+        "resolution": 64,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 154888,
+          "min": 154888,
+          "max": 154888
+        },
+        "cells": {
+          "median": 4448,
+          "min": 4448,
+          "max": 4448
+        },
+        "dependencies": {
+          "median": 847,
+          "min": 847,
+          "max": 847
+        },
+        "export_ms": {
+          "median": 16.6636,
+          "min": 16.3074,
+          "max": 17.8864
+        },
+        "finalize_ms": {
+          "median": 423.437,
+          "min": 405.2001,
+          "max": 545.5918
+        },
+        "gcode_bytes": {
+          "median": 687104,
+          "min": 687104,
+          "max": 687104
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 1187941,
+          "min": 1187941,
+          "max": 1187941
+        },
+        "interface_faces": {
+          "median": 380,
+          "min": 380,
+          "max": 380
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 168,
+          "min": 168,
+          "max": 168
+        },
+        "paths_ms": {
+          "median": 282.3045,
+          "min": 258.2206,
+          "max": 415.7344
+        },
+        "peak_working_set_bytes": {
+          "median": 25468928,
+          "min": 25300992,
+          "max": 25710592
+        },
+        "process_wall_ms": {
+          "median": 884.2192000010982,
+          "min": 811.7731000020285,
+          "max": 938.1351999982144
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 2108,
+          "min": 2108,
+          "max": 2108
+        },
+        "snapshot_ms": {
+          "median": 0.1036,
+          "min": 0.0802,
+          "max": 0.2005
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 789.9232,
+          "min": 690.7935,
+          "max": 839.628
+        }
+      },
+      "samples": [
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 16.3074,
+          "fallback": "",
+          "finalize_ms": 545.5918,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-cylinder",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 279.2661,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1036,
+          "tool_changes": 4,
+          "wall_ms": 825.2381,
+          "peak_working_set_bytes": 25513984,
+          "process_wall_ms": 901.9410999972024
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 17.8864,
+          "fallback": "",
+          "finalize_ms": 531.3676,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-cylinder",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 258.2206,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.0802,
+          "tool_changes": 4,
+          "wall_ms": 789.9232,
+          "peak_working_set_bytes": 25468928,
+          "process_wall_ms": 884.2192000010982
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 16.7193,
+          "fallback": "",
+          "finalize_ms": 407.8508,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-cylinder",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 282.3045,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.2005,
+          "tool_changes": 4,
+          "wall_ms": 690.7935,
+          "peak_working_set_bytes": 25300992,
+          "process_wall_ms": 811.7731000020285
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 16.4442,
+          "fallback": "",
+          "finalize_ms": 405.2001,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-cylinder",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 363.2615,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1557,
+          "tool_changes": 4,
+          "wall_ms": 768.9942,
+          "peak_working_set_bytes": 25452544,
+          "process_wall_ms": 865.2638000057777
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 16.6636,
+          "fallback": "",
+          "finalize_ms": 423.437,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P1-cylinder",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 415.7344,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1002,
+          "tool_changes": 4,
+          "wall_ms": 839.628,
+          "peak_working_set_bytes": 25710592,
+          "process_wall_ms": 938.1351999982144
+        }
+      ]
+    },
+    "P2-regions-1": {
+      "spec": {
+        "id": "P2-regions-1",
+        "shape": "stress",
+        "regions": 1,
+        "recipes": 1,
+        "physical": 2,
+        "topology": "stripes",
+        "height_change": "constant",
+        "resolution": 0,
+        "process": "classic",
+        "state": "translation",
+        "threads": 2,
+        "seed": 20261026,
+        "expected": "paint_not_matching_full_height_stripes"
+      },
+      "summary": {
+        "connected_recipe_components": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "finalize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "mesh_triangles": {
+          "median": 28,
+          "min": 28,
+          "max": 28
+        },
+        "paint_candidate_upper_bound": {
+          "median": 48,
+          "min": 48,
+          "max": 48
+        },
+        "paths_ms": {
+          "median": 0.0731,
+          "min": 0.0584,
+          "max": 0.0784
+        },
+        "peak_working_set_bytes": {
+          "median": 19824640,
+          "min": 19730432,
+          "max": 19849216
+        },
+        "physical": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "process_wall_ms": {
+          "median": 85.30700000119396,
+          "min": 78.47239999682643,
+          "max": 96.90270000282908
+        },
+        "recipes": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "regions": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "resolution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seed": {
+          "median": 20261026,
+          "min": 20261026,
+          "max": 20261026
+        },
+        "snapshot_ms": {
+          "median": 0.1008,
+          "min": 0.0845,
+          "max": 0.1242
+        },
+        "source_approximation_mm": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_ms": {
+          "median": 0.6026,
+          "min": 0.5382,
+          "max": 0.6396
+        }
+      },
+      "samples": [
+        {
+          "connected_recipe_components": 1,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-1",
+          "mesh_triangles": 28,
+          "paint_candidate_upper_bound": 48,
+          "paths_ms": 0.0746,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 1,
+          "regions": 1,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1242,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6026,
+          "peak_working_set_bytes": 19730432,
+          "process_wall_ms": 78.47239999682643
+        },
+        {
+          "connected_recipe_components": 1,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-1",
+          "mesh_triangles": 28,
+          "paint_candidate_upper_bound": 48,
+          "paths_ms": 0.0584,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 1,
+          "regions": 1,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.0845,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.5382,
+          "peak_working_set_bytes": 19824640,
+          "process_wall_ms": 91.60469999915222
+        },
+        {
+          "connected_recipe_components": 1,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-1",
+          "mesh_triangles": 28,
+          "paint_candidate_upper_bound": 48,
+          "paths_ms": 0.0731,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 1,
+          "regions": 1,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1055,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6351,
+          "peak_working_set_bytes": 19828736,
+          "process_wall_ms": 96.90270000282908
+        },
+        {
+          "connected_recipe_components": 1,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-1",
+          "mesh_triangles": 28,
+          "paint_candidate_upper_bound": 48,
+          "paths_ms": 0.0784,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 1,
+          "regions": 1,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1008,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6396,
+          "peak_working_set_bytes": 19738624,
+          "process_wall_ms": 84.84930000122404
+        },
+        {
+          "connected_recipe_components": 1,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-1",
+          "mesh_triangles": 28,
+          "paint_candidate_upper_bound": 48,
+          "paths_ms": 0.0592,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 1,
+          "regions": 1,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.0852,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.5384,
+          "peak_working_set_bytes": 19849216,
+          "process_wall_ms": 85.30700000119396
+        }
+      ]
+    },
+    "P2-regions-4": {
+      "spec": {
+        "id": "P2-regions-4",
+        "shape": "stress",
+        "regions": 4,
+        "recipes": 2,
+        "physical": 2,
+        "topology": "stripes",
+        "height_change": "constant",
+        "resolution": 0,
+        "process": "classic",
+        "state": "translation",
+        "threads": 2,
+        "seed": 20261026,
+        "expected": "paint_not_matching_full_height_stripes"
+      },
+      "summary": {
+        "connected_recipe_components": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "finalize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "mesh_triangles": {
+          "median": 100,
+          "min": 100,
+          "max": 100
+        },
+        "paint_candidate_upper_bound": {
+          "median": 624,
+          "min": 624,
+          "max": 624
+        },
+        "paths_ms": {
+          "median": 0.1048,
+          "min": 0.0518,
+          "max": 0.142
+        },
+        "peak_working_set_bytes": {
+          "median": 19795968,
+          "min": 19750912,
+          "max": 19873792
+        },
+        "physical": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "process_wall_ms": {
+          "median": 71.84129999950528,
+          "min": 58.59760000021197,
+          "max": 91.23859999817796
+        },
+        "recipes": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "regions": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "resolution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seed": {
+          "median": 20261026,
+          "min": 20261026,
+          "max": 20261026
+        },
+        "snapshot_ms": {
+          "median": 0.1159,
+          "min": 0.0661,
+          "max": 0.1585
+        },
+        "source_approximation_mm": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_ms": {
+          "median": 0.6456,
+          "min": 0.3598,
+          "max": 0.7275
+        }
+      },
+      "samples": [
+        {
+          "connected_recipe_components": 4,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-4",
+          "mesh_triangles": 100,
+          "paint_candidate_upper_bound": 624,
+          "paths_ms": 0.111,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 4,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1272,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6456,
+          "peak_working_set_bytes": 19849216,
+          "process_wall_ms": 91.23859999817796
+        },
+        {
+          "connected_recipe_components": 4,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-4",
+          "mesh_triangles": 100,
+          "paint_candidate_upper_bound": 624,
+          "paths_ms": 0.142,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 4,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1585,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.7275,
+          "peak_working_set_bytes": 19873792,
+          "process_wall_ms": 71.84129999950528
+        },
+        {
+          "connected_recipe_components": 4,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-4",
+          "mesh_triangles": 100,
+          "paint_candidate_upper_bound": 624,
+          "paths_ms": 0.0518,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 4,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.0661,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.3598,
+          "peak_working_set_bytes": 19750912,
+          "process_wall_ms": 58.73660000361269
+        },
+        {
+          "connected_recipe_components": 4,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-4",
+          "mesh_triangles": 100,
+          "paint_candidate_upper_bound": 624,
+          "paths_ms": 0.1048,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 4,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1159,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6474,
+          "peak_working_set_bytes": 19771392,
+          "process_wall_ms": 58.59760000021197
+        },
+        {
+          "connected_recipe_components": 4,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-4",
+          "mesh_triangles": 100,
+          "paint_candidate_upper_bound": 624,
+          "paths_ms": 0.0741,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 4,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1064,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.5038,
+          "peak_working_set_bytes": 19795968,
+          "process_wall_ms": 75.38539999950444
+        }
+      ]
+    },
+    "P2-regions-16": {
+      "spec": {
+        "id": "P2-regions-16",
+        "shape": "stress",
+        "regions": 16,
+        "recipes": 2,
+        "physical": 2,
+        "topology": "stripes",
+        "height_change": "constant",
+        "resolution": 0,
+        "process": "classic",
+        "state": "translation",
+        "threads": 2,
+        "seed": 20261026,
+        "expected": "paint_not_matching_full_height_stripes"
+      },
+      "summary": {
+        "connected_recipe_components": {
+          "median": 16,
+          "min": 16,
+          "max": 16
+        },
+        "finalize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "mesh_triangles": {
+          "median": 388,
+          "min": 388,
+          "max": 388
+        },
+        "paint_candidate_upper_bound": {
+          "median": 9408,
+          "min": 9408,
+          "max": 9408
+        },
+        "paths_ms": {
+          "median": 0.2579,
+          "min": 0.1759,
+          "max": 0.2714
+        },
+        "peak_working_set_bytes": {
+          "median": 19881984,
+          "min": 19763200,
+          "max": 19935232
+        },
+        "physical": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "process_wall_ms": {
+          "median": 95.6408999991254,
+          "min": 78.79789999424247,
+          "max": 97.02119999565184
+        },
+        "recipes": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "regions": {
+          "median": 16,
+          "min": 16,
+          "max": 16
+        },
+        "resolution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seed": {
+          "median": 20261026,
+          "min": 20261026,
+          "max": 20261026
+        },
+        "snapshot_ms": {
+          "median": 0.2374,
+          "min": 0.1454,
+          "max": 0.3988
+        },
+        "source_approximation_mm": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_ms": {
+          "median": 0.8507,
+          "min": 0.6327,
+          "max": 1.1936
+        }
+      },
+      "samples": [
+        {
+          "connected_recipe_components": 16,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-16",
+          "mesh_triangles": 388,
+          "paint_candidate_upper_bound": 9408,
+          "paths_ms": 0.2714,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 16,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.3988,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 1.1936,
+          "peak_working_set_bytes": 19894272,
+          "process_wall_ms": 97.02119999565184
+        },
+        {
+          "connected_recipe_components": 16,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-16",
+          "mesh_triangles": 388,
+          "paint_candidate_upper_bound": 9408,
+          "paths_ms": 0.2635,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 16,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.2374,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.9363,
+          "peak_working_set_bytes": 19881984,
+          "process_wall_ms": 88.45740000106161
+        },
+        {
+          "connected_recipe_components": 16,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-16",
+          "mesh_triangles": 388,
+          "paint_candidate_upper_bound": 9408,
+          "paths_ms": 0.1759,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 16,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1454,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6327,
+          "peak_working_set_bytes": 19763200,
+          "process_wall_ms": 95.6408999991254
+        },
+        {
+          "connected_recipe_components": 16,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-16",
+          "mesh_triangles": 388,
+          "paint_candidate_upper_bound": 9408,
+          "paths_ms": 0.2579,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 16,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.2405,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.8507,
+          "peak_working_set_bytes": 19935232,
+          "process_wall_ms": 78.79789999424247
+        },
+        {
+          "connected_recipe_components": 16,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-16",
+          "mesh_triangles": 388,
+          "paint_candidate_upper_bound": 9408,
+          "paths_ms": 0.1897,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 16,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.1662,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 0.6679,
+          "peak_working_set_bytes": 19861504,
+          "process_wall_ms": 95.8427000005031
+        }
+      ]
+    },
+    "P2-regions-64": {
+      "spec": {
+        "id": "P2-regions-64",
+        "shape": "stress",
+        "regions": 64,
+        "recipes": 2,
+        "physical": 2,
+        "topology": "stripes",
+        "height_change": "constant",
+        "resolution": 0,
+        "process": "classic",
+        "state": "translation",
+        "threads": 2,
+        "seed": 20261026,
+        "expected": "paint_not_matching_full_height_stripes"
+      },
+      "summary": {
+        "connected_recipe_components": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "finalize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "mesh_triangles": {
+          "median": 1540,
+          "min": 1540,
+          "max": 1540
+        },
+        "paint_candidate_upper_bound": {
+          "median": 148224,
+          "min": 148224,
+          "max": 148224
+        },
+        "paths_ms": {
+          "median": 0.892,
+          "min": 0.474,
+          "max": 0.9572
+        },
+        "peak_working_set_bytes": {
+          "median": 19996672,
+          "min": 19984384,
+          "max": 20029440
+        },
+        "physical": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "process_wall_ms": {
+          "median": 77.81600000453182,
+          "min": 63.90510000346694,
+          "max": 94.38569999474566
+        },
+        "recipes": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "regions": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "resolution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seed": {
+          "median": 20261026,
+          "min": 20261026,
+          "max": 20261026
+        },
+        "snapshot_ms": {
+          "median": 0.4856,
+          "min": 0.312,
+          "max": 0.5667
+        },
+        "source_approximation_mm": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_ms": {
+          "median": 1.9049,
+          "min": 1.3308,
+          "max": 2.1107
+        }
+      },
+      "samples": [
+        {
+          "connected_recipe_components": 64,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-64",
+          "mesh_triangles": 1540,
+          "paint_candidate_upper_bound": 148224,
+          "paths_ms": 0.474,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 64,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.468,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 1.3308,
+          "peak_working_set_bytes": 19984384,
+          "process_wall_ms": 76.6310999970301
+        },
+        {
+          "connected_recipe_components": 64,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-64",
+          "mesh_triangles": 1540,
+          "paint_candidate_upper_bound": 148224,
+          "paths_ms": 0.9075,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 64,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.312,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 1.6646,
+          "peak_working_set_bytes": 19996672,
+          "process_wall_ms": 63.90510000346694
+        },
+        {
+          "connected_recipe_components": 64,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-64",
+          "mesh_triangles": 1540,
+          "paint_candidate_upper_bound": 148224,
+          "paths_ms": 0.7398,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 64,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.5667,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 2.1107,
+          "peak_working_set_bytes": 19996672,
+          "process_wall_ms": 77.81600000453182
+        },
+        {
+          "connected_recipe_components": 64,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-64",
+          "mesh_triangles": 1540,
+          "paint_candidate_upper_bound": 148224,
+          "paths_ms": 0.892,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 64,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.4856,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 1.9049,
+          "peak_working_set_bytes": 20029440,
+          "process_wall_ms": 94.38569999474566
+        },
+        {
+          "connected_recipe_components": 64,
+          "expected": "paint_not_matching_full_height_stripes",
+          "fallback": "paint_not_matching_full_height_stripes",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-64",
+          "mesh_triangles": 1540,
+          "paint_candidate_upper_bound": 148224,
+          "paths_ms": 0.9572,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 64,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 0.5265,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 1.9505,
+          "peak_working_set_bytes": 20008960,
+          "process_wall_ms": 93.11829999933252
+        }
+      ]
+    },
+    "P2-regions-256": {
+      "spec": {
+        "id": "P2-regions-256",
+        "shape": "stress",
+        "regions": 256,
+        "recipes": 2,
+        "physical": 2,
+        "topology": "stripes",
+        "height_change": "constant",
+        "resolution": 0,
+        "process": "classic",
+        "state": "translation",
+        "threads": 2,
+        "seed": 20261026,
+        "expected": "paint_domain_candidate_limit"
+      },
+      "summary": {
+        "connected_recipe_components": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "finalize_ms": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "mesh_triangles": {
+          "median": 6148,
+          "min": 6148,
+          "max": 6148
+        },
+        "paint_candidate_upper_bound": {
+          "median": 2362368,
+          "min": 2362368,
+          "max": 2362368
+        },
+        "paths_ms": {
+          "median": 1.4267,
+          "min": 1.1115,
+          "max": 2.7813
+        },
+        "peak_working_set_bytes": {
+          "median": 21815296,
+          "min": 21696512,
+          "max": 21934080
+        },
+        "physical": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "process_wall_ms": {
+          "median": 110.90629999671364,
+          "min": 75.37670000601793,
+          "max": 141.92770000227029
+        },
+        "recipes": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "regions": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "resolution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seed": {
+          "median": 20261026,
+          "min": 20261026,
+          "max": 20261026
+        },
+        "snapshot_ms": {
+          "median": 2.1637,
+          "min": 1.0283,
+          "max": 2.9074
+        },
+        "source_approximation_mm": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_ms": {
+          "median": 4.3663,
+          "min": 2.5579,
+          "max": 5.7014
+        }
+      },
+      "samples": [
+        {
+          "connected_recipe_components": 256,
+          "expected": "paint_domain_candidate_limit",
+          "fallback": "paint_domain_candidate_limit",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-256",
+          "mesh_triangles": 6148,
+          "paint_candidate_upper_bound": 2362368,
+          "paths_ms": 1.1115,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 256,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 1.0283,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 2.5579,
+          "peak_working_set_bytes": 21852160,
+          "process_wall_ms": 141.92770000227029
+        },
+        {
+          "connected_recipe_components": 256,
+          "expected": "paint_domain_candidate_limit",
+          "fallback": "paint_domain_candidate_limit",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-256",
+          "mesh_triangles": 6148,
+          "paint_candidate_upper_bound": 2362368,
+          "paths_ms": 2.7813,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 256,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 2.1637,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 5.7014,
+          "peak_working_set_bytes": 21934080,
+          "process_wall_ms": 131.48160000127973
+        },
+        {
+          "connected_recipe_components": 256,
+          "expected": "paint_domain_candidate_limit",
+          "fallback": "paint_domain_candidate_limit",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-256",
+          "mesh_triangles": 6148,
+          "paint_candidate_upper_bound": 2362368,
+          "paths_ms": 1.4267,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 256,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 2.2998,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 4.3663,
+          "peak_working_set_bytes": 21749760,
+          "process_wall_ms": 110.90629999671364
+        },
+        {
+          "connected_recipe_components": 256,
+          "expected": "paint_domain_candidate_limit",
+          "fallback": "paint_domain_candidate_limit",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-256",
+          "mesh_triangles": 6148,
+          "paint_candidate_upper_bound": 2362368,
+          "paths_ms": 1.1885,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 256,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 1.2859,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 3.1217,
+          "peak_working_set_bytes": 21815296,
+          "process_wall_ms": 75.37670000601793
+        },
+        {
+          "connected_recipe_components": 256,
+          "expected": "paint_domain_candidate_limit",
+          "fallback": "paint_domain_candidate_limit",
+          "finalize_ms": 0.0,
+          "geometry_reuses": 0,
+          "height_change": "constant",
+          "id": "P2-regions-256",
+          "mesh_triangles": 6148,
+          "paint_candidate_upper_bound": 2362368,
+          "paths_ms": 2.0065,
+          "physical": 2,
+          "process": "classic",
+          "recipes": 2,
+          "regions": 256,
+          "resolution": 0,
+          "seed": 20261026,
+          "shape": "stress",
+          "snapshot_ms": 2.9074,
+          "source_approximation_mm": 0.0,
+          "state": "translation",
+          "threads": 2,
+          "topology": "stripes",
+          "wall_ms": 5.4899,
+          "peak_working_set_bytes": 21696512,
+          "process_wall_ms": 92.88570000353502
+        }
+      ]
+    },
+    "P3-mesh-16": {
+      "spec": {
+        "id": "P3-mesh-16",
+        "shape": "cylinder",
+        "height": 0.48,
+        "resolution": 16,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 145014,
+          "min": 145014,
+          "max": 145014
+        },
+        "cells": {
+          "median": 4248,
+          "min": 4248,
+          "max": 4248
+        },
+        "dependencies": {
+          "median": 903,
+          "min": 903,
+          "max": 903
+        },
+        "export_ms": {
+          "median": 8.5902,
+          "min": 7.0348,
+          "max": 14.2358
+        },
+        "finalize_ms": {
+          "median": 452.603,
+          "min": 390.1135,
+          "max": 498.7062
+        },
+        "gcode_bytes": {
+          "median": 693651,
+          "min": 693651,
+          "max": 693651
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 1116717,
+          "min": 1116717,
+          "max": 1116717
+        },
+        "interface_faces": {
+          "median": 92,
+          "min": 92,
+          "max": 92
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 184,
+          "min": 184,
+          "max": 184
+        },
+        "paths_ms": {
+          "median": 88.2633,
+          "min": 80.4394,
+          "max": 110.0097
+        },
+        "peak_working_set_bytes": {
+          "median": 25169920,
+          "min": 25088000,
+          "max": 25440256
+        },
+        "process_wall_ms": {
+          "median": 629.1740000015125,
+          "min": 575.6160000019008,
+          "max": 701.2918999971589
+        },
+        "resolution": {
+          "median": 16,
+          "min": 16,
+          "max": 16
+        },
+        "segments": {
+          "median": 2100,
+          "min": 2100,
+          "max": 2100
+        },
+        "snapshot_ms": {
+          "median": 0.099,
+          "min": 0.0393,
+          "max": 0.1124
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 540.6207,
+          "min": 478.9373,
+          "max": 609.2162
+        }
+      },
+      "samples": [
+        {
+          "candidates": 145014,
+          "cells": 4248,
+          "dependencies": 903,
+          "expected": "",
+          "export_ms": 7.3015,
+          "fallback": "",
+          "finalize_ms": 498.7062,
+          "gcode_bytes": 693651,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-16",
+          "index_visits": 1116717,
+          "interface_faces": 92,
+          "logical_cycles": 2,
+          "paths": 184,
+          "paths_ms": 110.0097,
+          "resolution": 16,
+          "segments": 2100,
+          "shape": "cylinder",
+          "snapshot_ms": 0.099,
+          "tool_changes": 4,
+          "wall_ms": 609.2162,
+          "peak_working_set_bytes": 25088000,
+          "process_wall_ms": 701.2918999971589
+        },
+        {
+          "candidates": 145014,
+          "cells": 4248,
+          "dependencies": 903,
+          "expected": "",
+          "export_ms": 8.5902,
+          "fallback": "",
+          "finalize_ms": 390.1135,
+          "gcode_bytes": 693651,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-16",
+          "index_visits": 1116717,
+          "interface_faces": 92,
+          "logical_cycles": 2,
+          "paths": 184,
+          "paths_ms": 88.2633,
+          "resolution": 16,
+          "segments": 2100,
+          "shape": "cylinder",
+          "snapshot_ms": 0.106,
+          "tool_changes": 4,
+          "wall_ms": 478.9373,
+          "peak_working_set_bytes": 25169920,
+          "process_wall_ms": 580.8076999965124
+        },
+        {
+          "candidates": 145014,
+          "cells": 4248,
+          "dependencies": 903,
+          "expected": "",
+          "export_ms": 7.0348,
+          "fallback": "",
+          "finalize_ms": 452.603,
+          "gcode_bytes": 693651,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-16",
+          "index_visits": 1116717,
+          "interface_faces": 92,
+          "logical_cycles": 2,
+          "paths": 184,
+          "paths_ms": 87.4419,
+          "resolution": 16,
+          "segments": 2100,
+          "shape": "cylinder",
+          "snapshot_ms": 0.092,
+          "tool_changes": 4,
+          "wall_ms": 540.6207,
+          "peak_working_set_bytes": 25190400,
+          "process_wall_ms": 641.6672000050312
+        },
+        {
+          "candidates": 145014,
+          "cells": 4248,
+          "dependencies": 903,
+          "expected": "",
+          "export_ms": 14.2358,
+          "fallback": "",
+          "finalize_ms": 466.6735,
+          "gcode_bytes": 693651,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-16",
+          "index_visits": 1116717,
+          "interface_faces": 92,
+          "logical_cycles": 2,
+          "paths": 184,
+          "paths_ms": 80.4394,
+          "resolution": 16,
+          "segments": 2100,
+          "shape": "cylinder",
+          "snapshot_ms": 0.0393,
+          "tool_changes": 4,
+          "wall_ms": 547.3397,
+          "peak_working_set_bytes": 25169920,
+          "process_wall_ms": 629.1740000015125
+        },
+        {
+          "candidates": 145014,
+          "cells": 4248,
+          "dependencies": 903,
+          "expected": "",
+          "export_ms": 8.7403,
+          "fallback": "",
+          "finalize_ms": 391.8442,
+          "gcode_bytes": 693651,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-16",
+          "index_visits": 1116717,
+          "interface_faces": 92,
+          "logical_cycles": 2,
+          "paths": 184,
+          "paths_ms": 89.0389,
+          "resolution": 16,
+          "segments": 2100,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1124,
+          "tool_changes": 4,
+          "wall_ms": 481.5565,
+          "peak_working_set_bytes": 25440256,
+          "process_wall_ms": 575.6160000019008
+        }
+      ]
+    },
+    "P3-mesh-32": {
+      "spec": {
+        "id": "P3-mesh-32",
+        "shape": "cylinder",
+        "height": 0.48,
+        "resolution": 32,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 148618,
+          "min": 148618,
+          "max": 148618
+        },
+        "cells": {
+          "median": 4358,
+          "min": 4358,
+          "max": 4358
+        },
+        "dependencies": {
+          "median": 815,
+          "min": 815,
+          "max": 815
+        },
+        "export_ms": {
+          "median": 9.0634,
+          "min": 7.1709,
+          "max": 16.2908
+        },
+        "finalize_ms": {
+          "median": 427.7119,
+          "min": 378.3357,
+          "max": 481.4756
+        },
+        "gcode_bytes": {
+          "median": 675896,
+          "min": 675896,
+          "max": 675896
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 1146473,
+          "min": 1146473,
+          "max": 1146473
+        },
+        "interface_faces": {
+          "median": 188,
+          "min": 188,
+          "max": 188
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 160,
+          "min": 160,
+          "max": 160
+        },
+        "paths_ms": {
+          "median": 158.3828,
+          "min": 142.9035,
+          "max": 172.2938
+        },
+        "peak_working_set_bytes": {
+          "median": 25821184,
+          "min": 25784320,
+          "max": 26271744
+        },
+        "process_wall_ms": {
+          "median": 678.6868999988656,
+          "min": 617.6433000000543,
+          "max": 714.2004000052111
+        },
+        "resolution": {
+          "median": 32,
+          "min": 32,
+          "max": 32
+        },
+        "segments": {
+          "median": 2084,
+          "min": 2084,
+          "max": 2084
+        },
+        "snapshot_ms": {
+          "median": 0.0899,
+          "min": 0.0407,
+          "max": 0.1581
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 584.8261,
+          "min": 534.9698,
+          "max": 640.1021
+        }
+      },
+      "samples": [
+        {
+          "candidates": 148618,
+          "cells": 4358,
+          "dependencies": 815,
+          "expected": "",
+          "export_ms": 16.2908,
+          "fallback": "",
+          "finalize_ms": 427.7119,
+          "gcode_bytes": 675896,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-32",
+          "index_visits": 1146473,
+          "interface_faces": 188,
+          "logical_cycles": 2,
+          "paths": 160,
+          "paths_ms": 142.9035,
+          "resolution": 32,
+          "segments": 2084,
+          "shape": "cylinder",
+          "snapshot_ms": 0.0442,
+          "tool_changes": 4,
+          "wall_ms": 570.9303,
+          "peak_working_set_bytes": 25968640,
+          "process_wall_ms": 654.6533999935491
+        },
+        {
+          "candidates": 148618,
+          "cells": 4358,
+          "dependencies": 815,
+          "expected": "",
+          "export_ms": 7.1709,
+          "fallback": "",
+          "finalize_ms": 411.8561,
+          "gcode_bytes": 675896,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-32",
+          "index_visits": 1146473,
+          "interface_faces": 188,
+          "logical_cycles": 2,
+          "paths": 160,
+          "paths_ms": 172.2938,
+          "resolution": 32,
+          "segments": 2084,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1581,
+          "tool_changes": 4,
+          "wall_ms": 584.8261,
+          "peak_working_set_bytes": 25784320,
+          "process_wall_ms": 678.6868999988656
+        },
+        {
+          "candidates": 148618,
+          "cells": 4358,
+          "dependencies": 815,
+          "expected": "",
+          "export_ms": 9.0634,
+          "fallback": "",
+          "finalize_ms": 481.4756,
+          "gcode_bytes": 675896,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-32",
+          "index_visits": 1146473,
+          "interface_faces": 188,
+          "logical_cycles": 2,
+          "paths": 160,
+          "paths_ms": 158.3828,
+          "resolution": 32,
+          "segments": 2084,
+          "shape": "cylinder",
+          "snapshot_ms": 0.0407,
+          "tool_changes": 4,
+          "wall_ms": 640.1021,
+          "peak_working_set_bytes": 25821184,
+          "process_wall_ms": 714.2004000052111
+        },
+        {
+          "candidates": 148618,
+          "cells": 4358,
+          "dependencies": 815,
+          "expected": "",
+          "export_ms": 9.3401,
+          "fallback": "",
+          "finalize_ms": 458.496,
+          "gcode_bytes": 675896,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-32",
+          "index_visits": 1146473,
+          "interface_faces": 188,
+          "logical_cycles": 2,
+          "paths": 160,
+          "paths_ms": 161.5864,
+          "resolution": 32,
+          "segments": 2084,
+          "shape": "cylinder",
+          "snapshot_ms": 0.0899,
+          "tool_changes": 4,
+          "wall_ms": 620.58,
+          "peak_working_set_bytes": 26271744,
+          "process_wall_ms": 695.608900001389
+        },
+        {
+          "candidates": 148618,
+          "cells": 4358,
+          "dependencies": 815,
+          "expected": "",
+          "export_ms": 7.6638,
+          "fallback": "",
+          "finalize_ms": 378.3357,
+          "gcode_bytes": 675896,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-32",
+          "index_visits": 1146473,
+          "interface_faces": 188,
+          "logical_cycles": 2,
+          "paths": 160,
+          "paths_ms": 156.0294,
+          "resolution": 32,
+          "segments": 2084,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1265,
+          "tool_changes": 4,
+          "wall_ms": 534.9698,
+          "peak_working_set_bytes": 25788416,
+          "process_wall_ms": 617.6433000000543
+        }
+      ]
+    },
+    "P3-mesh-64": {
+      "spec": {
+        "id": "P3-mesh-64",
+        "shape": "cylinder",
+        "height": 0.48,
+        "resolution": 64,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 154888,
+          "min": 154888,
+          "max": 154888
+        },
+        "cells": {
+          "median": 4448,
+          "min": 4448,
+          "max": 4448
+        },
+        "dependencies": {
+          "median": 847,
+          "min": 847,
+          "max": 847
+        },
+        "export_ms": {
+          "median": 9.0361,
+          "min": 6.787,
+          "max": 11.18
+        },
+        "finalize_ms": {
+          "median": 478.0625,
+          "min": 413.4769,
+          "max": 589.4234
+        },
+        "gcode_bytes": {
+          "median": 687104,
+          "min": 687104,
+          "max": 687104
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 1187941,
+          "min": 1187941,
+          "max": 1187941
+        },
+        "interface_faces": {
+          "median": 380,
+          "min": 380,
+          "max": 380
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 168,
+          "min": 168,
+          "max": 168
+        },
+        "paths_ms": {
+          "median": 345.482,
+          "min": 309.2391,
+          "max": 461.4481
+        },
+        "peak_working_set_bytes": {
+          "median": 25473024,
+          "min": 25460736,
+          "max": 25571328
+        },
+        "process_wall_ms": {
+          "median": 949.6756000007736,
+          "min": 860.1610999976401,
+          "max": 1068.445700002485
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 2108,
+          "min": 2108,
+          "max": 2108
+        },
+        "snapshot_ms": {
+          "median": 0.1548,
+          "min": 0.0692,
+          "max": 0.3775
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 875.545,
+          "min": 797.3128,
+          "max": 982.6694
+        }
+      },
+      "samples": [
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 11.18,
+          "fallback": "",
+          "finalize_ms": 589.4234,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-64",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 392.4242,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.2617,
+          "tool_changes": 4,
+          "wall_ms": 982.6694,
+          "peak_working_set_bytes": 25460736,
+          "process_wall_ms": 1068.445700002485
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 6.787,
+          "fallback": "",
+          "finalize_ms": 413.4769,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-64",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 461.4481,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1548,
+          "tool_changes": 4,
+          "wall_ms": 875.545,
+          "peak_working_set_bytes": 25571328,
+          "process_wall_ms": 956.9760000013048
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 9.711,
+          "fallback": "",
+          "finalize_ms": 478.0625,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-64",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 345.482,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.3775,
+          "tool_changes": 4,
+          "wall_ms": 824.5249,
+          "peak_working_set_bytes": 25501696,
+          "process_wall_ms": 917.6851999945939
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 9.0361,
+          "fallback": "",
+          "finalize_ms": 463.5933,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-64",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 333.47,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.0692,
+          "tool_changes": 4,
+          "wall_ms": 797.3128,
+          "peak_working_set_bytes": 25468928,
+          "process_wall_ms": 860.1610999976401
+        },
+        {
+          "candidates": 154888,
+          "cells": 4448,
+          "dependencies": 847,
+          "expected": "",
+          "export_ms": 7.2736,
+          "fallback": "",
+          "finalize_ms": 574.4969,
+          "gcode_bytes": 687104,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P3-mesh-64",
+          "index_visits": 1187941,
+          "interface_faces": 380,
+          "logical_cycles": 2,
+          "paths": 168,
+          "paths_ms": 309.2391,
+          "resolution": 64,
+          "segments": 2108,
+          "shape": "cylinder",
+          "snapshot_ms": 0.1529,
+          "tool_changes": 4,
+          "wall_ms": 884.388,
+          "peak_working_set_bytes": 25473024,
+          "process_wall_ms": 949.6756000007736
+        }
+      ]
+    },
+    "P4-cycles-1": {
+      "spec": {
+        "id": "P4-cycles-1",
+        "shape": "MB01",
+        "height": 0.24,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 75320,
+          "min": 75320,
+          "max": 75320
+        },
+        "cells": {
+          "median": 2944,
+          "min": 2944,
+          "max": 2944
+        },
+        "dependencies": {
+          "median": 130,
+          "min": 130,
+          "max": 130
+        },
+        "export_ms": {
+          "median": 9.4798,
+          "min": 6.6611,
+          "max": 12.2886
+        },
+        "finalize_ms": {
+          "median": 242.2723,
+          "min": 225.1375,
+          "max": 285.4727
+        },
+        "gcode_bytes": {
+          "median": 461606,
+          "min": 461606,
+          "max": 461606
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.24,
+          "min": 0.24,
+          "max": 0.24
+        },
+        "index_visits": {
+          "median": 367875,
+          "min": 367875,
+          "max": 367875
+        },
+        "interface_faces": {
+          "median": 6,
+          "min": 6,
+          "max": 6
+        },
+        "logical_cycles": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "paths": {
+          "median": 86,
+          "min": 86,
+          "max": 86
+        },
+        "paths_ms": {
+          "median": 16.1607,
+          "min": 11.6945,
+          "max": 26.8346
+        },
+        "peak_working_set_bytes": {
+          "median": 23818240,
+          "min": 23764992,
+          "max": 23920640
+        },
+        "process_wall_ms": {
+          "median": 357.87219999474473,
+          "min": 343.3057000002009,
+          "max": 397.4568999983603
+        },
+        "segments": {
+          "median": 1472,
+          "min": 1472,
+          "max": 1472
+        },
+        "snapshot_ms": {
+          "median": 0.0815,
+          "min": 0.0351,
+          "max": 0.0886
+        },
+        "tool_changes": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_ms": {
+          "median": 263.1671,
+          "min": 250.1419,
+          "max": 300.8186
+        }
+      },
+      "samples": [
+        {
+          "candidates": 75320,
+          "cells": 2944,
+          "dependencies": 130,
+          "expected": "",
+          "export_ms": 6.6611,
+          "fallback": "",
+          "finalize_ms": 235.8014,
+          "gcode_bytes": 461606,
+          "geometry_reuses": 0,
+          "height": 0.24,
+          "id": "P4-cycles-1",
+          "index_visits": 367875,
+          "interface_faces": 6,
+          "logical_cycles": 1,
+          "paths": 86,
+          "paths_ms": 26.8346,
+          "segments": 1472,
+          "shape": "MB01",
+          "snapshot_ms": 0.0815,
+          "tool_changes": 2,
+          "wall_ms": 263.1671,
+          "peak_working_set_bytes": 23764992,
+          "process_wall_ms": 343.3057000002009
+        },
+        {
+          "candidates": 75320,
+          "cells": 2944,
+          "dependencies": 130,
+          "expected": "",
+          "export_ms": 12.2886,
+          "fallback": "",
+          "finalize_ms": 258.5765,
+          "gcode_bytes": 461606,
+          "geometry_reuses": 0,
+          "height": 0.24,
+          "id": "P4-cycles-1",
+          "index_visits": 367875,
+          "interface_faces": 6,
+          "logical_cycles": 1,
+          "paths": 86,
+          "paths_ms": 16.1607,
+          "segments": 1472,
+          "shape": "MB01",
+          "snapshot_ms": 0.0849,
+          "tool_changes": 2,
+          "wall_ms": 275.3214,
+          "peak_working_set_bytes": 23920640,
+          "process_wall_ms": 366.8422999980976
+        },
+        {
+          "candidates": 75320,
+          "cells": 2944,
+          "dependencies": 130,
+          "expected": "",
+          "export_ms": 9.4798,
+          "fallback": "",
+          "finalize_ms": 242.2723,
+          "gcode_bytes": 461606,
+          "geometry_reuses": 0,
+          "height": 0.24,
+          "id": "P4-cycles-1",
+          "index_visits": 367875,
+          "interface_faces": 6,
+          "logical_cycles": 1,
+          "paths": 86,
+          "paths_ms": 11.6945,
+          "segments": 1472,
+          "shape": "MB01",
+          "snapshot_ms": 0.0351,
+          "tool_changes": 2,
+          "wall_ms": 254.2126,
+          "peak_working_set_bytes": 23810048,
+          "process_wall_ms": 357.87219999474473
+        },
+        {
+          "candidates": 75320,
+          "cells": 2944,
+          "dependencies": 130,
+          "expected": "",
+          "export_ms": 11.5691,
+          "fallback": "",
+          "finalize_ms": 285.4727,
+          "gcode_bytes": 461606,
+          "geometry_reuses": 0,
+          "height": 0.24,
+          "id": "P4-cycles-1",
+          "index_visits": 367875,
+          "interface_faces": 6,
+          "logical_cycles": 1,
+          "paths": 86,
+          "paths_ms": 14.8956,
+          "segments": 1472,
+          "shape": "MB01",
+          "snapshot_ms": 0.075,
+          "tool_changes": 2,
+          "wall_ms": 300.8186,
+          "peak_working_set_bytes": 23818240,
+          "process_wall_ms": 397.4568999983603
+        },
+        {
+          "candidates": 75320,
+          "cells": 2944,
+          "dependencies": 130,
+          "expected": "",
+          "export_ms": 7.4484,
+          "fallback": "",
+          "finalize_ms": 225.1375,
+          "gcode_bytes": 461606,
+          "geometry_reuses": 0,
+          "height": 0.24,
+          "id": "P4-cycles-1",
+          "index_visits": 367875,
+          "interface_faces": 6,
+          "logical_cycles": 1,
+          "paths": 86,
+          "paths_ms": 24.4527,
+          "segments": 1472,
+          "shape": "MB01",
+          "snapshot_ms": 0.0886,
+          "tool_changes": 2,
+          "wall_ms": 250.1419,
+          "peak_working_set_bytes": 23859200,
+          "process_wall_ms": 349.4104000055813
+        }
+      ]
+    },
+    "P4-cycles-2": {
+      "spec": {
+        "id": "P4-cycles-2",
+        "shape": "MB01",
+        "height": 0.48,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 180252,
+          "min": 180252,
+          "max": 180252
+        },
+        "cells": {
+          "median": 5888,
+          "min": 5888,
+          "max": 5888
+        },
+        "dependencies": {
+          "median": 882,
+          "min": 882,
+          "max": 882
+        },
+        "export_ms": {
+          "median": 11.076,
+          "min": 9.6868,
+          "max": 21.1546
+        },
+        "finalize_ms": {
+          "median": 539.8022,
+          "min": 504.3792,
+          "max": 556.4645
+        },
+        "gcode_bytes": {
+          "median": 923622,
+          "min": 923622,
+          "max": 923622
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 1460563,
+          "min": 1460563,
+          "max": 1460563
+        },
+        "interface_faces": {
+          "median": 22,
+          "min": 22,
+          "max": 22
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 172,
+          "min": 172,
+          "max": 172
+        },
+        "paths_ms": {
+          "median": 42.9262,
+          "min": 33.6251,
+          "max": 62.1828
+        },
+        "peak_working_set_bytes": {
+          "median": 25862144,
+          "min": 25796608,
+          "max": 25915392
+        },
+        "process_wall_ms": {
+          "median": 694.837600000028,
+          "min": 660.9164999972563,
+          "max": 702.6105999975698
+        },
+        "segments": {
+          "median": 2944,
+          "min": 2944,
+          "max": 2944
+        },
+        "snapshot_ms": {
+          "median": 0.0782,
+          "min": 0.0355,
+          "max": 0.0838
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 589.9269,
+          "min": 548.7728,
+          "max": 593.6345
+        }
+      },
+      "samples": [
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 21.1546,
+          "fallback": "",
+          "finalize_ms": 504.3792,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P4-cycles-2",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 62.1828,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0721,
+          "tool_changes": 4,
+          "wall_ms": 567.0224,
+          "peak_working_set_bytes": 25874432,
+          "process_wall_ms": 694.837600000028
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 9.6868,
+          "fallback": "",
+          "finalize_ms": 539.8022,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P4-cycles-2",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 50.9595,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0829,
+          "tool_changes": 4,
+          "wall_ms": 591.2865,
+          "peak_working_set_bytes": 25841664,
+          "process_wall_ms": 702.6105999975698
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 15.3673,
+          "fallback": "",
+          "finalize_ms": 556.03,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P4-cycles-2",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 33.6251,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0355,
+          "tool_changes": 4,
+          "wall_ms": 589.9269,
+          "peak_working_set_bytes": 25862144,
+          "process_wall_ms": 682.200199997169
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 11.076,
+          "fallback": "",
+          "finalize_ms": 556.4645,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P4-cycles-2",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 36.6491,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0838,
+          "tool_changes": 4,
+          "wall_ms": 593.6345,
+          "peak_working_set_bytes": 25915392,
+          "process_wall_ms": 699.4955000045593
+        },
+        {
+          "candidates": 180252,
+          "cells": 5888,
+          "dependencies": 882,
+          "expected": "",
+          "export_ms": 10.1244,
+          "fallback": "",
+          "finalize_ms": 505.351,
+          "gcode_bytes": 923622,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P4-cycles-2",
+          "index_visits": 1460563,
+          "interface_faces": 22,
+          "logical_cycles": 2,
+          "paths": 172,
+          "paths_ms": 42.9262,
+          "segments": 2944,
+          "shape": "MB01",
+          "snapshot_ms": 0.0782,
+          "tool_changes": 4,
+          "wall_ms": 548.7728,
+          "peak_working_set_bytes": 25796608,
+          "process_wall_ms": 660.9164999972563
+        }
+      ]
+    },
+    "P4-cycles-4": {
+      "spec": {
+        "id": "P4-cycles-4",
+        "shape": "MB01",
+        "height": 0.96,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 390100,
+          "min": 390100,
+          "max": 390100
+        },
+        "cells": {
+          "median": 11776,
+          "min": 11776,
+          "max": 11776
+        },
+        "dependencies": {
+          "median": 2386,
+          "min": 2386,
+          "max": 2386
+        },
+        "export_ms": {
+          "median": 24.5509,
+          "min": 23.2687,
+          "max": 28.0275
+        },
+        "finalize_ms": {
+          "median": 1320.034,
+          "min": 1184.2175,
+          "max": 1365.0537
+        },
+        "gcode_bytes": {
+          "median": 1847212,
+          "min": 1847212,
+          "max": 1847212
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.96,
+          "min": 0.96,
+          "max": 0.96
+        },
+        "index_visits": {
+          "median": 4704953,
+          "min": 4704953,
+          "max": 4704953
+        },
+        "interface_faces": {
+          "median": 52,
+          "min": 52,
+          "max": 52
+        },
+        "logical_cycles": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "paths": {
+          "median": 344,
+          "min": 344,
+          "max": 344
+        },
+        "paths_ms": {
+          "median": 87.6624,
+          "min": 72.1116,
+          "max": 96.5479
+        },
+        "peak_working_set_bytes": {
+          "median": 30437376,
+          "min": 30302208,
+          "max": 30490624
+        },
+        "process_wall_ms": {
+          "median": 1531.7986999943969,
+          "min": 1354.0391999995336,
+          "max": 1656.7464000036125
+        },
+        "segments": {
+          "median": 5888,
+          "min": 5888,
+          "max": 5888
+        },
+        "snapshot_ms": {
+          "median": 0.0416,
+          "min": 0.032,
+          "max": 0.0801
+        },
+        "tool_changes": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "wall_ms": {
+          "median": 1408.2237,
+          "min": 1256.5638,
+          "max": 1461.926
+        }
+      },
+      "samples": [
+        {
+          "candidates": 390100,
+          "cells": 11776,
+          "dependencies": 2386,
+          "expected": "",
+          "export_ms": 28.0275,
+          "fallback": "",
+          "finalize_ms": 1330.9539,
+          "gcode_bytes": 1847212,
+          "geometry_reuses": 0,
+          "height": 0.96,
+          "id": "P4-cycles-4",
+          "index_visits": 4704953,
+          "interface_faces": 52,
+          "logical_cycles": 4,
+          "paths": 344,
+          "paths_ms": 84.0367,
+          "segments": 5888,
+          "shape": "MB01",
+          "snapshot_ms": 0.0416,
+          "tool_changes": 8,
+          "wall_ms": 1415.3212,
+          "peak_working_set_bytes": 30486528,
+          "process_wall_ms": 1656.7464000036125
+        },
+        {
+          "candidates": 390100,
+          "cells": 11776,
+          "dependencies": 2386,
+          "expected": "",
+          "export_ms": 23.9389,
+          "fallback": "",
+          "finalize_ms": 1320.034,
+          "gcode_bytes": 1847212,
+          "geometry_reuses": 0,
+          "height": 0.96,
+          "id": "P4-cycles-4",
+          "index_visits": 4704953,
+          "interface_faces": 52,
+          "logical_cycles": 4,
+          "paths": 344,
+          "paths_ms": 87.6624,
+          "segments": 5888,
+          "shape": "MB01",
+          "snapshot_ms": 0.0801,
+          "tool_changes": 8,
+          "wall_ms": 1408.2237,
+          "peak_working_set_bytes": 30420992,
+          "process_wall_ms": 1531.7986999943969
+        },
+        {
+          "candidates": 390100,
+          "cells": 11776,
+          "dependencies": 2386,
+          "expected": "",
+          "export_ms": 24.5509,
+          "fallback": "",
+          "finalize_ms": 1206.8065,
+          "gcode_bytes": 1847212,
+          "geometry_reuses": 0,
+          "height": 0.96,
+          "id": "P4-cycles-4",
+          "index_visits": 4704953,
+          "interface_faces": 52,
+          "logical_cycles": 4,
+          "paths": 344,
+          "paths_ms": 93.4302,
+          "segments": 5888,
+          "shape": "MB01",
+          "snapshot_ms": 0.0337,
+          "tool_changes": 8,
+          "wall_ms": 1300.4788,
+          "peak_working_set_bytes": 30437376,
+          "process_wall_ms": 1397.3003999999491
+        },
+        {
+          "candidates": 390100,
+          "cells": 11776,
+          "dependencies": 2386,
+          "expected": "",
+          "export_ms": 23.2687,
+          "fallback": "",
+          "finalize_ms": 1365.0537,
+          "gcode_bytes": 1847212,
+          "geometry_reuses": 0,
+          "height": 0.96,
+          "id": "P4-cycles-4",
+          "index_visits": 4704953,
+          "interface_faces": 52,
+          "logical_cycles": 4,
+          "paths": 344,
+          "paths_ms": 96.5479,
+          "segments": 5888,
+          "shape": "MB01",
+          "snapshot_ms": 0.0439,
+          "tool_changes": 8,
+          "wall_ms": 1461.926,
+          "peak_working_set_bytes": 30302208,
+          "process_wall_ms": 1567.4814000012702
+        },
+        {
+          "candidates": 390100,
+          "cells": 11776,
+          "dependencies": 2386,
+          "expected": "",
+          "export_ms": 26.1099,
+          "fallback": "",
+          "finalize_ms": 1184.2175,
+          "gcode_bytes": 1847212,
+          "geometry_reuses": 0,
+          "height": 0.96,
+          "id": "P4-cycles-4",
+          "index_visits": 4704953,
+          "interface_faces": 52,
+          "logical_cycles": 4,
+          "paths": 344,
+          "paths_ms": 72.1116,
+          "segments": 5888,
+          "shape": "MB01",
+          "snapshot_ms": 0.032,
+          "tool_changes": 8,
+          "wall_ms": 1256.5638,
+          "peak_working_set_bytes": 30490624,
+          "process_wall_ms": 1354.0391999995336
+        }
+      ]
+    },
+    "P4-cycles-8": {
+      "spec": {
+        "id": "P4-cycles-8",
+        "shape": "MB01",
+        "height": 1.92,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 809796,
+          "min": 809796,
+          "max": 809796
+        },
+        "cells": {
+          "median": 23552,
+          "min": 23552,
+          "max": 23552
+        },
+        "dependencies": {
+          "median": 5394,
+          "min": 5394,
+          "max": 5394
+        },
+        "export_ms": {
+          "median": 45.0526,
+          "min": 40.8738,
+          "max": 49.853
+        },
+        "finalize_ms": {
+          "median": 2454.1588,
+          "min": 2318.8772,
+          "max": 2462.5859
+        },
+        "gcode_bytes": {
+          "median": 3705788,
+          "min": 3705788,
+          "max": 3705788
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 1.92,
+          "min": 1.92,
+          "max": 1.92
+        },
+        "index_visits": {
+          "median": 13508011,
+          "min": 13508011,
+          "max": 13508011
+        },
+        "interface_faces": {
+          "median": 112,
+          "min": 112,
+          "max": 112
+        },
+        "logical_cycles": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "paths": {
+          "median": 688,
+          "min": 688,
+          "max": 688
+        },
+        "paths_ms": {
+          "median": 182.045,
+          "min": 166.5657,
+          "max": 218.1201
+        },
+        "peak_working_set_bytes": {
+          "median": 39051264,
+          "min": 38928384,
+          "max": 39301120
+        },
+        "process_wall_ms": {
+          "median": 2728.2430000050226,
+          "min": 2622.6265000004787,
+          "max": 2788.989599997876
+        },
+        "segments": {
+          "median": 11776,
+          "min": 11776,
+          "max": 11776
+        },
+        "snapshot_ms": {
+          "median": 0.0437,
+          "min": 0.031,
+          "max": 0.091
+        },
+        "tool_changes": {
+          "median": 16,
+          "min": 16,
+          "max": 16
+        },
+        "wall_ms": {
+          "median": 2629.3659,
+          "min": 2495.5319,
+          "max": 2672.5632
+        }
+      },
+      "samples": [
+        {
+          "candidates": 809796,
+          "cells": 23552,
+          "dependencies": 5394,
+          "expected": "",
+          "export_ms": 44.1952,
+          "fallback": "",
+          "finalize_ms": 2457.698,
+          "gcode_bytes": 3705788,
+          "geometry_reuses": 0,
+          "height": 1.92,
+          "id": "P4-cycles-8",
+          "index_visits": 13508011,
+          "interface_faces": 112,
+          "logical_cycles": 8,
+          "paths": 688,
+          "paths_ms": 182.045,
+          "segments": 11776,
+          "shape": "MB01",
+          "snapshot_ms": 0.0394,
+          "tool_changes": 16,
+          "wall_ms": 2640.0307,
+          "peak_working_set_bytes": 38928384,
+          "process_wall_ms": 2736.9827999937115
+        },
+        {
+          "candidates": 809796,
+          "cells": 23552,
+          "dependencies": 5394,
+          "expected": "",
+          "export_ms": 48.158,
+          "fallback": "",
+          "finalize_ms": 2454.1588,
+          "gcode_bytes": 3705788,
+          "geometry_reuses": 0,
+          "height": 1.92,
+          "id": "P4-cycles-8",
+          "index_visits": 13508011,
+          "interface_faces": 112,
+          "logical_cycles": 8,
+          "paths": 688,
+          "paths_ms": 218.1201,
+          "segments": 11776,
+          "shape": "MB01",
+          "snapshot_ms": 0.0437,
+          "tool_changes": 16,
+          "wall_ms": 2672.5632,
+          "peak_working_set_bytes": 39301120,
+          "process_wall_ms": 2788.989599997876
+        },
+        {
+          "candidates": 809796,
+          "cells": 23552,
+          "dependencies": 5394,
+          "expected": "",
+          "export_ms": 49.853,
+          "fallback": "",
+          "finalize_ms": 2318.8772,
+          "gcode_bytes": 3705788,
+          "geometry_reuses": 0,
+          "height": 1.92,
+          "id": "P4-cycles-8",
+          "index_visits": 13508011,
+          "interface_faces": 112,
+          "logical_cycles": 8,
+          "paths": 688,
+          "paths_ms": 176.2998,
+          "segments": 11776,
+          "shape": "MB01",
+          "snapshot_ms": 0.0487,
+          "tool_changes": 16,
+          "wall_ms": 2495.5319,
+          "peak_working_set_bytes": 39051264,
+          "process_wall_ms": 2622.6265000004787
+        },
+        {
+          "candidates": 809796,
+          "cells": 23552,
+          "dependencies": 5394,
+          "expected": "",
+          "export_ms": 45.0526,
+          "fallback": "",
+          "finalize_ms": 2418.8807,
+          "gcode_bytes": 3705788,
+          "geometry_reuses": 0,
+          "height": 1.92,
+          "id": "P4-cycles-8",
+          "index_visits": 13508011,
+          "interface_faces": 112,
+          "logical_cycles": 8,
+          "paths": 688,
+          "paths_ms": 206.9019,
+          "segments": 11776,
+          "shape": "MB01",
+          "snapshot_ms": 0.091,
+          "tool_changes": 16,
+          "wall_ms": 2626.564,
+          "peak_working_set_bytes": 38973440,
+          "process_wall_ms": 2728.2430000050226
+        },
+        {
+          "candidates": 809796,
+          "cells": 23552,
+          "dependencies": 5394,
+          "expected": "",
+          "export_ms": 40.8738,
+          "fallback": "",
+          "finalize_ms": 2462.5859,
+          "gcode_bytes": 3705788,
+          "geometry_reuses": 0,
+          "height": 1.92,
+          "id": "P4-cycles-8",
+          "index_visits": 13508011,
+          "interface_faces": 112,
+          "logical_cycles": 8,
+          "paths": 688,
+          "paths_ms": 166.5657,
+          "segments": 11776,
+          "shape": "MB01",
+          "snapshot_ms": 0.031,
+          "tool_changes": 16,
+          "wall_ms": 2629.3659,
+          "peak_working_set_bytes": 39186432,
+          "process_wall_ms": 2722.146400003112
+        }
+      ]
+    },
+    "P5-hole-copies-1": {
+      "spec": {
+        "id": "P5-hole-copies-1",
+        "shape": "hole_plate",
+        "height": 0.48,
+        "resolution": 64,
+        "copies": 1,
+        "infill_pattern": "concentric",
+        "infill_angle": 0.0,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 266952,
+          "min": 266952,
+          "max": 266952
+        },
+        "cells": {
+          "median": 7592,
+          "min": 7592,
+          "max": 7592
+        },
+        "copies": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "dependencies": {
+          "median": 1085,
+          "min": 1085,
+          "max": 1085
+        },
+        "export_ms": {
+          "median": 15.8006,
+          "min": 12.0765,
+          "max": 17.151
+        },
+        "finalize_ms": {
+          "median": 786.621,
+          "min": 692.1098,
+          "max": 897.6196
+        },
+        "gcode_bytes": {
+          "median": 1196481,
+          "min": 1196481,
+          "max": 1196481
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 2029745,
+          "min": 2029745,
+          "max": 2029745
+        },
+        "infill_angle": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "interface_faces": {
+          "median": 832,
+          "min": 832,
+          "max": 832
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 304,
+          "min": 304,
+          "max": 304
+        },
+        "paths_ms": {
+          "median": 908.9156,
+          "min": 750.0511,
+          "max": 1062.9679
+        },
+        "peak_working_set_bytes": {
+          "median": 29229056,
+          "min": 28618752,
+          "max": 29601792
+        },
+        "process_wall_ms": {
+          "median": 1760.4957000003196,
+          "min": 1533.9094000009936,
+          "max": 1967.1636999992188
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 3660,
+          "min": 3660,
+          "max": 3660
+        },
+        "snapshot_ms": {
+          "median": 0.1662,
+          "min": 0.1038,
+          "max": 0.265
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 1667.574,
+          "min": 1460.267,
+          "max": 1875.8024
+        }
+      },
+      "samples": [
+        {
+          "candidates": 266952,
+          "cells": 7592,
+          "copies": 1,
+          "dependencies": 1085,
+          "expected": "",
+          "export_ms": 17.151,
+          "fallback": "",
+          "finalize_ms": 709.8668,
+          "gcode_bytes": 1196481,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-hole-copies-1",
+          "index_visits": 2029745,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 832,
+          "logical_cycles": 2,
+          "paths": 304,
+          "paths_ms": 750.0511,
+          "resolution": 64,
+          "segments": 3660,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1038,
+          "tool_changes": 4,
+          "wall_ms": 1460.267,
+          "peak_working_set_bytes": 28913664,
+          "process_wall_ms": 1533.9094000009936
+        },
+        {
+          "candidates": 266952,
+          "cells": 7592,
+          "copies": 1,
+          "dependencies": 1085,
+          "expected": "",
+          "export_ms": 12.0765,
+          "fallback": "",
+          "finalize_ms": 692.1098,
+          "gcode_bytes": 1196481,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-hole-copies-1",
+          "index_visits": 2029745,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 832,
+          "logical_cycles": 2,
+          "paths": 304,
+          "paths_ms": 933.6422,
+          "resolution": 64,
+          "segments": 3660,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1368,
+          "tool_changes": 4,
+          "wall_ms": 1626.1512,
+          "peak_working_set_bytes": 29229056,
+          "process_wall_ms": 1728.123399996548
+        },
+        {
+          "candidates": 266952,
+          "cells": 7592,
+          "copies": 1,
+          "dependencies": 1085,
+          "expected": "",
+          "export_ms": 15.8006,
+          "fallback": "",
+          "finalize_ms": 897.6196,
+          "gcode_bytes": 1196481,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-hole-copies-1",
+          "index_visits": 2029745,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 832,
+          "logical_cycles": 2,
+          "paths": 304,
+          "paths_ms": 908.9156,
+          "resolution": 64,
+          "segments": 3660,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.2452,
+          "tool_changes": 4,
+          "wall_ms": 1807.2365,
+          "peak_working_set_bytes": 28618752,
+          "process_wall_ms": 1901.8068999939715
+        },
+        {
+          "candidates": 266952,
+          "cells": 7592,
+          "copies": 1,
+          "dependencies": 1085,
+          "expected": "",
+          "export_ms": 16.8286,
+          "fallback": "",
+          "finalize_ms": 812.0421,
+          "gcode_bytes": 1196481,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-hole-copies-1",
+          "index_visits": 2029745,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 832,
+          "logical_cycles": 2,
+          "paths": 304,
+          "paths_ms": 1062.9679,
+          "resolution": 64,
+          "segments": 3660,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.265,
+          "tool_changes": 4,
+          "wall_ms": 1875.8024,
+          "peak_working_set_bytes": 29601792,
+          "process_wall_ms": 1967.1636999992188
+        },
+        {
+          "candidates": 266952,
+          "cells": 7592,
+          "copies": 1,
+          "dependencies": 1085,
+          "expected": "",
+          "export_ms": 13.8168,
+          "fallback": "",
+          "finalize_ms": 786.621,
+          "gcode_bytes": 1196481,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-hole-copies-1",
+          "index_visits": 2029745,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 832,
+          "logical_cycles": 2,
+          "paths": 304,
+          "paths_ms": 880.5184,
+          "resolution": 64,
+          "segments": 3660,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1662,
+          "tool_changes": 4,
+          "wall_ms": 1667.574,
+          "peak_working_set_bytes": 29323264,
+          "process_wall_ms": 1760.4957000003196
+        }
+      ]
+    },
+    "P5-hole-copies-2": {
+      "spec": {
+        "id": "P5-hole-copies-2",
+        "shape": "hole_plate",
+        "height": 0.48,
+        "resolution": 64,
+        "copies": 2,
+        "infill_pattern": "concentric",
+        "infill_angle": 0.0,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 508464,
+          "min": 508464,
+          "max": 508464
+        },
+        "cells": {
+          "median": 14520,
+          "min": 14520,
+          "max": 14520
+        },
+        "copies": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "dependencies": {
+          "median": 2112,
+          "min": 2112,
+          "max": 2112
+        },
+        "export_ms": {
+          "median": 30.8472,
+          "min": 24.3624,
+          "max": 55.3612
+        },
+        "finalize_ms": {
+          "median": 1515.5214,
+          "min": 1325.7642,
+          "max": 1579.0207
+        },
+        "gcode_bytes": {
+          "median": 2279853,
+          "min": 2279853,
+          "max": 2279853
+        },
+        "geometry_reuses": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 4028883,
+          "min": 4028883,
+          "max": 4028883
+        },
+        "infill_angle": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "interface_faces": {
+          "median": 1664,
+          "min": 1664,
+          "max": 1664
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 576,
+          "min": 576,
+          "max": 576
+        },
+        "paths_ms": {
+          "median": 889.2202,
+          "min": 772.0063,
+          "max": 1039.9328
+        },
+        "peak_working_set_bytes": {
+          "median": 33042432,
+          "min": 32854016,
+          "max": 33124352
+        },
+        "process_wall_ms": {
+          "median": 2619.418100002804,
+          "min": 2208.0526999998256,
+          "max": 2660.1710000031744
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 6988,
+          "min": 6988,
+          "max": 6988
+        },
+        "snapshot_ms": {
+          "median": 0.216,
+          "min": 0.165,
+          "max": 0.2805
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 2468.9293,
+          "min": 2098.4911,
+          "max": 2544.779
+        }
+      },
+      "samples": [
+        {
+          "candidates": 508464,
+          "cells": 14520,
+          "copies": 2,
+          "dependencies": 2112,
+          "expected": "",
+          "export_ms": 45.5649,
+          "fallback": "",
+          "finalize_ms": 1515.5214,
+          "gcode_bytes": 2279853,
+          "geometry_reuses": 1,
+          "height": 0.48,
+          "id": "P5-hole-copies-2",
+          "index_visits": 4028883,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 1664,
+          "logical_cycles": 2,
+          "paths": 576,
+          "paths_ms": 862.1939000000001,
+          "resolution": 64,
+          "segments": 6988,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.165,
+          "tool_changes": 4,
+          "wall_ms": 2378.2423,
+          "peak_working_set_bytes": 32985088,
+          "process_wall_ms": 2495.4289000015706
+        },
+        {
+          "candidates": 508464,
+          "cells": 14520,
+          "copies": 2,
+          "dependencies": 2112,
+          "expected": "",
+          "export_ms": 24.3624,
+          "fallback": "",
+          "finalize_ms": 1490.3305,
+          "gcode_bytes": 2279853,
+          "geometry_reuses": 1,
+          "height": 0.48,
+          "id": "P5-hole-copies-2",
+          "index_visits": 4028883,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 1664,
+          "logical_cycles": 2,
+          "paths": 576,
+          "paths_ms": 1039.9328,
+          "resolution": 64,
+          "segments": 6988,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.2616,
+          "tool_changes": 4,
+          "wall_ms": 2531.0231,
+          "peak_working_set_bytes": 33107968,
+          "process_wall_ms": 2660.1710000031744
+        },
+        {
+          "candidates": 508464,
+          "cells": 14520,
+          "copies": 2,
+          "dependencies": 2112,
+          "expected": "",
+          "export_ms": 28.9301,
+          "fallback": "",
+          "finalize_ms": 1576.0958,
+          "gcode_bytes": 2279853,
+          "geometry_reuses": 1,
+          "height": 0.48,
+          "id": "P5-hole-copies-2",
+          "index_visits": 4028883,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 1664,
+          "logical_cycles": 2,
+          "paths": 576,
+          "paths_ms": 968.18,
+          "resolution": 64,
+          "segments": 6988,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1914,
+          "tool_changes": 4,
+          "wall_ms": 2544.779,
+          "peak_working_set_bytes": 33042432,
+          "process_wall_ms": 2647.6791000022786
+        },
+        {
+          "candidates": 508464,
+          "cells": 14520,
+          "copies": 2,
+          "dependencies": 2112,
+          "expected": "",
+          "export_ms": 30.8472,
+          "fallback": "",
+          "finalize_ms": 1325.7642,
+          "gcode_bytes": 2279853,
+          "geometry_reuses": 1,
+          "height": 0.48,
+          "id": "P5-hole-copies-2",
+          "index_visits": 4028883,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 1664,
+          "logical_cycles": 2,
+          "paths": 576,
+          "paths_ms": 772.0063,
+          "resolution": 64,
+          "segments": 6988,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.2805,
+          "tool_changes": 4,
+          "wall_ms": 2098.4911,
+          "peak_working_set_bytes": 32854016,
+          "process_wall_ms": 2208.0526999998256
+        },
+        {
+          "candidates": 508464,
+          "cells": 14520,
+          "copies": 2,
+          "dependencies": 2112,
+          "expected": "",
+          "export_ms": 55.3612,
+          "fallback": "",
+          "finalize_ms": 1579.0207,
+          "gcode_bytes": 2279853,
+          "geometry_reuses": 1,
+          "height": 0.48,
+          "id": "P5-hole-copies-2",
+          "index_visits": 4028883,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 1664,
+          "logical_cycles": 2,
+          "paths": 576,
+          "paths_ms": 889.2202,
+          "resolution": 64,
+          "segments": 6988,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.216,
+          "tool_changes": 4,
+          "wall_ms": 2468.9293,
+          "peak_working_set_bytes": 33124352,
+          "process_wall_ms": 2619.418100002804
+        }
+      ]
+    },
+    "P5-hole-copies-4": {
+      "spec": {
+        "id": "P5-hole-copies-4",
+        "shape": "hole_plate",
+        "height": 0.48,
+        "resolution": 64,
+        "copies": 4,
+        "infill_pattern": "concentric",
+        "infill_angle": 0.0,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 991488,
+          "min": 991488,
+          "max": 991488
+        },
+        "cells": {
+          "median": 28376,
+          "min": 28376,
+          "max": 28376
+        },
+        "copies": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "dependencies": {
+          "median": 4166,
+          "min": 4166,
+          "max": 4166
+        },
+        "export_ms": {
+          "median": 119.045,
+          "min": 74.2925,
+          "max": 148.5032
+        },
+        "finalize_ms": {
+          "median": 3233.3858,
+          "min": 2936.0961,
+          "max": 3802.2322
+        },
+        "gcode_bytes": {
+          "median": 4454754,
+          "min": 4454754,
+          "max": 4454754
+        },
+        "geometry_reuses": {
+          "median": 3,
+          "min": 3,
+          "max": 3
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 7936313,
+          "min": 7936313,
+          "max": 7936313
+        },
+        "infill_angle": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "interface_faces": {
+          "median": 3328,
+          "min": 3328,
+          "max": 3328
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 1120,
+          "min": 1120,
+          "max": 1120
+        },
+        "paths_ms": {
+          "median": 904.2105,
+          "min": 808.035,
+          "max": 973.976
+        },
+        "peak_working_set_bytes": {
+          "median": 43278336,
+          "min": 43012096,
+          "max": 43425792
+        },
+        "process_wall_ms": {
+          "median": 4451.26789999631,
+          "min": 3882.0494999963557,
+          "max": 4884.457300002396
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 13644,
+          "min": 13644,
+          "max": 13644
+        },
+        "snapshot_ms": {
+          "median": 0.1599,
+          "min": 0.0825,
+          "max": 0.2408
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 4208.0196,
+          "min": 3744.6782,
+          "max": 4656.0779
+        }
+      },
+      "samples": [
+        {
+          "candidates": 991488,
+          "cells": 28376,
+          "copies": 4,
+          "dependencies": 4166,
+          "expected": "",
+          "export_ms": 83.0016,
+          "fallback": "",
+          "finalize_ms": 2994.2765,
+          "gcode_bytes": 4454754,
+          "geometry_reuses": 3,
+          "height": 0.48,
+          "id": "P5-hole-copies-4",
+          "index_visits": 7936313,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 3328,
+          "logical_cycles": 2,
+          "paths": 1120,
+          "paths_ms": 904.2105,
+          "resolution": 64,
+          "segments": 13644,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.2408,
+          "tool_changes": 4,
+          "wall_ms": 3899.1399,
+          "peak_working_set_bytes": 43425792,
+          "process_wall_ms": 4094.218100006401
+        },
+        {
+          "candidates": 991488,
+          "cells": 28376,
+          "copies": 4,
+          "dependencies": 4166,
+          "expected": "",
+          "export_ms": 74.2925,
+          "fallback": "",
+          "finalize_ms": 2936.0961,
+          "gcode_bytes": 4454754,
+          "geometry_reuses": 3,
+          "height": 0.48,
+          "id": "P5-hole-copies-4",
+          "index_visits": 7936313,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 3328,
+          "logical_cycles": 2,
+          "paths": 1120,
+          "paths_ms": 808.035,
+          "resolution": 64,
+          "segments": 13644,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1599,
+          "tool_changes": 4,
+          "wall_ms": 3744.6782,
+          "peak_working_set_bytes": 43278336,
+          "process_wall_ms": 3882.0494999963557
+        },
+        {
+          "candidates": 991488,
+          "cells": 28376,
+          "copies": 4,
+          "dependencies": 4166,
+          "expected": "",
+          "export_ms": 148.5032,
+          "fallback": "",
+          "finalize_ms": 3233.3858,
+          "gcode_bytes": 4454754,
+          "geometry_reuses": 3,
+          "height": 0.48,
+          "id": "P5-hole-copies-4",
+          "index_visits": 7936313,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 3328,
+          "logical_cycles": 2,
+          "paths": 1120,
+          "paths_ms": 973.976,
+          "resolution": 64,
+          "segments": 13644,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1907,
+          "tool_changes": 4,
+          "wall_ms": 4208.0196,
+          "peak_working_set_bytes": 43012096,
+          "process_wall_ms": 4451.26789999631
+        },
+        {
+          "candidates": 991488,
+          "cells": 28376,
+          "copies": 4,
+          "dependencies": 4166,
+          "expected": "",
+          "export_ms": 119.045,
+          "fallback": "",
+          "finalize_ms": 3540.228,
+          "gcode_bytes": 4454754,
+          "geometry_reuses": 3,
+          "height": 0.48,
+          "id": "P5-hole-copies-4",
+          "index_visits": 7936313,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 3328,
+          "logical_cycles": 2,
+          "paths": 1120,
+          "paths_ms": 937.8572,
+          "resolution": 64,
+          "segments": 13644,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.133,
+          "tool_changes": 4,
+          "wall_ms": 4478.5741,
+          "peak_working_set_bytes": 43057152,
+          "process_wall_ms": 4682.018199993763
+        },
+        {
+          "candidates": 991488,
+          "cells": 28376,
+          "copies": 4,
+          "dependencies": 4166,
+          "expected": "",
+          "export_ms": 130.6364,
+          "fallback": "",
+          "finalize_ms": 3802.2322,
+          "gcode_bytes": 4454754,
+          "geometry_reuses": 3,
+          "height": 0.48,
+          "id": "P5-hole-copies-4",
+          "index_visits": 7936313,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 3328,
+          "logical_cycles": 2,
+          "paths": 1120,
+          "paths_ms": 853.5629,
+          "resolution": 64,
+          "segments": 13644,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.0825,
+          "tool_changes": 4,
+          "wall_ms": 4656.0779,
+          "peak_working_set_bytes": 43311104,
+          "process_wall_ms": 4884.457300002396
+        }
+      ]
+    },
+    "P5-hole-copies-8": {
+      "spec": {
+        "id": "P5-hole-copies-8",
+        "shape": "hole_plate",
+        "height": 0.48,
+        "resolution": 64,
+        "copies": 8,
+        "infill_pattern": "concentric",
+        "infill_angle": 0.0,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 1957536,
+          "min": 1957536,
+          "max": 1957536
+        },
+        "cells": {
+          "median": 56088,
+          "min": 56088,
+          "max": 56088
+        },
+        "copies": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "dependencies": {
+          "median": 8274,
+          "min": 8274,
+          "max": 8274
+        },
+        "export_ms": {
+          "median": 216.2061,
+          "min": 159.0795,
+          "max": 305.0582
+        },
+        "finalize_ms": {
+          "median": 7992.3402,
+          "min": 6809.525,
+          "max": 8183.1598
+        },
+        "gcode_bytes": {
+          "median": 8817441,
+          "min": 8817441,
+          "max": 8817441
+        },
+        "geometry_reuses": {
+          "median": 7,
+          "min": 7,
+          "max": 7
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 16003853,
+          "min": 16003853,
+          "max": 16003853
+        },
+        "infill_angle": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "interface_faces": {
+          "median": 6656,
+          "min": 6656,
+          "max": 6656
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 2208,
+          "min": 2208,
+          "max": 2208
+        },
+        "paths_ms": {
+          "median": 946.9977000000002,
+          "min": 912.4706,
+          "max": 1042.8498
+        },
+        "peak_working_set_bytes": {
+          "median": 61857792,
+          "min": 61767680,
+          "max": 62050304
+        },
+        "process_wall_ms": {
+          "median": 9329.665600002045,
+          "min": 8102.23440000118,
+          "max": 9468.584900001588
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 26956,
+          "min": 26956,
+          "max": 26956
+        },
+        "snapshot_ms": {
+          "median": 0.1321,
+          "min": 0.0786,
+          "max": 0.3975
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 8939.7272,
+          "min": 7816.5595,
+          "max": 9226.3187
+        }
+      },
+      "samples": [
+        {
+          "candidates": 1957536,
+          "cells": 56088,
+          "copies": 8,
+          "dependencies": 8274,
+          "expected": "",
+          "export_ms": 216.2061,
+          "fallback": "",
+          "finalize_ms": 8153.3078,
+          "gcode_bytes": 8817441,
+          "geometry_reuses": 7,
+          "height": 0.48,
+          "id": "P5-hole-copies-8",
+          "index_visits": 16003853,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 6656,
+          "logical_cycles": 2,
+          "paths": 2208,
+          "paths_ms": 912.4706,
+          "resolution": 64,
+          "segments": 26956,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1321,
+          "tool_changes": 4,
+          "wall_ms": 9066.2282,
+          "peak_working_set_bytes": 61816832,
+          "process_wall_ms": 9375.142099997902
+        },
+        {
+          "candidates": 1957536,
+          "cells": 56088,
+          "copies": 8,
+          "dependencies": 8274,
+          "expected": "",
+          "export_ms": 292.8142,
+          "fallback": "",
+          "finalize_ms": 7370.4767,
+          "gcode_bytes": 8817441,
+          "geometry_reuses": 7,
+          "height": 0.48,
+          "id": "P5-hole-copies-8",
+          "index_visits": 16003853,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 6656,
+          "logical_cycles": 2,
+          "paths": 2208,
+          "paths_ms": 914.8930000000001,
+          "resolution": 64,
+          "segments": 26956,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.2309,
+          "tool_changes": 4,
+          "wall_ms": 8285.9973,
+          "peak_working_set_bytes": 62050304,
+          "process_wall_ms": 8676.634299998113
+        },
+        {
+          "candidates": 1957536,
+          "cells": 56088,
+          "copies": 8,
+          "dependencies": 8274,
+          "expected": "",
+          "export_ms": 305.0582,
+          "fallback": "",
+          "finalize_ms": 7992.3402,
+          "gcode_bytes": 8817441,
+          "geometry_reuses": 7,
+          "height": 0.48,
+          "id": "P5-hole-copies-8",
+          "index_visits": 16003853,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 6656,
+          "logical_cycles": 2,
+          "paths": 2208,
+          "paths_ms": 946.9977000000002,
+          "resolution": 64,
+          "segments": 26956,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.1013,
+          "tool_changes": 4,
+          "wall_ms": 8939.7272,
+          "peak_working_set_bytes": 62013440,
+          "process_wall_ms": 9329.665600002045
+        },
+        {
+          "candidates": 1957536,
+          "cells": 56088,
+          "copies": 8,
+          "dependencies": 8274,
+          "expected": "",
+          "export_ms": 178.8147,
+          "fallback": "",
+          "finalize_ms": 6809.525,
+          "gcode_bytes": 8817441,
+          "geometry_reuses": 7,
+          "height": 0.48,
+          "id": "P5-hole-copies-8",
+          "index_visits": 16003853,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 6656,
+          "logical_cycles": 2,
+          "paths": 2208,
+          "paths_ms": 1006.0917000000001,
+          "resolution": 64,
+          "segments": 26956,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.3975,
+          "tool_changes": 4,
+          "wall_ms": 7816.5595,
+          "peak_working_set_bytes": 61767680,
+          "process_wall_ms": 8102.23440000118
+        },
+        {
+          "candidates": 1957536,
+          "cells": 56088,
+          "copies": 8,
+          "dependencies": 8274,
+          "expected": "",
+          "export_ms": 159.0795,
+          "fallback": "",
+          "finalize_ms": 8183.1598,
+          "gcode_bytes": 8817441,
+          "geometry_reuses": 7,
+          "height": 0.48,
+          "id": "P5-hole-copies-8",
+          "index_visits": 16003853,
+          "infill_angle": 0.0,
+          "infill_pattern": "concentric",
+          "interface_faces": 6656,
+          "logical_cycles": 2,
+          "paths": 2208,
+          "paths_ms": 1042.8498,
+          "resolution": 64,
+          "segments": 26956,
+          "shape": "hole_plate",
+          "snapshot_ms": 0.0786,
+          "tool_changes": 4,
+          "wall_ms": 9226.3187,
+          "peak_working_set_bytes": 61857792,
+          "process_wall_ms": 9468.584900001588
+        }
+      ]
+    },
+    "P5-taper": {
+      "spec": {
+        "id": "P5-taper",
+        "shape": "frustum",
+        "height": 0.48,
+        "resolution": 64,
+        "expected": ""
+      },
+      "summary": {
+        "candidates": {
+          "median": 472104,
+          "min": 472104,
+          "max": 472104
+        },
+        "cells": {
+          "median": 13236,
+          "min": 13236,
+          "max": 13236
+        },
+        "dependencies": {
+          "median": 3383,
+          "min": 3383,
+          "max": 3383
+        },
+        "export_ms": {
+          "median": 64.473,
+          "min": 53.0673,
+          "max": 73.0945
+        },
+        "finalize_ms": {
+          "median": 2153.4633,
+          "min": 1887.2797,
+          "max": 2259.7678
+        },
+        "gcode_bytes": {
+          "median": 2043655,
+          "min": 2043655,
+          "max": 2043655
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 5805470,
+          "min": 5805470,
+          "max": 5805470
+        },
+        "interface_faces": {
+          "median": 888,
+          "min": 888,
+          "max": 888
+        },
+        "logical_cycles": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "paths": {
+          "median": 437,
+          "min": 437,
+          "max": 437
+        },
+        "paths_ms": {
+          "median": 1553.5932,
+          "min": 1487.9481,
+          "max": 1616.7474
+        },
+        "peak_working_set_bytes": {
+          "median": 32174080,
+          "min": 32124928,
+          "max": 32346112
+        },
+        "process_wall_ms": {
+          "median": 3817.6079000040772,
+          "min": 3588.49540000665,
+          "max": 4081.3076999984332
+        },
+        "resolution": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "segments": {
+          "median": 6389,
+          "min": 6389,
+          "max": 6389
+        },
+        "snapshot_ms": {
+          "median": 0.1552,
+          "min": 0.0614,
+          "max": 0.1754
+        },
+        "tool_changes": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "wall_ms": {
+          "median": 3642.0047,
+          "min": 3441.4805,
+          "max": 3813.9792
+        }
+      },
+      "samples": [
+        {
+          "candidates": 472104,
+          "cells": 13236,
+          "dependencies": 3383,
+          "expected": "",
+          "export_ms": 53.0673,
+          "fallback": "",
+          "finalize_ms": 2259.7678,
+          "gcode_bytes": 2043655,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-taper",
+          "index_visits": 5805470,
+          "interface_faces": 888,
+          "logical_cycles": 4,
+          "paths": 437,
+          "paths_ms": 1553.5932,
+          "resolution": 64,
+          "segments": 6389,
+          "shape": "frustum",
+          "snapshot_ms": 0.1754,
+          "tool_changes": 8,
+          "wall_ms": 3813.9792,
+          "peak_working_set_bytes": 32141312,
+          "process_wall_ms": 4081.3076999984332
+        },
+        {
+          "candidates": 472104,
+          "cells": 13236,
+          "dependencies": 3383,
+          "expected": "",
+          "export_ms": 64.473,
+          "fallback": "",
+          "finalize_ms": 1887.2797,
+          "gcode_bytes": 2043655,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-taper",
+          "index_visits": 5805470,
+          "interface_faces": 888,
+          "logical_cycles": 4,
+          "paths": 437,
+          "paths_ms": 1553.6059,
+          "resolution": 64,
+          "segments": 6389,
+          "shape": "frustum",
+          "snapshot_ms": 0.163,
+          "tool_changes": 8,
+          "wall_ms": 3441.4805,
+          "peak_working_set_bytes": 32124928,
+          "process_wall_ms": 3588.49540000665
+        },
+        {
+          "candidates": 472104,
+          "cells": 13236,
+          "dependencies": 3383,
+          "expected": "",
+          "export_ms": 56.8549,
+          "fallback": "",
+          "finalize_ms": 2159.1773,
+          "gcode_bytes": 2043655,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-taper",
+          "index_visits": 5805470,
+          "interface_faces": 888,
+          "logical_cycles": 4,
+          "paths": 437,
+          "paths_ms": 1616.7474,
+          "resolution": 64,
+          "segments": 6389,
+          "shape": "frustum",
+          "snapshot_ms": 0.0849,
+          "tool_changes": 8,
+          "wall_ms": 3776.2345,
+          "peak_working_set_bytes": 32346112,
+          "process_wall_ms": 3915.385600004811
+        },
+        {
+          "candidates": 472104,
+          "cells": 13236,
+          "dependencies": 3383,
+          "expected": "",
+          "export_ms": 73.0945,
+          "fallback": "",
+          "finalize_ms": 2136.3943,
+          "gcode_bytes": 2043655,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-taper",
+          "index_visits": 5805470,
+          "interface_faces": 888,
+          "logical_cycles": 4,
+          "paths": 437,
+          "paths_ms": 1492.4945,
+          "resolution": 64,
+          "segments": 6389,
+          "shape": "frustum",
+          "snapshot_ms": 0.0614,
+          "tool_changes": 8,
+          "wall_ms": 3629.1858,
+          "peak_working_set_bytes": 32174080,
+          "process_wall_ms": 3794.6326000019326
+        },
+        {
+          "candidates": 472104,
+          "cells": 13236,
+          "dependencies": 3383,
+          "expected": "",
+          "export_ms": 65.7943,
+          "fallback": "",
+          "finalize_ms": 2153.4633,
+          "gcode_bytes": 2043655,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P5-taper",
+          "index_visits": 5805470,
+          "interface_faces": 888,
+          "logical_cycles": 4,
+          "paths": 437,
+          "paths_ms": 1487.9481,
+          "resolution": 64,
+          "segments": 6389,
+          "shape": "frustum",
+          "snapshot_ms": 0.1552,
+          "tool_changes": 8,
+          "wall_ms": 3642.0047,
+          "peak_working_set_bytes": 32296960,
+          "process_wall_ms": 3817.6079000040772
+        }
+      ]
+    },
+    "P6-edit-revert": {
+      "spec": {
+        "id": "P6-edit-revert",
+        "shape": "MB02-transition",
+        "height": 0.48,
+        "edit_revert": true,
+        "expected": ""
+      },
+      "summary": {
+        "cache_hit_ms": {
+          "median": 0.009,
+          "min": 0.0085,
+          "max": 0.0223
+        },
+        "candidates": {
+          "median": 86085,
+          "min": 86085,
+          "max": 86085
+        },
+        "cells": {
+          "median": 3040,
+          "min": 3040,
+          "max": 3040
+        },
+        "dependencies": {
+          "median": 491,
+          "min": 491,
+          "max": 491
+        },
+        "edit_ms": {
+          "median": 265.5612,
+          "min": 194.9371,
+          "max": 300.0676
+        },
+        "export_ms": {
+          "median": 8.3107,
+          "min": 5.5861,
+          "max": 12.9709
+        },
+        "finalize_ms": {
+          "median": 232.5829,
+          "min": 213.9814,
+          "max": 347.1246
+        },
+        "gcode_bytes": {
+          "median": 494594,
+          "min": 494594,
+          "max": 494594
+        },
+        "geometry_reuses": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "height": {
+          "median": 0.48,
+          "min": 0.48,
+          "max": 0.48
+        },
+        "index_visits": {
+          "median": 625147,
+          "min": 625147,
+          "max": 625147
+        },
+        "interface_faces": {
+          "median": 48,
+          "min": 48,
+          "max": 48
+        },
+        "logical_cycles": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "paths": {
+          "median": 92,
+          "min": 92,
+          "max": 92
+        },
+        "paths_ms": {
+          "median": 4.7948,
+          "min": 4.5171,
+          "max": 10.3545
+        },
+        "peak_working_set_bytes": {
+          "median": 26128384,
+          "min": 25919488,
+          "max": 26279936
+        },
+        "process_wall_ms": {
+          "median": 1127.4912000008044,
+          "min": 996.5515000003506,
+          "max": 1225.0531000026967
+        },
+        "segments": {
+          "median": 1520,
+          "min": 1520,
+          "max": 1520
+        },
+        "snapshot_ms": {
+          "median": 0.0397,
+          "min": 0.039,
+          "max": 0.1068
+        },
+        "tool_changes": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "wall_ms": {
+          "median": 237.3256,
+          "min": 219.0248,
+          "max": 356.856
+        }
+      },
+      "samples": [
+        {
+          "cache_hit_ms": 0.012,
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "edit_ms": 300.0676,
+          "edit_revert": true,
+          "expected": "",
+          "export_ms": 8.3107,
+          "fallback": "",
+          "finalize_ms": 260.7429,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P6-edit-revert",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 4.7948,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0397,
+          "tool_changes": 4,
+          "wall_ms": 265.7697,
+          "peak_working_set_bytes": 26279936,
+          "process_wall_ms": 1170.4381000017747
+        },
+        {
+          "cache_hit_ms": 0.0085,
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "edit_ms": 194.9371,
+          "edit_revert": true,
+          "expected": "",
+          "export_ms": 7.7559,
+          "fallback": "",
+          "finalize_ms": 232.5829,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P6-edit-revert",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 4.5171,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.039,
+          "tool_changes": 4,
+          "wall_ms": 237.3256,
+          "peak_working_set_bytes": 26267648,
+          "process_wall_ms": 996.5515000003506
+        },
+        {
+          "cache_hit_ms": 0.0088,
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "edit_ms": 294.7532,
+          "edit_revert": true,
+          "expected": "",
+          "export_ms": 5.5861,
+          "fallback": "",
+          "finalize_ms": 213.9814,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P6-edit-revert",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 4.7939,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0395,
+          "tool_changes": 4,
+          "wall_ms": 219.0248,
+          "peak_working_set_bytes": 25972736,
+          "process_wall_ms": 1094.0425000007963
+        },
+        {
+          "cache_hit_ms": 0.0223,
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "edit_ms": 243.6992,
+          "edit_revert": true,
+          "expected": "",
+          "export_ms": 12.2982,
+          "fallback": "",
+          "finalize_ms": 220.3095,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P6-edit-revert",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 10.3545,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.1068,
+          "tool_changes": 4,
+          "wall_ms": 231.1646,
+          "peak_working_set_bytes": 25919488,
+          "process_wall_ms": 1127.4912000008044
+        },
+        {
+          "cache_hit_ms": 0.009,
+          "candidates": 86085,
+          "cells": 3040,
+          "dependencies": 491,
+          "edit_ms": 265.5612,
+          "edit_revert": true,
+          "expected": "",
+          "export_ms": 12.9709,
+          "fallback": "",
+          "finalize_ms": 347.1246,
+          "gcode_bytes": 494594,
+          "geometry_reuses": 0,
+          "height": 0.48,
+          "id": "P6-edit-revert",
+          "index_visits": 625147,
+          "interface_faces": 48,
+          "logical_cycles": 2,
+          "paths": 92,
+          "paths_ms": 9.2939,
+          "segments": 1520,
+          "shape": "MB02-transition",
+          "snapshot_ms": 0.0629,
+          "tool_changes": 4,
+          "wall_ms": 356.856,
+          "peak_working_set_bytes": 26128384,
+          "process_wall_ms": 1225.0531000026967
+        }
+      ]
+    }
+  },
+  "feature_off": {},
+  "budgets": {
+    "enabled_median_limits": {
+      "snapshot_ms": 500,
+      "paths_ms": 8000,
+      "finalize_ms": 20000,
+      "export_ms": 1000,
+      "peak_working_set_bytes": 268435456,
+      "cache_hit_ms": 10
+    },
+    "enabled_failures": [],
+    "enabled_pass": true,
+    "feature_off_time_estimator": "median(new_time_i / old_time_i) for adjacent paired captures",
+    "feature_off_5_percent": {},
+    "feature_off_ratio_of_medians_pass": false,
+    "feature_off_pass": false
+  }
+}

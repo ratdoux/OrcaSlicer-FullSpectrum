@@ -20,6 +20,21 @@ add_executable(${_TEST_NAME}_tests
 	test_gcode_processor.cpp
 	test_full_spectrum_ks_pair_residual.cpp
 	test_mixed_filament.cpp
+	material_band_fixtures.cpp
+	material_band_fixtures.hpp
+	test_material_band_fixtures.cpp
+	test_material_band_solver.cpp
+	test_material_band_input.cpp
+	test_material_band_paths.cpp
+	test_material_band_clipping.cpp
+	test_material_band_topology.cpp
+	test_material_band_schedule.cpp
+	test_material_band_final.cpp
+	test_material_band_production.cpp
+	test_material_band_stack.cpp
+	test_material_band_real_models.cpp
+	test_material_band_corpus.cpp
+	test_material_band_stress.cpp
 	test_obj_image_map.cpp
 	test_mixed_filament_color_golden.cpp
 	test_triangle_selector.cpp

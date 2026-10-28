@@ -58,6 +58,9 @@ enum class ImageMapPerimeterModulationMode {
     ImageControlledWidth,
 };
 
+enum class LocalZEngine { Legacy, MaterialBands };
+enum class MaterialBandBoundaryPolicy { PreservePaintedEdge, AllowTransition };
+
 enum class NoiseType {
     Classic,
     Perlin,
@@ -524,6 +527,8 @@ CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(GCodeFlavor)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(FuzzySkinType)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(FuzzySkinMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(ImageMapPerimeterModulationMode)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(LocalZEngine)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(MaterialBandBoundaryPolicy)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(NoiseType)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(InfillPattern)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(IroningType)
@@ -1417,6 +1422,11 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
                                                                                   image_map_perimeter_modulation_mode))(
         (ConfigOptionFloat, image_map_perimeter_printable_width))((ConfigOptionFloat, mixed_filament_surface_indentation))(
         (ConfigOptionBool, mixed_filament_region_collapse))((ConfigOptionString, mixed_filament_definitions))(
+        (ConfigOptionEnum<LocalZEngine>, local_z_engine))(
+        (ConfigOptionEnum<MaterialBandBoundaryPolicy>, material_band_boundary_policy))(
+        (ConfigOptionFloat, material_band_transition_width))((ConfigOptionPercent, material_band_transition_error))(
+        (ConfigOptionPercent, material_band_gradient_error))(
+        (ConfigOptionString, material_band_tool_sections))((ConfigOptionBool, material_band_stationary_toolchange))(
         (ConfigOptionFloat, dithering_z_step_size))((ConfigOptionBool, dithering_local_z_mode))(
         (ConfigOptionBool, dithering_local_z_whole_objects))((ConfigOptionBool, dithering_local_z_preserve_first_layer))(
         (ConfigOptionBool, dithering_local_z_infill))((ConfigOptionBool, dithering_local_z_direct_multicolor))(

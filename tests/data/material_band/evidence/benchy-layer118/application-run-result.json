@@ -1,0 +1,28 @@
+{
+  "application_build": 119,
+  "source": "C:/Users/radug/Downloads/3DBenchy.3mf",
+  "command_arguments": [
+    "--allow-newer-file",
+    "--slice",
+    "1",
+    "--local-z-engine",
+    "material_bands",
+    "--outputdir",
+    "build-material-band\\evidence\\layer119-application-benchy",
+    "C:/Users/radug/Downloads/3DBenchy.3mf"
+  ],
+  "exit_code": 0,
+  "engine_used": "material_bands",
+  "u1_audit_passed": true,
+  "gcode_sha256": "102f24689f3bf2c8cb2e43263f9f6f44391d40490ff929a52427e822ea4c7123",
+  "gcode_bytes": 360137854,
+  "dock_returns": 470,
+  "original_object_and_brim_cells": 2726325,
+  "combined_cells": 3727125,
+  "combined_paths": 374166,
+  "combined_index_visits": 1543942747,
+  "combined_access_index_visits": 1326776030,
+  "production_index_visit_limit": 2000000000,
+  "log_caveat": "Retained loader temporary-file, bed-exclusion and Voronoi diagnostic messages; not a warning-free log claim.",
+  "qualification": "Application export and U1 command audit passed. Independent canonical geometry and segment reconciliation remain separate evidence."
+}

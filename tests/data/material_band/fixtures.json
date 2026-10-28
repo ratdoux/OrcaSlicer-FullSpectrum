@@ -1,0 +1,373 @@
+{
+  "schema_version": 1,
+  "generator_version": 1,
+  "seed": 20261026,
+  "source_revision": "63117732a0683220530cf690f385055d1f3dd54d",
+  "units": {
+    "length": "mm",
+    "volume": "mm3"
+  },
+  "physical_materials": [
+    {
+      "id": 1,
+      "name": "A"
+    },
+    {
+      "id": 2,
+      "name": "B"
+    }
+  ],
+  "profile": {
+    "macro_height_mm": 0.24,
+    "bead_width_mm": 0.45,
+    "min_active_thickness_mm": 0.04,
+    "max_active_thickness_mm": 0.24,
+    "max_interface_gradient": 0.1,
+    "stack_order": [
+      1,
+      2
+    ],
+    "cadence": [
+      1,
+      1
+    ],
+    "first_active_cycle": 0,
+    "virtual_tool_envelope": {
+      "sections": [
+        {
+          "bottom_mm": 0.0,
+          "top_mm": 0.2,
+          "radius_mm": 0.2
+        },
+        {
+          "bottom_mm": 0.2,
+          "top_mm": 2.0,
+          "radius_mm": 1.0
+        },
+        {
+          "bottom_mm": 2.0,
+          "top_mm": 10.0,
+          "radius_mm": 3.0
+        }
+      ],
+      "clearance_mm": 0.001,
+      "travel_lift_mm": 0.4,
+      "physical_qualification": false
+    },
+    "motion": {
+      "max_volume_mm3_s": 8.0,
+      "max_z_mm_s": 5.0,
+      "max_segment_mm": 0.5
+    }
+  },
+  "budgets": {
+    "interface_mm": 1e-05,
+    "macro_closure_mm": 0.001,
+    "path_approximation_mm": 0.01,
+    "plateau_fraction": 0.005,
+    "relative_volume": 0.0001,
+    "absolute_volume_mm3": 0.0001
+  },
+  "production_overrides": {
+    "layer_height": "0.24",
+    "initial_layer_print_height": "0.24",
+    "mixed_filament_height_lower_bound": "0.04",
+    "mixed_filament_region_collapse": "1",
+    "mixed_filament_gradient_mode": "0",
+    "mixed_filament_advanced_dithering": "0",
+    "mixed_filament_component_bias_enabled": "0",
+    "dithering_local_z_mode": "0",
+    "dithering_local_z_whole_objects": "0",
+    "dithering_local_z_infill": "0",
+    "dithering_local_z_direct_multicolor": "1",
+    "dithering_local_z_independent_layer_height": "1",
+    "dithering_local_z_preserve_first_layer": "1",
+    "enable_prime_tower": "0",
+    "enable_support": "0",
+    "wall_loops": "2",
+    "sparse_infill_density": "100%",
+    "top_shell_layers": "2",
+    "bottom_shell_layers": "2",
+    "brim_width": "0",
+    "skirt_loops": "0",
+    "machine_start_gcode": "G90\nM83\n",
+    "machine_end_gcode": "",
+    "change_filament_gcode": "",
+    "layer_change_gcode": "",
+    "before_layer_change_gcode": "",
+    "use_relative_e_distances": "1"
+  },
+  "fixtures": [
+    {
+      "id": "MB01",
+      "dimensions_mm": [
+        12.0,
+        12.0,
+        2.4
+      ],
+      "field": "constant",
+      "fraction_a": [
+        0.5,
+        0.5
+      ],
+      "mesh_strips": 1,
+      "mesh_triangles": 12,
+      "source_chord_error_mm": 0.0,
+      "paint_scope": "whole_solid",
+      "production_recipe_quantization_fraction": 0.0,
+      "boundary_policy": "preserve_painted_edge",
+      "transition_width_mm": 0.0,
+      "transition_fraction_error": 0.0,
+      "expected_at_m3": {
+        "engine_used": "material_bands",
+        "fallback": false
+      }
+    },
+    {
+      "id": "MB02-edge",
+      "dimensions_mm": [
+        12.0,
+        8.0,
+        2.4
+      ],
+      "field": "step",
+      "fraction_a": [
+        0.25,
+        0.75
+      ],
+      "mesh_strips": 2,
+      "mesh_triangles": 20,
+      "source_chord_error_mm": 0.0,
+      "paint_scope": "painted_shell",
+      "production_recipe_quantization_fraction": 0.0,
+      "boundary_policy": "preserve_painted_edge",
+      "transition_width_mm": 0.0,
+      "transition_fraction_error": 0.0,
+      "expected_at_m3": {
+        "engine_used": "legacy",
+        "fallback": true,
+        "code": "UnsupportedTopology",
+        "detail": "discontinuous_interface"
+      }
+    },
+    {
+      "id": "MB02-transition",
+      "dimensions_mm": [
+        12.0,
+        8.0,
+        2.4
+      ],
+      "field": "step",
+      "fraction_a": [
+        0.25,
+        0.75
+      ],
+      "mesh_strips": 2,
+      "mesh_triangles": 20,
+      "source_chord_error_mm": 0.0,
+      "paint_scope": "painted_shell",
+      "production_recipe_quantization_fraction": 0.0,
+      "boundary_policy": "allow_transition",
+      "transition_width_mm": 2.0,
+      "transition_fraction_error": 0.25,
+      "expected_at_m3": {
+        "engine_used": "material_bands",
+        "fallback": false
+      }
+    },
+    {
+      "id": "MB03",
+      "dimensions_mm": [
+        12.0,
+        8.0,
+        2.4
+      ],
+      "field": "linear",
+      "fraction_a": [
+        0.25,
+        0.75
+      ],
+      "mesh_strips": 51,
+      "mesh_triangles": 412,
+      "source_chord_error_mm": 0.0,
+      "paint_scope": "painted_shell",
+      "production_recipe_quantization_fraction": 0.005,
+      "boundary_policy": "preserve_painted_edge",
+      "transition_width_mm": 0.0,
+      "transition_fraction_error": 0.0,
+      "expected_at_m3": {
+        "engine_used": "material_bands",
+        "fallback": false
+      }
+    }
+  ],
+  "feature_off_cases": [
+    {
+      "id": "OFF-solid",
+      "geometry": "MB01",
+      "paint": false,
+      "legacy_local_z": false
+    },
+    {
+      "id": "OFF-painted",
+      "geometry": "MB02-edge",
+      "paint": true,
+      "legacy_local_z": true
+    },
+    {
+      "id": "OFF-tapered",
+      "geometry": "frustum",
+      "paint": false,
+      "legacy_local_z": false,
+      "radius_bottom_mm": 6.0,
+      "radius_top_mm": 4.0,
+      "height_mm": 4.8,
+      "angular_segments": 64,
+      "source_chord_error_mm": 0.00722726276896557
+    }
+  ],
+  "core_acceptance": {
+    "MB01": {
+      "fallback": "",
+      "engine_used": "material_bands"
+    },
+    "MB02-edge": {
+      "fallback": "discontinuous_interface",
+      "engine_used": "legacy"
+    },
+    "MB02-transition": {
+      "fallback": "",
+      "engine_used": "material_bands"
+    },
+    "MB03": {
+      "fallback": "",
+      "engine_used": "material_bands",
+      "boundary_policy": "allow_transition (production integer-percentage paint quantization)"
+    },
+    "MB04": {
+      "fallback": "painted_domain_requires_box_faces",
+      "engine_used": "legacy"
+    },
+    "MB05": {
+      "fallback": "painted_domain_requires_box_faces",
+      "engine_used": "legacy"
+    },
+    "MB06": {
+      "fallback": "painted_domain_requires_box_faces",
+      "engine_used": "legacy"
+    },
+    "MB07": {
+      "fallback": "painted_domain_requires_box_faces",
+      "engine_used": "legacy"
+    },
+    "MB08": {
+      "fallback": "top_or_bottom_paint_requires_domain_adapter",
+      "engine_used": "legacy"
+    },
+    "MB09": {
+      "fallback": "painted_domain_requires_box_faces",
+      "engine_used": "legacy"
+    },
+    "MB10": {
+      "fallback": "painted_domain_requires_box_faces",
+      "engine_used": "legacy"
+    },
+    "MB11": {
+      "fallback": "multimaterial_painted_shell_requires_domain_adapter",
+      "engine_used": "legacy"
+    },
+    "MB11-reversed": {
+      "fallback": "recipe_stack_or_cadence",
+      "engine_used": "legacy"
+    },
+    "MB11-below-minimum": {
+      "fallback": "active_band_thickness",
+      "engine_used": "legacy"
+    },
+    "MB12": {
+      "fallback": "",
+      "engine_used": "material_bands"
+    },
+    "MB12-edit-revert": {
+      "fallback": "",
+      "engine_used": "material_bands"
+    }
+  },
+  "core_source_meshes": {
+    "round_solids": {
+      "angular_segments": 64,
+      "chord_error_max_mm": 0.00722726276896557
+    },
+    "MB07": {
+      "angles": 48,
+      "height_rings": 24,
+      "radius_mm": 6,
+      "source_approximation": "piecewise conical height rings; reported separately from path tolerance"
+    },
+    "MB08": {
+      "grid": 16,
+      "definition": "z=4+0.02*(x*x-y*y), -5<=x,y<=5",
+      "maximum_interpolation_error_mm": 0.00390625
+    },
+    "MB10": {
+      "angles": 48,
+      "height_rings": 24,
+      "definition": "union of radius-3 spheres at (+/-2,0,2.5), cut at z=0",
+      "oracle": "independent analytic cross sections in test_material_band_topology.cpp",
+      "source_weld_quantum_mm": 1e-06
+    }
+  },
+  "selected_curved_production": {
+    "MB04-uniform": {
+      "height_mm": 0.48,
+      "fallback": ""
+    },
+    "MB05-uniform": {
+      "height_mm": 0.48,
+      "fallback": ""
+    },
+    "MB06-pure": {
+      "height_mm": 0.12,
+      "macro_height_mm": 0.12,
+      "fallback": ""
+    },
+    "MB06-mixed": {
+      "height_mm": 0.48,
+      "macro_height_mm": 0.12,
+      "fallback": "unsupported_bead_footprint"
+    },
+    "MB09-uniform": {
+      "height_mm": 0.48,
+      "fallback": ""
+    }
+  },
+  "production_engine_profile": {
+    "helper": "MaterialBandFixtures::enable_material_bands",
+    "tool_sections_mm": [
+      0,
+      0.2,
+      0.01,
+      0.2,
+      2,
+      0.5,
+      2,
+      10,
+      2
+    ],
+    "gcode_flavor": "reprapfirmware",
+    "stationary_toolchange": true,
+    "purge_matrix_mm3": [
+      0,
+      1,
+      1,
+      0
+    ],
+    "prime_mm3": 1.0,
+    "tower_xy_mm": [
+      50,
+      50
+    ],
+    "wall_loops": "2 for slabs; 1 for curved and MB12",
+    "physical_qualification": false
+  }
+}

@@ -1,0 +1,260 @@
+{
+  "date": "2026-10-27",
+  "baseline_revision": "63117732a0683220530cf690f385055d1f3dd54d",
+  "default_engine": "legacy",
+  "physical_qualification": false,
+  "scope": "Constant whole-solid blends of 3/4 materials; height gradients of 2/3/4 colors.",
+  "gradient_execution": "Shared saved-setting decoders only; owned kernel curve, dose solve, clipping, paths, schedule and export. No legacy gradient sampler, Local-Z planner or rewriting.",
+  "tests": {
+    "ordinary_cases": 63,
+    "ordinary_assertions": 2444463,
+    "stress_cases": 64,
+    "stress_catch_cases": 1,
+    "stress_assertions": 1606551,
+    "stress_engines": {
+      "material_bands": 6,
+      "legacy": 58
+    },
+    "requested_pairs": 680,
+    "valid_requested_pairs": 680,
+    "measured_component_pairs": 659,
+    "regression_cases": 388,
+    "regression_failed": 7,
+    "total_cases": 452,
+    "total_passed": 445,
+    "remaining_preexisting_failures": [
+      "libslic3r:m1: compute uses num_physical bound, remove_physical uses kMax=64 (differential)",
+      "libslic3r:Scenario: Placeholder parser scripting",
+      "libslic3r:Complete cached slots override direct nozzle data atomically",
+      "fff_print:Persistent image maps generate geometry-first perimeter path modulation V2",
+      "fff_print:Mixed print uses the highest bed temperature",
+      "fff_print:Brim-introduced extruder is covered when wall_loops is zero",
+      "fff_print:bed_temperature_initial_layer_single expands to the max"
+    ],
+    "fixed_preexisting_failure": "DynamicPrintConfig serialization / GUI undo snapshot for FloatsOrPercents"
+  },
+  "performance": {
+    "report": "stack/benchmark-summary.json",
+    "enabled_workloads": 25,
+    "budgets": {
+      "enabled_median_limits": {
+        "snapshot_ms": 500,
+        "paths_ms": 8000,
+        "finalize_ms": 20000,
+        "export_ms": 1000,
+        "peak_working_set_bytes": 268435456,
+        "cache_hit_ms": 10
+      },
+      "enabled_failures": [],
+      "enabled_pass": true,
+      "feature_off_time_estimator": "median(new_time_i / old_time_i) for adjacent paired captures",
+      "feature_off_5_percent": {
+        "OFF-solid-bbl": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-painted-bbl": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-tapered-bbl": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-solid-generic": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-painted-generic": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-tapered-generic": {
+          "time_pass": true,
+          "memory_pass": true
+        }
+      },
+      "feature_off_ratio_of_medians_pass": false,
+      "feature_off_pass": true
+    },
+    "measured_binary_sha256": "e5ab67895e915fe926a72f96f41b99c612e7d3c1ed86c3bef69ea4c0428fab05",
+    "provenance": "Same stack implementation, measured before the subsequent config undo-archive dispatch fix. Final binary hashes are recorded separately; these timings are not attributed to a different binary."
+  },
+  "final_feature_off": {
+    "report": "stack/final-feature-off-summary.json",
+    "model_family_combinations": 6,
+    "paired_runs_per_combination": 20,
+    "all_normalized_commands_identical": true,
+    "preview_move_bytes": 104,
+    "budgets": {
+      "enabled_median_limits": {
+        "snapshot_ms": 500,
+        "paths_ms": 8000,
+        "finalize_ms": 20000,
+        "export_ms": 1000,
+        "peak_working_set_bytes": 268435456,
+        "cache_hit_ms": 10
+      },
+      "enabled_failures": [],
+      "enabled_pass": true,
+      "feature_off_time_estimator": "median(new_time_i / old_time_i) for adjacent paired captures",
+      "feature_off_5_percent": {
+        "OFF-solid-bbl": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-painted-bbl": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-tapered-bbl": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-solid-generic": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-painted-generic": {
+          "time_pass": true,
+          "memory_pass": true
+        },
+        "OFF-tapered-generic": {
+          "time_pass": true,
+          "memory_pass": true
+        }
+      },
+      "feature_off_ratio_of_medians_pass": true,
+      "feature_off_pass": true
+    },
+    "timing_note": "Measured after compilation completed, before GUI slicing. The earlier contended-feature-off-summary.json capture ran during compilation and failed timing/memory gates; retained for transparency."
+  },
+  "source_sha256": {
+    "src/libslic3r/MaterialBand/BoxPlanner.cpp": "dedd33a8b58167a2d23524e02ece50fc7c0efbaf1bdad26d12bfe930bdc86280",
+    "src/libslic3r/MaterialBand/BoxPlanner.hpp": "f4b3076bbfc301601afd9c03278c318cac40ffd049b5ef13feb99ec7cd1e22f9",
+    "src/libslic3r/MaterialBand/ClippedPlanner.cpp": "8188ba440acb41f8b3f68fad1a26290364faade64989b5a8755d217e56bca666",
+    "src/libslic3r/MaterialBand/ClippedPlanner.hpp": "49f2eb2fd16bb10608271a7867dc863ca7f33005e1bbfda936d19874c2926e64",
+    "src/libslic3r/MaterialBand/Contracts.cpp": "9d5302357b8233bb5fb6a1a4607cf68eba03c9522997585c0b29fde58ce1b4a0",
+    "src/libslic3r/MaterialBand/Contracts.hpp": "56c761b8066fac842f25fe4558c6f0375d050090472f79949526c5512c2a4be9",
+    "src/libslic3r/MaterialBand/FinalPrintPlan.cpp": "f504d5650df869b729f59575c0dd93e942af71838809e07358faa3ccc5606843",
+    "src/libslic3r/MaterialBand/FinalPrintPlan.hpp": "31e652f92cfc2c40e54917c2590f074f6468143767f1e1bae3974fd392281604",
+    "src/libslic3r/MaterialBand/InputAdapter.cpp": "0862a06f8244ef3ee6a5b4649b3756da87e0b93e4bee7b9f98ba85ccffc5e709",
+    "src/libslic3r/MaterialBand/InputAdapter.hpp": "c31276beca2b118eaf684334fd3f3ccb0b3a7da5b7ff9d9fc6997ac50de5506e",
+    "src/libslic3r/MaterialBand/PaintedBox.cpp": "99ffb97ace9687f5bb799abd5d367a0a25956ce57454eb36fc4628f5834d8e3e",
+    "src/libslic3r/MaterialBand/PaintedBox.hpp": "8ea0be80b88262064f88db484f24aabd87e312fa88e3516c97fbfffe85562c52",
+    "src/libslic3r/MaterialBand/Production.cpp": "4d367db04f29d9e0c3939426efda5cfe135a588a3e5d69254d90438984e41a23",
+    "src/libslic3r/MaterialBand/Production.hpp": "e1a16911e58a782cf1d189c63b91ec81ecbeb2c9501710a7c736af4fdf001e23",
+    "src/libslic3r/MaterialBand/ScheduleExport.cpp": "e8c8c7b49515bd74c4abfdbb48e217ee1f319fafc9c58f7c75a9f4b286ff4484",
+    "src/libslic3r/MaterialBand/Scheduler.cpp": "b4f85ec5ec1b7fa3c5da24ca64aaf263119b66e9b90d2d65a5d42eaf65d9d77f",
+    "src/libslic3r/MaterialBand/Scheduler.hpp": "9baa001f06abbabadca9d57af75710af9601918e14a3df94b615efa921bfa14b",
+    "src/libslic3r/MaterialBand/SlabSolver.cpp": "3dc08acf94df2901ad3d869f5e06ddef4983764b87fa52e6f85e02706125c643",
+    "src/libslic3r/MaterialBand/SlabSolver.hpp": "05bb81a687d5c34ebab3a8272b4668e4c6f948033823989806c08e2bccc81d46",
+    "src/libslic3r/MaterialBand/SolidClipper.cpp": "77af16b598d1f02d1d36d455866522b83eb2c88c76312793e8fa60ed8e56814d",
+    "src/libslic3r/MaterialBand/SolidClipper.hpp": "61e71116e952ca5749ec8667e8056b3fab88732718ad7b34a584ddae248022da",
+    "src/libslic3r/MaterialBand/StackDoseSolver.cpp": "fb59e3b805b13932e8e3879077516f4c1ac0530681aec80655d87d62682cce2e",
+    "src/libslic3r/MaterialBand/StackPlanner.cpp": "440ab4ac780ac60bc6c23e60a4af326794c1a62b021c9056c63833bb70142424",
+    "src/libslic3r/MaterialBand/StackPlanner.hpp": "b1229b891709f13c145a27dc1afb57fbd991cb729bcea2eb769aaf411875d9ea",
+    "src/libslic3r/MaterialBand/Topology.cpp": "9b7a32a63094a5778fafcb73dca0116fa068ae9909740d63e0f196fb67663205",
+    "src/libslic3r/MaterialBand/Topology.hpp": "62aa77e359b465a2f7d742404328f3524a518f656ada23bf980b67110ce445f0",
+    "scripts/material_band_baseline.py": "5e0d7dfe58cfff1bc2d3bf408942772b2786e62d2f016c36f1090ea9f6a2a6ac",
+    "scripts/material_band_benchmark.py": "34bd4ab9cb93b69062917b6ebb173719867027b0276671fd9483330ed5cf87bf",
+    "scripts/material_band_stress.py": "ec61dd014398e6630d9b23fa9de94a5bd5ea0420f7589144ad27ac28e6c130dc",
+    "src/libslic3r/CMakeLists.txt": "e10dba3fde087098dd39dadeda33039e8233fe1455b6bc6d0c5169499fd4a799",
+    "src/libslic3r/GCode.cpp": "4c4a1a905fa78c42d2efb3dbced1c2ebe3e09bd47019dd41399a6c9e05a5ffbe",
+    "src/libslic3r/GCode/GCodeProcessor.cpp": "19980de4e79611b2599fb9c98a71928d2b201a4c555f56482d506ff2f8512e29",
+    "src/libslic3r/GCode/GCodeProcessor.hpp": "ea0b30db470c6a8f47cd3816cdd88fbbd652037b10362d46900650c694b92410",
+    "src/libslic3r/Preset.cpp": "05fa2d6d05c49365d0f808629098344c90641b16ee07ab353c1b6f26ac2bf3e4",
+    "src/libslic3r/Print.cpp": "e22eea02031a3a9eefc396e248d98c8ee4ef61e6889123214e65338cecae6ae7",
+    "src/libslic3r/Print.hpp": "45e9938ed0ae311dd7941faac7a82f80f6a06598b3e9f62a180afc561b5610aa",
+    "src/libslic3r/PrintApply.cpp": "4ddf5a1b5b35ef9f009f44fb015505aad428eec557ddf0ab787e7c93a09466e4",
+    "src/libslic3r/PrintConfig.cpp": "10db0da60bff178486a38fd8c60b5066e426e47a629b6aa6313e76a731e1abab",
+    "src/libslic3r/PrintConfig.hpp": "20adb646a88b383cca2d73d76142dc8eb0f300658e8aafb686c6b21b4fa4cc37",
+    "src/slic3r/GUI/GCodeViewer.cpp": "d7444067618146252cd2a7488f9a184ccc21e49f7472e1177b8e8678ee51a3bc",
+    "src/slic3r/GUI/GCodeViewer.hpp": "4f94b2cf33bb5c6d1b5b2fbaa5b95cccea01d9ca03d89893082a04f1ac1300f0",
+    "src/slic3r/GUI/Tab.cpp": "7cee8a5416dca90977449a576b3bbf34e54c1da63c8673b5b7e419d402a0d23b",
+    "tests/data/material_band/fixtures.json": "38f326c9339ecd8991d3d291fbe900e6164132fc4447829156f38248d32c39a5",
+    "tests/libslic3r/CMakeLists.txt": "ed4efe8ec6a0ec9803c4c6cefbb9cf59a51fbc4915e6d887da4be5129b1f3250",
+    "tests/libslic3r/material_band_fixtures.cpp": "4a3c765d4209f534215c09ea541602620da1f5838c0176d0cd77728efe8f7b8a",
+    "tests/libslic3r/material_band_fixtures.hpp": "71a4438abbb37379f2acbfaeb56c1474ba576983aed15a165e371f8c743c4216",
+    "tests/libslic3r/test_material_band_clipping.cpp": "ac60d569d90a648b1db16ee930f3dc6603cf2500eb0be02b338e0c350222c697",
+    "tests/libslic3r/test_material_band_corpus.cpp": "6ffe04b9aa367dcb7da8929736abf5321e20068daeeebd56c94d5bf529f13ffa",
+    "tests/libslic3r/test_material_band_final.cpp": "609efb41bb05206037718272743ef8408e96b6df8b11b42d2c0b02549e77efed",
+    "tests/libslic3r/test_material_band_fixtures.cpp": "e6c7d91d0fb07e04ebb281224b300706a33dea086044ac6170fd066aa17adcdc",
+    "tests/libslic3r/test_material_band_input.cpp": "c72f14e75daf4bbe65ce3447b3a47b5533e82722a6086f6158331ff5c5e81a26",
+    "tests/libslic3r/test_material_band_paths.cpp": "3e5c2719353c667e7b9e09383127f039e3d473fd35427196cfdccb84383bc2db",
+    "tests/libslic3r/test_material_band_production.cpp": "da6e65daa51f08e09e925721229061edb4817a44a17682f9d0ec77edecbae841",
+    "tests/libslic3r/test_material_band_schedule.cpp": "9b83647b8ecd8d407046356b493c2b27ebc49226a797bafbc96da333052c7537",
+    "tests/libslic3r/test_material_band_solver.cpp": "e6e74447ed387859519a1179cc9d35ac193781f1c88f23d39f18c5bc28ea111f",
+    "tests/libslic3r/test_material_band_stress.cpp": "ba61d5c0673d9fbbd851d3aaa3e646da86ec8f82ba030c5b4504e13dc07265c8",
+    "tests/libslic3r/test_material_band_topology.cpp": "8f7a33b3d5f9fc1ccc1c417928cba5691227a19162369ce8ee8546530e9a7afd",
+    "scripts/material_band_real_models.py": "e580a1383a0a6033cb85584cb568f780274e1ad867b07debaf73e07616e66d1e",
+    "scripts/material_band_visual_audit.py": "995db9fc3765523efdf81ced2280234d018b7432730a9074ce1ddfb70d0b1468",
+    "tests/libslic3r/test_material_band_real_models.cpp": "c256ac41b58a5081c61a2d4e430c288d6170efc9ee49dfb9cbc81cd1b2350132",
+    "tests/libslic3r/test_material_band_stack.cpp": "c4f2b38856fb286dacfed822e4f3497ee03700921b4fd98acc5fca54e8a7fada",
+    "src/libslic3r/Config.hpp": "9d7e6efe27af04432be0333f9797f2b06710dfb88011882a334f889a4218aeb5",
+    "tests/libslic3r/test_config.cpp": "8e6d7e1631ad547344c15ecbf5eefc13b3d99658f68415ac00eae3d112407d57"
+  },
+  "binary_sha256": {
+    "build/src/Release/Snapmaker_Orca.dll": "6be44a2bf19e74a17e406f2678b86752290072cc4753ea0bb88ebca15cdfeb6c",
+    "build/src/Release/snapmaker-orca.exe": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+    "build-material-band/tests/libslic3r/Release/libslic3r_tests.exe": "adaea60ce30e42167351bc93262c45e0804cf74874d99e17cec4a0742732143c",
+    "build-material-band/tests/fff_print/Release/fff_print_tests.exe": "bc8a8b925721cf5f772f06a463c26b7e8c4320ebe05ecd18c371acf04c16575c"
+  },
+  "demonstrations": "../production/stack/manifest.json",
+  "limitations": [
+    "No arbitrary painted multi-material shells or image-based spatial gradients.",
+    "Strict final dose rejects tested inward tapers; two selected 32-segment cavity fixtures retain coverage/support fallbacks.",
+    "Classic dense fill and stationary RRF tool-selection envelope required; general printer profiles remain unsupported.",
+    "Discrete center-sampled gradient dose, not exact continuous integration or physical optical calibration.",
+    "Active-mask search is bounded per cycle and may reject a problem with another feasible mask assignment.",
+    "Original downloaded model audits remain legacy fallback geometry evidence; they do not establish new-kernel acceptance."
+  ],
+  "native_gui": {
+    "loaded_sliced_and_exported": [
+      {
+        "project": "MB-4-gradient.3mf",
+        "export": "build-material-band/evidence/stack/gui/MB-4-gradient.gcode",
+        "export_sha256": "bc48fabd9934cf12b949f49767df7139420d81523472991c0842fa2de8d01747",
+        "new_kernel_export": true,
+        "command_count": 36499,
+        "only_command_difference_from_headless": [
+          [
+            4,
+            "M190 S35",
+            "M190 S45"
+          ]
+        ],
+        "difference_reason": "GUI selects Smooth High Temp Plate and its 45 C bed target; headless fixture used 35 C.",
+        "logical_cycles": 10,
+        "tools": [
+          "T0",
+          "T1",
+          "T2",
+          "T3"
+        ]
+      },
+      {
+        "project": "MB-3-blend.3mf",
+        "export": "build-material-band/evidence/stack/gui/MB-3-blend.gcode",
+        "export_sha256": "bc3daede64038747dee074e566d88a25bd8e2967c1bd666cfe882f2b94e22de6",
+        "new_kernel_export": true,
+        "command_count": 53482,
+        "only_command_difference_from_headless": [
+          [
+            4,
+            "M190 S35",
+            "M190 S45"
+          ]
+        ],
+        "difference_reason": "GUI selects Smooth High Temp Plate and its 45 C bed target; headless fixture used 35 C.",
+        "logical_cycles": 10,
+        "tools": [
+          "T0",
+          "T1",
+          "T2"
+        ]
+      }
+    ],
+    "switching_projects_undo_snapshot": "passed"
+  }
+}

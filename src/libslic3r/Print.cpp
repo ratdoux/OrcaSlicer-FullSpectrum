@@ -1,6 +1,7 @@
 #include "Config.hpp"
 #include "Exception.hpp"
 #include "Print.hpp"
+#include "MaterialBand/Production.hpp"
 #include "BoundingBox.hpp"
 #include "Brim.hpp"
 #include "ClipperUtils.hpp"
@@ -519,6 +520,8 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
 
 void Print::clear()
 {
+
+    invalidate_material_band_plan();
 	std::scoped_lock<std::mutex> lock(this->state_mutex());
     // The following call should stop background processing if it is running.
     this->invalidate_all_steps();
@@ -874,6 +877,8 @@ void Print::set_calib_params(const Calib_Params& params) {
 
 bool Print::invalidate_step(PrintStep step)
 {
+
+    invalidate_material_band_plan();
 	bool invalidated = Inherited::invalidate_step(step);
     // Propagate to dependent steps.
     if (step != psGCodeExport)
@@ -1709,7 +1714,11 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
                 }
         }
 
-        if (! m_config.use_relative_e_distances)
+        // Material-band export owns its purge operations and supports both E
+        // modes. Defer this legacy-only rule until planning chooses an engine.
+        const auto band_result = material_band_result();
+        if (!m_config.use_relative_e_distances &&
+            (!MaterialBand::enabled(full_print_config()) || (band_result && band_result->fallback)))
             return { L("The Wipe Tower is currently only supported with the relative extruder addressing (use_relative_e_distances=1).") };
 
         if (m_config.ooze_prevention && m_config.single_extruder_multi_material)
@@ -2371,6 +2380,54 @@ std::map<ObjectID, unsigned int> getObjectExtruderMap(const Print& print) {
 }
 
 // Slicing process, running at a background thread.
+void Print::invalidate_material_band_plan()
+{
+    m_material_band_generation.fetch_add(1, std::memory_order_acq_rel);
+    std::atomic_store(&m_material_band_result, std::shared_ptr<const MaterialBand::ProductionResult>{});
+}
+
+bool Print::process_material_bands()
+{
+    using namespace MaterialBand;
+    if (!enabled(full_print_config())) return false;
+    const uint64_t generation = m_material_band_generation.load(std::memory_order_acquire);
+    auto result = material_band_result();
+    if (result && result->revision.generation == generation) return result->used_material_bands();
+    RevisionKey revision;
+    revision.object = model().id().id;
+    revision.geometry = revision.paint = revision.recipe = revision.process = revision.machine = generation;
+    revision.generation = generation;
+    set_status(10, L("Planning material bands"));
+    result = plan_production_print(*this, revision, [this] { return canceled(); },
+        [this, generation] { return m_material_band_generation.load(std::memory_order_acquire) != generation; });
+    throw_if_canceled();
+    if (m_material_band_generation.load(std::memory_order_acquire) != generation ||
+        (result->fallback && result->fallback->code == FailureCode::StaleInput))
+        throw CanceledException();
+    std::atomic_store(&m_material_band_result, result);
+    if (!result->used_material_bands()) return false;
+    m_wipe_tower_data.clear();
+    m_tool_ordering.clear();
+    m_skirt.clear();
+    m_brimMap.clear();
+    m_supportBrimMap.clear();
+    m_conflict_result.reset();
+    m_first_layer_convex_hull.points.clear();
+    m_skirt_convex_hull.clear();
+    m_support_used = false;
+    for (PrintObject* object : m_objects) {
+        object->clear_layers();
+        object->clear_support_layers();
+        object->clear_local_z_plan();
+        for (int step = 0; step < posCount; ++step)
+            if (object->set_started(PrintObjectStep(step))) object->set_done(PrintObjectStep(step));
+    }
+    for (PrintStep step : {psWipeTower, psSkirtBrim, psConflictCheck})
+        if (set_started(step)) set_done(step);
+    set_status(75, L("Material band plan validated"));
+    return true;
+}
+
 void Print::process(long long *time_cost_with_cache, bool use_cache)
 {
     long long start_time = 0, end_time = 0;
@@ -2383,6 +2440,13 @@ void Print::process(long long *time_cost_with_cache, bool use_cache)
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": this=%1%, enter, use_cache=%2%, object size=%3%")%this%use_cache%m_objects.size();
     if (m_objects.empty())
         return;
+
+    if (process_material_bands()) return;
+
+    if (const auto result = material_band_result(); result && result->fallback &&
+        has_wipe_tower() && !m_config.use_relative_e_distances)
+        throw SlicingError("Material bands fell back (" + result->fallback->detail +
+                           "). The legacy wipe tower requires relative extruder addressing.");
 
     for (PrintObject *obj : m_objects)
         obj->clear_shared_object();
@@ -2605,6 +2669,9 @@ void Print::process(long long *time_cost_with_cache, bool use_cache)
     }
 
     if (this->set_started(psWipeTower)) {
+        if (const auto result = material_band_result(); result && result->fallback)
+            active_step_add_warning(PrintStateBase::WarningLevel::NON_CRITICAL,
+                "Material bands: using legacy slicing (" + result->fallback_message() + ").");
         m_wipe_tower_data.clear();
         m_tool_ordering.clear();
         if (this->has_wipe_tower()) {
@@ -2764,7 +2831,7 @@ std::string Print::export_gcode(const std::string& path_template, GCodeProcessor
     gcode.do_export(this, path.c_str(), result, thumbnail_cb);
 
     //BBS
-    result->conflict_result = m_conflict_result;
+    if (result) result->conflict_result = m_conflict_result;
     return path.c_str();
 }
 
@@ -4462,6 +4529,9 @@ static void from_json(const json& j, groupedVolumeSlices& firstlayer_group)
 
 int Print::export_cached_data(const std::string& directory, bool with_space)
 {
+    // The existing disk format contains legacy Layer paths, not FinalPrintPlan.
+    if (const auto result = material_band_result(); result && result->used_material_bands())
+        return CLI_EXPORT_CACHE_WRITE_FAILED;
     int ret = 0;
     boost::filesystem::path directory_path(directory);
 
@@ -4730,6 +4800,8 @@ int Print::export_cached_data(const std::string& directory, bool with_space)
 
 int Print::load_cached_data(const std::string& directory)
 {
+    invalidate_material_band_plan();
+    if (MaterialBand::enabled(full_print_config())) return CLI_IMPORT_CACHE_NOT_FOUND;
     int ret = 0;
     boost::filesystem::path directory_path(directory);
 

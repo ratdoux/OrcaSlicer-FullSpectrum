@@ -19,6 +19,38 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared libs" OFF)
 
 set(lisbslic3r_sources
+    MaterialBand/Contracts.cpp
+    MaterialBand/Contracts.hpp
+    MaterialBand/LayerProcess.cpp
+    MaterialBand/LayerProcess.hpp
+    MaterialBand/InputAdapter.cpp
+    MaterialBand/InputAdapter.hpp
+    MaterialBand/SlabSolver.cpp
+    MaterialBand/StackDoseSolver.cpp
+    MaterialBand/StackPlanner.cpp
+    MaterialBand/StackPlanner.hpp
+    MaterialBand/PaintedDomains.cpp
+    MaterialBand/PaintedDomains.hpp
+    MaterialBand/SlabSolver.hpp
+    MaterialBand/BoxPlanner.cpp
+    MaterialBand/BoxPlanner.hpp
+    MaterialBand/SolidClipper.cpp
+    MaterialBand/SolidClipper.hpp
+    MaterialBand/ClippedPlanner.cpp
+    MaterialBand/ClippedPlanner.hpp
+    MaterialBand/Topology.cpp
+    MaterialBand/Topology.hpp
+    MaterialBand/Scheduler.cpp
+    MaterialBand/Scheduler.hpp
+    MaterialBand/ScheduleExport.cpp
+    MaterialBand/FinalPrintPlan.cpp
+    MaterialBand/FinalPrintPlan.hpp
+    MaterialBand/SnapmakerU1.cpp
+    MaterialBand/SnapmakerU1.hpp
+    MaterialBand/Production.cpp
+    MaterialBand/PaintedBox.hpp
+    MaterialBand/PaintedBox.cpp
+    MaterialBand/Production.hpp
     AABBMesh.cpp
     AABBMesh.hpp
     AABBTreeIndirect.hpp

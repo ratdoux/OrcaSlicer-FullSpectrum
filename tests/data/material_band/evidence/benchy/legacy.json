@@ -1,0 +1,94 @@
+{
+  "engine_requested": "legacy",
+  "fallback": "material_band_engine_not_selected",
+  "gcode": {
+    "extrusions": 588059,
+    "invalid_moves": 0,
+    "material_band_cycles": 0,
+    "moves": 763724,
+    "positive_filament_mm": 22378.644327149213
+  },
+  "geometry": {
+    "centerline_tolerance_mm": 0.06,
+    "hole_sections": 420,
+    "infill_mm": 110264.97672254675,
+    "layers": 599,
+    "ordered_point_fnv1a64": "18432948513540464255",
+    "outside_infill_mm": 0.0,
+    "outside_perimeter_mm": 0.0,
+    "paths": 55800,
+    "perimeter_mm": 221308.8940394843,
+    "slicing_error_layers": 0,
+    "sorted_segment_fnv1a64": "9809854195355678863"
+  },
+  "image_mapped_volumes": 0,
+  "material_band_accepted": false,
+  "objects": 1,
+  "samples": [
+    {
+      "fill_mm": 468.4182399286813,
+      "islands": 2,
+      "layer": 0,
+      "object": 0,
+      "outside_fill_mm": 0.0,
+      "outside_wall_mm": 0.0,
+      "wall_mm": 496.290285050906,
+      "z": 0.2
+    },
+    {
+      "fill_mm": 256.33944120058226,
+      "islands": 3,
+      "layer": 149,
+      "object": 0,
+      "outside_fill_mm": 0.0,
+      "outside_wall_mm": 0.0,
+      "wall_mm": 730.0282878599025,
+      "z": 12.120000000000008
+    },
+    {
+      "fill_mm": 78.46789478611018,
+      "islands": 5,
+      "layer": 299,
+      "object": 0,
+      "outside_fill_mm": 0.0,
+      "outside_wall_mm": 0.0,
+      "wall_mm": 309.65362249417683,
+      "z": 24.119999999999838
+    },
+    {
+      "fill_mm": 83.68840433881627,
+      "islands": 1,
+      "layer": 449,
+      "object": 0,
+      "outside_fill_mm": 0.0,
+      "outside_wall_mm": 0.0,
+      "wall_mm": 339.1771309387444,
+      "z": 36.119999999999585
+    },
+    {
+      "fill_mm": 33.99422463906895,
+      "islands": 1,
+      "layer": 598,
+      "object": 0,
+      "outside_fill_mm": 0.0,
+      "outside_wall_mm": 0.0,
+      "wall_mm": 33.61738481710197,
+      "z": 48.03999999999933
+    }
+  ],
+  "settings": {
+    "enable_support": "0",
+    "filament_diameter": "1.75,1.75,1.75,1.75",
+    "gcode_flavor": "klipper",
+    "internal_solid_infill_pattern": "monotonic",
+    "layer_height": "0.08",
+    "sparse_infill_density": "15%",
+    "sparse_infill_pattern": "gyroid",
+    "wall_generator": "classic",
+    "wall_loops": "2"
+  },
+  "slice_seconds": 20.4464048,
+  "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+  "stage": "complete",
+  "triangles": 225154
+}

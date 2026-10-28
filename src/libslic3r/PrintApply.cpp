@@ -1275,6 +1275,10 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 	new_full_config.option("print_settings_id",            true);
 	new_full_config.option("filament_settings_id",         true);
 	new_full_config.option("printer_settings_id",          true);
+    if (new_full_config.has("local_z_engine") || m_config.local_z_engine.value == LocalZEngine::MaterialBands)
+        for (const char* key : {"local_z_engine", "material_band_boundary_policy", "material_band_transition_width",
+                               "material_band_transition_error", "material_band_tool_sections", "material_band_stationary_toolchange"})
+            new_full_config.option(key, true);
     // Ensure newly introduced dithering keys are present so in-session updates are detected.
     new_full_config.option("dithering_z_step_size", true);
     new_full_config.option("dithering_local_z_mode", true);
@@ -2045,8 +2049,15 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 #endif /* _DEBUG */
 
 	//BBS: add timestamp logic
-	if (apply_status != APPLY_STATUS_UNCHANGED)
+	if (apply_status != APPLY_STATUS_UNCHANGED) {
 		m_modified_count++;
+        invalidate_material_band_plan();
+        // Accepted material bands do not populate legacy path caches. Any edit
+        // or engine toggle must regenerate them before a legacy fallback.
+        if (m_config.local_z_engine.value == LocalZEngine::MaterialBands ||
+            std::find(print_diff.begin(), print_diff.end(), "local_z_engine") != print_diff.end())
+            for (auto* object : m_objects) object->invalidate_all_steps();
+    }
 	BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(" %1%: finished,  this %2%, m_modified_count %3%, apply_status %4%, m_support_used %5%")%__LINE__ %this %m_modified_count %apply_status %m_support_used;
 	return static_cast<ApplyStatus>(apply_status);
 }

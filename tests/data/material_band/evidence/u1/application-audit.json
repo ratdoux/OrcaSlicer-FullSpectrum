@@ -1,0 +1,134 @@
+[
+  {
+    "file": "plate_1.gcode",
+    "sha256": "8b8e634b03bf74e0e0b4ecec67f2e16b059ee42c0b91514932c1dc61f19dcda4",
+    "tools": [
+      0,
+      1
+    ],
+    "dock_returns": 20,
+    "deposit_segments": 12974,
+    "minimum_dock_z": 4.4,
+    "highest_deposition_z": 2.4,
+    "object_mm3": [
+      172.7622570391932,
+      172.7622570391932,
+      0.0,
+      0.0
+    ],
+    "project": "U1-2-blend",
+    "commands": 28842,
+    "identical_to_headless": true
+  },
+  {
+    "file": "plate_1.gcode",
+    "sha256": "d398006b74033475344b5f8e9d51fdfa669d0fc515875d9bc826f006af62b92a",
+    "tools": [
+      0,
+      1
+    ],
+    "dock_returns": 16,
+    "deposit_segments": 11668,
+    "minimum_dock_z": 4.4,
+    "highest_deposition_z": 2.4,
+    "object_mm3": [
+      172.80497484530952,
+      172.80497484529982,
+      0.0,
+      0.0
+    ],
+    "project": "U1-2-gradient",
+    "commands": 25939,
+    "identical_to_headless": true
+  },
+  {
+    "file": "plate_1.gcode",
+    "sha256": "529c9edda6c62d64444b529861ca744fd1f44ebdff21542a2685738d290ff31d",
+    "tools": [
+      0,
+      1,
+      2
+    ],
+    "dock_returns": 30,
+    "deposit_segments": 19515,
+    "minimum_dock_z": 4.4,
+    "highest_deposition_z": 2.4,
+    "object_mm3": [
+      114.00266399219308,
+      114.00266399219308,
+      117.52111031952629,
+      0.0
+    ],
+    "project": "U1-3-blend",
+    "commands": 43309,
+    "identical_to_headless": true
+  },
+  {
+    "file": "plate_1.gcode",
+    "sha256": "8ed33d6321aaaec11506b567f5e1742afafd4ce9760819526bfa668d92bc3591",
+    "tools": [
+      0,
+      1,
+      2
+    ],
+    "dock_returns": 19,
+    "deposit_segments": 13699,
+    "minimum_dock_z": 4.4,
+    "highest_deposition_z": 2.4,
+    "object_mm3": [
+      86.40354574667717,
+      172.8070914933553,
+      86.40354574667627,
+      0.0
+    ],
+    "project": "U1-3-gradient",
+    "commands": 30672,
+    "identical_to_headless": true
+  },
+  {
+    "file": "plate_1.gcode",
+    "sha256": "0a85685b1911fcf8fbada49c52e05aa4e0fb699953f4cd1d8f17801595b25be2",
+    "tools": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "dock_returns": 40,
+    "deposit_segments": 26092,
+    "minimum_dock_z": 4.4,
+    "highest_deposition_z": 2.4,
+    "object_mm3": [
+      86.42033461417292,
+      86.42033461417292,
+      86.42033461417292,
+      86.42033461417292
+    ],
+    "project": "U1-4-blend",
+    "commands": 57868,
+    "identical_to_headless": true
+  },
+  {
+    "file": "plate_1.gcode",
+    "sha256": "75381e6ae21cfe1c708f2136dcf6a476d86ebf206e29c44cbd120cded2bc5e13",
+    "tools": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "dock_returns": 14,
+    "deposit_segments": 12645,
+    "minimum_dock_z": 4.4,
+    "highest_deposition_z": 2.4,
+    "object_mm3": [
+      57.028896526380905,
+      115.78151425595225,
+      115.78151425595134,
+      57.02889652638348
+    ],
+    "project": "U1-4-gradient",
+    "commands": 28404,
+    "identical_to_headless": true
+  }
+]

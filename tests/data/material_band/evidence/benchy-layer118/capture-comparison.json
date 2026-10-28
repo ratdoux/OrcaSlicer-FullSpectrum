@@ -1,0 +1,11 @@
+{
+  "source_capture": "build-material-band/evidence/benchy-layer-process-114/01-3DBenchy/cycle-paths.json",
+  "current_capture": "build-material-band\\evidence\\benchy-layer-process-118\\01-3DBenchy\\cycle-paths.json",
+  "sha256": "b8eaa83927c2326458c2f31a4282e40e38903b023d0d72786bdb1325718073b9",
+  "bytes": 724076003,
+  "byte_identical": true,
+  "paths": 342388,
+  "segments": 500027,
+  "cells": 2712994,
+  "qualification": "Object path geometry before brim/tower insertion. Complete original scheduling and export still require independent acceptance."
+}

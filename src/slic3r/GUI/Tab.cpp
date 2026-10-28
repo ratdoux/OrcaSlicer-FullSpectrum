@@ -3020,6 +3020,13 @@ void TabPrint::build()
         }
         optgroup->append_single_option_line("fs_surface_paint_only");
         optgroup->append_single_option_line("fs_painted_zone_extra_perimeters");
+        optgroup->append_single_option_line("local_z_engine");
+        optgroup->append_single_option_line("material_band_boundary_policy");
+        optgroup->append_single_option_line("material_band_transition_width");
+        optgroup->append_single_option_line("material_band_transition_error");
+        optgroup->append_single_option_line("material_band_gradient_error");
+        optgroup->append_single_option_line("material_band_tool_sections");
+        optgroup->append_single_option_line("material_band_stationary_toolchange");
         optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_local_z_whole_objects");
         optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");
@@ -3074,6 +3081,13 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("mixed_filament_surface_indentation");
         optgroup->append_single_option_line("mixed_filament_region_collapse");
         optgroup->append_single_option_line("dithering_z_step_size");
+        optgroup->append_single_option_line("local_z_engine");
+        optgroup->append_single_option_line("material_band_boundary_policy");
+        optgroup->append_single_option_line("material_band_transition_width");
+        optgroup->append_single_option_line("material_band_transition_error");
+        optgroup->append_single_option_line("material_band_gradient_error");
+        optgroup->append_single_option_line("material_band_tool_sections");
+        optgroup->append_single_option_line("material_band_stationary_toolchange");
         optgroup->append_single_option_line("dithering_local_z_mode");
         optgroup->append_single_option_line("dithering_local_z_whole_objects");
         optgroup->append_single_option_line("dithering_local_z_preserve_first_layer");

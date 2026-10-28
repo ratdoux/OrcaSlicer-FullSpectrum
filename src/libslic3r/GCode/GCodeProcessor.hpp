@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <optional>
+#include <map>
 
 namespace Slic3r {
 
@@ -172,6 +173,9 @@ class Print;
             //BBS: arc move related data
             EMovePathType move_path_type{ EMovePathType::Noop_move };
             Vec3f arc_center_position{ Vec3f::Zero() };      // mm
+            // Occupies the existing padding before the vector on 64-bit builds.
+            // Feature-off moves retain their original storage size.
+            uint32_t material_band_cycle{uint32_t(-1)};
             std::vector<Vec3f> interpolation_points;     // interpolation points of arc for drawing
 
             float volumetric_rate() const { return feedrate * mm3_per_mm; }
@@ -194,6 +198,22 @@ class Print;
         std::string filename;
         unsigned int id;
         std::vector<MoveVertex> moves;
+        struct MaterialBandMove {
+            size_t move_id = 0;
+            uint64_t cycle = 0, object = 0, domain = 0, interface_id = 0, operation = 0;
+            uint32_t material = 0, slot = 0;
+            double top_z = 0., width = 0., height_start = 0., height_end = 0.;
+            // 0 travel/state, 1 object, 2 prime, 3 purge, 4 brim.
+            uint8_t deposition = 0;
+        };
+        struct MaterialBandCycle {
+            uint64_t id = 0;
+            double top_z = 0.;
+            // Viewer sequence IDs exclude synthetic seams. Ranges may be disjoint.
+            std::vector<std::pair<size_t, size_t>> ranges;
+        };
+        std::vector<MaterialBandMove> material_band_moves;
+        std::vector<MaterialBandCycle> material_band_cycles;
         // Positions of ends of lines of the final G-code this->filename after TimeProcessor::post_process() finalizes the G-code.
         std::vector<size_t> lines_ends;
         Pointfs printable_area;
@@ -240,6 +260,8 @@ class Print;
             filename = other.filename;
             id = other.id;
             moves = other.moves;
+            material_band_moves = other.material_band_moves;
+            material_band_cycles = other.material_band_cycles;
             lines_ends = other.lines_ends;
             printable_area = other.printable_area;
             bed_exclude_area = other.bed_exclude_area;
@@ -708,6 +730,10 @@ class Print;
         float m_height; // mm
         float m_forced_width; // mm
         float m_forced_height; // mm
+        GCodeProcessorResult::MaterialBandMove m_material_band_move;
+        uint32_t m_material_band_cycle = uint32_t(-1);
+        bool m_material_band_bead = false;
+        std::map<uint64_t, uint32_t> m_material_band_cycle_index;
         float m_mm3_per_mm;
         float m_travel_dist; // mm
         float m_fan_speed; // percentage

@@ -30,6 +30,8 @@
 
 namespace Slic3r {
 
+namespace MaterialBand { struct ProductionResult; }
+
 class GCode;
 class Layer;
 class ModelObject;
@@ -1040,6 +1042,7 @@ public:
     void export_gcode_from_previous_file(const std::string& file, GCodeProcessorResult* result, ThumbnailsGeneratorCallback thumbnail_cb = nullptr);
     //BBS: add modify_count logic
     int get_modified_count() const {return m_modified_count;}
+    std::shared_ptr<const MaterialBand::ProductionResult> material_band_result() const { return std::atomic_load(&m_material_band_result); }
     //BBS: add status for whether support used
     bool is_support_used() const {return m_support_used;}
     std::string get_conflict_string() const
@@ -1102,6 +1105,11 @@ private:
     //BBS
     static StringObjectException check_multi_filament_valid(const Print &print);
 
+    bool process_material_bands();
+    void invalidate_material_band_plan();
+    std::shared_ptr<const MaterialBand::ProductionResult> m_material_band_result;
+    std::atomic<uint64_t> m_material_band_generation{0};
+
     bool                invalidate_state_by_config_options(const ConfigOptionResolver &new_config, const std::vector<t_config_option_key> &opt_keys);
 
     void                _make_skirt();
@@ -1119,7 +1127,7 @@ private:
     PrintRegionPtrs                         m_print_regions;
     
     //SoftFever
-    bool m_isBBLPrinter;
+    bool m_isBBLPrinter = false;
 
     // Ordered collections of extrusion paths to build skirt loops and brim.
     ExtrusionEntityCollection               m_skirt;
@@ -1143,7 +1151,7 @@ private:
     bool                                    m_support_used {false};
 
     //BBS: plate's origin
-    Vec3d   m_origin;
+    Vec3d   m_origin = Vec3d::Zero();
     //BBS: modified_count
     int     m_modified_count {0};
     //BBS

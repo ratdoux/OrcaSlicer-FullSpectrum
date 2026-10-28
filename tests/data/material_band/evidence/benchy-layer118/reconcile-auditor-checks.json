@@ -1,0 +1,72 @@
+[
+  {
+    "mode": "relative",
+    "case": "valid_reordered_and_relabelled",
+    "passed": true
+  },
+  {
+    "mode": "relative",
+    "case": "endpoint",
+    "rejected": true
+  },
+  {
+    "mode": "relative",
+    "case": "dose",
+    "rejected": true
+  },
+  {
+    "mode": "relative",
+    "case": "missing",
+    "rejected": true
+  },
+  {
+    "mode": "relative",
+    "case": "material",
+    "rejected": true
+  },
+  {
+    "mode": "relative",
+    "case": "domain_alias",
+    "rejected": true
+  },
+  {
+    "mode": "relative",
+    "case": "preview_metadata",
+    "rejected": true
+  },
+  {
+    "mode": "absolute",
+    "case": "valid_reordered_and_relabelled",
+    "passed": true
+  },
+  {
+    "mode": "absolute",
+    "case": "endpoint",
+    "rejected": true
+  },
+  {
+    "mode": "absolute",
+    "case": "dose",
+    "rejected": true
+  },
+  {
+    "mode": "absolute",
+    "case": "missing",
+    "rejected": true
+  },
+  {
+    "mode": "absolute",
+    "case": "material",
+    "rejected": true
+  },
+  {
+    "mode": "absolute",
+    "case": "domain_alias",
+    "rejected": true
+  },
+  {
+    "mode": "absolute",
+    "case": "preview_metadata",
+    "rejected": true
+  }
+]

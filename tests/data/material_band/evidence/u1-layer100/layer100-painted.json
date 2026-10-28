@@ -1,0 +1,2520 @@
+{
+  "physical_qualification": false,
+  "results": [
+    {
+      "file": "U1-4-gradient-reported.gcode",
+      "sha256": "e24be01ff7251249b05534f0deac5176571aeb32818cc4af64afdc3bf085541e",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 403,
+      "deposit_segments": 108021,
+      "minimum_dock_z": 29.12,
+      "highest_deposition_z": 27.12,
+      "object_mm3": [
+        19387.2041921923,
+        323.1993611897991,
+        173.98281732686527,
+        143.4218830856239
+      ],
+      "tower_mm3": [
+        285.77461837763366,
+        482.11320783136625,
+        213.84196997795516,
+        116.6407771531253
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 113,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 311408.2396320349,
+      "travel_z_mm": 21611.76799999997,
+      "planar_travels": 13643,
+      "lifted_travels": 1428,
+      "retractions": 10351,
+      "deposition_mm": 199106.38200011963
+    },
+    {
+      "file": "U1-painted-2-adjacent-annulus.gcode",
+      "sha256": "d5ad8cc4eb34f7ff6a232122669b4e9847b8566f080c9293deada3db97f8b2cd",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 2853,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        26.842777359784836,
+        55.96258696537781,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 18031.758459341825,
+      "travel_z_mm": 224.2800000000001,
+      "planar_travels": 982,
+      "lifted_travels": 72,
+      "retractions": 915,
+      "deposition_mm": 1439.3663277365476
+    },
+    {
+      "file": "U1-painted-2-adjacent-box.gcode",
+      "sha256": "a3b4d1a407da47ff206c4858d5812de6596e315ad3198fd7e53f9bc66f9ab022",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 2158,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        285.6676314398136,
+        59.93842169414731,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 13962.909062954555,
+      "travel_z_mm": 224.2800000000001,
+      "planar_travels": 346,
+      "lifted_travels": 72,
+      "retractions": 337,
+      "deposition_mm": 4006.6800000000785
+    },
+    {
+      "file": "U1-painted-2-adjacent-cylinder.gcode",
+      "sha256": "db9bcd0ff1ac064f694beff7e7ad0074ed295dd4eb74bc40657777db9d2a3666",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 2206,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        163.9033633638879,
+        24.291422716087258,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 13918.4198750201,
+      "travel_z_mm": 224.2800000000001,
+      "planar_travels": 428,
+      "lifted_travels": 72,
+      "retractions": 427,
+      "deposition_mm": 2564.3005730141035
+    },
+    {
+      "file": "U1-painted-2-blend-annulus.gcode",
+      "sha256": "633c7bfdd0cd849f4f42df85015bc47c788933a564d7c225c29e8ee2a9ffbc79",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 4,
+      "deposit_segments": 716,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        9.097834376805663,
+        7.459837419655091,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 3527.574292637519,
+      "travel_z_mm": 40.92,
+      "planar_travels": 176,
+      "lifted_travels": 18,
+      "retractions": 176,
+      "deposition_mm": 371.414035239614
+    },
+    {
+      "file": "U1-painted-2-blend-box.gcode",
+      "sha256": "a79778a86e638a3f23d3fb7f219e3eb18ca2cd9960ec5a8ccbb9e8ff2f3a2095",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 2350,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        297.6582021168921,
+        47.95362369356818,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 13588.958181277145,
+      "travel_z_mm": 249.40000000000006,
+      "planar_travels": 330,
+      "lifted_travels": 80,
+      "retractions": 310,
+      "deposition_mm": 4361.880000000093
+    },
+    {
+      "file": "U1-painted-2-blend-cylinder.gcode",
+      "sha256": "9df77b7a20ec85daa91d9a353d8b9063b711a4707e4cae4238814a9ed022d501",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 4,
+      "deposit_segments": 518,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        34.40010085385024,
+        3.23885636214493,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 2768.694578561635,
+      "travel_z_mm": 40.92,
+      "planar_travels": 82,
+      "lifted_travels": 18,
+      "retractions": 82,
+      "deposition_mm": 548.8464494326015
+    },
+    {
+      "file": "U1-painted-2-caps-annulus.gcode",
+      "sha256": "9f61c39bd9587338651bf3ba52496949f335c2b9b1fcf4d1737e9fd9ed466057",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 11,
+      "deposit_segments": 2864,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        24.614211543766064,
+        58.19071983065935,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        13.607978421377013,
+        13.607978421377013,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 7,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 12310.548091502402,
+      "travel_z_mm": 167.12,
+      "planar_travels": 854,
+      "lifted_travels": 52,
+      "retractions": 852,
+      "deposition_mm": 1407.2326321485662
+    },
+    {
+      "file": "U1-painted-2-caps-box.gcode",
+      "sha256": "4d16837686aab8d31c85ee61a9c972d4c09848cfd6d0608c60fab796a4834f64",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 11,
+      "deposit_segments": 2034,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        151.22163493991113,
+        194.37840498935944,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        13.607978421377013,
+        13.607978421377013,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 7,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 8599.275585928468,
+      "travel_z_mm": 167.12,
+      "planar_travels": 304,
+      "lifted_travels": 52,
+      "retractions": 289,
+      "deposition_mm": 3813.480000000084
+    },
+    {
+      "file": "U1-painted-2-caps-cylinder.gcode",
+      "sha256": "6d399783141410df861871fa7e57278d8f24077145c12a8b472211d347e774d6",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 11,
+      "deposit_segments": 2194,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        86.80929274623664,
+        101.38366531951426,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        13.607978421377013,
+        13.607978421377013,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 7,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 8522.168292842334,
+      "travel_z_mm": 167.12,
+      "planar_travels": 388,
+      "lifted_travels": 52,
+      "retractions": 387,
+      "deposition_mm": 2489.8891853722707
+    },
+    {
+      "file": "U1-painted-2-gradient-annulus.gcode",
+      "sha256": "43fdd4b574d6524446bdb811e68e9ad0ca3d7602a773d0bf217003f95d895993",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 18,
+      "deposit_segments": 3320,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        45.49838411361118,
+        37.30842338067712,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.44035401849582,
+        19.44035401849582,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 16427.582208251544,
+      "travel_z_mm": 208.12000000000003,
+      "planar_travels": 878,
+      "lifted_travels": 68,
+      "retractions": 878,
+      "deposition_mm": 1717.095158578279
+    },
+    {
+      "file": "U1-painted-2-gradient-box.gcode",
+      "sha256": "ebf2110eecb49cb1372250fc1abbdcc1f4b4cb8f293316363953e76d37c911d3",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 18,
+      "deposit_segments": 2250,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        297.65531577864215,
+        47.95073735531788,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.44035401849582,
+        19.44035401849582,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 12478.221639223051,
+      "travel_z_mm": 208.12000000000003,
+      "planar_travels": 328,
+      "lifted_travels": 68,
+      "retractions": 310,
+      "deposition_mm": 4182.480000000077
+    },
+    {
+      "file": "U1-painted-2-gradient-cylinder.gcode",
+      "sha256": "8de2091e592b2aa222e828192478ca65c3718ca791c9bfb541fc2d39808cab8d",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 18,
+      "deposit_segments": 2458,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.00050426925014,
+        16.19428181072468,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.44035401849582,
+        19.44035401849582,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 12632.237792707494,
+      "travel_z_mm": 208.12000000000003,
+      "planar_travels": 409,
+      "lifted_travels": 68,
+      "retractions": 410,
+      "deposition_mm": 2682.455022446707
+    },
+    {
+      "file": "U1-painted-2-pure-annulus.gcode",
+      "sha256": "d4ad3635146bd7819a865fc0a4b0362e98d1aa4ede81f062a8bf1992d2d0020b",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 4,
+      "deposit_segments": 460,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        1.6379969571505908,
+        14.922753600110772,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 3497.1220001560937,
+      "travel_z_mm": 27.48,
+      "planar_travels": 172,
+      "lifted_travels": 12,
+      "retractions": 172,
+      "deposition_mm": 233.23901761980719
+    },
+    {
+      "file": "U1-painted-2-pure-box.gcode",
+      "sha256": "bbcabc9cf69fec9bfedc26cef9c116430fa50a63acb4b03b0ba47e9067372a99",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 1870,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        249.70457842332746,
+        95.90147471063517,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 13450.13606623619,
+      "travel_z_mm": 123.79999999999997,
+      "planar_travels": 310,
+      "lifted_travels": 40,
+      "retractions": 300,
+      "deposition_mm": 3473.880000000052
+    },
+    {
+      "file": "U1-painted-2-pure-cylinder.gcode",
+      "sha256": "f0f692888e9f6d1f673414bbf98ec91b887482cf51963c8d49b8435bd6fde844",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 4,
+      "deposit_segments": 390,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        31.161244491705347,
+        6.47771272428986,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 2742.97482036952,
+      "travel_z_mm": 27.48,
+      "planar_travels": 80,
+      "lifted_travels": 12,
+      "retractions": 80,
+      "deposition_mm": 488.86922471630146
+    },
+    {
+      "file": "U1-painted-2-recipes-annulus.gcode",
+      "sha256": "4d7403e3e4347c73fa8c91e8d33dba11642ce12c6dc469b83550243d365e9c42",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 3506,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        45.49477619079768,
+        37.30269880981376,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 18275.62754524645,
+      "travel_z_mm": 300.60000000000014,
+      "planar_travels": 1039,
+      "lifted_travels": 96,
+      "retractions": 946,
+      "deposition_mm": 1783.0974416129834
+    },
+    {
+      "file": "U1-painted-2-recipes-box.gcode",
+      "sha256": "005375c457e4eaf7cbcce5c3a93e90ecde5339474fa725d9b1d32e98d36232b2",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 2278,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        297.6560373632046,
+        47.95145893988045,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 14098.705236998574,
+      "travel_z_mm": 300.60000000000014,
+      "planar_travels": 366,
+      "lifted_travels": 96,
+      "retractions": 357,
+      "deposition_mm": 4228.680000000085
+    },
+    {
+      "file": "U1-painted-2-recipes-cylinder.gcode",
+      "sha256": "676cd8e2fe2f1bbd2bf3ae06acaaa014a998b38e5081bb3c175d3832d2758236",
+      "tools": [
+        0,
+        1
+      ],
+      "dock_returns": 20,
+      "deposit_segments": 2526,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        172.00050426925046,
+        16.194281810724757,
+        0.0,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 14026.230176792635,
+      "travel_z_mm": 300.60000000000014,
+      "planar_travels": 448,
+      "lifted_travels": 96,
+      "retractions": 438,
+      "deposition_mm": 2714.243634804854
+    },
+    {
+      "file": "U1-painted-3-adjacent-annulus.gcode",
+      "sha256": "5d2856f85ea1af81e15e813cd63a75d772fc29386f4e918d98c91799f123d2ff",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 29,
+      "deposit_segments": 3201,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        17.515863937165744,
+        55.96205780336546,
+        9.324267612556294,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        46.65635896688727,
+        11.664173926587484,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 23506.92070366856,
+      "travel_z_mm": 268.28,
+      "planar_travels": 1062,
+      "lifted_travels": 88,
+      "retractions": 991,
+      "deposition_mm": 1840.080400628257
+    },
+    {
+      "file": "U1-painted-3-adjacent-box.gcode",
+      "sha256": "21969a33ddcef7bf57e3332274ee07f41ae10d34826d79763b93104c220c56af",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 29,
+      "deposit_segments": 2448,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        267.6867543576772,
+        59.939720546359645,
+        17.982175934350472,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        46.65635896688727,
+        11.664173926587484,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19250.973344759142,
+      "travel_z_mm": 268.28,
+      "planar_travels": 421,
+      "lifted_travels": 88,
+      "retractions": 416,
+      "deposition_mm": 4471.980000000075
+    },
+    {
+      "file": "U1-painted-3-adjacent-cylinder.gcode",
+      "sha256": "eb09ee97a9e813304ae5e9267d98150b9d06e0972c4df1eb8c1ee12a76f3889b",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 29,
+      "deposit_segments": 2488,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        159.8547929112071,
+        24.291422716087162,
+        4.0485704526811555,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        46.65635896688727,
+        11.664173926587484,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19377.395945311448,
+      "travel_z_mm": 268.28,
+      "planar_travels": 501,
+      "lifted_travels": 88,
+      "retractions": 501,
+      "deposition_mm": 2926.389185372236
+    },
+    {
+      "file": "U1-painted-3-blend-annulus.gcode",
+      "sha256": "1c90b85c723aca6658577319055e8bbf4c2bca7151fe885dd42cc43b70f93b04",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 1020,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        6.564014237979383,
+        4.926017280828803,
+        5.073797799253661,
+        0.0
+      ],
+      "tower_mm3": [
+        7.776180091908329,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 5914.213174778008,
+      "travel_z_mm": 62.37200000000001,
+      "planar_travels": 192,
+      "lifted_travels": 28,
+      "retractions": 192,
+      "deposition_mm": 577.9890528594223
+    },
+    {
+      "file": "U1-painted-3-blend-box.gcode",
+      "sha256": "642f8a491f5bc8ed2cd4aa44a7ba458d968dd00410efa95a02d7e0dda132eb92",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 40,
+      "deposit_segments": 3070,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        281.35039100165,
+        31.645812578324275,
+        32.60984955398663,
+        0.0
+      ],
+      "tower_mm3": [
+        38.88090045954157,
+        19.440450229770835,
+        19.440450229770835,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 24792.480885159388,
+      "travel_z_mm": 375.0600000000005,
+      "planar_travels": 410,
+      "lifted_travels": 120,
+      "retractions": 380,
+      "deposition_mm": 5591.880000000095
+    },
+    {
+      "file": "U1-painted-3-blend-cylinder.gcode",
+      "sha256": "7e7dab0e01bc4dae67b2e47c76335fff35d54e6cc74a4a332430a42abbc555c5",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 8,
+      "deposit_segments": 694,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        33.29790448726486,
+        2.136659995559487,
+        2.201313972370371,
+        0.0
+      ],
+      "tower_mm3": [
+        7.776180091908329,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 5148.630238926922,
+      "travel_z_mm": 62.37200000000001,
+      "planar_travels": 96,
+      "lifted_travels": 28,
+      "retractions": 96,
+      "deposition_mm": 677.2236741489028
+    },
+    {
+      "file": "U1-painted-3-caps-annulus.gcode",
+      "sha256": "67122976a015861ecc632cb591a8595615753995bebfcea7bc4f0fa0f1f4a6e5",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 12,
+      "deposit_segments": 2936,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        10.81058749464389,
+        44.16831134215025,
+        27.8260325376317,
+        0.0
+      ],
+      "tower_mm3": [
+        15.551999391535338,
+        19.439969173395724,
+        5.831990752018726,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 7,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 12982.225938793623,
+      "travel_z_mm": 161.32000000000002,
+      "planar_travels": 881,
+      "lifted_travels": 50,
+      "retractions": 879,
+      "deposition_mm": 1521.5326321485686
+    },
+    {
+      "file": "U1-painted-3-caps-box.gcode",
+      "sha256": "9bf3d0efb6593cdf108b4a8ab9e4acbfb38dd171b262291be5e2b971b7bbcde8",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 12,
+      "deposit_segments": 2106,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        133.4793137141762,
+        104.60450612041235,
+        107.51617198904563,
+        0.0
+      ],
+      "tower_mm3": [
+        15.551999391535338,
+        19.439969173395724,
+        5.831990752018726,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 7,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 9243.09448432742,
+      "travel_z_mm": 161.32000000000002,
+      "planar_travels": 331,
+      "lifted_travels": 50,
+      "retractions": 316,
+      "deposition_mm": 3927.7800000000852
+    },
+    {
+      "file": "U1-painted-3-caps-cylinder.gcode",
+      "sha256": "c7273e1268ac1bb0dc4fc30771e1f0a33950364cd9b2789b54d55a41056e4b56",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 12,
+      "deposit_segments": 2266,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        80.81759127769122,
+        49.621999360804935,
+        57.753367427254354,
+        0.0
+      ],
+      "tower_mm3": [
+        15.551999391535338,
+        19.439969173395724,
+        5.831990752018726,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 7,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 9193.302409947135,
+      "travel_z_mm": 161.32000000000002,
+      "planar_travels": 414,
+      "lifted_travels": 50,
+      "retractions": 414,
+      "deposition_mm": 2604.189185372276
+    },
+    {
+      "file": "U1-painted-3-gradient-annulus.gcode",
+      "sha256": "cdd50a07e368ab0c4d6e691952ca9420f0a234d90390179857490f4a0e1fbf90",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 24,
+      "deposit_segments": 3688,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        26.842633042872347,
+        37.30534461987682,
+        18.652672309938367,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        27.216149265304065,
+        11.664173926587484,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 20033.77349410645,
+      "travel_z_mm": 243.47999999999996,
+      "planar_travels": 916,
+      "lifted_travels": 78,
+      "retractions": 916,
+      "deposition_mm": 2022.6701761980885
+    },
+    {
+      "file": "U1-painted-3-gradient-box.gcode",
+      "sha256": "a6e658a6c03eeef9be6170a04ede144095d1ef3d5fc46aa57535454cdc4c86b5",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 24,
+      "deposit_segments": 2458,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        273.68081300246024,
+        47.952469158267554,
+        23.97623457913395,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        27.216149265304065,
+        11.664173926587484,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 15885.762065736242,
+      "travel_z_mm": 243.47999999999996,
+      "planar_travels": 366,
+      "lifted_travels": 78,
+      "retractions": 346,
+      "deposition_mm": 4527.480000000079
+    },
+    {
+      "file": "U1-painted-3-gradient-cylinder.gcode",
+      "sha256": "4e78cbf1b274963c090a339001bf1f267389b264f8638b3e13e0c4b197f3ff07",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 24,
+      "deposit_segments": 2698,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        163.90336336388827,
+        16.1942818107247,
+        8.097140905362322,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        27.216149265304065,
+        11.664173926587484,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 16235.214137559544,
+      "travel_z_mm": 243.47999999999996,
+      "planar_travels": 445,
+      "lifted_travels": 78,
+      "retractions": 446,
+      "deposition_mm": 2909.8322471629904
+    },
+    {
+      "file": "U1-painted-3-pure-annulus.gcode",
+      "sha256": "c909226a04bf9be61cc22fa60114fef36e4d6c318cf3ab60fe12e8d34406fec6",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 489,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        1.6379969571505908,
+        7.461424905692871,
+        7.461424905692871,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 4746.386936150857,
+      "travel_z_mm": 39.96,
+      "planar_travels": 194,
+      "lifted_travels": 18,
+      "retractions": 186,
+      "deposition_mm": 266.7193081413361
+    },
+    {
+      "file": "U1-painted-3-pure-box.gcode",
+      "sha256": "9eec765f3f635cd5a42d88024260eb3c9f218a4816d2487df5d0e6425e943f81",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 30,
+      "deposit_segments": 1990,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        249.70457842332746,
+        71.92610603297682,
+        23.975368677658796,
+        0.0
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        19.440450229770835,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19413.478119020092,
+      "travel_z_mm": 185.39999999999998,
+      "planar_travels": 360,
+      "lifted_travels": 60,
+      "retractions": 360,
+      "deposition_mm": 3644.880000000049
+    },
+    {
+      "file": "U1-painted-3-pure-cylinder.gcode",
+      "sha256": "46f4e5049c2ecb5c8860e149f40b3bd8fa005791b31453b2d84252039c8cad58",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 414,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        31.161244491705347,
+        3.2388563621449302,
+        3.2388563621449302,
+        0.0
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 3945.310733919225,
+      "travel_z_mm": 39.96,
+      "planar_travels": 90,
+      "lifted_travels": 18,
+      "retractions": 90,
+      "deposition_mm": 523.0692247163012
+    },
+    {
+      "file": "U1-painted-3-recipes-annulus.gcode",
+      "sha256": "4dc251f18bc3af6dc4768d5f58363aae7bfb2f53da6ff3cd445586e02f1ae656",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 33,
+      "deposit_segments": 3862,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        36.16786276817882,
+        18.65017081678784,
+        27.9762664435696,
+        0.0
+      ],
+      "tower_mm3": [
+        25.272585298702072,
+        19.440450229770835,
+        33.04809191168527,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 26115.15882290526,
+      "travel_z_mm": 375.00000000000045,
+      "planar_travels": 1115,
+      "lifted_travels": 120,
+      "retractions": 1022,
+      "deposition_mm": 2187.411514504688
+    },
+    {
+      "file": "U1-painted-3-recipes-box.gcode",
+      "sha256": "6709ff08f3b93c1290318357ae9128dfd264677ba205e927c1cb0efe623c8013",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 33,
+      "deposit_segments": 2576,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        279.67516028106826,
+        35.96435186870078,
+        29.97058185774249,
+        0.0
+      ],
+      "tower_mm3": [
+        25.272585298702072,
+        19.440450229770835,
+        33.04809191168527,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 21619.814127367074,
+      "travel_z_mm": 375.00000000000045,
+      "planar_travels": 437,
+      "lifted_travels": 120,
+      "retractions": 432,
+      "deposition_mm": 4697.580000000065
+    },
+    {
+      "file": "U1-painted-3-recipes-cylinder.gcode",
+      "sha256": "8aa8f84139e91b613461ec1636d1adbbadd3731efda8141e646d3dfa3a3be402",
+      "tools": [
+        0,
+        1,
+        2
+      ],
+      "dock_returns": 33,
+      "deposit_segments": 2816,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        167.95193381656952,
+        8.097140905362316,
+        12.145711358043515,
+        0.0
+      ],
+      "tower_mm3": [
+        25.272585298702072,
+        19.440450229770835,
+        33.04809191168527,
+        0.0
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 21842.73718478134,
+      "travel_z_mm": 375.00000000000045,
+      "planar_travels": 517,
+      "lifted_travels": 120,
+      "retractions": 512,
+      "deposition_mm": 3079.932247162968
+    },
+    {
+      "file": "U1-painted-4-adjacent-annulus.gcode",
+      "sha256": "a10109ea03ef02e64b99ad4575707e6af847e94d6b3e0d3447c5565ed63bae9e",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 29,
+      "deposit_segments": 3069,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        14.345918900751165,
+        49.80929866044266,
+        12.497748413327761,
+        6.1539617838604155
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        36.936278168914434,
+        13.608122738289548,
+        7.776083880633314
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 23457.83051780298,
+      "travel_z_mm": 244.12000000000012,
+      "planar_travels": 1052,
+      "lifted_travels": 80,
+      "retractions": 987,
+      "deposition_mm": 1770.9007939291314
+    },
+    {
+      "file": "U1-painted-4-adjacent-box.gcode",
+      "sha256": "31fea11dcb083562ec310014e59dc14ec202522a49af8d746e5f6acb40316fbd",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 29,
+      "deposit_segments": 2376,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        261.5739228938867,
+        48.069943125062906,
+        24.094574447403893,
+        11.869344470559504
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        36.936278168914434,
+        13.608122738289548,
+        7.776083880633314
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19216.749615265948,
+      "travel_z_mm": 244.12000000000012,
+      "planar_travels": 417,
+      "lifted_travels": 80,
+      "retractions": 413,
+      "deposition_mm": 4338.780000000066
+    },
+    {
+      "file": "U1-painted-4-adjacent-cylinder.gcode",
+      "sha256": "0c5f003efe9a79a010f7ee2430906a2ae547a7c6c46be62dd86de9d560a5f1c7",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 29,
+      "deposit_segments": 2424,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        158.47858683337546,
+        21.618288651037442,
+        5.424006840312604,
+        2.672364374849618
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        36.936278168914434,
+        13.608122738289548,
+        7.776083880633314
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19350.37653037449,
+      "travel_z_mm": 244.12000000000012,
+      "planar_travels": 499,
+      "lifted_travels": 80,
+      "retractions": 499,
+      "deposition_mm": 2896.400573014089
+    },
+    {
+      "file": "U1-painted-4-blend-annulus.gcode",
+      "sha256": "69d769bbf6c50e6041ec865149ad05c9881e6c653789092fa612894855c03ef7",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 10,
+      "deposit_segments": 1300,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        5.369455047378392,
+        3.7314580902277914,
+        3.7314580902277914,
+        3.7314580902277914
+      ],
+      "tower_mm3": [
+        7.776180091908329,
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 7130.532999609087,
+      "travel_z_mm": 79.80000000000001,
+      "planar_travels": 202,
+      "lifted_travels": 36,
+      "retractions": 202,
+      "deposition_mm": 750.3640704792329
+    },
+    {
+      "file": "U1-painted-4-blend-box.gcode",
+      "sha256": "5dad87516fbc7aa430996cffffa378c62b0818ec4438712a30733d1c972121c5",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 50,
+      "deposit_segments": 3670,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        273.67850393185927,
+        23.97392550853366,
+        23.97392550853366,
+        23.97392550853366
+      ],
+      "tower_mm3": [
+        38.88090045954157,
+        19.440450229770835,
+        19.440450229770835,
+        19.440450229770835
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 30502.03582628494,
+      "travel_z_mm": 500.6000000000003,
+      "planar_travels": 460,
+      "lifted_travels": 160,
+      "retractions": 420,
+      "deposition_mm": 6650.880000000088
+    },
+    {
+      "file": "U1-painted-4-blend-cylinder.gcode",
+      "sha256": "e57cd17d327690494e8a2861e40860b40caa791af29167fd5a9d055ea832a3a3",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 10,
+      "deposit_segments": 846,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        32.78067267277791,
+        1.619428181072465,
+        1.619428181072465,
+        1.619428181072465
+      ],
+      "tower_mm3": [
+        7.776180091908329,
+        3.888090045954164,
+        3.888090045954164,
+        3.888090045954164
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 6359.227419623039,
+      "travel_z_mm": 79.80000000000001,
+      "planar_travels": 104,
+      "lifted_travels": 36,
+      "retractions": 104,
+      "deposition_mm": 771.4008988652033
+    },
+    {
+      "file": "U1-painted-4-caps-annulus.gcode",
+      "sha256": "49d7f418ab76b946a5d08fe43fa5852845538b1314fe5fc501715d6595423fdb",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 13,
+      "deposit_segments": 2712,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        5.96069738517163,
+        37.079921602513615,
+        14.922849811385761,
+        24.84146257535456
+      ],
+      "tower_mm3": [
+        15.551999391535338,
+        15.55197533871658,
+        9.719984586697873,
+        5.831990752018724
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 8,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 13559.115781606173,
+      "travel_z_mm": 135.84,
+      "planar_travels": 888,
+      "lifted_travels": 42,
+      "retractions": 886,
+      "deposition_mm": 1432.8576145287607
+    },
+    {
+      "file": "U1-painted-4-caps-box.gcode",
+      "sha256": "04d7ed04f6778e9bb9f6cd90fb87778380e48dc9431170585eb2396d8f83ee5e",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 13,
+      "deposit_segments": 2262,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        127.2455446776902,
+        95.49361106302274,
+        19.18082410413964,
+        103.6800119787818
+      ],
+      "tower_mm3": [
+        15.551999391535338,
+        15.55197533871658,
+        9.719984586697873,
+        5.831990752018724
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 8,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 7635.169457501025,
+      "travel_z_mm": 135.84,
+      "planar_travels": 228,
+      "lifted_travels": 42,
+      "retractions": 100,
+      "deposition_mm": 3867.2999999999993
+    },
+    {
+      "file": "U1-painted-4-caps-cylinder.gcode",
+      "sha256": "682167388367bc168dd1338f583021a84eca03149c4c10056f6c636340dad739",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 13,
+      "deposit_segments": 7510,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        78.71241642188028,
+        46.54516278578709,
+        6.47752030173984,
+        56.457882609161025
+      ],
+      "tower_mm3": [
+        15.551999391535338,
+        15.55197533871658,
+        9.719984586697873,
+        5.831990752018724
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 8,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 8004.087704012436,
+      "travel_z_mm": 135.84,
+      "planar_travels": 204,
+      "lifted_travels": 42,
+      "retractions": 100,
+      "deposition_mm": 2234.2085956968126
+    },
+    {
+      "file": "U1-painted-4-gradient-annulus.gcode",
+      "sha256": "db68c73d917b78247801ea66571a9ad34611db69d77b0dd40244234364d6b180",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 23,
+      "deposit_segments": 3430,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        20.501925174205663,
+        24.997998319805735,
+        24.997998319805973,
+        12.311964441271437
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        17.496020361693677,
+        13.608122738289548,
+        7.776083880633314
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19410.430682079143,
+      "travel_z_mm": 212.92000000000013,
+      "planar_travels": 913,
+      "lifted_travels": 68,
+      "retractions": 913,
+      "deposition_mm": 1883.5951585782796
+    },
+    {
+      "file": "U1-painted-4-gradient-box.gcode",
+      "sha256": "ff8cd2275d73c2e4e66781f169e1bfe16fbc640c36abfecf771d856b24fabd0f",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 23,
+      "deposit_segments": 2360,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        265.5303710507396,
+        32.12609926320524,
+        32.12609926320515,
+        15.825792627412692
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        17.496020361693677,
+        13.608122738289548,
+        7.776083880633314
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 15316.617151615603,
+      "travel_z_mm": 212.92000000000013,
+      "planar_travels": 363,
+      "lifted_travels": 68,
+      "retractions": 345,
+      "deposition_mm": 4348.980000000076
+    },
+    {
+      "file": "U1-painted-4-gradient-cylinder.gcode",
+      "sha256": "6748e94ddd31e4d90eb7c203d9fe5e07dbfee6e806d1eadeae9d84cb771334ff",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 23,
+      "deposit_segments": 2568,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        161.1509512082251,
+        10.848013680625181,
+        10.848013680625188,
+        5.344728749699229
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        17.496020361693677,
+        13.608122738289548,
+        7.776083880633314
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 15617.04396989545,
+      "travel_z_mm": 212.92000000000013,
+      "planar_travels": 443,
+      "lifted_travels": 68,
+      "retractions": 445,
+      "deposition_mm": 2848.955022446697
+    },
+    {
+      "file": "U1-painted-4-pure-annulus.gcode",
+      "sha256": "f35fdf6d375c0ab110ad0401a299e18a036917666137dbf7d035f4e1e4a923b3",
+      "tools": [
+        0,
+        1,
+        3
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 489,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        1.6379969571505908,
+        7.461424905692871,
+        0.0,
+        7.461424905692871
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        0.0,
+        3.888090045954164
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 4746.386936150857,
+      "travel_z_mm": 39.96,
+      "planar_travels": 194,
+      "lifted_travels": 18,
+      "retractions": 186,
+      "deposition_mm": 266.7193081413361
+    },
+    {
+      "file": "U1-painted-4-pure-box.gcode",
+      "sha256": "d2be96bb57c3d1c1017fa315c601e70a846a1f80bfc5f56084414f9721e7a968",
+      "tools": [
+        0,
+        1,
+        3
+      ],
+      "dock_returns": 30,
+      "deposit_segments": 1990,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        249.70457842332746,
+        71.92610603297682,
+        0.0,
+        23.975368677658796
+      ],
+      "tower_mm3": [
+        19.440450229770835,
+        19.440450229770835,
+        0.0,
+        19.440450229770835
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 19413.478119020092,
+      "travel_z_mm": 185.39999999999998,
+      "planar_travels": 360,
+      "lifted_travels": 60,
+      "retractions": 360,
+      "deposition_mm": 3644.880000000049
+    },
+    {
+      "file": "U1-painted-4-pure-cylinder.gcode",
+      "sha256": "3842a7a7d0a563ca16a8da0aa61a5f127160b66ab7a8fa05e230e1e2d8c749a0",
+      "tools": [
+        0,
+        1,
+        3
+      ],
+      "dock_returns": 6,
+      "deposit_segments": 414,
+      "minimum_dock_z": 2.48,
+      "highest_deposition_z": 0.48,
+      "object_mm3": [
+        31.161244491705347,
+        3.2388563621449302,
+        0.0,
+        3.2388563621449302
+      ],
+      "tower_mm3": [
+        3.888090045954164,
+        3.888090045954164,
+        0.0,
+        3.888090045954164
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 2,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 3945.310733919225,
+      "travel_z_mm": 39.96,
+      "planar_travels": 90,
+      "lifted_travels": 18,
+      "retractions": 90,
+      "deposition_mm": 523.0692247163012
+    },
+    {
+      "file": "U1-painted-4-recipes-annulus.gcode",
+      "sha256": "b068120f538d30339e12d79e38ad197643a33a5ad44b5623e8d7351b992b24a2",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 34,
+      "deposit_segments": 3832,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        32.99791773176448,
+        12.497411673865155,
+        12.497748413327761,
+        24.80596061487358
+      ],
+      "tower_mm3": [
+        23.328540275724993,
+        11.6642701378625,
+        11.6642701378625,
+        50.543967956466275
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 26816.52844419858,
+      "travel_z_mm": 374.5200000000004,
+      "planar_travels": 1144,
+      "lifted_travels": 120,
+      "retractions": 1029,
+      "deposition_mm": 2281.1319078055603
+    },
+    {
+      "file": "U1-painted-4-recipes-box.gcode",
+      "sha256": "0a0cee0f61ced380e0396a792e15f7656e87a4731863ed6b1de7008e5e4a6bb7",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 34,
+      "deposit_segments": 2606,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        273.56232881727783,
+        24.094574447403936,
+        24.094574447403893,
+        23.85775039395153
+      ],
+      "tower_mm3": [
+        23.328540275724993,
+        11.6642701378625,
+        11.6642701378625,
+        50.543967956466275
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 20296.338666275453,
+      "travel_z_mm": 374.5200000000004,
+      "planar_travels": 472,
+      "lifted_travels": 120,
+      "retractions": 249,
+      "deposition_mm": 4727.280000000053
+    },
+    {
+      "file": "U1-painted-4-recipes-cylinder.gcode",
+      "sha256": "a379e481ca2fd46911a12c1fce1125023b13a9d66dbb732dc8a4a817c03bee7c",
+      "tools": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "dock_returns": 34,
+      "deposit_segments": 2854,
+      "minimum_dock_z": 4.4,
+      "highest_deposition_z": 2.4,
+      "object_mm3": [
+        166.57572773873784,
+        5.424006840312564,
+        5.424006840312604,
+        10.769505280211996
+      ],
+      "tower_mm3": [
+        23.328540275724993,
+        11.6642701378625,
+        11.6642701378625,
+        50.543967956466275
+      ],
+      "brim_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "tower_layer_count": 10,
+      "bin_returns": 0,
+      "bin_purge_mm3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "travel_mm": 20930.07956200132,
+      "travel_z_mm": 374.5200000000004,
+      "planar_travels": 554,
+      "lifted_travels": 120,
+      "retractions": 231,
+      "deposition_mm": 3212.843634804813
+    }
+  ],
+  "negative_checks": [
+    {
+      "mode": "relative",
+      "mutation": "missing_z",
+      "rejected": true
+    },
+    {
+      "mode": "relative",
+      "mutation": "missing_xy",
+      "rejected": true
+    },
+    {
+      "mode": "relative",
+      "mutation": "missing_tool",
+      "rejected": true
+    },
+    {
+      "mode": "relative",
+      "mutation": "missing_g90",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_z",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_xy",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_tool",
+      "rejected": true
+    },
+    {
+      "mode": "absolute",
+      "mutation": "missing_g90",
+      "rejected": true
+    }
+  ]
+}

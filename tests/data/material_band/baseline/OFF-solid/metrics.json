@@ -1,0 +1,20 @@
+{
+  "case": "OFF-solid",
+  "engine_used": "legacy",
+  "export_ms": 26.691,
+  "layers": 10,
+  "legacy_local_z_passes": 0,
+  "path_polylines": 80,
+  "path_segments": 752,
+  "paths_ms": 3.4832,
+  "preview_moves": 943,
+  "slice_ms": 1.2953,
+  "slice_surfaces": 10,
+  "threads": 2,
+  "peak_working_set_bytes": 23433216,
+  "wall_seconds": 0.06834059999891906,
+  "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+  "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+  "gcode_bytes": 51293,
+  "tool_sequence": []
+}

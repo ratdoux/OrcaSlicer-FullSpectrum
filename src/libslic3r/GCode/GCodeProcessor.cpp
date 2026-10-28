@@ -559,6 +559,8 @@ void GCodeProcessorResult::reset() {
     lock();
 
     moves = std::vector<GCodeProcessorResult::MoveVertex>();
+    material_band_moves.clear();
+    material_band_cycles.clear();
     lines_ends     = std::vector<size_t>();
     printable_area = Pointfs();
     //BBS: add bed exclude area
@@ -587,6 +589,8 @@ void GCodeProcessorResult::reset() {
     lock();
 
     moves.clear();
+    material_band_moves.clear();
+    material_band_cycles.clear();
     lines_ends.clear();
     release_unused_memory();
     printable_area = Pointfs();
@@ -623,6 +627,8 @@ void GCodeProcessorResult::release_unused_memory()
 {
     GCodePreview::shrink_excess_capacity(moves);
     GCodePreview::shrink_excess_capacity(lines_ends);
+    GCodePreview::shrink_excess_capacity(material_band_moves);
+    GCodePreview::shrink_excess_capacity(material_band_cycles);
 }
 
 const std::vector<std::pair<GCodeProcessor::EProducer, std::string>> GCodeProcessor::Producers = {
@@ -1168,6 +1174,10 @@ void GCodeProcessor::reset()
     m_height = 0.0f;
     m_forced_width = 0.0f;
     m_forced_height = 0.0f;
+    m_material_band_move = {};
+    m_material_band_cycle = uint32_t(-1);
+    m_material_band_bead = false;
+    m_material_band_cycle_index.clear();
     m_mm3_per_mm = 0.0f;
     m_travel_dist = 0.0f;
     m_fan_speed = 0.0f;
@@ -1324,6 +1334,20 @@ void GCodeProcessor::process_buffer(const char* buffer, size_t size)
 
 void GCodeProcessor::finalize(bool post_process)
 {
+    if (!m_result.material_band_cycles.empty()) {
+        const bool complete = std::all_of(m_result.material_band_cycles.begin(), m_result.material_band_cycles.end(),
+            [](const auto& cycle) { return !cycle.ranges.empty(); }) &&
+            std::all_of(m_result.moves.begin(), m_result.moves.end(), [](const auto& move) {
+                return move.type != EMoveType::Extrude || move.material_band_cycle != uint32_t(-1);
+            });
+        if (!complete) {
+            // Partial/foreign metadata retains the established external-file
+            // interpretation. Never build a misleading partial logical slider.
+            m_result.material_band_moves.clear();
+            m_result.material_band_cycles.clear();
+            for (auto& move : m_result.moves) move.material_band_cycle = uint32_t(-1);
+        }
+    }
     // update width/height of wipe moves
     for (GCodeProcessorResult::MoveVertex& move : m_result.moves) {
         if (move.type == EMoveType::Wipe) {
@@ -1915,6 +1939,42 @@ bool GCodeProcessor::get_last_z_from_gcode(const std::string& gcode_str, double&
 
 void GCodeProcessor::process_tags(const std::string_view comment, bool producers_enabled)
 {
+    if (boost::starts_with(comment, "MB_CYCLE ")) {
+        m_material_band_cycle = uint32_t(-1);
+        m_material_band_bead = false;
+        GCodeProcessorResult::MaterialBandMove metadata;
+        std::string top, object, domain, material, slot, interface_id, operation, extra;
+        std::istringstream input{std::string(comment.substr(9))};
+        input.imbue(std::locale::classic());
+        if ((input >> metadata.cycle >> top >> metadata.top_z >> object >> metadata.object >> domain >> metadata.domain >>
+            material >> metadata.material >> slot >> metadata.slot >> interface_id >> metadata.interface_id >> operation >> metadata.operation) &&
+            !(input >> extra) && top == "TOP" && object == "OBJECT" && domain == "DOMAIN" && material == "MATERIAL" &&
+            slot == "SLOT" && interface_id == "INTERFACE" && operation == "OPERATION" && std::isfinite(metadata.top_z) &&
+            metadata.top_z > 0. && metadata.material >= 1 && metadata.material <= 64 && metadata.operation != 0) {
+            auto inserted = m_material_band_cycle_index.emplace(metadata.cycle, uint32_t(m_result.material_band_cycles.size()));
+            if (inserted.second) m_result.material_band_cycles.push_back({metadata.cycle, metadata.top_z, {}});
+            m_material_band_cycle = inserted.first->second;
+            m_material_band_move = metadata;
+            m_layer_id = m_material_band_cycle + 1;
+        }
+        return;
+    }
+    if (boost::starts_with(comment, "MB_BEAD ")) {
+        std::string width, start, end, extra;
+        std::istringstream input{std::string(comment.substr(8))};
+        input.imbue(std::locale::classic());
+        auto& metadata = m_material_band_move;
+        m_material_band_bead = bool(input >> width >> metadata.width >> start >> metadata.height_start >> end >> metadata.height_end) &&
+            !(input >> extra) && width == "WIDTH" && start == "HEIGHT_START" && end == "HEIGHT_END" &&
+            std::isfinite(metadata.width) && std::isfinite(metadata.height_start) && std::isfinite(metadata.height_end) &&
+            metadata.width > 0. && metadata.height_start > 0. && metadata.height_end > 0.;
+        return;
+    }
+    if (boost::starts_with(comment, "MB_OPERATION ")) {
+        const auto kind = comment.substr(13);
+        m_material_band_move.deposition = kind == "DEPOSITION" ? 1 : kind == "PRIME" ? 2 : kind == "PURGE" ? 3 : kind == "BRIM" ? 4 : 0;
+        return;
+    }
     // producers tags
     if (producers_enabled && process_producers_tags(comment))
         return;
@@ -3490,6 +3550,13 @@ void GCodeProcessor::process_G29(const GCodeReader::GCodeLine& line)
 
 void GCodeProcessor::process_G10(const GCodeReader::GCodeLine& line)
 {
+    if (m_flavor == gcfRepRapFirmware && line.has('P')) {
+        // In RRF a P parameter selects tool settings, not firmware retraction.
+        float tool = 0., temperature = 0.;
+        if (line.has_value('P', tool) && tool >= 0. && tool < m_extruder_temps.size() &&
+            line.has_value('S', temperature)) m_extruder_temps[size_t(tool)] = temperature;
+        return;
+    }
     GCodeReader::GCodeLine g10;
     g10.set(Axis::E, -get_value_at(this->m_parser.config(), this->m_parser.config().retraction_length, ConfigFlowDomain::Filament, m_extruder_id));
     g10.set(Axis::F,  get_value_at(this->m_parser.config(), this->m_parser.config().retraction_speed, ConfigFlowDomain::Filament, m_extruder_id) * 60);
@@ -4816,6 +4883,13 @@ void GCodeProcessor::run_post_process()
 
 void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type)
 {
+    const bool band_move = m_material_band_cycle != uint32_t(-1) &&
+        (type != EMoveType::Extrude || (m_material_band_bead && m_material_band_move.material == uint32_t(m_extruder_id) + 1));
+    if (band_move && type == EMoveType::Extrude) {
+        // Bead height is a vertical thickness, independent of motion along Z.
+        m_width = float(m_material_band_move.width);
+        m_height = float((m_material_band_move.height_start + m_material_band_move.height_end) * .5);
+    }
     m_last_line_id = (type == EMoveType::Color_change || type == EMoveType::Pause_Print || type == EMoveType::Custom_GCode) ?
         m_line_id + 1 :
         ((type == EMoveType::Seam) ? m_last_line_id : m_line_id);
@@ -4858,8 +4932,21 @@ void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type)
         // BBS: add arc move related data
         path_type,
         arc_center,
+        band_move ? m_material_band_cycle : uint32_t(-1),
         std::move(interpolation_points),
     });
+
+    if (band_move && type != EMoveType::Seam) {
+        auto metadata = m_material_band_move;
+        metadata.move_id = m_result.moves.size() - 1;
+        if (type != EMoveType::Extrude) metadata.deposition = 0;
+        m_result.material_band_moves.push_back(metadata);
+        auto& cycle = m_result.material_band_cycles[m_material_band_cycle];
+        cycle.top_z = std::max(cycle.top_z, metadata.top_z);
+        const size_t sequence = metadata.move_id - m_seams_count;
+        if (!cycle.ranges.empty() && cycle.ranges.back().second + 1 == sequence) cycle.ranges.back().second = sequence;
+        else cycle.ranges.emplace_back(sequence > 0 ? sequence - 1 : 0, sequence);
+    }
 
     if (type == EMoveType::Seam) {
         m_seams_count++;

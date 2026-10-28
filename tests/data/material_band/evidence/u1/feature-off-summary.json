@@ -1,0 +1,3431 @@
+{
+  "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+  "threads": 2,
+  "warmups": 1,
+  "measured_runs": 5,
+  "cpu_affinity": "0x3",
+  "p95_published": false,
+  "enabled": {},
+  "feature_off": {
+    "OFF-solid-bbl": {
+      "old": {
+        "export_ms": {
+          "median": 29.0221,
+          "min": 27.4094,
+          "max": 32.7317
+        },
+        "gcode_bytes": {
+          "median": 51293,
+          "min": 51293,
+          "max": 51293
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 80,
+          "min": 80,
+          "max": 80
+        },
+        "path_segments": {
+          "median": 752,
+          "min": 752,
+          "max": 752
+        },
+        "paths_ms": {
+          "median": 3.4398,
+          "min": 2.5005,
+          "max": 5.3144
+        },
+        "peak_working_set_bytes": {
+          "median": 23310336,
+          "min": 23064576,
+          "max": 23429120
+        },
+        "preview_moves": {
+          "median": 943,
+          "min": 943,
+          "max": 943
+        },
+        "slice_ms": {
+          "median": 1.7301,
+          "min": 1.3384,
+          "max": 2.1661
+        },
+        "slice_surfaces": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "slicing_export_ms": {
+          "median": 35.4696,
+          "min": 32.3125,
+          "max": 37.3983
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.07415780000155792,
+          "min": 0.06868260000192095,
+          "max": 0.1701452999986941
+        }
+      },
+      "new": {
+        "export_ms": {
+          "median": 28.0298,
+          "min": 26.6993,
+          "max": 37.9225
+        },
+        "gcode_bytes": {
+          "median": 51293,
+          "min": 51293,
+          "max": 51293
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 80,
+          "min": 80,
+          "max": 80
+        },
+        "path_segments": {
+          "median": 752,
+          "min": 752,
+          "max": 752
+        },
+        "paths_ms": {
+          "median": 3.1631,
+          "min": 2.7623,
+          "max": 4.2864
+        },
+        "peak_working_set_bytes": {
+          "median": 23785472,
+          "min": 23748608,
+          "max": 23912448
+        },
+        "preview_moves": {
+          "median": 943,
+          "min": 943,
+          "max": 943
+        },
+        "slice_ms": {
+          "median": 1.6524,
+          "min": 1.5325,
+          "max": 2.4193
+        },
+        "slice_surfaces": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "slicing_export_ms": {
+          "median": 34.2302,
+          "min": 31.3949,
+          "max": 42.2503
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.07880670001031831,
+          "min": 0.06694669999706093,
+          "max": 0.08273270000063349
+        }
+      },
+      "time_ratio": 0.9650574012675645,
+      "paired_time_ratio": 0.9868816433357525,
+      "memory_ratio": 1.020383060973467,
+      "samples_old": [
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 27.4094,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.283,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.6201,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23429120,
+          "wall_seconds": 0.06868260000192095,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 32.3125
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 28.2856,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 5.3144,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.8696,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23293952,
+          "wall_seconds": 0.07334210000408348,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 35.4696
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 29.0221,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.9502,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.3384,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23064576,
+          "wall_seconds": 0.1701452999986941,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 34.3107
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 30.4781,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.4398,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.7301,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23310336,
+          "wall_seconds": 0.07415780000155792,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 35.648
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 32.7317,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 2.5005,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 2.1661,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23310336,
+          "wall_seconds": 0.0748816999985138,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 37.3983
+        }
+      ],
+      "samples_new": [
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 37.9225,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 2.7623,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.5655,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23748608,
+          "wall_seconds": 0.08273270000063349,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 42.2503
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 26.6993,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.1631,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.5325,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23781376,
+          "wall_seconds": 0.06694669999706093,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 31.3949
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 27.6354,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.8059,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 2.4193,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23834624,
+          "wall_seconds": 0.08012059998873156,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 33.8606
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 31.1661,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.1018,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.6524,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23785472,
+          "wall_seconds": 0.0714968999964185,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 35.9203
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 28.0298,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 4.2864,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 1.914,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23912448,
+          "wall_seconds": 0.07880670001031831,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "611be10f2fbbcfa20705124d0d84d3ed0f4e678d7b10c87e7e791b474d40a5d7",
+          "gcode_bytes": 51293,
+          "tool_sequence": [],
+          "slicing_export_ms": 34.2302
+        }
+      ]
+    },
+    "OFF-painted-bbl": {
+      "old": {
+        "export_ms": {
+          "median": 40.4822,
+          "min": 35.5245,
+          "max": 43.7407
+        },
+        "gcode_bytes": {
+          "median": 79314,
+          "min": 79314,
+          "max": 79314
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 50,
+          "min": 50,
+          "max": 50
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 119,
+          "min": 119,
+          "max": 119
+        },
+        "path_segments": {
+          "median": 814,
+          "min": 814,
+          "max": 814
+        },
+        "paths_ms": {
+          "median": 4.3628,
+          "min": 3.9872,
+          "max": 7.4821
+        },
+        "peak_working_set_bytes": {
+          "median": 24408064,
+          "min": 24350720,
+          "max": 24522752
+        },
+        "preview_moves": {
+          "median": 1752,
+          "min": 1752,
+          "max": 1752
+        },
+        "slice_ms": {
+          "median": 3.1719,
+          "min": 3.0343,
+          "max": 6.0538
+        },
+        "slice_surfaces": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "slicing_export_ms": {
+          "median": 47.6382,
+          "min": 43.059200000000004,
+          "max": 57.276599999999995
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.08600779999687802,
+          "min": 0.0842214000003878,
+          "max": 0.09704399999463931
+        }
+      },
+      "new": {
+        "export_ms": {
+          "median": 36.9856,
+          "min": 35.6202,
+          "max": 38.2489
+        },
+        "gcode_bytes": {
+          "median": 79314,
+          "min": 79314,
+          "max": 79314
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 50,
+          "min": 50,
+          "max": 50
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 119,
+          "min": 119,
+          "max": 119
+        },
+        "path_segments": {
+          "median": 814,
+          "min": 814,
+          "max": 814
+        },
+        "paths_ms": {
+          "median": 4.5613,
+          "min": 4.2997,
+          "max": 4.651
+        },
+        "peak_working_set_bytes": {
+          "median": 24776704,
+          "min": 24719360,
+          "max": 25030656
+        },
+        "preview_moves": {
+          "median": 1752,
+          "min": 1752,
+          "max": 1752
+        },
+        "slice_ms": {
+          "median": 4.0041,
+          "min": 2.9546,
+          "max": 5.5038
+        },
+        "slice_surfaces": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "slicing_export_ms": {
+          "median": 44.6478,
+          "min": 43.924,
+          "max": 48.314
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.08480750001035631,
+          "min": 0.08220119999896269,
+          "max": 0.08940879999136087
+        }
+      },
+      "time_ratio": 0.937226847361991,
+      "paired_time_ratio": 0.9220331582637463,
+      "memory_ratio": 1.0151032052357778,
+      "samples_old": [
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 35.5245,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.3628,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.1719,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24522752,
+          "wall_seconds": 0.0842214000003878,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 43.059200000000004
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 42.1711,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 3.9872,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.1642,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24522752,
+          "wall_seconds": 0.08517180000490043,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 49.322500000000005
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 43.7407,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 7.4821,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 6.0538,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24408064,
+          "wall_seconds": 0.09704399999463931,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 57.276599999999995
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 40.4822,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.1217,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.0343,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24350720,
+          "wall_seconds": 0.08600779999687802,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 47.6382
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 39.4619,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.4719,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.2323,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24350720,
+          "wall_seconds": 0.08659229999466334,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 47.1661
+        }
+      ],
+      "samples_new": [
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 37.6323,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.651,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 4.0716,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 25030656,
+          "wall_seconds": 0.08480750001035631,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 46.3549
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 36.9856,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.2999,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.3623,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24776704,
+          "wall_seconds": 0.08590150000236463,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 44.6478
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 36.3486,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.634,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 2.9546,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24719360,
+          "wall_seconds": 0.08940879999136087,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 43.9372
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 35.6202,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.2997,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 4.0041,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24760320,
+          "wall_seconds": 0.08220119999896269,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 43.924
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 38.2489,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.5613,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 5.5038,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24907776,
+          "wall_seconds": 0.08329739999317098,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "755029c088da47802407763c52d3d8cd6849a5ed18ff23ca56dfd71030df9af4",
+          "gcode_bytes": 79314,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 48.314
+        }
+      ]
+    },
+    "OFF-tapered-bbl": {
+      "old": {
+        "export_ms": {
+          "median": 252.299,
+          "min": 250.3172,
+          "max": 253.4301
+        },
+        "gcode_bytes": {
+          "median": 109534,
+          "min": 109534,
+          "max": 109534
+        },
+        "layers": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 88,
+          "min": 88,
+          "max": 88
+        },
+        "path_segments": {
+          "median": 2729,
+          "min": 2729,
+          "max": 2729
+        },
+        "paths_ms": {
+          "median": 23.7704,
+          "min": 22.7839,
+          "max": 24.7365
+        },
+        "peak_working_set_bytes": {
+          "median": 26320896,
+          "min": 26034176,
+          "max": 26451968
+        },
+        "preview_moves": {
+          "median": 3025,
+          "min": 3025,
+          "max": 3025
+        },
+        "slice_ms": {
+          "median": 3.0716,
+          "min": 2.8191,
+          "max": 3.7073
+        },
+        "slice_surfaces": {
+          "median": 358,
+          "min": 358,
+          "max": 358
+        },
+        "slicing_export_ms": {
+          "median": 279.2354,
+          "min": 277.0819,
+          "max": 281.2382
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.31974340000306256,
+          "min": 0.31641499999386724,
+          "max": 0.42538950000016484
+        }
+      },
+      "new": {
+        "export_ms": {
+          "median": 247.0118,
+          "min": 240.4043,
+          "max": 252.0647
+        },
+        "gcode_bytes": {
+          "median": 109534,
+          "min": 109534,
+          "max": 109534
+        },
+        "layers": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 88,
+          "min": 88,
+          "max": 88
+        },
+        "path_segments": {
+          "median": 2729,
+          "min": 2729,
+          "max": 2729
+        },
+        "paths_ms": {
+          "median": 23.5945,
+          "min": 23.3305,
+          "max": 25.1408
+        },
+        "peak_working_set_bytes": {
+          "median": 26374144,
+          "min": 26300416,
+          "max": 26640384
+        },
+        "preview_moves": {
+          "median": 3025,
+          "min": 3025,
+          "max": 3025
+        },
+        "slice_ms": {
+          "median": 3.0458,
+          "min": 2.8267,
+          "max": 3.4773
+        },
+        "slice_surfaces": {
+          "median": 358,
+          "min": 358,
+          "max": 358
+        },
+        "slicing_export_ms": {
+          "median": 274.5256,
+          "min": 266.6862,
+          "max": 278.705
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.31335529999341816,
+          "min": 0.3040028999967035,
+          "max": 0.32459790000575595
+        }
+      },
+      "time_ratio": 0.983133227377331,
+      "paired_time_ratio": 0.9807738221632974,
+      "memory_ratio": 1.0020230314347962,
+      "samples_old": [
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 252.2408,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 22.7839,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.0556,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26370048,
+          "wall_seconds": 0.3169307999924058,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 278.0803
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 253.4301,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 24.7365,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.0716,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26034176,
+          "wall_seconds": 0.31974340000306256,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 281.2382
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 253.117,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.7704,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.3191,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26320896,
+          "wall_seconds": 0.3227990999876056,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 280.2065
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 250.3172,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.0574,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.7073,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26451968,
+          "wall_seconds": 0.42538950000016484,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 277.0819
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 252.299,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 24.1173,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 2.8191,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26173440,
+          "wall_seconds": 0.31641499999386724,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 279.2354
+        }
+      ],
+      "samples_new": [
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 252.0647,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.5945,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.0458,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26374144,
+          "wall_seconds": 0.32459790000575595,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 278.705
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 240.4043,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.4498,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 2.8321,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26300416,
+          "wall_seconds": 0.3040028999967035,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 266.6862
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 247.0118,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 24.3301,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.4773,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26501120,
+          "wall_seconds": 0.31675659999018535,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 274.8192
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 248.3684,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.3305,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 2.8267,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26640384,
+          "wall_seconds": 0.3128512999974191,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 274.5256
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 242.6611,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 25.1408,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "bbl",
+          "slice_ms": 3.0957,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26308608,
+          "wall_seconds": 0.31335529999341816,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "8978dd9d10e10d41bb1de11936dad69908841daf61d1c7226e1a856e8c8c743f",
+          "gcode_bytes": 109534,
+          "tool_sequence": [],
+          "slicing_export_ms": 270.8976
+        }
+      ]
+    },
+    "OFF-solid-generic": {
+      "old": {
+        "export_ms": {
+          "median": 31.3923,
+          "min": 29.4619,
+          "max": 32.933
+        },
+        "gcode_bytes": {
+          "median": 49490,
+          "min": 49490,
+          "max": 49490
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 80,
+          "min": 80,
+          "max": 80
+        },
+        "path_segments": {
+          "median": 752,
+          "min": 752,
+          "max": 752
+        },
+        "paths_ms": {
+          "median": 3.0538,
+          "min": 2.7403,
+          "max": 3.6435
+        },
+        "peak_working_set_bytes": {
+          "median": 23384064,
+          "min": 23330816,
+          "max": 23486464
+        },
+        "preview_moves": {
+          "median": 943,
+          "min": 943,
+          "max": 943
+        },
+        "slice_ms": {
+          "median": 1.3883,
+          "min": 1.2855,
+          "max": 2.2594
+        },
+        "slice_surfaces": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "slicing_export_ms": {
+          "median": 35.5712,
+          "min": 35.0981,
+          "max": 37.5526
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.07290220000140835,
+          "min": 0.07180890000017826,
+          "max": 0.07594939999398775
+        }
+      },
+      "new": {
+        "export_ms": {
+          "median": 30.266,
+          "min": 28.8872,
+          "max": 35.7257
+        },
+        "gcode_bytes": {
+          "median": 49490,
+          "min": 49490,
+          "max": 49490
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 80,
+          "min": 80,
+          "max": 80
+        },
+        "path_segments": {
+          "median": 752,
+          "min": 752,
+          "max": 752
+        },
+        "paths_ms": {
+          "median": 3.0032,
+          "min": 2.7445,
+          "max": 3.7224
+        },
+        "peak_working_set_bytes": {
+          "median": 23736320,
+          "min": 23674880,
+          "max": 23863296
+        },
+        "preview_moves": {
+          "median": 943,
+          "min": 943,
+          "max": 943
+        },
+        "slice_ms": {
+          "median": 1.4639,
+          "min": 1.2711,
+          "max": 1.5437
+        },
+        "slice_surfaces": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "slicing_export_ms": {
+          "median": 34.2967,
+          "min": 33.8646,
+          "max": 40.272600000000004
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.07563269999809563,
+          "min": 0.07272180001018569,
+          "max": 0.08444900000176858
+        }
+      },
+      "time_ratio": 0.9641704525008997,
+      "paired_time_ratio": 0.9708075365902997,
+      "memory_ratio": 1.0150639341390786,
+      "samples_old": [
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 31.3923,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 2.8934,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.2855,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23384064,
+          "wall_seconds": 0.07574569999997038,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 35.5712
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 29.4619,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.6435,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.2594,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23355392,
+          "wall_seconds": 0.07290220000140835,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 35.3648
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 31.6792,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 2.7403,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.2919,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23400448,
+          "wall_seconds": 0.07180890000017826,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 35.711400000000005
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 29.8624,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.0538,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.1819,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23486464,
+          "wall_seconds": 0.07251940001151524,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 35.0981
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 32.933,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.2313,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.3883,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23330816,
+          "wall_seconds": 0.07594939999398775,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 37.5526
+        }
+      ],
+      "samples_new": [
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 35.7257,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.0032,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.5437,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23674880,
+          "wall_seconds": 0.07644669999717735,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 40.272600000000004
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 29.8381,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 2.7554,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.2711,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23711744,
+          "wall_seconds": 0.08444900000176858,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 33.8646
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 31.4144,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.1429,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.5097,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23773184,
+          "wall_seconds": 0.07563269999809563,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 36.067
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 28.8872,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 3.7224,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.4639,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23863296,
+          "wall_seconds": 0.07543209999857936,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 34.0735
+        },
+        {
+          "case": "OFF-solid",
+          "engine_used": "legacy",
+          "export_ms": 30.266,
+          "layers": 10,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 80,
+          "path_segments": 752,
+          "paths_ms": 2.7445,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 943,
+          "runtime_printer_family": "generic",
+          "slice_ms": 1.2862,
+          "slice_surfaces": 10,
+          "threads": 2,
+          "peak_working_set_bytes": 23736320,
+          "wall_seconds": 0.07272180001018569,
+          "profile_sha256": "d8e55844bc85f3ee7bfb2362b06636b13238b3e34f2e39685493995887735ecc",
+          "normalized_gcode_sha256": "7909e1f72277225673d540fef7a355a416389bd2cb37712f7550b6e5157dcbde",
+          "gcode_bytes": 49490,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 34.2967
+        }
+      ]
+    },
+    "OFF-painted-generic": {
+      "old": {
+        "export_ms": {
+          "median": 38.6742,
+          "min": 36.7926,
+          "max": 43.2568
+        },
+        "gcode_bytes": {
+          "median": 75678,
+          "min": 75678,
+          "max": 75678
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 50,
+          "min": 50,
+          "max": 50
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 119,
+          "min": 119,
+          "max": 119
+        },
+        "path_segments": {
+          "median": 814,
+          "min": 814,
+          "max": 814
+        },
+        "paths_ms": {
+          "median": 4.1106,
+          "min": 4.0146,
+          "max": 4.5056
+        },
+        "peak_working_set_bytes": {
+          "median": 24330240,
+          "min": 24297472,
+          "max": 24883200
+        },
+        "preview_moves": {
+          "median": 1752,
+          "min": 1752,
+          "max": 1752
+        },
+        "slice_ms": {
+          "median": 3.1655,
+          "min": 2.814,
+          "max": 4.2107
+        },
+        "slice_surfaces": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "slicing_export_ms": {
+          "median": 47.3784,
+          "min": 43.8313,
+          "max": 50.8668
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.08944969999720342,
+          "min": 0.08212969999294728,
+          "max": 0.1932089000038104
+        }
+      },
+      "new": {
+        "export_ms": {
+          "median": 37.3883,
+          "min": 36.9141,
+          "max": 40.9102
+        },
+        "gcode_bytes": {
+          "median": 75678,
+          "min": 75678,
+          "max": 75678
+        },
+        "layers": {
+          "median": 10,
+          "min": 10,
+          "max": 10
+        },
+        "legacy_local_z_passes": {
+          "median": 50,
+          "min": 50,
+          "max": 50
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 119,
+          "min": 119,
+          "max": 119
+        },
+        "path_segments": {
+          "median": 814,
+          "min": 814,
+          "max": 814
+        },
+        "paths_ms": {
+          "median": 4.5323,
+          "min": 4.3727,
+          "max": 5.7539
+        },
+        "peak_working_set_bytes": {
+          "median": 24858624,
+          "min": 24780800,
+          "max": 24915968
+        },
+        "preview_moves": {
+          "median": 1752,
+          "min": 1752,
+          "max": 1752
+        },
+        "slice_ms": {
+          "median": 3.1666,
+          "min": 2.9124,
+          "max": 3.8236
+        },
+        "slice_surfaces": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "slicing_export_ms": {
+          "median": 46.0535,
+          "min": 44.7646,
+          "max": 48.5291
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.08513229999516625,
+          "min": 0.08200249999936204,
+          "max": 0.08762850001221523
+        }
+      },
+      "time_ratio": 0.9720357800178985,
+      "paired_time_ratio": 0.9741084544855884,
+      "memory_ratio": 1.0217171717171718,
+      "samples_old": [
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 36.7926,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.2247,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.814,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24326144,
+          "wall_seconds": 0.08212969999294728,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 43.8313
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 38.6742,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.5056,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 4.2107,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24330240,
+          "wall_seconds": 0.1932089000038104,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 47.3905
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 38.3139,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.0146,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.1655,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24883200,
+          "wall_seconds": 0.08342569999513216,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 45.494
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 43.2568,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.1106,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.4994,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24297472,
+          "wall_seconds": 0.08944969999720342,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 50.8668
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 40.2218,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.1002,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.0564,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24498176,
+          "wall_seconds": 0.09297610000066925,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 47.3784
+        }
+      ],
+      "samples_new": [
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 37.3883,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.3727,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.8236,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24915968,
+          "wall_seconds": 0.08762850001221523,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 45.5846
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 36.9141,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.9381,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.9124,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24858624,
+          "wall_seconds": 0.08200249999936204,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 44.7646
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 40.9102,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.4871,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.1318,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24870912,
+          "wall_seconds": 0.08513229999516625,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 48.5291
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 37.133,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 5.7539,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.1666,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24797184,
+          "wall_seconds": 0.08479249999800231,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 46.0535
+        },
+        {
+          "case": "OFF-painted",
+          "engine_used": "legacy",
+          "export_ms": 38.3489,
+          "layers": 10,
+          "legacy_local_z_passes": 50,
+          "move_vertex_bytes": 104,
+          "path_polylines": 119,
+          "path_segments": 814,
+          "paths_ms": 4.5323,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 1752,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.2705,
+          "slice_surfaces": 20,
+          "threads": 2,
+          "peak_working_set_bytes": 24780800,
+          "wall_seconds": 0.08521589999145363,
+          "profile_sha256": "acd61e2da6ab76775d2819e49c4a26f629ca7647e5401ededbb47f1c0640d7ed",
+          "normalized_gcode_sha256": "f056f006a7fa6df598048999f3ff9ebfa3352184804ed4188ce14781fd50ed87",
+          "gcode_bytes": 75678,
+          "tool_sequence": [
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0",
+            "T1",
+            "T0"
+          ],
+          "slicing_export_ms": 46.1517
+        }
+      ]
+    },
+    "OFF-tapered-generic": {
+      "old": {
+        "export_ms": {
+          "median": 261.5868,
+          "min": 252.8885,
+          "max": 298.83
+        },
+        "gcode_bytes": {
+          "median": 106162,
+          "min": 106162,
+          "max": 106162
+        },
+        "layers": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 88,
+          "min": 88,
+          "max": 88
+        },
+        "path_segments": {
+          "median": 2729,
+          "min": 2729,
+          "max": 2729
+        },
+        "paths_ms": {
+          "median": 23.9406,
+          "min": 23.1323,
+          "max": 43.0296
+        },
+        "peak_working_set_bytes": {
+          "median": 26046464,
+          "min": 25440256,
+          "max": 26087424
+        },
+        "preview_moves": {
+          "median": 3025,
+          "min": 3025,
+          "max": 3025
+        },
+        "slice_ms": {
+          "median": 2.946,
+          "min": 2.8975,
+          "max": 4.3716
+        },
+        "slice_surfaces": {
+          "median": 358,
+          "min": 358,
+          "max": 358
+        },
+        "slicing_export_ms": {
+          "median": 288.4443,
+          "min": 279.2629,
+          "max": 346.2312
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.3384411999868462,
+          "min": 0.3248366000043461,
+          "max": 0.4231872999953339
+        }
+      },
+      "new": {
+        "export_ms": {
+          "median": 254.081,
+          "min": 248.8014,
+          "max": 480.3123
+        },
+        "gcode_bytes": {
+          "median": 106162,
+          "min": 106162,
+          "max": 106162
+        },
+        "layers": {
+          "median": 20,
+          "min": 20,
+          "max": 20
+        },
+        "legacy_local_z_passes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "move_vertex_bytes": {
+          "median": 104,
+          "min": 104,
+          "max": 104
+        },
+        "path_polylines": {
+          "median": 88,
+          "min": 88,
+          "max": 88
+        },
+        "path_segments": {
+          "median": 2729,
+          "min": 2729,
+          "max": 2729
+        },
+        "paths_ms": {
+          "median": 23.8125,
+          "min": 22.4863,
+          "max": 44.071
+        },
+        "peak_working_set_bytes": {
+          "median": 26554368,
+          "min": 25370624,
+          "max": 26923008
+        },
+        "preview_moves": {
+          "median": 3025,
+          "min": 3025,
+          "max": 3025
+        },
+        "slice_ms": {
+          "median": 3.1107,
+          "min": 2.7578,
+          "max": 4.1234
+        },
+        "slice_surfaces": {
+          "median": 358,
+          "min": 358,
+          "max": 358
+        },
+        "slicing_export_ms": {
+          "median": 279.89029999999997,
+          "min": 275.7926,
+          "max": 528.5067
+        },
+        "threads": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "wall_seconds": {
+          "median": 0.3230628000019351,
+          "min": 0.3177927999931853,
+          "max": 0.5707837999943877
+        }
+      },
+      "time_ratio": 0.9703443611123533,
+      "paired_time_ratio": 0.989219778648764,
+      "memory_ratio": 1.0194999213712848,
+      "samples_old": [
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 298.83,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 43.0296,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 4.3716,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 25440256,
+          "wall_seconds": 0.3911750999977812,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 346.2312
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 265.3747,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.2664,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.946,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26046464,
+          "wall_seconds": 0.32957109999551903,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 291.5871
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 255.0314,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 24.6627,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.8975,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 25858048,
+          "wall_seconds": 0.3248366000043461,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 282.59159999999997
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 261.5868,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.9406,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.9169,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26066944,
+          "wall_seconds": 0.3384411999868462,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 288.4443
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 252.8885,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.1323,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.2421,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26087424,
+          "wall_seconds": 0.4231872999953339,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 279.2629
+        }
+      ],
+      "samples_new": [
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 480.3123,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 44.071,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 4.1234,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 25370624,
+          "wall_seconds": 0.5707837999943877,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 528.5067
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 254.081,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 22.8399,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.9694,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26513408,
+          "wall_seconds": 0.3177927999931853,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 279.89029999999997
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 253.7952,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 22.4863,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.2637,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26669056,
+          "wall_seconds": 0.3238956999994116,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 279.5452
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 259.416,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.8125,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 2.7578,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26554368,
+          "wall_seconds": 0.32226609998906497,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 285.98629999999997
+        },
+        {
+          "case": "OFF-tapered",
+          "engine_used": "legacy",
+          "export_ms": 248.8014,
+          "layers": 20,
+          "legacy_local_z_passes": 0,
+          "move_vertex_bytes": 104,
+          "path_polylines": 88,
+          "path_segments": 2729,
+          "paths_ms": 23.8805,
+          "plate_origin_mm": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "preview_moves": 3025,
+          "runtime_printer_family": "generic",
+          "slice_ms": 3.1107,
+          "slice_surfaces": 358,
+          "threads": 2,
+          "peak_working_set_bytes": 26923008,
+          "wall_seconds": 0.3230628000019351,
+          "profile_sha256": "aa6bd68a4f0ab8bb51d24532a4b5dcc3b8ab9db49eaac09382c5489e0bbe21d0",
+          "normalized_gcode_sha256": "88369930b0f23b2ba4f82392a5e7b2dae8b12b4ac30533dcc26fd5b743e99fb7",
+          "gcode_bytes": 106162,
+          "tool_sequence": [
+            "T0"
+          ],
+          "slicing_export_ms": 275.7926
+        }
+      ]
+    }
+  },
+  "baseline_binary_sha256": "53d23574c8fd97d666ee83e643e6707ff32b449fd9e1bce4797a9c8cbf09550d",
+  "budgets": {
+    "enabled_median_limits": {
+      "snapshot_ms": 500,
+      "paths_ms": 8000,
+      "finalize_ms": 20000,
+      "export_ms": 1000,
+      "peak_working_set_bytes": 268435456,
+      "cache_hit_ms": 10
+    },
+    "enabled_failures": [],
+    "enabled_pass": true,
+    "feature_off_time_estimator": "median(new_time_i / old_time_i) for adjacent paired captures",
+    "feature_off_5_percent": {
+      "OFF-solid-bbl": {
+        "time_pass": true,
+        "memory_pass": true
+      },
+      "OFF-painted-bbl": {
+        "time_pass": true,
+        "memory_pass": true
+      },
+      "OFF-tapered-bbl": {
+        "time_pass": true,
+        "memory_pass": true
+      },
+      "OFF-solid-generic": {
+        "time_pass": true,
+        "memory_pass": true
+      },
+      "OFF-painted-generic": {
+        "time_pass": true,
+        "memory_pass": true
+      },
+      "OFF-tapered-generic": {
+        "time_pass": true,
+        "memory_pass": true
+      }
+    },
+    "feature_off_ratio_of_medians_pass": true,
+    "feature_off_pass": true
+  }
+}

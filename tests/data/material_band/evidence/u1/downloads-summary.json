@@ -1,0 +1,281 @@
+[
+  {
+    "source": "C:\\Users\\radug\\Downloads\\Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\01-Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "d7036560c0648238fbffc7cfc2150c7389afd2fbbbf700c31ffa05172b84960b",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 2.0654891000012867,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 1,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture.3mf",
+      "stage": "loaded",
+      "triangles": 103176
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\1_Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\02-1_Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "f682d3b7e00814942d8a400afc5347393f38934e2eaf792a01ffc09ff8d71f13",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 2.003036299996893,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 1,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\1_Meshy_AI_tyranid_alien_predato_1016020716_image-to-3d-texture.3mf",
+      "stage": "loaded",
+      "triangles": 103176
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\03-3DBenchy",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "92e44b529c7857c3909f62c1b8aee4a1cfd85bf772ff2808eefceb38c38ee62b",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.6620097000122769,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+      "stage": "loaded",
+      "triangles": 225154
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\TestCylinder.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\04-TestCylinder",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "6ea86e68bf17a254971eb41e8a05c6b92cda6201630ca48348d815aa24181deb",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.12373930000467226,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "1",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.08",
+        "sparse_infill_density": "10%",
+        "sparse_infill_pattern": "adaptivecubic",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\TestCylinder.3mf",
+      "stage": "loaded",
+      "triangles": 720
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\CubeTest.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\05-CubeTest",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "8fe938b4c145cd0d02ea3d4e1c6682d0957f15d2c57ea57878e1590ad874700c",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.08374670000921469,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "rectilinear",
+        "layer_height": "0.2",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\CubeTest.3mf",
+      "stage": "loaded",
+      "triangles": 12
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\SlicerProblem_Painting.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\06-SlicerProblem_Painting",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "cbd990a0e288d560718fa32103f65e0cdf6385706dc99f0009f381a1c811bd05",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 0.17987120000179857,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 2,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.2",
+        "sparse_infill_density": "25%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "6"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\SlicerProblem_Painting.3mf",
+      "stage": "loaded",
+      "triangles": 64904
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\Multi-color Cute Dragon by IK3Digital.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\07-Multi-color Cute Dragon by IK3Digital",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "a22b77b66459ae8ffc87a5281f1b43474346fcd2d8c17be3bf830d9fd2f60cb8",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 2.1336025000055088,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "rectilinear",
+        "layer_height": "0.2",
+        "sparse_infill_density": "5%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\Multi-color Cute Dragon by IK3Digital.3mf",
+      "stage": "loaded",
+      "triangles": 1371217
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\Chibi Panther Chameleon by Raki-Box.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\08-Chibi Panther Chameleon by Raki-Box",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "06f200f1bc58230649c0c9443f23cbf5898e5157dc7793071ad8ed698e6ecd5a",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 1.4680519999965327,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75,1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.24",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "grid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\Chibi Panther Chameleon by Raki-Box.3mf",
+      "stage": "loaded",
+      "triangles": 811700
+    },
+    "source_unchanged": true
+  },
+  {
+    "source": "C:\\Users\\radug\\Downloads\\1MPolygonBridge.3mf",
+    "output": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\u1\\downloads\\09-1MPolygonBridge",
+    "binary_sha256": "7d3571314084055befca93a614d4137073f586a2a4fd3fa2b644b9dafe13579a",
+    "sha256": "e7f5810db93300928eec92c6f648b731d1c49995266411d62b45a4c770e11f2a",
+    "status": "completed",
+    "exit_code": 0,
+    "elapsed_seconds": 4.438227099992218,
+    "report": {
+      "engine_requested": "material_bands",
+      "fallback": "unsupported_auxiliary_or_sequential_profile",
+      "image_mapped_volumes": 0,
+      "material_band_accepted": false,
+      "objects": 1,
+      "settings": {
+        "enable_support": "0",
+        "filament_diameter": "1.75,1.75",
+        "gcode_flavor": "klipper",
+        "internal_solid_infill_pattern": "monotonic",
+        "layer_height": "0.12",
+        "sparse_infill_density": "15%",
+        "sparse_infill_pattern": "gyroid",
+        "wall_generator": "classic",
+        "wall_loops": "2"
+      },
+      "source": "C:\\Users\\radug\\Downloads\\1MPolygonBridge.3mf",
+      "stage": "loaded",
+      "triangles": 2179126
+    },
+    "source_unchanged": true
+  }
+]

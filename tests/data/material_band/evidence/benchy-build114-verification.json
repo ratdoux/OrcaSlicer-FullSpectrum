@@ -1,0 +1,368 @@
+{
+  "date": "2026-10-28",
+  "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+  "source_sha256": "92e44b529c7857c3909f62c1b8aee4a1cfd85bf772ff2808eefceb38c38ee62b",
+  "source_unchanged": true,
+  "git_head": "63117732a0683220530cf690f385055d1f3dd54d",
+  "working_tree_contains_uncommitted_implementation": true,
+  "binaries_sha256": {
+    "build\\src\\Release\\snapmaker-orca.exe": "b7f87b6244aa6e4a0c1fcaad63a65500e8a3f28ff278dfaccf4574c4b26fdb5e",
+    "build\\src\\Release\\Snapmaker_Orca.dll": "3b81fa7309f70947ee478258d1c4a7f7fad725215bb4c312a6e09f0d75b707f6",
+    "build-material-band\\tests\\libslic3r\\Release\\libslic3r_tests.exe": "ea9f51abc92c177b5af9b868914b1561803922cc7e1e023e2bde33d9ee872742"
+  },
+  "original_material_band_accepted": false,
+  "original_engine_used": "legacy",
+  "original_slice_report": {
+    "engine_requested": "material_bands",
+    "failure_band": {
+      "cycle": 187,
+      "domain": 1539,
+      "material": 2
+    },
+    "failure_witness": [
+      130.903578,
+      137.7821263333333,
+      40.781879194630875
+    ],
+    "fallback": "schedule_support_cache_limit",
+    "gcode": {
+      "extrusions": 588059,
+      "invalid_moves": 0,
+      "material_band_cycles": 0,
+      "moves": 763724,
+      "positive_filament_mm": 22378.644327149213
+    },
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 420,
+      "infill_mm": 110264.97672254675,
+      "layers": 599,
+      "ordered_point_fnv1a64": "18432948513540464255",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 55800,
+      "perimeter_mm": 221308.8940394843,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "9809854195355678863"
+    },
+    "image_mapped_volumes": 0,
+    "material_band_accepted": false,
+    "objects": 1,
+    "paint_stream_bits": 1429240,
+    "planning_ms": {
+      "finalize": 681789.7631,
+      "paths": 2709914.9247,
+      "snapshot": 58.7105
+    },
+    "samples": [
+      {
+        "fill_mm": 468.4182399286813,
+        "islands": 2,
+        "layer": 0,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 496.290285050906,
+        "z": 0.2
+      },
+      {
+        "fill_mm": 256.33944120058226,
+        "islands": 3,
+        "layer": 149,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 730.0282878599025,
+        "z": 12.120000000000008
+      },
+      {
+        "fill_mm": 78.46789478611018,
+        "islands": 5,
+        "layer": 299,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 309.65362249417683,
+        "z": 24.119999999999838
+      },
+      {
+        "fill_mm": 83.68840433881627,
+        "islands": 1,
+        "layer": 449,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 339.1771309387444,
+        "z": 36.119999999999585
+      },
+      {
+        "fill_mm": 33.99422463906895,
+        "islands": 1,
+        "layer": 598,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 33.61738481710197,
+        "z": 48.03999999999933
+      }
+    ],
+    "settings": {
+      "brim_type": "auto_brim",
+      "brim_width": "5",
+      "enable_prime_tower": "1",
+      "enable_support": "0",
+      "filament_diameter": "1.75,1.75,1.75,1.75",
+      "gcode_flavor": "klipper",
+      "initial_layer_infill_speed": "105",
+      "initial_layer_print_height": "0.2",
+      "initial_layer_speed": "50",
+      "internal_solid_infill_pattern": "monotonic",
+      "layer_height": "0.08",
+      "mixed_filament_height_lower_bound": "0.06",
+      "prime_volume": "18",
+      "print_sequence": "by layer",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "gyroid",
+      "wall_generator": "classic",
+      "wall_loops": "2"
+    },
+    "slice_seconds": 3400.8599826,
+    "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+    "stage": "complete",
+    "triangles": 225154,
+    "unsupported_settings": []
+  },
+  "legacy_geometry_equal": true,
+  "fixed_paint_bit_count": {
+    "bits": 1429240,
+    "triangles": 225154,
+    "old_triangle_limit": 400000,
+    "new_rule": "Decode and count leaf triangles before selector expansion; retain 400000 triangle limit."
+  },
+  "remaining_blockers": [
+    {
+      "kind": "whole_print_qualification",
+      "detail": "Build 114 resolves the dependency-edge limit and passes whole-object validation. The combined 3727125-cell object/tower plan reaches the support-cache memory limit at cycle 187. Build 115 retires grounded-wall caches only after their last possible target and releases temporary graph work before travel; all 30 scheduling cases pass, including a bounded-memory regression that failed before the fix. Complete production qualification and captured object/tower replay are running."
+    }
+  ],
+  "application_cli": {
+    "exit_code": 0,
+    "production_build": 114,
+    "source_unchanged": true,
+    "gcode": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\layer114-application-benchy\\plate_1.gcode",
+    "gcode_sha256": "27a94f5480b4bec708b597c030a9bd420f2c3f142f16cec5a7897787d6a6ded2",
+    "engine_used": "legacy",
+    "stderr_empty": false
+  },
+  "new_engine_tests": {
+    "cases": 109,
+    "assertions": 4690332,
+    "passed": true,
+    "log": "build-material-band-layer114-tests.log"
+  },
+  "broader_regression": {
+    "cases": 388,
+    "passed": 381,
+    "failed": 7,
+    "previously_recorded_failures": true
+  },
+  "physical_qualification": false,
+  "legacy_baseline_report": {
+    "engine_requested": "material_bands",
+    "fallback": "unsupported_auxiliary_or_sequential_profile",
+    "gcode": {
+      "extrusions": 588059,
+      "invalid_moves": 0,
+      "material_band_cycles": 0,
+      "moves": 763724,
+      "positive_filament_mm": 22378.644327149213
+    },
+    "geometry": {
+      "centerline_tolerance_mm": 0.06,
+      "hole_sections": 420,
+      "infill_mm": 110264.97672254675,
+      "layers": 599,
+      "ordered_point_fnv1a64": "18432948513540464255",
+      "outside_infill_mm": 0.0,
+      "outside_perimeter_mm": 0.0,
+      "paths": 55800,
+      "perimeter_mm": 221308.8940394843,
+      "slicing_error_layers": 0,
+      "sorted_segment_fnv1a64": "9809854195355678863"
+    },
+    "image_mapped_volumes": 0,
+    "material_band_accepted": false,
+    "objects": 1,
+    "paint_stream_bits": 1429240,
+    "samples": [
+      {
+        "fill_mm": 468.4182399286813,
+        "islands": 2,
+        "layer": 0,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 496.290285050906,
+        "z": 0.2
+      },
+      {
+        "fill_mm": 256.33944120058226,
+        "islands": 3,
+        "layer": 149,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 730.0282878599025,
+        "z": 12.120000000000008
+      },
+      {
+        "fill_mm": 78.46789478611018,
+        "islands": 5,
+        "layer": 299,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 309.65362249417683,
+        "z": 24.119999999999838
+      },
+      {
+        "fill_mm": 83.68840433881627,
+        "islands": 1,
+        "layer": 449,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 339.1771309387444,
+        "z": 36.119999999999585
+      },
+      {
+        "fill_mm": 33.99422463906895,
+        "islands": 1,
+        "layer": 598,
+        "object": 0,
+        "outside_fill_mm": 0.0,
+        "outside_wall_mm": 0.0,
+        "wall_mm": 33.61738481710197,
+        "z": 48.03999999999933
+      }
+    ],
+    "settings": {
+      "brim_type": "auto_brim",
+      "brim_width": "5",
+      "enable_prime_tower": "1",
+      "enable_support": "0",
+      "filament_diameter": "1.75,1.75,1.75,1.75",
+      "gcode_flavor": "klipper",
+      "internal_solid_infill_pattern": "monotonic",
+      "layer_height": "0.08",
+      "prime_volume": "18",
+      "print_sequence": "by layer",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "gyroid",
+      "wall_generator": "classic",
+      "wall_loops": "2"
+    },
+    "slice_seconds": 12.0261967,
+    "source": "C:\\Users\\radug\\Downloads\\3DBenchy.3mf",
+    "stage": "complete",
+    "triangles": 225154,
+    "unsupported_settings": [
+      "brim is not supported (brim_width=5 mm)",
+      "sparse infill is not supported (15%; gyroid)"
+    ]
+  },
+  "production_build": 114,
+  "current_status": "Build-118 captured finalization passes complete object/tower support, access, travel and command generation within the unchanged 2-billion index-visit limit. All 112 kernel cases / 4690361 assertions and all 61 fixture plus two application export audits pass. Application build 119 changes only the engine tooltip. Full unchanged original Benchy runs started at 08:59 on 2026-10-28: test binary 118 and application 119. Full original qualification, canonical geometry and exported G-code audits remain pending.",
+  "historical_blockers": [
+    {
+      "kind": "unsupported_setting",
+      "detail": "5 mm automatic brim"
+    },
+    {
+      "kind": "unsupported_setting",
+      "detail": "15% gyroid sparse infill; kernel currently requires 100% dense"
+    },
+    {
+      "kind": "input_geometry",
+      "detail": "11 zero-area triangles in the imported float mesh",
+      "indices": [
+        52293,
+        129640,
+        129677,
+        150766,
+        213447,
+        213451,
+        213455,
+        213461,
+        214397,
+        219700,
+        219733
+      ]
+    },
+    {
+      "kind": "clipper_resource_limit",
+      "detail": "Removing those 11 triangles in diagnostic copies reaches pure_slab_admission: 225143 input faces exceed max_input_faces=20000."
+    },
+    {
+      "kind": "derived_configuration_constraint",
+      "detail": "Original layer height 0.08 mm and minimum active thickness 0.06 mm cannot fit two active materials in one macrocycle (minimum total 0.12 mm). This is inferred from the settings and solver constraints; the full model stops at earlier gates."
+    },
+    {
+      "kind": "unimplemented_process_setting",
+      "detail": "Original first-layer height is 0.2 mm, while current fixed kernel macrocycles derive height from nominal layer_height (0.08 mm here); separate first-layer process is not implemented."
+    }
+  ],
+  "resolved_compatibility": [
+    "5 mm automatic brim",
+    "15% normal gyroid with separate solid skins",
+    "Exact zero-area triangles excluded while preserving source facet IDs",
+    "225154-face source accepted by the U1 mesh-section process",
+    "Macrocycle allocation respecting 0.06 mm active minimum",
+    "Separate 0.2 mm first-layer process"
+  ],
+  "historical_application_cli": {
+    "exit_code": 0,
+    "source_unchanged": true,
+    "gcode": "D:\\FullSpectrum\\OrcaSlicer-FullSpectrum\\build-material-band\\evidence\\benchy-review\\application\\plate_1.gcode",
+    "gcode_sha256": "c2bf49b97ca208cefc184a5436c30ffe5041f565dcd5f422f9cde6dcd1e005d6",
+    "engine_used": "legacy",
+    "stderr_empty": true,
+    "known_log_messages": "Import temporary-file/bed-exclusion warnings; no assertion that log is warning-free."
+  },
+  "build115_diagnostic_replay": {
+    "log": "build-material-band-layer115-finalize-replay.log",
+    "accepted": false,
+    "failure": "schedule_index_work_limit",
+    "combined_cells": 3713794,
+    "omits_original_brim": true,
+    "full_production_runs": "deliberately stopped after diagnostic failure"
+  },
+  "build117_diagnostic_replay": {
+    "log": "build-material-band-layer117-finalize-replay.log",
+    "accepted": false,
+    "failure": "schedule_index_work_limit",
+    "combined_cells": 3713794,
+    "omits_original_brim": true,
+    "support_checkpoint": {
+      "cells": 3700000,
+      "index_visits": 899308954,
+      "candidates": 33527941
+    },
+    "production_limit_index_visits": 2000000000
+  },
+  "build118_diagnostic_replay": {
+    "log": "build-material-band-layer118-finalize-replay.log",
+    "accepted": true,
+    "exit_code": 0,
+    "combined_cells": 3713794,
+    "paths": 374154,
+    "dependencies": 375091,
+    "operations": 2127356,
+    "index_visits": 1537041981,
+    "support_index_visits": 901914679,
+    "access_index_visits": 1323517802,
+    "production_limit_index_visits": 2000000000,
+    "omits_original_brim": true,
+    "qualification": "Diagnostic captured geometry only; original project plus brim still requires full production acceptance."
+  }
+}
