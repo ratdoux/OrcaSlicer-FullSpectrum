@@ -1616,7 +1616,7 @@ struct BridgeSliceResult
     std::vector<std::set<int>> regions_by_layer;
     std::string                gcode;
     std::vector<float>         local_z_extrusion_heights;
-    // Extruder and role of every Local-Z extrusion thinner than a whole layer.
+    // Extruder and role of every Local-Z extrusion whose height differs from a whole layer.
     std::set<std::pair<int, int>> local_z_extruder_roles;
 };
 
@@ -1627,7 +1627,8 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
                                         const std::vector<std::string>&             colors,
                                         const std::vector<std::pair<int, int>>&     painted_facets,
                                         bool                                        continuous_bridges,
-                                        bool                                        independent_layer_heights = false)
+                                        bool                                        independent_layer_heights = false,
+                                        double                                      layer_height              = 0.2)
 {
     MixedFilamentManager definitions;
     for (const MixedFilamentDefinition& mix : mixes)
@@ -1651,8 +1652,8 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
     for (const char* key : {"line_width", "initial_layer_line_width", "outer_wall_line_width", "inner_wall_line_width",
                             "sparse_infill_line_width", "internal_solid_infill_line_width", "top_surface_line_width"})
         config.set_key_value(key, new ConfigOptionFloatOrPercent(0.45, false));
-    config.set_key_value("layer_height", new ConfigOptionFloat(0.2));
-    config.set_key_value("initial_layer_print_height", new ConfigOptionFloat(0.2));
+    config.set_key_value("layer_height", new ConfigOptionFloat(layer_height));
+    config.set_key_value("initial_layer_print_height", new ConfigOptionFloat(layer_height));
     config.set_key_value("sparse_infill_density", new ConfigOptionPercent(20.0));
     config.set_key_value("mixed_filament_definitions", new ConfigOptionString(definitions.serialize_custom_entries()));
     config.set_key_value("mixed_filament_height_lower_bound", new ConfigOptionFloat(0.04));
@@ -1705,7 +1706,7 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
     gcode_stream.close();
     boost::filesystem::remove(gcode_path);
     for (const GCodeProcessorResult::MoveVertex& move : processor_result.moves)
-        if (move.type == EMoveType::Extrude && move.delta_extruder > 0.f && move.height < 0.19f) {
+        if (move.type == EMoveType::Extrude && move.delta_extruder > 0.f && std::abs(move.height - float(layer_height)) > 0.01f) {
             result.local_z_extrusion_heights.push_back(move.height);
             result.local_z_extruder_roles.emplace(int(move.extruder_id), int(move.extrusion_role));
         }
@@ -1899,86 +1900,99 @@ TEST_CASE("Continuous mix bridges connect two- and three-filament mixes", "[Prin
     check_island_walls(bridged, 2);
 }
 
-TEST_CASE("Continuous mix bridges stack independent-height mixes once per layer", "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
+TEST_CASE("Continuous mix bridges keep independent Local-Z heights on thin layers", "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
 {
-    // On their own, the 3:1 mix would cycle cyan 0.12 / magenta 0.04 and the
-    // 1:1:3 mix 0.04 / 0.04 / 0.12, out of step with the 0.2 mm layers. Bridged,
-    // both stack once per layer so their filaments line up.
+    // With a 0.04 mm minimum the 3:1 mix cycles cyan 0.12 / magenta 0.04 and the
+    // 1:1:3 mix 0.04 / 0.04 / 0.12. A 0.06 mm layer cannot hold two sublayers,
+    // so both cycles span several layers and the bridges follow them.
     const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757580, {{1, 75}, {2, 25}}, "#40BFFF"),
                                                      make_bridge_test_mix(757581, {{1, 20}, {2, 20}, {3, 60}}, "#A0A060")};
     const std::vector<std::string>             colors{"#00FFFF", "#FF00FF", "#FFFF00"};
     const std::vector<std::pair<int, int>>     painted{{6, 4}, {7, 4}, {8, 4}, {9, 4}, {4, 5}, {5, 5}, {10, 5}, {11, 5}};
+    constexpr double                           layer_height = 0.06;
 
-    const BridgeSliceResult bridged = slice_bridge_scenario(mixes, colors, painted, true, true);
+    const BridgeSliceResult bridged = slice_bridge_scenario(mixes, colors, painted, true, true, layer_height);
     const auto              passes  = bridge_passes_by_layer(bridged.plans);
-    REQUIRE(passes.size() >= 2);
-    size_t two_filament_rows = 0;
+    REQUIRE(passes.size() >= 3);
+    // A run's last layer fills whatever its cycle leaves below the layer top.
+    const size_t     last_bridged_layer = passes.rbegin()->first;
+    std::set<double> two_filament_heights;
+    bool             staggered_stacks = false;
     for (const auto& [layer_id, layer_passes] : passes) {
         INFO("layer " << layer_id);
-        const double layer_top = 0.2 * double(layer_id + 1);
+        const double layer_top = layer_height * double(layer_id + 1);
         for (const SubLayerPlan* pass : layer_passes) {
             CHECK(pass->print_z <= layer_top + 1e-6);
             const LocalZBridgeField& field = *pass->bridge_field;
             CHECK(std::is_sorted(field.slot_filaments().begin(), field.slot_filaments().end()));
             for (const LocalZBridgeField::Row& row : field.rows()) {
-                // Every zone fills exactly this nominal layer.
-                CHECK_THAT(row.bounds.front(), Catch::Matchers::WithinAbs(layer_top - 0.2, 1e-6));
-                CHECK_THAT(row.bounds.back(), Catch::Matchers::WithinAbs(layer_top, 1e-6));
-                // The two-filament mix keeps its 3:1 split on every layer,
-                // whatever its neighbors are.
-                std::vector<unsigned int> printed;
+                // Each zone's stack starts where its own cadence stands.
+                if (std::abs(row.bounds.front() - field.rows().front().bounds.front()) > 1e-6)
+                    staggered_stacks = true;
+                if (row.filaments != std::vector<unsigned int>{1, 2} || layer_id == last_bridged_layer)
+                    continue;
                 for (size_t slot = 0; slot < field.slot_count(); ++slot)
                     if (bridge_row_height(row, slot) > 1e-9)
-                        printed.push_back(field.slot_filaments()[slot]);
-                if (printed == std::vector<unsigned int>{1, 2}) {
-                    ++two_filament_rows;
-                    for (size_t slot = 0; slot < field.slot_count(); ++slot) {
-                        if (field.slot_filaments()[slot] == 1 && bridge_row_height(row, slot) > 1e-9)
-                            CHECK_THAT(bridge_row_height(row, slot), Catch::Matchers::WithinAbs(0.15, 1e-6));
-                        if (field.slot_filaments()[slot] == 2 && bridge_row_height(row, slot) > 1e-9)
-                            CHECK_THAT(bridge_row_height(row, slot), Catch::Matchers::WithinAbs(0.05, 1e-6));
-                    }
-                }
+                        two_filament_heights.insert(std::round(bridge_row_height(row, slot) * 100.) / 100.);
             }
         }
-        // Bridged rows keep no passes of their own.
+        // Bridged rows keep no passes of their own, and the group shares one region.
         for (const SubLayerPlan& plan : bridged.plans)
             if (plan.layer_id == layer_id && plan.bridge_field == nullptr)
                 CHECK(bridge_plan_filament(plan) == 0);
+        REQUIRE(layer_id < bridged.regions_by_layer.size());
+        CHECK(int(bridged.regions_by_layer[layer_id].count(4) + bridged.regions_by_layer[layer_id].count(5)) <= 1);
     }
-    CHECK(two_filament_rows > 0);
-    for (const std::set<int>& regions : bridged.regions_by_layer)
-        CHECK(int(regions.count(4) + regions.count(5)) <= 1);
+    // The 3:1 mix prints its own cadence instead of splitting each layer 0.045 / 0.015.
+    CHECK(two_filament_heights == std::set<double>{0.04, 0.12});
+    CHECK(staggered_stacks);
     check_bridged_extrusion(bridged);
 }
 
 TEST_CASE("Continuous mix bridges connect independent-height mixes to the object's own filament",
           "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
 {
-    // A 1:3 cyan/magenta mix with independent heights on the -X face of a cyan object.
+    // A 1:3 cyan/magenta mix on the -X face of a cyan object cycles cyan 0.04 /
+    // magenta 0.12 across 0.06 mm layers, so it prints nothing on some layers.
     const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757582, {{1, 25}, {2, 75}}, "#BF40FF")};
     const std::vector<std::string>             colors{"#00FFFF", "#FF00FF"};
     const std::vector<std::pair<int, int>>     painted{{8, 3}, {9, 3}};
+    constexpr double                           layer_height = 0.06;
 
-    const BridgeSliceResult bridged = slice_bridge_scenario(mixes, colors, painted, true, true);
+    const BridgeSliceResult bridged = slice_bridge_scenario(mixes, colors, painted, true, true, layer_height);
     const auto              passes  = bridge_passes_by_layer(bridged.plans);
-    REQUIRE(passes.size() >= 2);
+    REQUIRE(passes.size() >= 3);
+    const size_t last_bridged_layer   = passes.rbegin()->first;
+    size_t       layers_without_mix   = 0;
+    size_t       layers_joining_cyan  = 0;
     for (const auto& [layer_id, layer_passes] : passes) {
         INFO("layer " << layer_id);
-        REQUIRE(layer_passes.size() == 2);
-        CHECK(bridge_plan_filament(*layer_passes[0]) == 1);
-        CHECK(bridge_plan_filament(*layer_passes[1]) == 2);
-        // The body's whole layer of cyan and the mix's cyan share the first slot.
-        const LocalZBridgeField& field = *layer_passes[0]->bridge_field;
+        const LocalZBridgeField& field = *layer_passes.front()->bridge_field;
         REQUIRE(field.rows().size() == 2);
-        std::multiset<double> cyan_heights;
-        for (const LocalZBridgeField::Row& row : field.rows())
-            cyan_heights.insert(std::round(bridge_row_height(row, 0) * 100.) / 100.);
-        CHECK(cyan_heights == std::multiset<double>{0.05, 0.2});
+        const auto body = std::find_if(field.rows().begin(), field.rows().end(),
+                                       [](const LocalZBridgeField::Row& row) { return row.filaments == std::vector<unsigned int>{1}; });
+        const auto mix  = std::find_if(field.rows().begin(), field.rows().end(),
+                                       [](const LocalZBridgeField::Row& row) { return row.filaments == std::vector<unsigned int>{1, 2}; });
+        REQUIRE(body != field.rows().end());
+        REQUIRE(mix != field.rows().end());
+        // The body prints its whole nominal layer of cyan.
+        CHECK_THAT(body->bounds.back() - body->bounds.front(), Catch::Matchers::WithinAbs(layer_height, 1e-6));
+        if (mix->bounds.back() - mix->bounds.front() < 1e-9)
+            ++layers_without_mix;
+        for (size_t slot = 0; slot < field.slot_count(); ++slot) {
+            const double mix_height = bridge_row_height(*mix, slot);
+            if (mix_height > 1e-9 && layer_id != last_bridged_layer)
+                CHECK((std::abs(mix_height - 0.04) < 1e-6 || std::abs(mix_height - 0.12) < 1e-6));
+            if (field.slot_filaments()[slot] == 1 && mix_height > 1e-9 && bridge_row_height(*body, slot) > 1e-9)
+                ++layers_joining_cyan;
+        }
         // The mix joins the body's region instead of keeping its own walls.
         REQUIRE(layer_id < bridged.regions_by_layer.size());
         CHECK(bridged.regions_by_layer[layer_id].count(3) == 0);
     }
+    // Where the mix prints nothing, the body still bridges and tapers onto its top.
+    CHECK(layers_without_mix > 0);
+    CHECK(layers_joining_cyan > 0);
     check_bridged_extrusion(bridged);
 }
 

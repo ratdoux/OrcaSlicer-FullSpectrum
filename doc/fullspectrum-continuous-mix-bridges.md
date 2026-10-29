@@ -15,8 +15,8 @@ With independent stacks, each region is its own print region with its own perime
 
 With **Continuous mix bridges** enabled, the slicer groups neighboring zones that share at least one physical filament. A zone is a Local-Z mix, a painted single-filament area, or an island of the object's own filament. A group needs at least one mix.
 
-- Every zone keeps its own filament heights within each nominal layer. A mix restacks them in ascending filament order; a single-filament zone prints one pass over the whole layer.
-- On each layer, the group's slots are its filaments in ascending order. Every zone's pass of a filament shares that filament's slot; a zone without the filament gives the slot zero height.
+- Every zone keeps the passes its own Local-Z cadence prints on each nominal layer, at the same heights as without bridges. A mix restacks that layer's passes in ascending filament order; a single-filament zone prints one pass over the whole layer.
+- On each layer, the group's slots are its filaments in ascending order. Every zone's pass of a filament shares that filament's slot; a zone without the filament gives the slot zero height at that point of its stack. A filament gets as many slots as the most passes any zone prints with it on that layer.
 - Every slot prints as its own island: the zones that use it plus the part of the band its layer reaches. Each island gets its own walls along its outline, at least two, and the region's infill inside them, so a layer ends in perimeters instead of clipped-off beads. The bridged zones also share one region, so the merged infill follows the group outline instead of every painted boundary.
 - Away from boundaries, every zone looks exactly as it would unbridged. Within a band at a boundary between zones that share a filament, each slot interface blends between the two sides' absolute heights. A shared layer therefore moves and thins toward its neighbor's layer, while the other layers thicken or thin around it.
 - Between two mixes the band is centered on the boundary. Next to a single-filament zone the whole band lies on the single-filament side, so a mix keeps its exact ratio up to its edge. A thin painted shell over the object's body therefore keeps its color at the surface, and the transition happens inside the body.
@@ -25,13 +25,21 @@ With **Continuous mix bridges** enabled, the slicer groups neighboring zones tha
 
 Paths inside the band print non-planar: each short segment carries its own Z and bead height, and flow scales with the local height. Outside the band, paths stay flat and keep their original vertices.
 
-Every mix stacks its filaments once per nominal layer, in ascending filament order, the same order on every layer. Shared filaments then line up in every zone, and neighboring layers alternate filaments the way an unbridged mix does.
+Bridges never change which Local-Z planner a mix uses or the heights it prints.
+
+### Per-layer Local-Z
+
+With normal Local-Z, every mix stacks all its filaments inside each nominal layer. Every zone of a layer then spans the whole layer, shared filaments line up in every zone, and neighboring layers alternate filaments the way an unbridged mix does. This needs a layer thick enough for each mix's filaments at the minimum sublayer height; thinner layers print the mix unsplit, as in normal Local-Z.
 
 ### Independent layer heights and gradients
 
-Without bridges, rows planned with **Use independent Local-Z layer heights**, and gradients, run their own cadence across nominal layers, with their own cycle length and filament order. Neighboring cadences drift against each other, so the same filament sits at different heights from layer to layer, and connecting those layers produces braided, crossing beads.
+Rows planned with **Use independent Local-Z layer heights**, and gradients, run their own cadence across nominal layers, with their own cycle length, so they keep working on layers thinner than a whole cycle. Each pass prints on the nominal layer that holds its top. Bridges follow those cadences:
 
-On painted objects with bridges enabled, those rows therefore plan like any other mix: once per nominal layer, at the process layer height, with gradient ratios taken per layer. Independent layer heights and the gradient Local-Z height do not apply there. A mix with more filaments than fit in one layer at the minimum sublayer height gets clamped heights, as in normal Local-Z. Adaptive image-map rows keep their own cadence and never bridge, and objects without painting keep independent cadences.
+- On each nominal layer, a zone contributes the passes its cadence prints there, restacked in ascending filament order. Its stack starts at the top of what it printed before, so neighboring stacks can start and end at different heights.
+- A zone whose cadence prints nothing on a layer still joins its group with a zero-height stack at its current top, because grouping uses every filament a mix can print. A neighbor's layer then tapers onto that top, and the next layer's blended bottom matches this layer's blended top.
+- Passes of the same filament printed on the same nominal layer connect. A filament printed on different layers on the two sides tapers out from each side, one layer above the other.
+
+Neighboring cadences drift against each other, so a shared layer bends up or down inside the band by up to about one pass height to meet its neighbor. Ordering every layer by filament keeps those bends from crossing. Adaptive image-map rows keep their own non-planar cadence and never bridge.
 
 ## Settings
 
@@ -48,8 +56,8 @@ Both are project-level Color Mixing settings, like the other `dithering_local_z_
 | --- | --- | --- |
 | Field | `src/libslic3r/LocalZBridge.*` | `LocalZBridgeField` holds member masks, each member's absolute slot interfaces, and whether it absorbs the band. It blends interfaces at a point, returns each slot's island outline, and turns an extrusion path into `ExtrusionPathSloped` segments with absolute Z, dropping parts the slot does not print. |
 | Zones and groups | `PrintObjectSlice.cpp` | `local_z_bridge_row_passes()`, `collect_local_z_bridge_single_filament_zones()` and `group_local_z_bridge_zones()` build zones and group touching zones that share a filament. Single-filament zones come from the full paint segmentation, because the planner's own segmentation omits single-filament channels. |
-| Alignment | `align_local_z_bridge_zones()` | Builds one slot per filament the group prints, in ascending order, and each member's absolute slot interfaces from its passes. |
-| Planning | `build_local_z_plan()` | With bridges, painted objects plan every non-adaptive mix in isolated multi-row Local-Z, including a lone mix. Rows first plan their own passes, so cadence state advances as without bridges, then `build_local_z_bridge_layer()` replaces grouped rows' passes with one pass per slot. |
+| Alignment | `align_local_z_bridge_zones()` | Builds the group's slots in ascending filament order, repeating a filament as often as one member prints it, and each member's absolute slot interfaces from its base height and passes. |
+| Planning | `build_local_z_plan()` | Rows first plan their own passes, so cadence state advances as without bridges. With per-layer Local-Z, a lone mix also plans in isolated multi-row mode so it can bridge. Independent and gradient intervals record where each row's stack starts, restack each row's passes with `local_z_bridge_restacked_passes()`, and add rows that print nothing as zero-height zones. `build_local_z_bridge_layer()` then replaces grouped rows' passes with one pass per slot. |
 | Regions | `merge_local_z_bridge_regions()` | Before `apply_mm_segmentation()`, moves bridged mixes and single-filament islands into the largest zone's channel, so perimeters and infill follow the merged island. |
 | Export | `GCode::process_layer()` and `_extrude()` | `make_local_z_bridge_island()` builds wall loops from each bridge pass's island outline, with the flows and wall count of the region covering most of it, at least two walls. The region's infill is clipped to the area inside those walls; its own walls never print in bridge passes. Infill inside `LocalZInterval::bridge_masks` always prints in bridge passes, even with **Apply subdivision to infill** off, so merged single-filament zones keep their own filament. While a bridge pass is emitted, every path that is not already sloped goes through the field. Seam scarfs, wipes and the inward move after loops are disabled for bridge passes, and the pass skips its planar Z move. |
 | Tool ordering | `ToolOrdering` | Registers every filament a Local-Z pass prints, since a bridged filament can print only inside passes once its region is merged away. |
@@ -61,7 +69,9 @@ A bridge pass sets `print_z` to the highest top of its slot over all members. Pa
 ## Scope and limits
 
 - Adaptive image-map Local-Z rows never bridge.
-- Independent layer heights and gradient Local-Z heights do not apply to painted objects while bridging.
+- With independent heights, a shared layer only connects between passes printed on the same nominal layer; elsewhere both sides taper. Inside the band, layers bend by up to about one pass height where neighboring cadences drift.
+- With per-layer Local-Z, a layer too thin for a mix's filaments at the minimum sublayer height prints that mix unsplit and without bridges, as in normal Local-Z. Use independent heights for thinner layers.
+- Painted boundaries that move between layers, and groups that form or end, can leave small overlaps or gaps inside the band where neighboring cadences differ, like independent Local-Z at any moving boundary.
 - Outside Local-Z passes, the merged region uses the configuration of the largest zone, for example its wall count.
 - A large single-filament zone, such as the object body, prints entirely in bridge passes on layers where it bridges. Away from the band its beads are flat and identical to normal printing.
 - A layer that tapers to nothing prints its last beads far thinner than the Local-Z minimum sublayer height; their flow scales down with them.
@@ -70,5 +80,5 @@ A bridge pass sets `print_z` to the highest top of its slot over all members. Pa
 
 ## Tests
 
-- `tests/libslic3r/test_local_z_bridge.cpp` covers the field: member heights, boundary blending, independence from the outer contour, monotonic interfaces, connected segments, flow scaling, volume preservation, the zero-width switch, a mix next to a single-filament zone, a thin painted shell keeping its ratio, island outlines, tapering instead of pockets, mixes with different filament sets, stacks that start and end at different heights, and sharp boundaries between zones that share nothing.
-- `tests/fff_print/test_print.cpp` slices painted cubes with bridges for two mixes of the same filaments, a mix next to the object's own filament, a two-filament mix next to a three-filament mix, independent-height mixes with different filament sets, and an independent-height mix next to the object's own filament. The tests check bridge passes, stack order, per-layer stacking, unchanged mix ratios next to other zones, merged regions, outer and inner island walls in non-bridged filaments, non-planar G-code and blended bead heights.
+- `tests/libslic3r/test_local_z_bridge.cpp` covers the field: member heights, boundary blending, independence from the outer contour, monotonic interfaces, connected segments, flow scaling, volume preservation, the zero-width switch, a mix next to a single-filament zone, a thin painted shell keeping its ratio, island outlines, tapering instead of pockets, mixes with different filament sets, stacks that start and end at different heights, tapering onto a mix that prints nothing on a layer, and sharp boundaries between zones that share nothing.
+- `tests/fff_print/test_print.cpp` slices painted cubes with bridges for two mixes of the same filaments, a mix next to the object's own filament, a two-filament mix next to a three-filament mix, independent-height mixes with different filament sets on layers thinner than their cycles, and an independent-height mix next to the object's own filament on layers where it prints nothing. The tests check bridge passes, stack order, per-layer stacking, independent cadence heights, staggered stacks, zero-height zones, unchanged mix ratios next to other zones, merged regions, outer and inner island walls in non-bridged filaments, non-planar G-code and blended bead heights.

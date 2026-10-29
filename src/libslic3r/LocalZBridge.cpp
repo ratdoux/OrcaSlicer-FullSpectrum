@@ -38,7 +38,7 @@ LocalZBridgeField::LocalZBridgeField(double transition_width_mm, std::vector<uns
         for (size_t bound_idx = 1; bound_idx < row.bounds.size(); ++bound_idx)
             if (!std::isfinite(row.bounds[bound_idx]) || row.bounds[bound_idx] < row.bounds[bound_idx - 1])
                 row.bounds[bound_idx] = row.bounds[bound_idx - 1];
-        std::vector<unsigned int> filaments;
+        std::vector<unsigned int> filaments = row.filaments;
         for (size_t slot_idx = 0; slot_idx < slot_count; ++slot_idx)
             if (this->row_height(row, slot_idx) > BRIDGE_PRINTED_HEIGHT_MM)
                 filaments.push_back(m_slot_filaments[slot_idx]);

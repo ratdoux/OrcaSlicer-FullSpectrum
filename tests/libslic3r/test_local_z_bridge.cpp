@@ -326,6 +326,45 @@ TEST_CASE("Continuous mix bridge connects stacks that start and end at different
     CHECK_THAT(field.slot_bounds(1).upper, WithinAbs(0.40, 1e-9));
 }
 
+TEST_CASE("Continuous mix bridge tapers onto a mix that prints nothing on the layer", "[LocalZ][LocalZBridge]")
+{
+    // With independent heights a mix's cadence can skip a nominal layer. Its
+    // stack then has zero height at its current top, 0.18, while the cyan body
+    // next to it prints 0.20 to 0.28.
+    auto make = [](std::vector<unsigned int> mix_filaments) {
+        std::vector<LocalZBridgeField::Row> rows(2);
+        rows[0].masks              = {rectangle_mm(0., 0., 10., 10.)};
+        rows[0].bounds             = stack_bounds(0.20, {0.08});
+        rows[0].absorbs_transition = true;
+        rows[1].masks              = {rectangle_mm(10., 0., 20., 10.)};
+        rows[1].bounds             = stack_bounds(0.18, {0.});
+        rows[1].filaments          = std::move(mix_filaments);
+        return LocalZBridgeField(2.0, {1}, std::move(rows));
+    };
+
+    const LocalZBridgeField field = make({1, 2});
+    REQUIRE(field.rows().size() == 2);
+    const LocalZBridgeField::Span inside = field.slot_span_at(Point::new_scale(5., 5.), 0);
+    CHECK_THAT(inside.lower, WithinAbs(0.20, 1e-9));
+    CHECK_THAT(inside.upper, WithinAbs(0.28, 1e-9));
+    // The body's layer slopes down onto the mix's top across the band on its side.
+    const LocalZBridgeField::Span middle = field.slot_span_at(Point::new_scale(9., 5.), 0);
+    CHECK_THAT(middle.lower, WithinAbs(0.19, 1e-6));
+    CHECK_THAT(middle.upper, WithinAbs(0.23, 1e-6));
+    CHECK(field.slot_span_at(Point::new_scale(9.99, 5.), 0).height() < 1e-3);
+    CHECK(field.slot_span_at(Point::new_scale(15., 5.), 0).height() <= 1e-9);
+
+    const std::vector<ExtrusionPathSloped> cyan = field.modulate_path(horizontal_path(1., 19.), 0, 0.);
+    REQUIRE_FALSE(cyan.empty());
+    CHECK(cyan.back().polyline.points.back().x() <= Point::new_scale(10., 5.).x());
+    CHECK(cyan.back().absolute_z_end < 0.20);
+
+    // Without its component list the mix shares nothing on this layer, so the
+    // body would end at full height and the next layer would overlap it.
+    const LocalZBridgeField unshared = make({});
+    CHECK_THAT(unshared.slot_span_at(Point::new_scale(9.9, 5.), 0).height(), WithinAbs(0.08, 1e-9));
+}
+
 TEST_CASE("Continuous mix bridge keeps zones that share no filament sharp", "[LocalZ][LocalZBridge]")
 {
     // Solid cyan next to solid magenta: no shared filament, so no blend.

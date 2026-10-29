@@ -38,6 +38,10 @@ public:
         std::vector<double> bounds;
         // A single-filament zone takes the whole transition band on its side.
         bool                absorbs_transition{false};
+        // Filaments the zone can print besides the ones it prints here. A mix
+        // whose own cadence prints nothing on a layer still shares its
+        // components, so a neighbor's layer tapers onto the top of its stack.
+        std::vector<unsigned int> filaments;
     };
 
     struct Span
