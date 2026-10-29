@@ -252,7 +252,9 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
                 const ExPolygons& pass_masks = compensated_masks_by_extruder[extruder_id];
                 if (pass_masks.empty())
                     continue;
-                if (layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks), local_z_infill_enabled))
+                // Bridge passes generate walls for their whole island at export.
+                if (plan.bridge_field != nullptr ||
+                    layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks), local_z_infill_enabled))
                     pass_ref.extruders.push_back(unsigned(extruder_id));
             }
 
@@ -727,6 +729,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "dithering_local_z_direct_multicolor"
             || opt_key == "dithering_local_z_independent_layer_height"
             || opt_key == "dithering_local_z_gradient_layer_height"
+            || opt_key == "dithering_local_z_continuous_bridges"
+            || opt_key == "dithering_local_z_bridge_transition_width"
             || opt_key == "dithering_step_painted_zones_only"
             || opt_key == "mixed_filament_gradient_mode"
             || opt_key == "mixed_filament_height_lower_bound"

@@ -239,6 +239,8 @@ static std::vector<std::string> s_project_options {
     "dithering_local_z_independent_layer_height",
     "dithering_local_z_gradient_layer_height",
     "dithering_local_z_gradient_middle_filament_window",
+    "dithering_local_z_continuous_bridges",
+    "dithering_local_z_bridge_transition_width",
     "dithering_step_painted_zones_only",
 };
 

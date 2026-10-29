@@ -642,6 +642,8 @@ private:
     int m_start_gcode_filament = -1;
     const ImageMap::AdaptiveLocalZRenderer* m_adaptive_local_z_renderer { nullptr };
     const SubLayerPlan*                     m_adaptive_local_z_plan { nullptr };
+    // Set while emitting a continuous mix bridge pass; its field drives every path's Z.
+    const SubLayerPlan*                     m_local_z_bridge_plan { nullptr };
 
     std::set<unsigned int>                  m_initial_layer_extruders;
     // BBS

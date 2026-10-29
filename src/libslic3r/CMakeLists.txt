@@ -357,6 +357,8 @@ set(lisbslic3r_sources
     LocalZClipper.cpp
     LocalZPathRouter.hpp
     LocalZPathRouter.cpp
+    LocalZBridge.hpp
+    LocalZBridge.cpp
     LocalZClipper.hpp
     LocalZClipAcceleration.cpp
     LocalZClipAcceleration.hpp

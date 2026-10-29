@@ -6615,6 +6615,8 @@ void GUI_App::load_current_presets(bool active_preset_combox/*= false*/, bool ch
             "dithering_local_z_direct_multicolor",
             "dithering_local_z_independent_layer_height",
             "dithering_local_z_gradient_layer_height",
+            "dithering_local_z_continuous_bridges",
+            "dithering_local_z_bridge_transition_width",
             "dithering_step_painted_zones_only",
             "mixed_filament_definitions"
         };

@@ -675,6 +675,13 @@ void ToolOrdering::initialize_layers(std::vector<coordf_t> &zs)
 // Collect extruders reuqired to print layers.
 void ToolOrdering::collect_extruders(const PrintObject &object, const std::vector<std::pair<double, unsigned int>> &per_layer_extruder_switches)
 {
+    for (const SubLayerPlan &plan : object.local_z_sublayer_plan())
+        for (const std::vector<ExPolygons> *masks_by_extruder : {&plan.painted_masks_by_extruder, &plan.fixed_painted_masks_by_extruder})
+            for (size_t extruder_idx = 0; extruder_idx < masks_by_extruder->size(); ++extruder_idx)
+                if (!(*masks_by_extruder)[extruder_idx].empty())
+                    m_local_z_pass_extruders.push_back(unsigned(extruder_idx));
+    sort_remove_duplicates(m_local_z_pass_extruders);
+
     for (LayerTools &layer_tools : m_layer_tools) {
         layer_tools.mixed_mgr                = m_mixed_mgr;
         layer_tools.num_physical             = m_num_physical;
@@ -1124,6 +1131,12 @@ void ToolOrdering::collect_extruder_statistics(bool prime_multi_material)
     m_all_printing_extruders.clear();
     for (const auto &lt : m_layer_tools) {
         append(m_all_printing_extruders, lt.extruders);
+        sort_remove_duplicates(m_all_printing_extruders);
+    }
+    // Local-Z passes switch tools outside the per-layer lists, so the writer
+    // must still know every filament they print.
+    if (!m_all_printing_extruders.empty()) {
+        append(m_all_printing_extruders, m_local_z_pass_extruders);
         sort_remove_duplicates(m_all_printing_extruders);
     }
 

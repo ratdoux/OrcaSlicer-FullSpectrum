@@ -2247,6 +2247,8 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
          opt_key == "dithering_local_z_independent_layer_height" ||
          opt_key == "dithering_local_z_gradient_layer_height" ||
          opt_key == "dithering_local_z_gradient_middle_filament_window" ||
+         opt_key == "dithering_local_z_continuous_bridges" ||
+         opt_key == "dithering_local_z_bridge_transition_width" ||
          opt_key == "dithering_step_painted_zones_only" ||
          opt_key == "mixed_filament_definitions")) {
         DynamicPrintConfig &project_cfg = wxGetApp().preset_bundle->project_config;
@@ -3027,6 +3029,8 @@ void TabPrint::build()
         optgroup->append_single_option_line("dithering_local_z_direct_multicolor");
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
         optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
+        optgroup->append_single_option_line("dithering_local_z_continuous_bridges");
+        optgroup->append_single_option_line("dithering_local_z_bridge_transition_width");
 
     page = add_options_page(L("Others"), "custom-gcode_other"); // ORCA: icon only visible on placeholders
         optgroup = page->new_optgroup(L("Skirt"), L"param_skirt");
@@ -3081,6 +3085,8 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("dithering_local_z_independent_layer_height");
         optgroup->append_single_option_line("dithering_local_z_gradient_layer_height");
         optgroup->append_single_option_line("dithering_local_z_gradient_middle_filament_window");
+        optgroup->append_single_option_line("dithering_local_z_continuous_bridges");
+        optgroup->append_single_option_line("dithering_local_z_bridge_transition_width");
         optgroup->append_single_option_line("dithering_step_painted_zones_only");
 
         optgroup = page->new_optgroup(L("Fuzzy Skin"), L"fuzzy_skin");

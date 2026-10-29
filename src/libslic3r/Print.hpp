@@ -23,6 +23,7 @@
 #include <Eigen/Geometry>
 
 #include <functional>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -32,6 +33,7 @@ namespace Slic3r {
 
 class GCode;
 class Layer;
+class LocalZBridgeField;
 class ModelObject;
 class Print;
 class PrintObject;
@@ -72,6 +74,9 @@ struct LocalZInterval
     size_t first_sublayer_idx { 0 };
     size_t sublayer_count { 0 };
     ExPolygons managed_masks;
+    // Outline of every continuous mix bridge group on this layer. Bridge passes
+    // print all extrusions inside it, infill included, on every layer of a cycle.
+    ExPolygons bridge_masks;
 };
 
 struct SubLayerPlan
@@ -100,6 +105,12 @@ struct SubLayerPlan
     double                    adaptive_cycle_z_lo { 0.0 };
     double                    adaptive_cycle_z_hi { 0.0 };
     double                    adaptive_sample_z { 0.0 };
+    // Continuous mix bridge passes print one slot of a bridged group over every
+    // zone that uses it. All passes of the group share the field, which supplies
+    // the local Z and bead height at G-code time. print_z is the highest top of
+    // the slot so ordering and travel clear the pass.
+    std::shared_ptr<const LocalZBridgeField> bridge_field;
+    size_t                                   bridge_slot_index { 0 };
     std::vector<ExPolygons> painted_masks_by_extruder;
     std::vector<ExPolygons> fixed_painted_masks_by_extruder;
     ExPolygons              base_masks;

@@ -4601,6 +4601,37 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionPercent(22));
 
+    def = this->add("dithering_local_z_continuous_bridges", coBool);
+    def->label = L("Continuous mix bridges");
+    def->category = L("Others");
+    def->tooltip = L("Experimental. Lets neighboring Local-Z color zones share continuous layers of the same physical "
+                     "filament, even when those layers have different thicknesses. A zone can be a color mixture, a painted "
+                     "filament or the object's own filament, and mixtures may use different sets of filaments.\n\n"
+                     "Without bridges every mixture builds an independent stack with its own perimeters, so its sublayers "
+                     "end at the painted boundary and can leave a visible seam. With bridges, neighboring zones print each "
+                     "shared filament as one connected island with its own perimeter paths. Across the boundary, one "
+                     "filament's layer gradually becomes thinner while the other's becomes thicker, and a filament only one "
+                     "side uses tapers out.\n\n"
+                     "Bridged layers are printed non-planar inside the transition band. On painted objects every mixture then "
+                     "stacks its filaments once per nominal layer in a shared order, so independent Local-Z layer heights and "
+                     "gradient Local-Z heights do not apply there.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("dithering_local_z_bridge_transition_width", coFloat);
+    def->label = L("Bridge transition width");
+    def->category = L("Others");
+    def->tooltip = L("Width of the band in which sublayer thicknesses blend from one zone to its neighbor. Between two "
+                     "mixtures the band is centered on the boundary. Next to a single filament the whole band lies on the "
+                     "single-filament side, so a mixture, such as a thin painted shell, keeps its exact ratio up to its edge. "
+                     "Wider bands give gentler Z slopes. 0 switches thickness at the boundary while still keeping each "
+                     "filament's layer connected.");
+    def->sidetext = "mm";
+    def->min = 0.;
+    def->max = 20.;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(2.0));
+
     def = this->add("dithering_step_painted_zones_only", coBool);
     def->label = L("Use step size in painted zones only");
     def->category = L("Others");

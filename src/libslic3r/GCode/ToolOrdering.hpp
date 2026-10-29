@@ -237,6 +237,9 @@ private:
     unsigned int               m_last_printing_extruder  = (unsigned int)-1;
     // All extruders, which extrude some material over m_layer_tools.
     std::vector<unsigned int>  m_all_printing_extruders;
+    // Extruders of Local-Z sublayer passes. A filament can print only inside
+    // passes, for example when a continuous mix bridge merges its region away.
+    std::vector<unsigned int>  m_local_z_pass_extruders;
     std::unordered_map<uint32_t, std::vector<uint8_t>> m_tool_order_cache;
     const DynamicPrintConfig*  m_print_full_config = nullptr;
     const PrintConfig*         m_print_config_ptr = nullptr;

@@ -6,6 +6,7 @@
 #include "I18N.hpp"
 #include "GCode.hpp"
 #include "LocalZOrderOptimizer.hpp"
+#include "LocalZBridge.hpp"
 #include "LocalZClipper.hpp"
 #include "LocalZPathRouter.hpp"
 #include "LocalZClipAcceleration.hpp"
@@ -3856,6 +3857,68 @@ static inline void append_clipped_loop(LocalZPathRouter&          router,
         append_clipped_path(router, path, include_masks, exclude_masks, flow_height_override, dst);
 }
 
+// A continuous mix bridge prints each slot island as its own region: wall loops
+// follow the island outline, so a filament's layer ends in perimeters instead of
+// clipped-off beads, and the region's infill fills the area inside the walls.
+struct LocalZBridgeIsland
+{
+    std::shared_ptr<ExtrusionEntityCollection> walls;
+    ExPolygons                                 infill_area;
+    const LayerRegion*                         region{nullptr};
+};
+
+static LocalZBridgeIsland make_local_z_bridge_island(const Layer& layer, const ExPolygons& island)
+{
+    LocalZBridgeIsland result;
+    // The region covering most of the island supplies flows and wall count.
+    double best_area = 0.;
+    for (const LayerRegion* layerm : layer.regions()) {
+        if (layerm == nullptr || layerm->slices.empty())
+            continue;
+        const double covered = std::abs(area(intersection_ex(to_expolygons(layerm->slices.surfaces), island)));
+        if (covered > best_area) {
+            best_area     = covered;
+            result.region = layerm;
+        }
+    }
+    if (result.region == nullptr)
+        return result;
+
+    const Flow ext_flow   = result.region->flow(frExternalPerimeter);
+    const Flow perim_flow = result.region->flow(frPerimeter);
+    // An island needs at least two walls to hold its own edge.
+    const int wall_count = std::max(2, result.region->region().config().wall_loops.value);
+    result.walls         = std::make_shared<ExtrusionEntityCollection>();
+    // Classic spacing: the outer wall sits half a width inside the outline and
+    // every further wall one spacing deeper.
+    double inset = 0.5 * double(ext_flow.scaled_width()), last_inset = 0.;
+    for (int wall_idx = 0; wall_idx < wall_count; ++wall_idx) {
+        if (wall_idx == 1)
+            inset += 0.5 * double(ext_flow.scaled_spacing() + perim_flow.scaled_spacing());
+        else if (wall_idx > 1)
+            inset += double(perim_flow.scaled_spacing());
+        const ExPolygons rings = offset_ex(island, -float(inset));
+        if (rings.empty())
+            break;
+        const Flow&         flow     = wall_idx == 0 ? ext_flow : perim_flow;
+        const ExtrusionRole role     = wall_idx == 0 ? erExternalPerimeter : erPerimeter;
+        auto                add_loop = [&](const Polygon& polygon, ExtrusionLoopRole loop_role) {
+            ExtrusionPath path(role, flow.mm3_per_mm(), flow.width(), flow.height());
+            path.polyline = polygon.split_at_first_point();
+            result.walls->append(ExtrusionLoop(path, loop_role));
+        };
+        for (const ExPolygon& ring : rings) {
+            add_loop(ring.contour, elrDefault);
+            for (const Polygon& hole : ring.holes)
+                add_loop(hole, elrHole);
+        }
+        last_inset = inset;
+    }
+    if (last_inset > 0.)
+        result.infill_area = offset_ex(island, -float(last_inset + 0.5 * double(perim_flow.scaled_spacing())));
+    return result;
+}
+
 static inline ExPolygons local_z_compensate_masks(const ExPolygons& src_masks,
                                                   const float       delta_scaled,
                                                   const bool        fallback_to_source)
@@ -4939,6 +5002,9 @@ LayerResult GCode::process_layer(const Print& print,
         std::vector<ExPolygons>                               compensated_masks_by_extruder;
         std::vector<LocalZClipper>                            clippers_by_extruder;
         std::map<unsigned int, std::vector<ObjectByExtruder>> by_extruder;
+        // Continuous mix bridge passes print their island as its own region.
+        LocalZBridgeIsland                                    bridge_island;
+        LocalZClipper                                         bridge_infill_clipper;
     };
     struct LocalZLayerContext {
         bool                    enabled { false };
@@ -4949,6 +5015,11 @@ LayerResult GCode::process_layer(const Print& print,
         ExPolygons              non_adaptive_masks_for_base_exclude;
         ExPolygons              adaptive_inner_ownership_masks;
         bool                    has_adaptive_perimeter_pass { false };
+        // Infill inside bridged outlines always prints in bridge passes, even
+        // when Local-Z infill subdivision is off.
+        bool                    has_bridge_masks { false };
+        ExPolygons              bridge_masks_for_base_exclude;
+        LocalZClipper           bridge_exclude_clipper;
         LocalZClipper                 base_exclude_clipper;
         LocalZClipper                 base_external_exclude_clipper;
         LocalZClipper                 non_adaptive_exclude_clipper;
@@ -5014,6 +5085,12 @@ LayerResult GCode::process_layer(const Print& print,
 
                 LocalZPassBucket bucket;
                 bucket.plan = &plan;
+                if (plan.bridge_field != nullptr) {
+                    ExPolygons island;
+                    for (const ExPolygons& masks : plan.painted_masks_by_extruder)
+                        append(island, masks);
+                    bucket.bridge_island = make_local_z_bridge_island(*layer_to_print.object_layer, union_ex(island));
+                }
                 const size_t plan_mask_slots = std::max(plan.painted_masks_by_extruder.size(), plan.fixed_painted_masks_by_extruder.size());
                 bucket.compensated_masks_by_extruder.assign(plan_mask_slots, ExPolygons());
                 bool pass_has_raw_masks         = false;
@@ -5102,6 +5179,10 @@ LayerResult GCode::process_layer(const Print& print,
                 ctx.adaptive_inner_ownership_masks =
                     local_z_compensate_masks(ctx.mixed_masks_union, local_z_adaptive_inner_ownership, true);
             }
+            if (!it_interval->bridge_masks.empty()) {
+                ctx.has_bridge_masks              = true;
+                ctx.bridge_masks_for_base_exclude = local_z_compensate_masks(it_interval->bridge_masks, local_z_base_mask_expand, true);
+            }
             if ((!independent_layer_height && ctx.pass_buckets.empty()) || ctx.mixed_masks_union.empty()) {
                 ctx.enabled = false;
                 if (local_z_rejected_context_logs < 50) {
@@ -5132,7 +5213,9 @@ LayerResult GCode::process_layer(const Print& print,
                                                         LocalZClipper(ctx.mixed_masks_union, &local_z_clip_cache) :
                                                         ctx.base_exclude_clipper;
                 ctx.non_adaptive_exclude_clipper  = LocalZClipper(ctx.non_adaptive_masks_for_base_exclude, &local_z_clip_cache);
+                ctx.bridge_exclude_clipper        = LocalZClipper(ctx.bridge_masks_for_base_exclude, &local_z_clip_cache);
                 for (LocalZPassBucket& bucket : ctx.pass_buckets) {
+                    bucket.bridge_infill_clipper = LocalZClipper(bucket.bridge_island.infill_area, &local_z_clip_cache);
                     const auto& masks = bucket.compensated_masks_by_extruder.empty() ? bucket.plan->painted_masks_by_extruder :
                                                                                        bucket.compensated_masks_by_extruder;
                     bucket.clippers_by_extruder.reserve(masks.size());
@@ -5392,6 +5475,33 @@ LayerResult GCode::process_layer(const Print& print,
                 return false;
             };
 
+            // Bridge island walls belong to the pass of their slot's filament.
+            if (local_z_ctx != nullptr) {
+                for (LocalZPassBucket& pass_bucket : local_z_ctx->pass_buckets) {
+                    const LocalZBridgeIsland& island = pass_bucket.bridge_island;
+                    if (pass_bucket.plan == nullptr || !island.walls || island.walls->entities.empty() || island.region == nullptr)
+                        continue;
+                    const auto& masks = pass_bucket.plan->painted_masks_by_extruder;
+                    const auto  slot  = std::find_if(masks.begin(), masks.end(), [](const ExPolygons& slot_masks) { return !slot_masks.empty(); });
+                    if (slot == masks.end())
+                        continue;
+                    const PrintRegion&                     region  = print.get_print_region(island.region->region().print_region_id());
+                    std::vector<ObjectByExtruder::Island>& islands = object_islands_by_extruder(
+                        pass_bucket.by_extruder, unsigned(slot - masks.begin()), layer_to_print_idx, layers.size(), n_slices + 1);
+                    for (size_t i = 0; i <= n_slices; ++i) {
+                        const bool   last       = i == n_slices;
+                        const size_t island_idx = last ? n_slices : slices_test_order[i];
+                        if (last || entity_matches_surface(island_idx, *island.walls)) {
+                            if (islands[island_idx].by_region.empty())
+                                islands[island_idx].by_region.assign(print.num_print_regions(), ObjectByExtruder::Island::Region());
+                            islands[island_idx].by_region[region.print_region_id()].append(ObjectByExtruder::Island::Region::PERIMETERS,
+                                                                                          island.walls.get(), nullptr);
+                            break;
+                        }
+                    }
+                }
+            }
+
             for (size_t region_id = 0; region_id < layer.regions().size(); ++region_id) {
                 const LayerRegion* layerm = layer.regions()[region_id];
                 if (layerm == nullptr)
@@ -5415,16 +5525,27 @@ LayerResult GCode::process_layer(const Print& print,
                             continue;
 
                         const ExtrusionEntityCollection* filtered_extrusions = extrusions;
+                        // Without Local-Z infill, only bridge passes take infill: a bridge
+                        // prints its whole island, including merged single-filament zones.
+                        const bool bridge_infill_only = entity_type == ObjectByExtruder::Island::Region::INFILL &&
+                                                        !local_z_infill_enabled;
                         const bool local_z_entity_enabled =
-                            entity_type == ObjectByExtruder::Island::Region::PERIMETERS ||
-                            (local_z_infill_enabled && entity_type == ObjectByExtruder::Island::Region::INFILL);
+                            !bridge_infill_only || (local_z_ctx != nullptr && local_z_ctx->has_bridge_masks);
                         if (local_z_entity_enabled && local_z_ctx != nullptr && !local_z_ctx->mixed_masks_union.empty()) {
                             for (LocalZPassBucket& pass_bucket : local_z_ctx->pass_buckets) {
-                                if (pass_bucket.plan == nullptr)
+                                if (pass_bucket.plan == nullptr || (bridge_infill_only && pass_bucket.plan->bridge_field == nullptr))
+                                    continue;
+                                // A bridge island prints its own walls; only infill inside them
+                                // comes from the region.
+                                const bool bridge_pass = pass_bucket.plan->bridge_field != nullptr;
+                                if (bridge_pass && entity_type == ObjectByExtruder::Island::Region::PERIMETERS)
                                     continue;
                                 for (size_t pass_extruder_id = 0; pass_extruder_id < pass_bucket.plan->painted_masks_by_extruder.size();
                                      ++pass_extruder_id) {
-                                    const LocalZClipper& pass_masks = pass_bucket.clippers_by_extruder[pass_extruder_id];
+                                    if (pass_bucket.clippers_by_extruder[pass_extruder_id].empty())
+                                        continue;
+                                    const LocalZClipper& pass_masks =
+                                        bridge_pass ? pass_bucket.bridge_infill_clipper : pass_bucket.clippers_by_extruder[pass_extruder_id];
                                     if (pass_masks.empty())
                                         continue;
                                     auto clipped_local =
@@ -5473,7 +5594,8 @@ LayerResult GCode::process_layer(const Print& print,
 
                             // Adaptive phase-B owns the external wall wherever its compensated inclusion mask
                             // reaches. Keep the distinct exclusion masks for external and ordinary Local-Z roles.
-                            const LocalZClipper*             base_external_exclude_masks = &local_z_ctx->base_external_exclude_clipper;
+                            const LocalZClipper*             base_external_exclude_masks =
+                                bridge_infill_only ? &local_z_ctx->bridge_exclude_clipper : &local_z_ctx->base_external_exclude_clipper;
                             const ExtrusionEntityCollection& base_source = *extrusions;
                             auto                             clipped_base =
                                 clip_extrusion_collection_for_local_z(local_z_path_router, base_source, nullptr,
@@ -5770,11 +5892,13 @@ LayerResult GCode::process_layer(const Print& print,
                                      << " pass_print_z=" << pass_plan.print_z
                                      << " pass_flow_height=" << pass_plan.flow_height
                                      << " extruder=" << local_extruder_id;
-            if (!pass_plan.adaptive_nonplanar && std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
+            // Non-planar passes set Z per segment, so a plane move would only add travel.
+            const bool nonplanar_pass = pass_plan.adaptive_nonplanar || pass_plan.bridge_field != nullptr;
+            if (!nonplanar_pass && std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
                 gcode += this->retract(false, false, LiftType::NormalLift);
                 gcode += m_writer.travel_to_z(pass_z, "Local-Z path pass");
             }
-            if (!pass_plan.adaptive_nonplanar && std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
+            if (!nonplanar_pass && std::abs(m_writer.get_position().z() - pass_z) > EPSILON) {
                 BOOST_LOG_TRIVIAL(warning) << "Local-Z pass z restore"
                                            << " print_z=" << print_z
                                            << " layer_id=" << pass_plan.layer_id
@@ -5820,6 +5944,7 @@ LayerResult GCode::process_layer(const Print& print,
                     ? renderer->second.get()
                     : nullptr;
                 m_adaptive_local_z_plan     = m_adaptive_local_z_renderer != nullptr ? &pass_plan : nullptr;
+                m_local_z_bridge_plan       = pass_plan.bridge_field != nullptr ? &pass_plan : nullptr;
 
                 for (ObjectByExtruder::Island& island : instance_to_print.object_by_extruder.islands) {
                     gcode += this->extrude_perimeters(print, island.by_region, first_layer, false);
@@ -5829,6 +5954,7 @@ LayerResult GCode::process_layer(const Print& print,
                 }
                 m_adaptive_local_z_renderer = nullptr;
                 m_adaptive_local_z_plan     = nullptr;
+                m_local_z_bridge_plan       = nullptr;
                 m_config.reduce_crossing_wall.value = saved_reduce_crossing_wall;
             }
 
@@ -6773,7 +6899,7 @@ std::string GCode::extrude_loop(
         loop.split_at(last_pos, false);
 
     const auto seam_scarf_type   = m_config.seam_slope_type.value;
-    bool       enable_seam_slope = m_adaptive_local_z_renderer == nullptr &&
+    bool       enable_seam_slope = m_adaptive_local_z_renderer == nullptr && m_local_z_bridge_plan == nullptr &&
                              ((seam_scarf_type == SeamScarfType::External && !is_hole) || seam_scarf_type == SeamScarfType::All) &&
                              !m_config.spiral_mode &&
                              (loop.role() == erExternalPerimeter || (loop.role() == erPerimeter && m_config.seam_slope_inner_walls)) &&
@@ -6972,7 +7098,10 @@ std::string GCode::extrude_loop(
     }
 
     // BBS
-    if (m_wipe.enable) {
+    // A bridge pass may skip parts of the loop, so its geometry is no wipe path.
+    if (m_local_z_bridge_plan != nullptr) {
+        m_wipe.reset_path();
+    } else if (m_wipe.enable) {
         m_wipe.path = Polyline();
         for (ExtrusionPath& path : paths) {
             // BBS: Don't need to save duplicated point into wipe path
@@ -6984,7 +7113,8 @@ std::string GCode::extrude_loop(
     }
 
     // make a little move inwards before leaving loop
-    if (m_config.wipe_on_loops.value && paths.back().role() == erExternalPerimeter && m_layer != NULL && m_config.wall_loops.value > 1 &&
+    if (m_local_z_bridge_plan == nullptr && m_config.wipe_on_loops.value && paths.back().role() == erExternalPerimeter && m_layer != NULL &&
+        m_config.wall_loops.value > 1 &&
         paths.front().size() >= 2 && paths.back().polyline.points.size() >= 3) {
         // detect angle between last and first segment
         // the side depends on the original winding order of the polygon (inwards for contours, outwards for holes)
@@ -7063,7 +7193,9 @@ std::string GCode::extrude_multi_path(ExtrusionMultiPath multipath, std::string 
     }
 
     // BBS
-    if (m_wipe.enable) {
+    if (m_local_z_bridge_plan != nullptr) {
+        m_wipe.reset_path();
+    } else if (m_wipe.enable) {
         m_wipe.path = Polyline();
         for (ExtrusionPath& path : multipath.paths) {
             // BBS: Don't need to save duplicated point into wipe path
@@ -7103,7 +7235,9 @@ std::string GCode::extrude_path(ExtrusionPath path, std::string description, dou
     m_multi_flow_segment_path_average_mm3_per_mm = 0;
     //    description += ExtrusionEntity::role_to_string(path.role());
     std::string gcode = this->_extrude(path, description, speed);
-    if (m_wipe.enable) {
+    if (m_local_z_bridge_plan != nullptr) {
+        m_wipe.reset_path();
+    } else if (m_wipe.enable) {
         m_wipe.path = std::move(path.polyline);
         m_wipe.path.reverse();
     }
@@ -7326,6 +7460,16 @@ std::string GCode::_extrude(const ExtrusionPath& path, std::string description, 
                 gcode += this->_extrude(segment, description, speed);
             return gcode;
         }
+    }
+
+    if (m_local_z_bridge_plan != nullptr && m_local_z_bridge_plan->bridge_field != nullptr &&
+        dynamic_cast<const ExtrusionPathSloped*>(&path) == nullptr) {
+        // The field drops the parts this slot does not print, so an empty result
+        // means nothing to extrude rather than a flat fallback.
+        for (const ExtrusionPathSloped& segment :
+             m_local_z_bridge_plan->bridge_field->modulate_path(path, m_local_z_bridge_plan->bridge_slot_index, m_config.z_offset.value))
+            gcode += this->_extrude(segment, description, speed);
+        return gcode;
     }
 
     if (is_bridge(path.role()))
