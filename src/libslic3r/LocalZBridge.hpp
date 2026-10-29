@@ -5,6 +5,7 @@
 #include "ExPolygon.hpp"
 #include "ExtrusionEntity.hpp"
 
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -53,6 +54,7 @@ public:
 
     LocalZBridgeField(double transition_width_mm, std::vector<unsigned int> slot_filaments, std::vector<Row> rows);
 
+    double                           transition_width_mm() const { return 2. * m_half_width_mm; }
     size_t                           slot_count() const { return m_slot_filaments.size(); }
     const std::vector<unsigned int>& slot_filaments() const { return m_slot_filaments; }
     const std::vector<Row>&          rows() const { return m_rows; }
@@ -78,8 +80,15 @@ public:
     // Splits a path into segments whose Z and bead height follow the field and
     // drops the parts where the slot is not printed. Runs that stay at one
     // height keep their source vertices; only the transition band is
-    // resampled. Returns nothing for an invalid path or slot index.
-    std::vector<ExtrusionPathSloped> modulate_path(const ExtrusionPath& path, size_t slot_index, double z_offset) const;
+    // resampled. Only parts whose top lies in (tops.lower, tops.upper] are
+    // kept; a slot spanning several nominal layers prints each part on the
+    // layer that holds its top, cut exactly where the top crosses the limit.
+    // Returns nothing for an invalid path or slot index.
+    std::vector<ExtrusionPathSloped> modulate_path(const ExtrusionPath& path,
+                                                   size_t               slot_index,
+                                                   double               z_offset,
+                                                   const Span&          tops = {-std::numeric_limits<double>::infinity(),
+                                                                                std::numeric_limits<double>::infinity()}) const;
 
 private:
     // Blended slot interfaces at a point.

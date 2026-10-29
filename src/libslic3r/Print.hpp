@@ -23,6 +23,7 @@
 #include <Eigen/Geometry>
 
 #include <functional>
+#include <limits>
 #include <memory>
 #include <set>
 #include <vector>
@@ -111,6 +112,10 @@ struct SubLayerPlan
     // the slot so ordering and travel clear the pass.
     std::shared_ptr<const LocalZBridgeField> bridge_field;
     size_t                                   bridge_slot_index { 0 };
+    // A slot that spans several nominal layers prints, on each layer, only the
+    // parts whose top lies in (bridge_top_lower, bridge_top_upper].
+    double                                   bridge_top_lower { -std::numeric_limits<double>::infinity() };
+    double                                   bridge_top_upper { std::numeric_limits<double>::infinity() };
     std::vector<ExPolygons> painted_masks_by_extruder;
     std::vector<ExPolygons> fixed_painted_masks_by_extruder;
     ExPolygons              base_masks;

@@ -365,6 +365,42 @@ TEST_CASE("Continuous mix bridge tapers onto a mix that prints nothing on the la
     CHECK_THAT(unshared.slot_span_at(Point::new_scale(9.9, 5.), 0).height(), WithinAbs(0.08, 1e-9));
 }
 
+TEST_CASE("Continuous mix bridge prints each part of a slot on the layer holding its top", "[LocalZ][LocalZBridge]")
+{
+    // Cyan's top falls from 0.35 on the left to 0.25 on the right and crosses
+    // a nominal layer top at 0.30 in the middle of the band.
+    const LocalZBridgeField field = make_two_mix_field(2.0);
+    const ExtrusionPath     path  = horizontal_path(1., 19.);
+    auto                    length_of = [](const std::vector<ExtrusionPathSloped>& segments) {
+        double length = 0.;
+        for (const ExtrusionPathSloped& segment : segments)
+            length += unscale<double>(segment.polyline.length());
+        return length;
+    };
+
+    const std::vector<ExtrusionPathSloped> whole = field.modulate_path(path, 0, 0.);
+    const std::vector<ExtrusionPathSloped> lower = field.modulate_path(path, 0, 0., {0.20, 0.30});
+    const std::vector<ExtrusionPathSloped> upper = field.modulate_path(path, 0, 0., {0.30, 0.40});
+    REQUIRE_FALSE(lower.empty());
+    REQUIRE_FALSE(upper.empty());
+    // Together the two layers print the whole slot once.
+    CHECK_THAT(length_of(lower) + length_of(upper), WithinAbs(length_of(whole), 1e-3));
+    for (const ExtrusionPathSloped& segment : lower) {
+        CHECK(segment.absolute_z_begin <= 0.30 + 1e-9);
+        CHECK(segment.absolute_z_end <= 0.30 + 1e-9);
+    }
+    for (const ExtrusionPathSloped& segment : upper) {
+        CHECK(segment.absolute_z_begin >= 0.30 - 1e-9);
+        CHECK(segment.absolute_z_end >= 0.30 - 1e-9);
+    }
+    // The parts meet exactly where the top crosses 0.30.
+    CHECK(upper.back().polyline.points.back() == lower.front().polyline.points.front());
+    CHECK_THAT(upper.back().absolute_z_end, WithinAbs(0.30, 1e-9));
+    CHECK_THAT(lower.front().absolute_z_begin, WithinAbs(0.30, 1e-9));
+    // A layer above the slot prints none of it.
+    CHECK(field.modulate_path(path, 0, 0., {0.40, 0.50}).empty());
+}
+
 TEST_CASE("Continuous mix bridge keeps zones that share no filament sharp", "[LocalZ][LocalZBridge]")
 {
     // Solid cyan next to solid magenta: no shared filament, so no blend.

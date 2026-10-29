@@ -4612,11 +4612,12 @@ void PrintConfigDef::init_fff_params()
                      "shared filament as one connected island with its own perimeter paths. Across the boundary, one "
                      "filament's layer gradually becomes thinner while the other's becomes thicker, and a filament only one "
                      "side uses tapers out.\n\n"
-                     "Bridged layers are printed non-planar inside the transition band. Every zone keeps its Local-Z heights, "
-                     "including independent and gradient Local-Z heights, and stacks the passes of each nominal layer in "
-                     "ascending filament order. Passes of the same filament printed on the same nominal layer connect. With "
-                     "independent heights a mixture's cycle can span several layers, so its layers bend gently inside the "
-                     "band to meet its neighbors.");
+                     "Bridged layers are printed non-planar inside the transition band. With normal Local-Z every mixture "
+                     "stacks its filaments once per nominal layer. With independent Local-Z layer heights, bridged mixtures "
+                     "share windows of whole layers, long enough for the longest cycle: each mixture repeats its own cycle as "
+                     "many whole times as fit, stretched to fill the window, so matching sublayers connect across mixtures. "
+                     "Each part of a connected layer prints on the nominal layer that holds its top. Gradient mixtures and "
+                     "adaptive image maps keep their own cadence and do not bridge.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 

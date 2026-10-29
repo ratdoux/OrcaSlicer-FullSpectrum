@@ -7464,10 +7464,12 @@ std::string GCode::_extrude(const ExtrusionPath& path, std::string description, 
 
     if (m_local_z_bridge_plan != nullptr && m_local_z_bridge_plan->bridge_field != nullptr &&
         dynamic_cast<const ExtrusionPathSloped*>(&path) == nullptr) {
-        // The field drops the parts this slot does not print, so an empty result
-        // means nothing to extrude rather than a flat fallback.
+        // The field drops the parts this slot does not print on this layer, so an
+        // empty result means nothing to extrude rather than a flat fallback.
+        const LocalZBridgeField::Span tops{m_local_z_bridge_plan->bridge_top_lower, m_local_z_bridge_plan->bridge_top_upper};
         for (const ExtrusionPathSloped& segment :
-             m_local_z_bridge_plan->bridge_field->modulate_path(path, m_local_z_bridge_plan->bridge_slot_index, m_config.z_offset.value))
+             m_local_z_bridge_plan->bridge_field->modulate_path(path, m_local_z_bridge_plan->bridge_slot_index, m_config.z_offset.value,
+                                                                tops))
             gcode += this->_extrude(segment, description, speed);
         return gcode;
     }

@@ -223,7 +223,10 @@ ExPolygons LocalZBridgeField::slot_island(size_t slot_index, const ExPolygons& o
     return outline.empty() ? island : intersection_ex(island, outline);
 }
 
-std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const ExtrusionPath& path, size_t slot_index, double z_offset) const
+std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const ExtrusionPath& path,
+                                                                  size_t               slot_index,
+                                                                  double               z_offset,
+                                                                  const Span&          tops) const
 {
     std::vector<ExtrusionPathSloped> output;
     const Points&                    source = path.polyline.points;
@@ -285,6 +288,44 @@ std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const Extrusio
         return std::abs(lhs.upper - rhs.upper) <= BRIDGE_FLAT_TOLERANCE_MM &&
                std::abs(lhs.height() - rhs.height()) <= BRIDGE_FLAT_TOLERANCE_MM;
     };
+    auto top_kept = [&tops](double top) { return top > tops.lower && top <= tops.upper; };
+    // Keeps the part of a sloped segment whose top lies in the kept range. The
+    // cut points depend only on the segment, so the parts kept on neighboring
+    // layers meet exactly.
+    auto emit_sloped = [&](const Sample& first, const Sample& second) {
+        const double top_delta = second.span.upper - first.span.upper;
+        double       t_begin   = 0.;
+        double       t_end     = 1.;
+        if (std::abs(top_delta) <= 1e-12) {
+            if (!top_kept(first.span.upper))
+                return;
+        } else {
+            double t_lower = (tops.lower - first.span.upper) / top_delta;
+            double t_upper = (tops.upper - first.span.upper) / top_delta;
+            if (t_lower > t_upper)
+                std::swap(t_lower, t_upper);
+            t_begin = std::max(0., t_lower);
+            t_end   = std::min(1., t_upper);
+            if (t_end - t_begin <= 1e-9)
+                return;
+        }
+        auto point_at = [&](double t) {
+            if (t <= 0.)
+                return first.point;
+            if (t >= 1.)
+                return second.point;
+            const Vec2d delta = (second.point - first.point).cast<double>();
+            return Point(coord_t(std::llround(double(first.point.x()) + delta.x() * t)),
+                         coord_t(std::llround(double(first.point.y()) + delta.y() * t)));
+        };
+        auto top_at    = [&](double t) { return first.span.upper + top_delta * t; };
+        auto height_at = [&](double t) { return first.span.height() + (second.span.height() - first.span.height()) * t; };
+        const Point begin_point = point_at(t_begin);
+        const Point end_point   = point_at(t_end);
+        if (begin_point == end_point)
+            return;
+        emit(Points{begin_point, end_point}, top_at(t_begin), top_at(t_end), 0.5 * (height_at(t_begin) + height_at(t_end)));
+    };
 
     size_t begin = 0;
     while (begin + 1 < samples.size()) {
@@ -301,16 +342,16 @@ std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const Extrusio
                 ++end;
             // Resampled points on a flat run lie on their source segment, so
             // only source vertices are needed to reproduce the geometry.
-            Points points{first.point};
-            for (size_t sample_idx = begin + 1; sample_idx < end; ++sample_idx)
-                if (samples[sample_idx].source_vertex)
-                    points.emplace_back(samples[sample_idx].point);
-            points.emplace_back(samples[end].point);
-            emit(std::move(points), first.span.upper, first.span.upper, first.span.height());
+            if (top_kept(first.span.upper)) {
+                Points points{first.point};
+                for (size_t sample_idx = begin + 1; sample_idx < end; ++sample_idx)
+                    if (samples[sample_idx].source_vertex)
+                        points.emplace_back(samples[sample_idx].point);
+                points.emplace_back(samples[end].point);
+                emit(std::move(points), first.span.upper, first.span.upper, first.span.height());
+            }
         } else {
-            const Sample& second = samples[end];
-            emit(Points{first.point, second.point}, first.span.upper, second.span.upper,
-                 0.5 * (first.span.height() + second.span.height()));
+            emit_sloped(first, samples[end]);
         }
         begin = end;
     }
