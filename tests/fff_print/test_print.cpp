@@ -1628,7 +1628,8 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
                                         const std::vector<std::pair<int, int>>&     painted_facets,
                                         bool                                        continuous_bridges,
                                         bool                                        independent_layer_heights = false,
-                                        double                                      layer_height              = 0.2)
+                                        double                                      layer_height              = 0.2,
+                                        const DynamicPrintConfig*                   overrides                 = nullptr)
 {
     MixedFilamentManager definitions;
     for (const MixedFilamentDefinition& mix : mixes)
@@ -1667,6 +1668,8 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
     config.set_key_value("dithering_local_z_bridge_transition_width", new ConfigOptionFloat(2.0));
     config.set_key_value("enable_prime_tower", new ConfigOptionBool(false));
     config.set_key_value("gcode_comments", new ConfigOptionBool(true));
+    if (overrides != nullptr)
+        config.apply(*overrides);
 
     Model        model;
     ModelObject* model_object = model.add_object();
@@ -2007,6 +2010,52 @@ TEST_CASE("Continuous mix bridges connect phase-locked mixes to the object's own
                       [&mix_heights](double cyan) { return mix_heights.count(std::round(3. * cyan * 1e6) / 1e6) == 1; }));
     CHECK(cyan_connected);
     check_bridged_extrusion(bridged);
+}
+
+TEST_CASE("Continuous mix bridge comparison settings reach the bridges", "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
+{
+    // The phase-locked 3:1 and 1:1:3 mixes on 0.06 mm layers, sliced with
+    // each comparison setting flipped.
+    const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757583, {{1, 75}, {2, 25}}, "#40BFFF"),
+                                                     make_bridge_test_mix(757584, {{1, 20}, {2, 20}, {3, 60}}, "#A0A060")};
+    const std::vector<std::string>             colors{"#00FFFF", "#FF00FF", "#FFFF00"};
+    const std::vector<std::pair<int, int>>     painted{{6, 4}, {7, 4}, {8, 4}, {9, 4}, {4, 5}, {5, 5}, {10, 5}, {11, 5}};
+    constexpr double                           layer_height = 0.06;
+
+    auto slice_with = [&](bool fine_sampling, bool shared_outlines) {
+        DynamicPrintConfig overrides;
+        overrides.set_key_value("dithering_local_z_bridge_fine_sampling", new ConfigOptionBool(fine_sampling));
+        overrides.set_key_value("dithering_local_z_bridge_shared_outlines", new ConfigOptionBool(shared_outlines));
+        return slice_bridge_scenario(mixes, colors, painted, true, true, layer_height, &overrides);
+    };
+    // Layers on which each field prints.
+    auto layers_by_field = [](const BridgeSliceResult& result) {
+        std::map<const LocalZBridgeField*, std::set<size_t>> layers;
+        for (const SubLayerPlan& plan : result.plans)
+            if (plan.bridge_field != nullptr)
+                layers[plan.bridge_field.get()].insert(plan.layer_id);
+        return layers;
+    };
+
+    const BridgeSliceResult plain = slice_with(false, false);
+    REQUIRE_FALSE(layers_by_field(plain).empty());
+    for (const auto& [field, layers] : layers_by_field(plain)) {
+        CHECK_FALSE(field->options().fine_sampling);
+        // Without shared outlines every layer builds its own fields.
+        CHECK(layers.size() == 1);
+    }
+    check_bridged_extrusion(plain);
+
+    const BridgeSliceResult refined = slice_with(true, true);
+    const auto              refined_layers = layers_by_field(refined);
+    REQUIRE_FALSE(refined_layers.empty());
+    for (const auto& [field, layers] : refined_layers)
+        CHECK(field->options().fine_sampling);
+    // With shared outlines a later layer prints its part of a slot with the
+    // field of the layer that printed the first part.
+    CHECK(std::any_of(refined_layers.begin(), refined_layers.end(),
+                      [](const auto& entry) { return entry.second.size() > 1; }));
+    check_bridged_extrusion(refined);
 }
 
 TEST_CASE("Gradient Local-Z preserves configured and painted seam placement", "[PrintObject][MixedFilament][LocalZ][Seam]")

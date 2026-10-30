@@ -9923,6 +9923,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                     "dithering_local_z_gradient_layer_height",
                                     "dithering_local_z_continuous_bridges",
                                     "dithering_local_z_bridge_transition_width",
+                                    "dithering_local_z_bridge_fine_sampling",
+                                    "dithering_local_z_bridge_scarf_cuts",
+                                    "dithering_local_z_bridge_shared_outlines",
                                     "dithering_step_painted_zones_only"
                                 };
                                 preset_bundle->project_config.apply_only(config_loaded, imported_project_option_keys, true);

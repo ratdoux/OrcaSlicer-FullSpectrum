@@ -829,6 +829,9 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
                                             config->option("dithering_local_z_continuous_bridges") != nullptr &&
                                             config->opt_bool("dithering_local_z_continuous_bridges");
     toggle_line("dithering_local_z_bridge_transition_width", continuous_bridges_enabled);
+    toggle_line("dithering_local_z_bridge_fine_sampling", continuous_bridges_enabled);
+    toggle_line("dithering_local_z_bridge_scarf_cuts", continuous_bridges_enabled);
+    toggle_line("dithering_local_z_bridge_shared_outlines", continuous_bridges_enabled);
     toggle_line("local_z_wipe_tower_purge_lines", have_prime_tower && !is_BBL_Printer && local_z_dithering_enabled);
 
     WipeTowerWallType wipe_tower_wall_type = config->opt_enum<WipeTowerWallType>("wipe_tower_wall_type");

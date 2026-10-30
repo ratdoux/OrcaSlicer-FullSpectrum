@@ -4635,6 +4635,37 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(2.0));
 
+    def = this->add("dithering_local_z_bridge_fine_sampling", coBool);
+    def->label = L("Fine bridge sampling");
+    def->category = L("Others");
+    def->tooltip = L("Samples bridged paths at least 8 times across the transition band, so short transitions slope "
+                     "smoothly instead of in a few kinks. Paths keep their original points outside the band.\n\n"
+                     "When off, paths are sampled every 0.2 mm.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("dithering_local_z_bridge_scarf_cuts", coBool);
+    def->label = L("Scarf bridged layer cuts");
+    def->category = L("Others");
+    def->tooltip = L("With independent Local-Z layer heights, a bridged layer that slopes across a transition band prints "
+                     "in parts on neighboring nominal layers, cut where its top crosses a layer boundary. When on, both "
+                     "parts continue across a 1 mm overlap with flow ramping in opposite directions, like a scarf seam, so "
+                     "the joint has no gap.\n\n"
+                     "When off, the parts stop and start exactly at the cut.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("dithering_local_z_bridge_shared_outlines", coBool);
+    def->label = L("Keep bridged layer outlines across layers");
+    def->category = L("Others");
+    def->tooltip = L("With independent Local-Z layer heights, a bridged layer can print in parts on several nominal "
+                     "layers. When on, every part uses the zone outlines of the first layer that prints it, so the parts "
+                     "meet without height steps. Where a painted boundary slopes, colors then move in steps of up to one "
+                     "bridge window instead of one layer.\n\n"
+                     "When off, every layer uses its own outlines.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("dithering_step_painted_zones_only", coBool);
     def->label = L("Use step size in painted zones only");
     def->category = L("Others");

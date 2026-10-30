@@ -1422,7 +1422,8 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
         (ConfigOptionBool, dithering_local_z_infill))((ConfigOptionBool, dithering_local_z_direct_multicolor))(
         (ConfigOptionBool, dithering_local_z_independent_layer_height))((ConfigOptionFloat, dithering_local_z_gradient_layer_height))(
         (ConfigOptionPercent, dithering_local_z_gradient_middle_filament_window))((ConfigOptionBool, dithering_local_z_continuous_bridges))(
-        (ConfigOptionFloat, dithering_local_z_bridge_transition_width))((ConfigOptionBool, dithering_step_painted_zones_only))(
+        (ConfigOptionFloat, dithering_local_z_bridge_transition_width))(
+        (ConfigOptionBool, dithering_local_z_bridge_fine_sampling))((ConfigOptionBool, dithering_local_z_bridge_scarf_cuts))((ConfigOptionBool, dithering_local_z_bridge_shared_outlines))((ConfigOptionBool, dithering_step_painted_zones_only))(
         (ConfigOptionString, printer_model))((ConfigOptionFloat, resolution))((ConfigOptionFloats, retraction_minimum_travel))(
         (ConfigOptionBools, retract_when_changing_layer))((ConfigOptionFloat, skirt_distance))((ConfigOptionInt, skirt_height))(
         (ConfigOptionInt, skirt_loops))((ConfigOptionEnum<SkirtType>, skirt_type))((ConfigOptionFloat, skirt_speed))(

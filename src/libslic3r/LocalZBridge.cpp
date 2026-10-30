@@ -15,6 +15,8 @@ namespace {
 constexpr double BRIDGE_SAMPLE_SPACING_MM = 0.20;
 constexpr double BRIDGE_FLAT_TOLERANCE_MM = 1e-5;
 constexpr double BRIDGE_PRINTED_HEIGHT_MM = 1e-6;
+// Length of the overlap in which a scarf joins two parts of a cut path.
+constexpr double BRIDGE_SCARF_LENGTH_MM = 1.0;
 
 // Odd smoothstep on [-1, 1] with zero slope at both ends, so the blend meets
 // the constant row heights without a crease at the band edge.
@@ -26,8 +28,11 @@ double smooth_signed_step(double t)
 
 } // namespace
 
-LocalZBridgeField::LocalZBridgeField(double transition_width_mm, std::vector<unsigned int> slot_filaments, std::vector<Row> rows)
-    : m_half_width_mm(0.5 * std::max(0., transition_width_mm)), m_slot_filaments(std::move(slot_filaments))
+LocalZBridgeField::LocalZBridgeField(double                    transition_width_mm,
+                                     std::vector<unsigned int> slot_filaments,
+                                     std::vector<Row>          rows,
+                                     const Options&            options)
+    : m_half_width_mm(0.5 * std::max(0., transition_width_mm)), m_options(options), m_slot_filaments(std::move(slot_filaments))
 {
     const size_t                           slot_count = m_slot_filaments.size();
     std::vector<std::vector<unsigned int>> filaments_by_row;
@@ -67,6 +72,13 @@ double LocalZBridgeField::band_reach_mm(const Row& from, const Row& into) const
     return from.absorbs_transition ? 0. : 2. * m_half_width_mm;
 }
 
+double LocalZBridgeField::band_shift_mm(const Row& row, const Row& other) const
+{
+    if (row.absorbs_transition == other.absorbs_transition)
+        return 0.;
+    return row.absorbs_transition ? m_half_width_mm : -m_half_width_mm;
+}
+
 std::vector<double> LocalZBridgeField::row_weights_at(const Point& point) const
 {
     const size_t        row_count = m_rows.size();
@@ -102,12 +114,7 @@ std::vector<double> LocalZBridgeField::row_weights_at(const Point& point) const
     // at their boundary and reach 1/0 half a band away. Between a mix and a
     // single-filament zone, both depths shift by half a band so the whole band
     // lies in the single-filament zone.
-    auto shift_mm = [this](size_t row_idx, size_t other_idx) {
-        const bool row_absorbs = m_rows[row_idx].absorbs_transition;
-        if (row_absorbs == m_rows[other_idx].absorbs_transition)
-            return 0.;
-        return row_absorbs ? m_half_width_mm : -m_half_width_mm;
-    };
+    auto shift_mm = [this](size_t row_idx, size_t other_idx) { return this->band_shift_mm(m_rows[row_idx], m_rows[other_idx]); };
     double total = 0.;
     for (size_t row_idx = 0; row_idx < row_count; ++row_idx) {
         if (!m_shares[owner][row_idx])
@@ -250,7 +257,11 @@ std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const Extrusio
         samples.push_back({point, source_vertex, this->slot_span_at(point, slot_index)});
     };
 
-    const double spacing_scaled = scale_(BRIDGE_SAMPLE_SPACING_MM);
+    // Fine sampling never steps over a band, then refines wherever neighboring
+    // samples differ, so flat runs cost no more than before.
+    const double transition_mm  = this->transition_width_mm();
+    const bool   fine           = m_options.fine_sampling && transition_mm > EPSILON;
+    const double spacing_scaled = scale_(fine ? std::clamp(transition_mm, 0.05, BRIDGE_SAMPLE_SPACING_MM) : BRIDGE_SAMPLE_SPACING_MM);
     add_sample(source.front(), true);
     for (size_t source_idx = 0; source_idx + 1 < source.size(); ++source_idx) {
         const Point& a      = source[source_idx];
@@ -270,13 +281,43 @@ std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const Extrusio
     if (samples.size() < 2)
         return output;
 
-    auto emit = [&](Points&& points, double z_begin, double z_end, double height) {
+    auto same_level = [](const Span& lhs, const Span& rhs) {
+        return std::abs(lhs.upper - rhs.upper) <= BRIDGE_FLAT_TOLERANCE_MM &&
+               std::abs(lhs.height() - rhs.height()) <= BRIDGE_FLAT_TOLERANCE_MM;
+    };
+    if (fine) {
+        const double        fine_spacing_scaled = scale_(std::max(0.01, transition_mm / 8.));
+        std::vector<Sample> refined;
+        refined.reserve(samples.size());
+        for (size_t sample_idx = 0; sample_idx + 1 < samples.size(); ++sample_idx) {
+            const Sample& a = samples[sample_idx];
+            const Sample& b = samples[sample_idx + 1];
+            refined.push_back(a);
+            if (same_level(a.span, b.span))
+                continue;
+            const Vec2d  delta = (b.point - a.point).cast<double>();
+            const size_t count = std::clamp<size_t>(size_t(std::ceil(delta.norm() / fine_spacing_scaled)), 1, 4096);
+            for (size_t step = 1; step < count; ++step) {
+                const double t = double(step) / double(count);
+                const Point  point(coord_t(std::llround(double(a.point.x()) + delta.x() * t)),
+                                   coord_t(std::llround(double(a.point.y()) + delta.y() * t)));
+                if (point != refined.back().point && point != b.point)
+                    refined.push_back({point, false, this->slot_span_at(point, slot_index)});
+            }
+        }
+        refined.push_back(samples.back());
+        samples = std::move(refined);
+    }
+
+    auto emit = [&](Points&& points, double z_begin, double z_end, double height, double flow) {
         ExtrusionPath segment(Polyline(std::move(points)), path);
         segment.polyline.fitting_result.clear();
         // A layer that tapers to nothing still needs a positive bead height.
         height = std::max(1e-3, height);
         if (path.height > EPSILON)
             segment.mm3_per_mm *= height / double(path.height);
+        // A scarf shares one bead between two nominal layers.
+        segment.mm3_per_mm *= flow;
         segment.height = float(height);
         ExtrusionPathSloped sloped(std::move(segment), ExtrusionPathSloped::Slope{0., 1.}, ExtrusionPathSloped::Slope{1., 1.});
         sloped.local_z_modulation = true;
@@ -284,77 +325,145 @@ std::vector<ExtrusionPathSloped> LocalZBridgeField::modulate_path(const Extrusio
         sloped.absolute_z_end     = z_end + z_offset;
         output.emplace_back(std::move(sloped));
     };
-    auto same_level = [](const Span& lhs, const Span& rhs) {
-        return std::abs(lhs.upper - rhs.upper) <= BRIDGE_FLAT_TOLERANCE_MM &&
-               std::abs(lhs.height() - rhs.height()) <= BRIDGE_FLAT_TOLERANCE_MM;
-    };
-    auto top_kept = [&tops](double top) { return top > tops.lower && top <= tops.upper; };
-    // Keeps the part of a sloped segment whose top lies in the kept range. The
-    // cut points depend only on the segment, so the parts kept on neighboring
-    // layers meet exactly.
-    auto emit_sloped = [&](const Sample& first, const Sample& second) {
-        const double top_delta = second.span.upper - first.span.upper;
-        double       t_begin   = 0.;
-        double       t_end     = 1.;
-        if (std::abs(top_delta) <= 1e-12) {
-            if (!top_kept(first.span.upper))
-                return;
-        } else {
-            double t_lower = (tops.lower - first.span.upper) / top_delta;
-            double t_upper = (tops.upper - first.span.upper) / top_delta;
-            if (t_lower > t_upper)
-                std::swap(t_lower, t_upper);
-            t_begin = std::max(0., t_lower);
-            t_end   = std::min(1., t_upper);
-            if (t_end - t_begin <= 1e-9)
-                return;
+
+    std::vector<double> lengths(samples.size(), 0.);
+    for (size_t sample_idx = 1; sample_idx < samples.size(); ++sample_idx)
+        lengths[sample_idx] = lengths[sample_idx - 1] + (samples[sample_idx].point - samples[sample_idx - 1].point).cast<double>().norm();
+
+    // Cuts: where the top crosses a limit of the kept range between two
+    // printed samples. They depend only on the path, so the parts kept on
+    // neighboring layers meet exactly.
+    auto top_kept = [&tops](double top) { return top_in(tops, top); };
+    std::vector<std::vector<double>> splits(samples.size());
+    std::vector<double>              cuts;
+    for (size_t sample_idx = 0; sample_idx + 1 < samples.size(); ++sample_idx) {
+        const Sample& a         = samples[sample_idx];
+        const Sample& b         = samples[sample_idx + 1];
+        const double  top_delta = b.span.upper - a.span.upper;
+        if (!a.printed() || !b.printed() || std::abs(top_delta) <= 1e-12)
+            continue;
+        // The top changes sides of a limit here, possibly exactly at a sample.
+        // Sides shift by the tolerance of top_in, so rounding error around a
+        // limit never cuts; the cut itself lies on the limit.
+        for (const double limit : {tops.lower, tops.upper}) {
+            if (!std::isfinite(limit) || (a.span.upper > limit + TOP_TOLERANCE_MM) == (b.span.upper > limit + TOP_TOLERANCE_MM))
+                continue;
+            const double t = std::clamp((limit - a.span.upper) / top_delta, 0., 1.);
+            if (t > 1e-9 && t < 1. - 1e-9)
+                splits[sample_idx].push_back(t);
+            cuts.push_back(lengths[sample_idx] + t * (lengths[sample_idx + 1] - lengths[sample_idx]));
         }
-        auto point_at = [&](double t) {
-            if (t <= 0.)
-                return first.point;
-            if (t >= 1.)
-                return second.point;
-            const Vec2d delta = (second.point - first.point).cast<double>();
-            return Point(coord_t(std::llround(double(first.point.x()) + delta.x() * t)),
-                         coord_t(std::llround(double(first.point.y()) + delta.y() * t)));
-        };
-        auto top_at    = [&](double t) { return first.span.upper + top_delta * t; };
-        auto height_at = [&](double t) { return first.span.height() + (second.span.height() - first.span.height()) * t; };
-        const Point begin_point = point_at(t_begin);
-        const Point end_point   = point_at(t_end);
-        if (begin_point == end_point)
-            return;
-        emit(Points{begin_point, end_point}, top_at(t_begin), top_at(t_end), 0.5 * (height_at(t_begin) + height_at(t_end)));
+    }
+    std::sort(cuts.begin(), cuts.end());
+
+    // Scarf joints: within half a scarf of a cut, both layers print the bead,
+    // with flow ramping from one half at the cut to all of it on the side the
+    // layer keeps and to nothing on the other, so the joint adds up to one bead.
+    const double half_scarf = m_options.scarf_cuts && !cuts.empty() ? scale_(0.5 * BRIDGE_SCARF_LENGTH_MM) : 0.;
+    if (half_scarf > 0.) {
+        const double ramp_step = half_scarf / 4.;
+        for (size_t sample_idx = 0; sample_idx + 1 < samples.size(); ++sample_idx) {
+            const double begin = lengths[sample_idx];
+            const double end   = lengths[sample_idx + 1];
+            if (end - begin <= EPSILON || !samples[sample_idx].printed() || !samples[sample_idx + 1].printed())
+                continue;
+            for (const double cut : cuts) {
+                const double ramp_begin = std::max(begin, cut - half_scarf);
+                const double ramp_end   = std::min(end, cut + half_scarf);
+                if (ramp_end <= ramp_begin)
+                    continue;
+                for (double position = ramp_begin;; position += ramp_step) {
+                    const double clamped = std::min(position, ramp_end);
+                    const double t       = (clamped - begin) / (end - begin);
+                    if (t > 1e-9 && t < 1. - 1e-9)
+                        splits[sample_idx].push_back(t);
+                    if (clamped >= ramp_end)
+                        break;
+                }
+            }
+        }
+    }
+    auto flow_at = [&](double position, bool kept) {
+        if (half_scarf <= 0.)
+            return kept ? 1. : 0.;
+        const auto   next     = std::lower_bound(cuts.begin(), cuts.end(), position);
+        double       distance = std::numeric_limits<double>::infinity();
+        if (next != cuts.end())
+            distance = *next - position;
+        if (next != cuts.begin())
+            distance = std::min(distance, position - *std::prev(next));
+        const double ramp = 0.5 * distance / half_scarf;
+        return kept ? std::min(1., 0.5 + ramp) : std::max(0., 0.5 - ramp);
     };
 
-    size_t begin = 0;
-    while (begin + 1 < samples.size()) {
-        const Sample& first = samples[begin];
-        size_t        end   = begin + 1;
-        if (!first.printed() || !samples[end].printed()) {
+    // Flat runs at full flow merge into one path. Resampled points on a flat
+    // run lie on their source segment, so only source vertices are kept.
+    std::vector<std::pair<Point, bool>> run;
+    double                              run_top    = 0.;
+    double                              run_height = 0.;
+    auto flush_run = [&]() {
+        if (run.size() >= 2) {
+            Points points;
+            for (size_t run_idx = 0; run_idx < run.size(); ++run_idx)
+                if (run_idx == 0 || run_idx + 1 == run.size() || run[run_idx].second)
+                    points.emplace_back(run[run_idx].first);
+            emit(std::move(points), run_top, run_top, run_height, 1.);
+        }
+        run.clear();
+    };
+    for (size_t sample_idx = 0; sample_idx + 1 < samples.size(); ++sample_idx) {
+        const Sample& a = samples[sample_idx];
+        const Sample& b = samples[sample_idx + 1];
+        if (!a.printed() || !b.printed()) {
             // The slot starts or ends between these samples, where its layer
             // has already tapered to nothing.
-            begin = end;
+            flush_run();
             continue;
         }
-        if (same_level(first.span, samples[end].span)) {
-            while (end + 1 < samples.size() && samples[end + 1].printed() && same_level(first.span, samples[end + 1].span))
-                ++end;
-            // Resampled points on a flat run lie on their source segment, so
-            // only source vertices are needed to reproduce the geometry.
-            if (top_kept(first.span.upper)) {
-                Points points{first.point};
-                for (size_t sample_idx = begin + 1; sample_idx < end; ++sample_idx)
-                    if (samples[sample_idx].source_vertex)
-                        points.emplace_back(samples[sample_idx].point);
-                points.emplace_back(samples[end].point);
-                emit(std::move(points), first.span.upper, first.span.upper, first.span.height());
+        std::vector<double>& ts = splits[sample_idx];
+        ts.push_back(0.);
+        ts.push_back(1.);
+        sort_remove_duplicates(ts);
+        const bool  flat  = same_level(a.span, b.span);
+        const Vec2d delta = (b.point - a.point).cast<double>();
+        auto point_at = [&](double t) {
+            if (t <= 0.)
+                return a.point;
+            if (t >= 1.)
+                return b.point;
+            return Point(coord_t(std::llround(double(a.point.x()) + delta.x() * t)), coord_t(std::llround(double(a.point.y()) + delta.y() * t)));
+        };
+        auto top_at    = [&](double t) { return a.span.upper + (b.span.upper - a.span.upper) * t; };
+        auto height_at = [&](double t) { return a.span.height() + (b.span.height() - a.span.height()) * t; };
+        for (size_t piece_idx = 0; piece_idx + 1 < ts.size(); ++piece_idx) {
+            const double t_begin = ts[piece_idx];
+            const double t_end   = ts[piece_idx + 1];
+            const double t_mid   = 0.5 * (t_begin + t_end);
+            const double flow    = flow_at(lengths[sample_idx] + t_mid * (lengths[sample_idx + 1] - lengths[sample_idx]), top_kept(top_at(t_mid)));
+            const Point  begin_point = point_at(t_begin);
+            const Point  end_point   = point_at(t_end);
+            if (flow <= 1e-6 || begin_point == end_point) {
+                flush_run();
+                continue;
             }
-        } else {
-            emit_sloped(first, samples[end]);
+            if (flat && flow >= 1. - 1e-9) {
+                const bool continues = !run.empty() && run.back().first == begin_point &&
+                                       std::abs(run_top - a.span.upper) <= BRIDGE_FLAT_TOLERANCE_MM &&
+                                       std::abs(run_height - a.span.height()) <= BRIDGE_FLAT_TOLERANCE_MM;
+                if (!continues) {
+                    flush_run();
+                    run.emplace_back(begin_point, t_begin <= 0. ? a.source_vertex : false);
+                    run_top    = a.span.upper;
+                    run_height = a.span.height();
+                }
+                run.emplace_back(end_point, t_end >= 1. ? b.source_vertex : false);
+                continue;
+            }
+            flush_run();
+            emit(Points{begin_point, end_point}, top_at(t_begin), top_at(t_end), 0.5 * (height_at(t_begin) + height_at(t_end)), flow);
         }
-        begin = end;
     }
+    flush_run();
     return output;
 }
 

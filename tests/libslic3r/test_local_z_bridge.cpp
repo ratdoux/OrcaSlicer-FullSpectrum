@@ -401,6 +401,122 @@ TEST_CASE("Continuous mix bridge prints each part of a slot on the layer holding
     CHECK(field.modulate_path(path, 0, 0., {0.40, 0.50}).empty());
 }
 
+TEST_CASE("Continuous mix bridge keeps a taper whose blended top lands on the layer top", "[LocalZ][LocalZBridge]")
+{
+    // A 3:5 cyan/magenta mix on the left, solid cyan on the right, on a layer
+    // from 4.65 to 4.85. Magenta's top is 4.85 in both zones, so its blended
+    // top across the band is 4.85 up to rounding error.
+    std::vector<LocalZBridgeField::Row> rows(2);
+    rows[0].masks              = {rectangle_mm(0., 0., 10., 10.)};
+    rows[0].bounds             = {4.65, 4.725, 4.85};
+    rows[1].masks              = {rectangle_mm(10., 0., 20., 10.)};
+    rows[1].bounds             = {4.65, 4.85, 4.85};
+    rows[1].absorbs_transition = true;
+    LocalZBridgeField::Options options;
+    options.fine_sampling = true;
+    options.scarf_cuts    = true;
+    const LocalZBridgeField field(0.4, {1, 2}, rows, options);
+    auto                    length_of = [](const std::vector<ExtrusionPathSloped>& segments) {
+        double length = 0.;
+        for (const ExtrusionPathSloped& segment : segments)
+            length += unscale<double>(segment.polyline.length());
+        return length;
+    };
+
+    // Paths that start at different offsets sample the band at different points.
+    for (int offset = 0; offset < 64; ++offset) {
+        CAPTURE(offset);
+        const ExtrusionPath path = horizontal_path(1. + 0.0037 * offset, 19.);
+        // The layer prints all of magenta, through the band to the end of its taper.
+        const std::vector<ExtrusionPathSloped> whole    = field.modulate_path(path, 1, 0.);
+        const std::vector<ExtrusionPathSloped> on_layer = field.modulate_path(path, 1, 0., {4.65, 4.85});
+        REQUIRE_FALSE(on_layer.empty());
+        CHECK_THAT(length_of(on_layer), WithinAbs(length_of(whole), 1e-6));
+        CHECK(unscale<double>(on_layer.back().polyline.points.back().x()) > 10.3);
+        // At full flow: nothing was cut, so nothing was scarfed.
+        for (const ExtrusionPathSloped& segment : on_layer)
+            CHECK_THAT(segment.mm3_per_mm / double(segment.height), WithinAbs(path.mm3_per_mm / double(path.height), 1e-6));
+        // The layer above prints none of it.
+        CHECK(field.modulate_path(path, 1, 0., {4.85, 5.05}).empty());
+    }
+    CHECK(LocalZBridgeField::top_in({4.65, 4.85}, 4.85 + 1e-12));
+    CHECK_FALSE(LocalZBridgeField::top_in({4.85, 5.05}, 4.85 + 1e-12));
+}
+
+TEST_CASE("Continuous mix bridge scarf joins the parts of a cut slot", "[LocalZ][LocalZBridge]")
+{
+    // The cyan crossing at 0.30 from the previous case, with scarf joints.
+    std::vector<LocalZBridgeField::Row> rows(2);
+    rows[0].masks  = {rectangle_mm(0., 0., 10., 10.)};
+    rows[0].bounds = stack_bounds(0.20, {0.15, 0.05});
+    rows[1].masks  = {rectangle_mm(10., 0., 20., 10.)};
+    rows[1].bounds = stack_bounds(0.20, {0.05, 0.15});
+    LocalZBridgeField::Options options;
+    options.scarf_cuts = true;
+    const LocalZBridgeField field(2.0, {1, 2}, rows, options);
+    const ExtrusionPath     path = horizontal_path(1., 19.);
+    auto                    volume_of = [](const std::vector<ExtrusionPathSloped>& segments) {
+        double volume = 0.;
+        for (const ExtrusionPathSloped& segment : segments)
+            volume += unscale<double>(segment.polyline.length()) * segment.mm3_per_mm;
+        return volume;
+    };
+
+    const std::vector<ExtrusionPathSloped> whole = field.modulate_path(path, 0, 0.);
+    const std::vector<ExtrusionPathSloped> lower = field.modulate_path(path, 0, 0., {0.20, 0.30});
+    const std::vector<ExtrusionPathSloped> upper = field.modulate_path(path, 0, 0., {0.30, 0.40});
+    REQUIRE_FALSE(lower.empty());
+    REQUIRE_FALSE(upper.empty());
+    // The two layers overlap by the scarf length around the cut at x = 10 and
+    // together extrude exactly one bead.
+    CHECK_THAT(unscale<double>(upper.back().polyline.points.back().x()), WithinAbs(10.5, 0.01));
+    CHECK_THAT(unscale<double>(lower.front().polyline.points.front().x()), WithinAbs(9.5, 0.01));
+    CHECK_THAT(volume_of(lower) + volume_of(upper), WithinAbs(volume_of(whole), 1e-6 * volume_of(whole)));
+    // Only the overlap carries partial flow.
+    const double full_flow = path.mm3_per_mm / double(path.height);
+    for (const ExtrusionPathSloped& segment : upper) {
+        const double flow = segment.mm3_per_mm / (full_flow * double(segment.height));
+        const double x    = unscale<double>(segment.polyline.points.front().x());
+        CAPTURE(x, flow);
+        CHECK(flow <= 1. + 1e-6);
+        if (x < 9.4)
+            CHECK_THAT(flow, WithinAbs(1., 1e-6));
+    }
+    // Without a top range nothing is cut, so nothing is scarfed.
+    CHECK_THAT(volume_of(whole), WithinAbs(volume_of(LocalZBridgeField(2.0, {1, 2}, rows).modulate_path(path, 0, 0.)), 1e-9));
+}
+
+TEST_CASE("Continuous mix bridge fine sampling resolves short transitions", "[LocalZ][LocalZBridge]")
+{
+    // Cyan 0.15 / magenta 0.05 against 0.05 / 0.15 with a 0.3 mm band.
+    std::vector<LocalZBridgeField::Row> rows(2);
+    rows[0].masks  = {rectangle_mm(0., 0., 10., 10.)};
+    rows[0].bounds = stack_bounds(0.20, {0.15, 0.05});
+    rows[1].masks  = {rectangle_mm(10., 0., 20., 10.)};
+    rows[1].bounds = stack_bounds(0.20, {0.05, 0.15});
+    LocalZBridgeField::Options options;
+    options.fine_sampling = true;
+    const LocalZBridgeField fine(0.3, {1, 2}, rows, options);
+    const LocalZBridgeField coarse(0.3, {1, 2}, rows);
+
+    auto sloped_count = [](const std::vector<ExtrusionPathSloped>& segments) {
+        return std::count_if(segments.begin(), segments.end(), [](const ExtrusionPathSloped& segment) {
+            return std::abs(segment.absolute_z_end - segment.absolute_z_begin) > 1e-9;
+        });
+    };
+    const std::vector<ExtrusionPathSloped> fine_cyan   = fine.modulate_path(horizontal_path(1., 19.), 0, 0.);
+    const std::vector<ExtrusionPathSloped> coarse_cyan = coarse.modulate_path(horizontal_path(1., 19.), 0, 0.);
+    CHECK(sloped_count(fine_cyan) >= 8);
+    CHECK(sloped_count(coarse_cyan) <= 3);
+    // Both cover the same path, and flat runs stay single segments.
+    CHECK(fine_cyan.front().polyline.points.front() == coarse_cyan.front().polyline.points.front());
+    CHECK(fine_cyan.back().polyline.points.back() == coarse_cyan.back().polyline.points.back());
+    CHECK(fine_cyan.size() < 40);
+    // No step between neighboring samples exceeds a quarter of the height change.
+    for (const ExtrusionPathSloped& segment : fine_cyan)
+        CHECK(std::abs(segment.absolute_z_end - segment.absolute_z_begin) < 0.025);
+}
+
 TEST_CASE("Continuous mix bridge keeps zones that share no filament sharp", "[LocalZ][LocalZBridge]")
 {
     // Solid cyan next to solid magenta: no shared filament, so no blend.

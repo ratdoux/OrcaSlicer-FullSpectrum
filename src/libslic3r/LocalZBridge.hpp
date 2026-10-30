@@ -52,9 +52,22 @@ public:
         double height() const { return upper - lower; }
     };
 
-    LocalZBridgeField(double transition_width_mm, std::vector<unsigned int> slot_filaments, std::vector<Row> rows);
+    // Refinements that can be compared against the plain field.
+    struct Options
+    {
+        // Resamples paths at least 8 times across the transition band instead
+        // of every 0.2 mm.
+        bool fine_sampling{false};
+        // Where a top range cuts a path, both sides continue across a short
+        // overlap with flow ramping in opposite directions, so the parts
+        // printed on neighboring layers join like a scarf seam.
+        bool scarf_cuts{false};
+    };
+
+    LocalZBridgeField(double transition_width_mm, std::vector<unsigned int> slot_filaments, std::vector<Row> rows, const Options& options = {});
 
     double                           transition_width_mm() const { return 2. * m_half_width_mm; }
+    const Options&                   options() const { return m_options; }
     size_t                           slot_count() const { return m_slot_filaments.size(); }
     const std::vector<unsigned int>& slot_filaments() const { return m_slot_filaments; }
     const std::vector<Row>&          rows() const { return m_rows; }
@@ -73,6 +86,16 @@ public:
     double slot_max_height(size_t slot_index) const;
     // Whether any member row prints the slot.
     bool   slot_used(size_t slot_index) const;
+    // Blended tops and accumulated sublayer heights that land on a nominal
+    // layer's top miss it by rounding error; tops compare against limits
+    // shifted by this much. Far below G-code resolution.
+    static constexpr double TOP_TOLERANCE_MM = 1e-6;
+    // Whether a top lies in (tops.lower, tops.upper], so a top that lands on a
+    // nominal layer's top prints on that layer and nowhere else.
+    static bool top_in(const Span& tops, double top)
+    {
+        return top > tops.lower + TOP_TOLERANCE_MM && top <= tops.upper + TOP_TOLERANCE_MM;
+    }
     // Outline where the slot is printed, clipped to `outline`: every zone that
     // prints it, plus the part of each sharing neighbor its layer reaches into.
     ExPolygons slot_island(size_t slot_index, const ExPolygons& outline) const;
@@ -82,7 +105,8 @@ public:
     // height keep their source vertices; only the transition band is
     // resampled. Only parts whose top lies in (tops.lower, tops.upper] are
     // kept; a slot spanning several nominal layers prints each part on the
-    // layer that holds its top, cut exactly where the top crosses the limit.
+    // layer that holds its top, cut exactly where the top crosses the limit,
+    // or joined across it by a scarf when Options::scarf_cuts is set.
     // Returns nothing for an invalid path or slot index.
     std::vector<ExtrusionPathSloped> modulate_path(const ExtrusionPath& path,
                                                    size_t               slot_index,
@@ -96,8 +120,11 @@ private:
     double              row_height(const Row& row, size_t slot_index) const { return row.bounds[slot_index + 1] - row.bounds[slot_index]; }
     // How far the transition band of `from` reaches into a sharing neighbor.
     double              band_reach_mm(const Row& from, const Row& into) const;
+    // Shift of a row's signed depth against another row of the other kind.
+    double              band_shift_mm(const Row& row, const Row& other) const;
 
     double                                           m_half_width_mm{0.};
+    Options                                          m_options;
     std::vector<unsigned int>                        m_slot_filaments;
     std::vector<Row>                                 m_rows;
     // m_shares[r][q]: rows r and q print at least one common filament.

@@ -241,6 +241,9 @@ static std::vector<std::string> s_project_options {
     "dithering_local_z_gradient_middle_filament_window",
     "dithering_local_z_continuous_bridges",
     "dithering_local_z_bridge_transition_width",
+    "dithering_local_z_bridge_fine_sampling",
+    "dithering_local_z_bridge_scarf_cuts",
+    "dithering_local_z_bridge_shared_outlines",
     "dithering_step_painted_zones_only",
 };
 
