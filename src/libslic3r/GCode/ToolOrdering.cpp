@@ -1,3 +1,4 @@
+#include "LocalZBridgePaths.hpp"
 #include "ExtrusionEntity.hpp"
 #include "Print.hpp"
 #include "ToolOrdering.hpp"
@@ -675,11 +676,17 @@ void ToolOrdering::initialize_layers(std::vector<coordf_t> &zs)
 // Collect extruders reuqired to print layers.
 void ToolOrdering::collect_extruders(const PrintObject &object, const std::vector<std::pair<double, unsigned int>> &per_layer_extruder_switches)
 {
-    for (const SubLayerPlan &plan : object.local_z_sublayer_plan())
+    for (const SubLayerPlan& plan : object.local_z_sublayer_plan()) {
         for (const std::vector<ExPolygons> *masks_by_extruder : {&plan.painted_masks_by_extruder, &plan.fixed_painted_masks_by_extruder})
             for (size_t extruder_idx = 0; extruder_idx < masks_by_extruder->size(); ++extruder_idx)
                 if (!(*masks_by_extruder)[extruder_idx].empty())
                     m_local_z_pass_extruders.push_back(unsigned(extruder_idx));
+        if (plan.bridge_field && object.print()->config().enable_prime_tower.value && plan.layer_id < object.layer_count()) {
+            const Layer& layer = *object.get_layer(int(plan.layer_id));
+            if (prepare_local_z_bridge_pass(layer, plan).has_extrusions)
+                this->tools_for_layer(layer.print_z).has_local_z_bridges = true;
+        }
+    }
     sort_remove_duplicates(m_local_z_pass_extruders);
 
     for (LayerTools &layer_tools : m_layer_tools) {
@@ -1028,6 +1035,10 @@ void ToolOrdering::fill_wipe_tower_partitions(const PrintConfig &config, coordf_
                 -- lt.wipe_tower_partitions;
             last_extruder = lt.extruders.back();
         }
+        // Keep structural tower layers through the last executable bridge pass.
+        // Its tool changes are planned separately from the nominal extruders.
+        if (lt.has_local_z_bridges)
+            lt.wipe_tower_partitions = std::max<size_t>(1, lt.wipe_tower_partitions);
     }
 
     // Propagate the wipe tower partitions down to support the upper partitions by the lower partitions.

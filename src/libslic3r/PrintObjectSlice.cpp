@@ -26,6 +26,7 @@
 #include "MixedFilamentChannelMap.hpp"
 #include "LayerGeometryBatch.hpp"
 #include "LocalZBridge.hpp"
+#include "LocalZBridgePlanner.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
 #include "SVG.hpp"
@@ -2182,22 +2183,6 @@ static std::vector<unsigned int> build_local_z_direct_multicolor_sequence(const 
     return sequence;
 }
 
-struct LocalZIndependentDirectPass
-{
-    unsigned int extruder_id { 0 };
-    double       height { 0.0 };
-};
-
-static double local_z_max_layer_height_for_extruder(const PrintConfig &print_config, unsigned int extruder_id)
-{
-    const size_t extruder_idx = extruder_id > 0 ? size_t(extruder_id - 1) : 0;
-    const double configured_max =
-        print_config.max_layer_height.values.empty() ? 0.0 : print_config.max_layer_height.get_at(extruder_idx);
-    const double nozzle_diameter =
-        print_config.nozzle_diameter.values.empty() ? 0.4 : print_config.nozzle_diameter.get_at(extruder_idx);
-    return std::max(0.01, configured_max > EPSILON ? configured_max : 0.75 * nozzle_diameter);
-}
-
 static std::vector<LocalZIndependentDirectPass> build_local_z_independent_direct_cadence(
     const std::vector<unsigned int> &component_ids,
     const std::vector<int>          &component_weights,
@@ -2379,16 +2364,6 @@ static LocalZActivePair derive_local_z_active_pair(const MixedFilamentDefinition
     out.component_b = pair.component_b.id;
     out.mix_b_percent = pair.component_b_percent;
     out.uses_layer_cycle_sequence = false;
-    return out;
-}
-
-static ExPolygons collect_layer_region_slices(const Layer &layer)
-{
-    ExPolygons out;
-    for (const LayerRegion *layerm : layer.regions())
-        append(out, to_expolygons(layerm->slices.surfaces));
-    if (!out.empty())
-        out = union_ex(out);
     return out;
 }
 
@@ -2989,837 +2964,106 @@ static std::vector<ExPolygons> build_local_z_transition_fixed_masks_for_pass(
     return pass_masks_by_extruder;
 }
 
-// Zones closer than this count as neighbors. It spans the 0.10 mm guard that
-// full-domain Local-Z keeps between mixed rows and single-filament regions.
-constexpr double LOCAL_Z_BRIDGE_TOUCH_TOLERANCE_MM = 0.15;
-
-// Identifies a sublayer across the zones of a phase-locked bridge window. A
-// template sublayer sits at position 2 * its index in the window's stack; a
-// single-filament layer that matches none sits at an odd position between two.
-struct LocalZBridgeKey
+// Read cadence metadata without clearing or generating the object's Local-Z passes.
+static LocalZBridgePlan prepare_local_z_bridge_plan(const PrintObject&                          object,
+                                                    const std::vector<std::vector<ExPolygons>>& segmentation,
+                                                    bool                                        whole_object_scope,
+                                                    const std::vector<uint8_t>&                 enabled_rows,
+                                                    const std::vector<uint8_t>&                 adaptive_rows)
 {
-    int          position { 0 };
-    unsigned int filament { 0 };
-    unsigned int layer { 0 };
-
-    bool operator<(const LocalZBridgeKey &rhs) const
-    {
-        return std::tie(position, filament, layer) < std::tie(rhs.position, rhs.filament, rhs.layer);
-    }
-    bool operator==(const LocalZBridgeKey &rhs) const
-    {
-        return position == rhs.position && filament == rhs.filament && layer == rhs.layer;
-    }
-};
-
-// One pass of a bridge zone: a filament over an absolute Z range.
-struct LocalZBridgePass
-{
-    unsigned int    filament { 0 };
-    double          lo { 0. };
-    double          hi { 0. };
-    // Phase-locked windows match slots by key instead of by filament.
-    LocalZBridgeKey key;
-};
-
-// A zone that can join a continuous mix bridge: one Local-Z mixed row, or one
-// island of a single-filament region, painted or in the object's default color.
-struct LocalZBridgeZone
-{
-    ExPolygons                    masks;
-    // The zone's own passes on this layer, bottom to top, contiguous and in
-    // ascending filament order.
-    std::vector<LocalZBridgePass> passes;
-    // Bottom of the zone's stack on this layer. A mix following its own
-    // cadence may print nothing on a layer; its stack then has zero height here.
-    double                        base_z { 0. };
-    // Every filament the zone can print, sorted, so neighbors bridge even on
-    // layers where the zone prints none of the filaments they share.
-    std::vector<unsigned int>     filaments;
-    // Local-Z row of a mixed zone, or size_t(-1) for a single-filament zone.
-    size_t                        mixed_row { size_t(-1) };
-    // Segmentation channel holding the masks. A mixed zone owns its whole
-    // channel; a single-filament zone owns only its island of the channel.
-    unsigned int                  channel { 0 };
-    BoundingBox                   bbox;
-    double                        area { 0. };
-
-    bool is_mixed() const { return mixed_row != size_t(-1); }
-};
-
-static LocalZBridgeZone make_local_z_bridge_zone(ExPolygons                    masks,
-                                                 std::vector<LocalZBridgePass> passes,
-                                                 double                        base_z,
-                                                 std::vector<unsigned int>     filaments,
-                                                 size_t                        mixed_row,
-                                                 unsigned int                  channel)
-{
-    LocalZBridgeZone zone;
-    zone.bbox   = get_extents(masks);
-    zone.area   = std::abs(area(masks));
-    zone.masks  = std::move(masks);
-    zone.base_z = passes.empty() ? base_z : passes.front().lo;
-    for (const LocalZBridgePass &pass : passes)
-        filaments.push_back(pass.filament);
-    filaments.erase(std::remove(filaments.begin(), filaments.end(), 0u), filaments.end());
-    sort_remove_duplicates(filaments);
-    zone.filaments = std::move(filaments);
-    zone.passes    = std::move(passes);
-    zone.mixed_row = mixed_row;
-    zone.channel   = channel;
-    return zone;
-}
-
-static bool local_z_bridge_zones_share_filament(const LocalZBridgeZone &lhs, const LocalZBridgeZone &rhs)
-{
-    return std::find_first_of(lhs.filaments.begin(), lhs.filaments.end(), rhs.filaments.begin(), rhs.filaments.end()) !=
-           lhs.filaments.end();
-}
-
-// Passes of a Local-Z row, bottom to top, or nothing when a pass does not
-// print exactly one physical filament or the passes leave a gap. A nonzero
-// dependency group keeps only that row's passes.
-static std::vector<LocalZBridgePass> local_z_bridge_row_passes(const std::vector<SubLayerPlan> &plans,
-                                                               size_t                           num_physical,
-                                                               size_t                           dependency_group = 0)
-{
-    std::vector<LocalZBridgePass> passes;
-    for (const SubLayerPlan &plan : plans) {
-        if (dependency_group != 0 && plan.dependency_group != dependency_group)
+    LocalZBridgePlan          result;
+    const Print&              print  = *object.print();
+    const PrintConfig&        config = print.config();
+    const DynamicPrintConfig& full   = print.full_print_config();
+    if (!bool_from_full_config(full, "dithering_local_z_continuous_bridges", config.dithering_local_z_continuous_bridges.value) ||
+        !bool_from_full_config(full, "dithering_local_z_direct_multicolor", config.dithering_local_z_direct_multicolor.value) ||
+        !bool_from_full_config(full, "dithering_local_z_independent_layer_height",
+                               config.dithering_local_z_independent_layer_height.value) ||
+        float_from_full_config(full, "mixed_color_layer_height_a", config.mixed_color_layer_height_a.value) > EPSILON ||
+        float_from_full_config(full, "mixed_color_layer_height_b", config.mixed_color_layer_height_b.value) > EPSILON)
+        return result;
+    const size_t         physical     = config.filament_colour.size();
+    const auto&          manager      = print.mixed_filament_manager();
+    const auto           definitions  = manager.mixed_filament_definitions(physical);
+    const bool           local_z_mode = bool_from_full_config(full, "dithering_local_z_mode", config.dithering_local_z_mode.value);
+    const double         minimum      = std::max(0.01, double(float_from_full_config(full, "mixed_filament_height_lower_bound",
+                                                                                     config.mixed_filament_height_lower_bound.value)));
+    std::vector<uint8_t> used(definitions.size(), 0);
+    for (const auto& channels : segmentation)
+        for (size_t channel = 0; channel < channels.size(); ++channel) {
+            const int row = manager.mixed_index_from_filament_id(unsigned(channel), physical);
+            if (!channels[channel].empty() && row >= 0 && size_t(row) < used.size())
+                used[row] = 1;
+        }
+    result.phase_locked_rows.assign(definitions.size(), 0);
+    result.channel_filaments.resize(physical + definitions.size() + 1);
+    std::vector<std::vector<LocalZIndependentDirectPass>> cadences(definitions.size());
+    double                                                longest = 0.;
+    for (size_t row = 0; row < definitions.size(); ++row) {
+        const auto& definition = definitions[row];
+        if (!used[row] || (row < adaptive_rows.size() && adaptive_rows[row]) ||
+            (!(row < enabled_rows.size() && enabled_rows[row]) && !mixed_filament_definition_uses_local_z(definition, local_z_mode)) ||
+            local_z_gradient_mixed_definition(definition))
             continue;
-        size_t       painted_slots = 0;
-        unsigned int filament      = 0;
-        for (size_t slot = 0; slot < plan.painted_masks_by_extruder.size(); ++slot)
-            if (!plan.painted_masks_by_extruder[slot].empty()) {
-                ++painted_slots;
-                filament = unsigned(slot + 1);
-            }
-        if (painted_slots != 1 || filament > num_physical || plan.adaptive_nonplanar || plan.bridge_field || plan.flow_height <= EPSILON)
-            return {};
-        passes.push_back({filament, plan.print_z - plan.flow_height, plan.print_z});
-    }
-    std::sort(passes.begin(), passes.end(), [](const LocalZBridgePass &lhs, const LocalZBridgePass &rhs) { return lhs.lo < rhs.lo; });
-    for (size_t pass_idx = 1; pass_idx < passes.size(); ++pass_idx)
-        if (std::abs(passes[pass_idx].lo - passes[pass_idx - 1].hi) > 1e-6)
-            return {};
-    return passes;
-}
-
-// Restacks one nominal layer of a row with one pass per filament in ascending
-// filament order. Every zone of a layer then stacks shared filaments in the
-// same order, and neighboring layers alternate filaments like an unbridged mix.
-static std::vector<LocalZBridgePass> local_z_bridge_ordered_layer_passes(const std::vector<LocalZBridgePass> &passes, size_t num_physical)
-{
-    if (passes.empty())
-        return {};
-    std::vector<double> height_by_filament(num_physical + 1, 0.);
-    for (const LocalZBridgePass &pass : passes)
-        height_by_filament[pass.filament] += pass.hi - pass.lo;
-    std::vector<LocalZBridgePass> ordered;
-    double                        z = passes.front().lo;
-    for (unsigned int filament = 1; filament <= num_physical; ++filament)
-        if (height_by_filament[filament] > EPSILON) {
-            ordered.push_back({filament, z, z + height_by_filament[filament]});
-            z = ordered.back().hi;
+        std::vector<unsigned int> ids;
+        std::vector<int>          weights;
+        if (!local_z_direct_multicolor_definition(definition, physical, &ids, &weights)) {
+            if (!local_z_eligible_mixed_definition(definition) || definition.behavior.gradient.enabled)
+                continue;
+            ids     = decode_blend_component_ids(definition, physical);
+            weights = decode_blend_component_weights(definition, physical, ids.size());
+            if (weights.empty())
+                weights.assign(ids.size(), 1);
         }
-    ordered.back().hi = passes.back().hi;
-    return ordered;
-}
-
-// Bottom of a nominal layer: the previous layer's top, so consecutive layers
-// partition Z exactly.
-static double local_z_bridge_layer_bottom(const PrintObject &print_object, size_t layer_id)
-{
-    const Layer *layer = print_object.get_layer(int(layer_id));
-    return layer_id > 0 ? print_object.get_layer(int(layer_id - 1))->print_z : layer->print_z - layer->height;
-}
-
-// With independent Local-Z heights, bridged mixes phase-lock their cycles to
-// shared windows of whole nominal layers, long enough for the longest cycle.
-// In a window every mix repeats its own cycle as many whole times as fit,
-// stretched to fill the window, with its filaments in ascending order. The
-// n-th cycle of every mix then sits at nearly the same height, so sublayers
-// match across mixes by cycle and filament, and a single-filament zone matches
-// each nominal layer to the nearest sublayer of its filament. A matched layer
-// spans different nominal layers in different zones; each part prints on the
-// nominal layer that holds its top.
-struct LocalZBridgeWindow
-{
-    size_t first_layer { 0 };
-    size_t last_layer { 0 };
-    double z_lo { 0. };
-    double z_hi { 0. };
-    // Per mixed row, its keyed sublayers over [z_lo, z_hi], bottom to top;
-    // empty for rows the window does not phase-lock.
-    std::vector<std::vector<LocalZBridgePass>> row_passes;
-    // Per physical filament, one keyed pass per nominal layer.
-    std::vector<std::vector<LocalZBridgePass>> single_passes;
-};
-
-static LocalZBridgeWindow build_local_z_bridge_window(const PrintObject                                         &print_object,
-                                                      size_t                                                     first_layer,
-                                                      size_t                                                     last_layer,
-                                                      const std::vector<std::vector<LocalZIndependentDirectPass>> &row_cadences,
-                                                      const std::vector<uint8_t>                                &rows_in_window,
-                                                      size_t                                                     num_physical,
-                                                      const PrintConfig                                         &print_cfg)
-{
-    LocalZBridgeWindow window;
-    window.first_layer = first_layer;
-    window.last_layer  = last_layer;
-    window.z_lo        = local_z_bridge_layer_bottom(print_object, first_layer);
-    window.z_hi        = print_object.get_layer(int(last_layer))->print_z;
-    window.row_passes.assign(row_cadences.size(), {});
-    window.single_passes.assign(num_physical, {});
-    const double height = window.z_hi - window.z_lo;
-
-    // Every row's cycle as total height per filament, in ascending filament order.
-    struct RowCycle
-    {
-        size_t                                       row { 0 };
-        std::vector<std::pair<unsigned int, double>> components;
-        double                                       height { 0. };
-        size_t                                       repeats { 1 };
-    };
-    std::vector<RowCycle> cycles;
-    size_t                max_repeats = 1;
-    for (size_t row_idx = 0; row_idx < row_cadences.size() && height > EPSILON; ++row_idx) {
-        if (row_idx >= rows_in_window.size() || rows_in_window[row_idx] == 0)
+        if (ids.size() < 2)
             continue;
-        RowCycle cycle;
-        cycle.row = row_idx;
-        for (const LocalZIndependentDirectPass &pass : row_cadences[row_idx]) {
-            if (pass.extruder_id == 0 || pass.extruder_id > num_physical || pass.height <= EPSILON)
-                continue;
-            auto component = std::find_if(cycle.components.begin(), cycle.components.end(),
-                                          [&pass](const auto &entry) { return entry.first == pass.extruder_id; });
-            if (component == cycle.components.end())
-                cycle.components.emplace_back(pass.extruder_id, pass.height);
-            else
-                component->second += pass.height;
-            cycle.height += pass.height;
-        }
-        if (cycle.height <= EPSILON)
+        cadences[row] = build_local_z_independent_direct_cadence(ids, weights, minimum, config);
+        double cycle  = 0.;
+        for (const auto& pass : cadences[row])
+            cycle += pass.height;
+        if (cycle <= EPSILON)
             continue;
-        std::sort(cycle.components.begin(), cycle.components.end());
-        cycle.repeats = std::max<size_t>(1, size_t(std::floor(height / cycle.height + 1e-6)));
-        max_repeats   = std::max(max_repeats, cycle.repeats);
-        cycles.emplace_back(std::move(cycle));
+        result.phase_locked_rows[row]                = 1;
+        result.channel_filaments[physical + row + 1] = std::move(ids);
+        longest                                      = std::max(longest, cycle);
     }
-
-    // Template sublayers are (cycle slot, filament, split). A row that repeats
-    // fewer times maps each of its cycles to the nearest cycle slot of the row
-    // that repeats most; a sublayer above the printer's maximum layer height
-    // splits into equal passes.
-    using TemplateKey = std::tuple<size_t, unsigned int, size_t>;
-    std::vector<std::vector<std::pair<TemplateKey, double>>> row_entries(cycles.size());
-    std::vector<TemplateKey>                                  keys;
-    for (size_t cycle_idx = 0; cycle_idx < cycles.size(); ++cycle_idx) {
-        const RowCycle &cycle = cycles[cycle_idx];
-        const double    scale = height / (double(cycle.repeats) * cycle.height);
-        for (size_t repeat = 0; repeat < cycle.repeats; ++repeat) {
-            const size_t slot = std::min(max_repeats - 1, size_t(std::floor((double(repeat) + 0.5) * double(max_repeats) /
-                                                                                double(cycle.repeats) - 1e-9)));
-            for (const auto &[filament, component_height] : cycle.components) {
-                const double scaled = component_height * scale;
-                const size_t splits = std::max<size_t>(
-                    1, size_t(std::ceil(scaled / local_z_max_layer_height_for_extruder(print_cfg, filament) - EPSILON)));
-                for (size_t split = 0; split < splits; ++split) {
-                    row_entries[cycle_idx].emplace_back(TemplateKey{slot, filament, split}, scaled / double(splits));
-                    keys.emplace_back(slot, filament, split);
-                }
+    const bool whole    = mixed_filament_local_z_uses_full_domain(bool_from_full_config(full, "dithering_local_z_whole_objects",
+                                                                                        config.dithering_local_z_whole_objects.value),
+                                                                  whole_object_scope);
+    const bool preserve = bool_from_full_config(full, "dithering_local_z_preserve_first_layer",
+                                                config.dithering_local_z_preserve_first_layer.value);
+    size_t     anchor   = 0;
+    while (anchor < object.layer_count() && !mixed_filament_local_z_should_subdivide_layer(anchor, whole, preserve))
+        ++anchor;
+    result.layout = compute_local_z_bridge_window_layout(object.layer_count(), anchor, std::max(0.01, object.config().layer_height.value),
+                                                         longest);
+    for (size_t index = 0; index < result.layout.count; ++index) {
+        const size_t         first = result.layout.first_layer(index);
+        const size_t         last  = result.layout.last_layer(index, object.layer_count());
+        std::vector<uint8_t> rows(definitions.size(), 0);
+        for (size_t layer = first; layer <= last; ++layer)
+            for (size_t row = 0; row < rows.size(); ++row) {
+                const size_t channel = physical + row + 1;
+                if (result.phase_locked_rows[row] && channel < segmentation[layer].size() && !segmentation[layer][channel].empty())
+                    rows[row] = 1;
             }
-        }
+        result.windows.push_back(build_local_z_bridge_window(object, first, last, cadences, rows, physical, config));
     }
-    sort_remove_duplicates(keys);
-
-    // Rows' keyed passes, and the consensus stack: every row's interfaces
-    // averaged, with zero height where a row lacks a sublayer.
-    std::vector<double> consensus(keys.size() + 1, 0.);
-    for (size_t cycle_idx = 0; cycle_idx < cycles.size(); ++cycle_idx) {
-        std::vector<LocalZBridgePass> &passes = window.row_passes[cycles[cycle_idx].row];
-        double                         z      = window.z_lo;
-        for (const auto &[key, entry_height] : row_entries[cycle_idx]) {
-            const int index = int(std::lower_bound(keys.begin(), keys.end(), key) - keys.begin());
-            passes.push_back({std::get<1>(key), z, z + entry_height, LocalZBridgeKey{2 * index, 0, 0}});
-            z += entry_height;
-        }
-        passes.back().hi = window.z_hi;
-        double top      = window.z_lo;
-        size_t pass_idx = 0;
-        consensus.front() += top / double(cycles.size());
-        for (size_t index = 0; index < keys.size(); ++index) {
-            if (pass_idx < passes.size() && passes[pass_idx].key.position == int(2 * index))
-                top = passes[pass_idx++].hi;
-            consensus[index + 1] += top / double(cycles.size());
-        }
-    }
-    if (cycles.empty())
-        std::fill(consensus.begin(), consensus.end(), window.z_lo);
-
-    // Each single-filament layer matches at most one template sublayer of its
-    // filament, keeping both in order and maximizing their overlap with the
-    // consensus stack. An unmatched layer sits between the template sublayers
-    // around its middle.
-    std::vector<std::pair<double, double>> layers;
-    for (size_t layer_id = first_layer; layer_id <= last_layer; ++layer_id)
-        layers.emplace_back(local_z_bridge_layer_bottom(print_object, layer_id), print_object.get_layer(int(layer_id))->print_z);
-    const size_t layer_count = layers.size();
-    for (unsigned int filament = 1; filament <= num_physical; ++filament) {
-        std::vector<int> filament_keys;
-        for (size_t index = 0; index < keys.size(); ++index)
-            if (std::get<1>(keys[index]) == filament)
-                filament_keys.push_back(int(index));
-        const size_t key_count = filament_keys.size();
-        auto         overlap   = [&](size_t layer_idx, size_t key_idx) {
-            const int index = filament_keys[key_idx];
-            return std::min(layers[layer_idx].second, consensus[index + 1]) - std::max(layers[layer_idx].first, consensus[index]);
-        };
-        // best[i][j]: largest overlap of the first i layers with the first j keys.
-        std::vector<std::vector<double>>  best(layer_count + 1, std::vector<double>(key_count + 1, 0.));
-        std::vector<std::vector<uint8_t>> choice(layer_count + 1, std::vector<uint8_t>(key_count + 1, 0));
-        for (size_t i = 1; i <= layer_count; ++i)
-            for (size_t j = 1; j <= key_count; ++j) {
-                best[i][j]   = best[i - 1][j];
-                choice[i][j] = 0;
-                if (best[i][j - 1] > best[i][j]) {
-                    best[i][j]   = best[i][j - 1];
-                    choice[i][j] = 1;
-                }
-                if (const double shared = overlap(i - 1, j - 1); shared > EPSILON && best[i - 1][j - 1] + shared >= best[i][j]) {
-                    best[i][j]   = best[i - 1][j - 1] + shared;
-                    choice[i][j] = 2;
-                }
-            }
-        std::vector<int> matched(layer_count, -1);
-        for (size_t i = layer_count, j = key_count; i > 0 && j > 0;) {
-            if (choice[i][j] == 2) {
-                matched[i - 1] = filament_keys[j - 1];
-                --i;
-                --j;
-            } else if (choice[i][j] == 1) {
-                --j;
-            } else {
-                --i;
-            }
-        }
-
-        std::vector<LocalZBridgePass> &passes = window.single_passes[filament - 1];
-        for (size_t layer_idx = 0; layer_idx < layer_count; ++layer_idx) {
-            LocalZBridgeKey key;
-            if (matched[layer_idx] >= 0) {
-                key.position = 2 * matched[layer_idx];
-            } else {
-                int previous = -1;
-                for (size_t other = 0; other < layer_idx; ++other)
-                    if (matched[other] >= 0)
-                        previous = matched[other];
-                int next = int(keys.size());
-                for (size_t other = layer_count; other-- > layer_idx + 1;)
-                    if (matched[other] >= 0)
-                        next = matched[other];
-                const double middle = 0.5 * (layers[layer_idx].first + layers[layer_idx].second);
-                int          before = 0;
-                while (before < int(keys.size()) && 0.5 * (consensus[before] + consensus[before + 1]) < middle)
-                    ++before;
-                before = std::clamp(before, previous + 1, next);
-                key    = LocalZBridgeKey{2 * before - 1, filament, unsigned(layer_idx)};
-            }
-            passes.push_back({filament, layers[layer_idx].first, layers[layer_idx].second, key});
-        }
-    }
-    return window;
-}
-
-// Painted single-filament islands and the islands of the object's default
-// color, taken from the full paint segmentation of one layer. Each prints its
-// filament over the whole nominal layer. The default color is the physical
-// filament each parent region assigns to its walls; mixed defaults are Local-Z
-// rows instead.
-static std::vector<LocalZBridgeZone> collect_local_z_bridge_single_filament_zones(const Layer                   &layer,
-                                                                                const std::vector<ExPolygons> &layer_segmentation,
-                                                                                size_t                         num_physical)
-{
-    std::vector<LocalZBridgeZone> zones;
-    const double                  z_lo = layer.print_z - layer.height;
-    auto add_islands = [&](const ExPolygons &masks, unsigned int filament, unsigned int channel) {
-        for (const ExPolygon &island : masks)
-            zones.emplace_back(
-                make_local_z_bridge_zone(ExPolygons{island}, {{filament, z_lo, layer.print_z}}, z_lo, {}, size_t(-1), channel));
-    };
-    for (unsigned int filament = 1; filament <= num_physical && filament < layer_segmentation.size(); ++filament)
-        if (!layer_segmentation[filament].empty())
-            add_islands(union_ex(layer_segmentation[filament]), filament, filament);
-    if (!layer_segmentation.empty() && !layer_segmentation.front().empty()) {
-        for (const LayerRegion *layerm : layer.regions()) {
-            if (layerm == nullptr || layerm->slices.empty())
-                continue;
-            const int filament = layerm->region().config().wall_filament.value;
-            if (filament < 1 || size_t(filament) > num_physical)
-                continue;
-            add_islands(intersection_ex(layer_segmentation.front(), to_expolygons(layerm->slices.surfaces)), unsigned(filament), 0);
-        }
-    }
-    return zones;
-}
-
-// Zones that touch and share a filament bridge. A group needs at least two
-// zones, one of them mixed; its largest zone comes first.
-static std::vector<std::vector<size_t>> group_local_z_bridge_zones(const std::vector<LocalZBridgeZone> &zones)
-{
-    std::vector<size_t> parent(zones.size());
-    std::iota(parent.begin(), parent.end(), size_t(0));
-    auto find_root = [&parent](size_t idx) {
-        while (parent[idx] != idx)
-            idx = parent[idx] = parent[parent[idx]];
-        return idx;
-    };
-    const coord_t touch_tolerance = coord_t(scale_(LOCAL_Z_BRIDGE_TOUCH_TOLERANCE_MM));
-    for (size_t lhs = 0; lhs < zones.size(); ++lhs) {
-        BoundingBox inflated = zones[lhs].bbox;
-        inflated.offset(touch_tolerance);
-        ExPolygons inflated_masks;
-        for (size_t rhs = lhs + 1; rhs < zones.size(); ++rhs) {
-            if (find_root(lhs) == find_root(rhs) || !inflated.overlap(zones[rhs].bbox) ||
-                !local_z_bridge_zones_share_filament(zones[lhs], zones[rhs]))
-                continue;
-            if (inflated_masks.empty())
-                inflated_masks = offset_ex(zones[lhs].masks, float(touch_tolerance));
-            if (!intersection_ex(inflated_masks, zones[rhs].masks).empty())
-                parent[find_root(lhs)] = find_root(rhs);
-        }
-    }
-
-    std::vector<std::vector<size_t>> by_root(zones.size());
-    for (size_t idx = 0; idx < zones.size(); ++idx)
-        by_root[find_root(idx)].push_back(idx);
-    std::vector<std::vector<size_t>> groups;
-    for (std::vector<size_t> &members : by_root) {
-        if (members.size() < 2 ||
-            std::none_of(members.begin(), members.end(), [&zones](size_t member) { return zones[member].is_mixed(); }))
-            continue;
-        std::sort(members.begin(), members.end(), [&zones](size_t lhs, size_t rhs) {
-            if (std::abs(zones[lhs].area - zones[rhs].area) > EPSILON)
-                return zones[lhs].area > zones[rhs].area;
-            return lhs < rhs;
-        });
-        groups.emplace_back(std::move(members));
-    }
-    return groups;
-}
-
-struct LocalZBridgeAlignment
-{
-    std::vector<unsigned int>        slot_filaments;
-    // Phase-locked windows only: the key of every slot.
-    std::vector<LocalZBridgeKey>     slot_keys;
-    // Per group member, the absolute Z of every slot interface.
-    std::vector<std::vector<double>> member_bounds;
-};
-
-// Every zone of a layer stacks its passes in ascending filament order, so the
-// slots are the group's filaments in that order and each filament connects
-// across every zone that prints it. A filament gets as many slots as the most
-// passes any zone prints with it, so a pass split at the maximum layer height
-// keeps its own slot. A zone gives a slot it does not print zero height at
-// that point of its stack.
-static LocalZBridgeAlignment align_local_z_bridge_zones(const std::vector<LocalZBridgeZone> &zones, const std::vector<size_t> &members)
-{
-    LocalZBridgeAlignment alignment;
-    std::vector<size_t>   slots_per_filament;
-    for (size_t member : members) {
-        std::vector<size_t> passes_per_filament;
-        for (const LocalZBridgePass &pass : zones[member].passes) {
-            if (pass.filament >= passes_per_filament.size())
-                passes_per_filament.resize(pass.filament + 1, 0);
-            ++passes_per_filament[pass.filament];
-        }
-        if (passes_per_filament.size() > slots_per_filament.size())
-            slots_per_filament.resize(passes_per_filament.size(), 0);
-        for (size_t filament = 0; filament < passes_per_filament.size(); ++filament)
-            slots_per_filament[filament] = std::max(slots_per_filament[filament], passes_per_filament[filament]);
-    }
-    for (size_t filament = 0; filament < slots_per_filament.size(); ++filament)
-        alignment.slot_filaments.insert(alignment.slot_filaments.end(), slots_per_filament[filament], unsigned(filament));
-    for (size_t member : members) {
-        const LocalZBridgeZone &zone = zones[member];
-        std::vector<double>     bounds{zone.base_z};
-        size_t                  pass_idx = 0;
-        for (unsigned int filament : alignment.slot_filaments) {
-            double top = bounds.back();
-            if (pass_idx < zone.passes.size() && zone.passes[pass_idx].filament == filament)
-                top = zone.passes[pass_idx++].hi;
-            bounds.push_back(top);
-        }
-        alignment.member_bounds.emplace_back(std::move(bounds));
-    }
-    return alignment;
-}
-
-// In a phase-locked window every zone lists its passes in key order, so the
-// slots are the group's keys in that order and a matched sublayer connects
-// across every zone that prints it. A zone gives a slot it does not print
-// zero height at that point of its stack.
-static LocalZBridgeAlignment align_local_z_bridge_window_zones(const std::vector<LocalZBridgeZone> &zones, const std::vector<size_t> &members)
-{
-    std::vector<std::pair<LocalZBridgeKey, unsigned int>> slots;
-    for (size_t member : members)
-        for (const LocalZBridgePass &pass : zones[member].passes)
-            slots.emplace_back(pass.key, pass.filament);
-    std::sort(slots.begin(), slots.end(), [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
-    slots.erase(std::unique(slots.begin(), slots.end(), [](const auto &lhs, const auto &rhs) { return lhs.first == rhs.first; }),
-                slots.end());
-
-    LocalZBridgeAlignment alignment;
-    for (const auto &slot : slots) {
-        alignment.slot_filaments.push_back(slot.second);
-        alignment.slot_keys.push_back(slot.first);
-    }
-    for (size_t member : members) {
-        const LocalZBridgeZone &zone = zones[member];
-        std::vector<double>     bounds{zone.base_z};
-        size_t                  pass_idx = 0;
-        for (const auto &slot : slots) {
-            double top = bounds.back();
-            if (pass_idx < zone.passes.size() && zone.passes[pass_idx].key == slot.first)
-                top = zone.passes[pass_idx++].hi;
-            bounds.push_back(top);
-        }
-        alignment.member_bounds.emplace_back(std::move(bounds));
-    }
-    return alignment;
-}
-
-// Settings shared by every bridge field of an object.
-struct LocalZBridgeSettings
-{
-    double                     transition_width_mm { 0. };
-    LocalZBridgeField::Options options;
-};
-
-// A group's field. In a phase-locked window the field holds the window's
-// whole stack, and the slot range lists the slots that can have a top on the
-// current nominal layer.
-struct LocalZBridgeGroupField
-{
-    std::shared_ptr<const LocalZBridgeField> field;
-    std::vector<LocalZBridgeKey>             keys;
-    size_t                                   first_slot { 0 };
-    size_t                                   end_slot { 0 };
-};
-
-static LocalZBridgeGroupField make_local_z_bridge_field(const std::vector<LocalZBridgeZone> &zones,
-                                                        const std::vector<size_t>           &members,
-                                                        const LocalZBridgeSettings          &settings,
-                                                        const LocalZBridgeField::Span       *window_tops = nullptr)
-{
-    LocalZBridgeAlignment alignment = window_tops != nullptr ? align_local_z_bridge_window_zones(zones, members) :
-                                                               align_local_z_bridge_zones(zones, members);
-    LocalZBridgeGroupField result;
-    result.end_slot = alignment.slot_filaments.size();
-    if (window_tops != nullptr) {
-        // A blended top lies between the members' tops.
-        result.first_slot = result.end_slot;
-        size_t last_slot  = 0;
-        for (size_t slot = 0; slot < alignment.slot_filaments.size(); ++slot) {
-            double lowest_top  = std::numeric_limits<double>::infinity();
-            double highest_top = -std::numeric_limits<double>::infinity();
-            bool   printed     = false;
-            for (const std::vector<double> &bounds : alignment.member_bounds) {
-                lowest_top  = std::min(lowest_top, bounds[slot + 1]);
-                highest_top = std::max(highest_top, bounds[slot + 1]);
-                printed     = printed || bounds[slot + 1] - bounds[slot] > 1e-6;
-            }
-            if (printed && highest_top > window_tops->lower + LocalZBridgeField::TOP_TOLERANCE_MM &&
-                lowest_top <= window_tops->upper + LocalZBridgeField::TOP_TOLERANCE_MM) {
-                result.first_slot = std::min(result.first_slot, slot);
-                last_slot         = slot;
-            }
-        }
-        if (result.first_slot == alignment.slot_filaments.size())
-            return {};
-        result.end_slot = last_slot + 1;
-        result.keys     = std::move(alignment.slot_keys);
-    }
-
-    std::vector<LocalZBridgeField::Row> rows;
-    rows.reserve(members.size());
-    for (size_t member_idx = 0; member_idx < members.size(); ++member_idx) {
-        const LocalZBridgeZone &zone = zones[members[member_idx]];
-        rows.push_back({zone.masks, std::move(alignment.member_bounds[member_idx]), !zone.is_mixed(), zone.filaments});
-    }
-    result.field = std::make_shared<const LocalZBridgeField>(settings.transition_width_mm, std::move(alignment.slot_filaments),
-                                                             std::move(rows), settings.options);
-    if (result.field->rows().size() != members.size())
-        return {};
     return result;
-}
-
-// One slot a group prints on this layer, with the field that shapes it.
-struct LocalZBridgeSlotRef
-{
-    std::shared_ptr<const LocalZBridgeField> field;
-    size_t                                   slot { 0 };
-};
-
-// Emits one bridge pass per printed slot. A pass mask is the slot's island:
-// where its layer is printed, inside the group outline. Export prints the
-// island as its own region, with walls along its outline. With a window's top
-// range, a pass prints only the parts of its slot whose top lies on this
-// nominal layer, so its island keeps the zones whose own top does and the
-// transition bands, where blended tops cross nominal layers.
-static void append_local_z_bridge_passes(const std::vector<LocalZBridgeSlotRef> &slots,
-                                         const ExPolygons                       &group_masks,
-                                         size_t                                  layer_id,
-                                         size_t                                  dependency_group,
-                                         size_t                                  num_physical,
-                                         size_t                                 &pass_counter,
-                                         std::vector<SubLayerPlan>              &plans,
-                                         const LocalZBridgeField::Span          *window_tops = nullptr)
-{
-    // The strip reaches 2 mm past the band, so walls along its cut edge lie
-    // where every zone keeps its own top and nothing prints on this layer.
-    std::vector<std::pair<const LocalZBridgeField *, ExPolygons>> band_strips;
-    auto band_strip_of = [&band_strips](const LocalZBridgeField &field) -> const ExPolygons & {
-        for (const auto &[strip_field, strip] : band_strips)
-            if (strip_field == &field)
-                return strip;
-        const float reach = float(scale_(field.transition_width_mm() + 2.0));
-        ExPolygons  strip;
-        for (const LocalZBridgeField::Row &row : field.rows())
-            append(strip, diff_ex(offset_ex(row.masks, reach), row.masks));
-        band_strips.emplace_back(&field, union_ex(strip));
-        return band_strips.back().second;
-    };
-    // Export builds no walls in an island narrower than an outer wall, so such
-    // a pass would print nothing while wipe-tower planning expects its tool.
-    const float min_island_half_width = float(scale_(0.3));
-    size_t      dependency_order      = 0;
-    for (const LocalZBridgeSlotRef &slot_ref : slots) {
-        const LocalZBridgeField &field    = *slot_ref.field;
-        const size_t             slot_idx = slot_ref.slot;
-        const unsigned int       filament = field.slot_filaments()[slot_idx];
-        if (!field.slot_used(slot_idx) || filament == 0 || filament > num_physical)
-            continue;
-        ExPolygons slot_masks = field.slot_island(slot_idx, group_masks);
-        if (window_tops != nullptr && !slot_masks.empty()) {
-            ExPolygons printed = band_strip_of(field);
-            for (const LocalZBridgeField::Row &row : field.rows()) {
-                const double top = row.bounds[slot_idx + 1];
-                if (top - row.bounds[slot_idx] > 1e-6 && LocalZBridgeField::top_in(*window_tops, top))
-                    append(printed, row.masks);
-            }
-            slot_masks = intersection_ex(slot_masks, union_ex(printed));
-        }
-        if (slot_masks.empty() || offset_ex(slot_masks, -min_island_half_width).empty())
-            continue;
-        const LocalZBridgeField::Span bounds = field.slot_bounds(slot_idx);
-        SubLayerPlan                  plan;
-        plan.layer_id          = layer_id;
-        plan.pass_index        = pass_counter++;
-        plan.split_interval    = true;
-        plan.z_lo              = bounds.lower;
-        plan.z_hi              = window_tops != nullptr ? std::min(bounds.upper, window_tops->upper) : bounds.upper;
-        plan.print_z           = plan.z_hi;
-        plan.flow_height       = field.slot_max_height(slot_idx);
-        plan.dependency_group  = dependency_group;
-        plan.dependency_order  = dependency_order++;
-        plan.bridge_field      = slot_ref.field;
-        plan.bridge_slot_index = slot_idx;
-        if (window_tops != nullptr) {
-            plan.bridge_top_lower = window_tops->lower;
-            plan.bridge_top_upper = window_tops->upper;
-        }
-        plan.painted_masks_by_extruder.assign(num_physical, ExPolygons());
-        plan.fixed_painted_masks_by_extruder.assign(num_physical, ExPolygons());
-        plan.painted_masks_by_extruder[filament - 1] = std::move(slot_masks);
-        plans.emplace_back(std::move(plan));
-    }
-}
-
-// Moves a bridge group's zones into one segmentation channel, so the group
-// prints as one region whose perimeters follow its outline instead of every
-// painted boundary between its zones.
-struct LocalZBridgeRegionMerge
-{
-    unsigned int                                     target_channel { 0 };
-    std::vector<unsigned int>                        whole_channels;
-    std::vector<std::pair<unsigned int, ExPolygons>> islands;
-};
-// Per layer, the merges of every bridge group on that layer.
-using LocalZBridgeRegionMerges = std::vector<std::vector<LocalZBridgeRegionMerge>>;
-
-// What one layer's bridge groups changed, for the caller's bookkeeping.
-struct LocalZBridgeLayerResult
-{
-    // Mixed rows whose own passes the bridges replaced.
-    std::vector<size_t> bridged_rows;
-    // Single-filament islands the bridges print.
-    ExPolygons          single_filament_masks;
-    // Outline of every bridge group.
-    ExPolygons          outline;
-};
-
-// Shared outlines: in a phase-locked window, every part of a slot uses the
-// field of the first layer that printed part of it, when that layer's group
-// overlaps the current one, so parts on neighboring layers meet exactly.
-struct LocalZBridgeOutlineCache
-{
-    struct Entry
-    {
-        size_t                 layer_id { 0 };
-        LocalZBridgeGroupField group;
-        ExPolygons             outline;
-        BoundingBox            bbox;
-    };
-    size_t             window_first_layer { std::numeric_limits<size_t>::max() };
-    std::vector<Entry> entries;
-
-    void start_window(size_t first_layer)
-    {
-        if (window_first_layer != first_layer) {
-            window_first_layer = first_layer;
-            entries.clear();
-        }
-    }
-};
-
-// Groups one layer's zones, appends one bridge pass per slot of every group
-// and records each group's region merge. Zones of a phase-locked window match
-// slots by key and print only the parts whose top lies in `window_tops`.
-static LocalZBridgeLayerResult build_local_z_bridge_layer(const std::vector<LocalZBridgeZone> &zones,
-                                                          size_t                               layer_id,
-                                                          size_t                               layer_count,
-                                                          size_t                               num_physical,
-                                                          const LocalZBridgeSettings          &settings,
-                                                          size_t                              &pass_counter,
-                                                          std::vector<SubLayerPlan>           &plans,
-                                                          LocalZBridgeRegionMerges            *merges,
-                                                          const LocalZBridgeField::Span       *window_tops   = nullptr,
-                                                          LocalZBridgeOutlineCache            *outline_cache = nullptr)
-{
-    LocalZBridgeLayerResult                    result;
-    std::vector<LocalZBridgeOutlineCache::Entry> new_entries;
-    for (const std::vector<size_t> &members : group_local_z_bridge_zones(zones)) {
-        LocalZBridgeGroupField group_field = make_local_z_bridge_field(zones, members, settings, window_tops);
-        if (group_field.field == nullptr)
-            continue;
-        ExPolygons              group_masks;
-        size_t                  dependency_group = std::numeric_limits<size_t>::max();
-        LocalZBridgeRegionMerge merge;
-        // The largest zone keeps the island, so its region configuration applies.
-        merge.target_channel = zones[members.front()].channel;
-        for (size_t member : members) {
-            const LocalZBridgeZone &zone = zones[member];
-            append(group_masks, zone.masks);
-            if (zone.is_mixed()) {
-                dependency_group = std::min(dependency_group, zone.mixed_row + 1);
-                result.bridged_rows.push_back(zone.mixed_row);
-                merge.whole_channels.push_back(zone.channel);
-            } else {
-                append(result.single_filament_masks, zone.masks);
-                merge.islands.emplace_back(zone.channel, zone.masks);
-            }
-        }
-        group_masks = union_ex(group_masks);
-        const BoundingBox group_bbox = get_extents(group_masks);
-
-        std::vector<LocalZBridgeSlotRef> slots;
-        for (size_t slot = group_field.first_slot; slot < group_field.end_slot; ++slot) {
-            LocalZBridgeSlotRef slot_ref{group_field.field, slot};
-            if (outline_cache != nullptr && slot < group_field.keys.size()) {
-                const LocalZBridgeKey &key = group_field.keys[slot];
-                for (const LocalZBridgeOutlineCache::Entry &entry : outline_cache->entries) {
-                    if (entry.layer_id >= layer_id || !entry.bbox.overlap(group_bbox))
-                        continue;
-                    const auto begin = entry.group.keys.begin() + entry.group.first_slot;
-                    const auto end   = entry.group.keys.begin() + entry.group.end_slot;
-                    const auto found = std::find(begin, end, key);
-                    if (found == end || intersection_ex(entry.outline, group_masks).empty())
-                        continue;
-                    slot_ref = {entry.group.field, size_t(found - entry.group.keys.begin())};
-                    break;
-                }
-            }
-            slots.push_back(std::move(slot_ref));
-        }
-        append_local_z_bridge_passes(slots, group_masks, layer_id, dependency_group, num_physical, pass_counter, plans, window_tops);
-        if (outline_cache != nullptr)
-            new_entries.push_back({layer_id, std::move(group_field), group_masks, group_bbox});
-        append(result.outline, group_masks);
-        if (merges != nullptr && layer_id < layer_count) {
-            if (merges->size() < layer_count)
-                merges->resize(layer_count);
-            (*merges)[layer_id].emplace_back(std::move(merge));
-        }
-    }
-    if (outline_cache != nullptr)
-        outline_cache->entries.insert(outline_cache->entries.end(), std::make_move_iterator(new_entries.begin()),
-                                      std::make_move_iterator(new_entries.end()));
-    if (result.single_filament_masks.size() > 1)
-        result.single_filament_masks = union_ex(result.single_filament_masks);
-    if (result.outline.size() > 1)
-        result.outline = union_ex(result.outline);
-    return result;
-}
-
-static void merge_local_z_bridge_regions(std::vector<std::vector<ExPolygons>> &segmentation, const LocalZBridgeRegionMerges &merges)
-{
-    const float island_margin = scaled<float>(10. * EPSILON);
-    for (size_t layer_id = 0; layer_id < merges.size() && layer_id < segmentation.size(); ++layer_id) {
-        std::vector<ExPolygons> &channels = segmentation[layer_id];
-        for (const LocalZBridgeRegionMerge &merge : merges[layer_id]) {
-            if (merge.target_channel >= channels.size())
-                continue;
-            ExPolygons merged;
-            for (unsigned int channel : merge.whole_channels)
-                if (channel < channels.size()) {
-                    append(merged, std::move(channels[channel]));
-                    channels[channel].clear();
-                }
-            for (const auto &[channel, masks] : merge.islands)
-                if (channel < channels.size()) {
-                    channels[channel] = diff_ex(channels[channel], offset_ex(masks, island_margin));
-                    append(merged, masks);
-                }
-            ExPolygons &target = channels[merge.target_channel];
-            append(target, std::move(merged));
-            // Neighboring segmentation cells can leave hairline gaps; close them
-            // so the merged island gets one outline.
-            target = closing_ex(union_ex(target), scaled<float>(10. * EPSILON));
-        }
-    }
-}
-
-// Removes single-filament islands that joined a bridge from full-domain fixed
-// passes; the bridge passes print them instead.
-static void remove_local_z_bridged_fixed_masks(std::vector<SubLayerPlan> &fixed_plans, const ExPolygons &bridged_masks)
-{
-    if (bridged_masks.empty())
-        return;
-    for (SubLayerPlan &plan : fixed_plans)
-        for (ExPolygons &masks : plan.fixed_painted_masks_by_extruder)
-            if (!masks.empty())
-                masks = diff_ex(masks, bridged_masks);
-    fixed_plans.erase(std::remove_if(fixed_plans.begin(), fixed_plans.end(),
-                                     [](const SubLayerPlan &plan) {
-                                         return std::all_of(plan.fixed_painted_masks_by_extruder.begin(),
-                                                            plan.fixed_painted_masks_by_extruder.end(),
-                                                            [](const ExPolygons &masks) { return masks.empty(); });
-                                     }),
-                      fixed_plans.end());
 }
 
 template<typename ThrowOnCancel>
-static void build_local_z_plan(PrintObject &print_object,
-                               const std::vector<std::vector<ExPolygons>> &segmentation,
-                               bool whole_object_scope_active,
-                               const std::vector<uint8_t> &enabled_rows,
-                               const std::vector<uint8_t> &adaptive_independent_rows,
-                               ThrowOnCancel throw_on_cancel,
-                               LocalZBridgeRegionMerges *bridge_region_merges = nullptr,
+static void build_local_z_plan(PrintObject&                                print_object,
+                               const std::vector<std::vector<ExPolygons>>& segmentation,
+                               bool                                        whole_object_scope_active,
+                               const std::vector<uint8_t>&                 enabled_rows,
+                               const std::vector<uint8_t>&                 adaptive_independent_rows,
+                               ThrowOnCancel                               throw_on_cancel,
+                               LocalZBridgeRegionMerges*                   bridge_region_merges = nullptr,
                                // Full paint segmentation; the planner's own one omits single-filament channels.
-                               const std::vector<std::vector<ExPolygons>> *paint_segmentation = nullptr)
+                               const std::vector<std::vector<ExPolygons>>* paint_segmentation = nullptr,
+                               // Immutable bridge metadata prepared from authored paint.
+                               const LocalZBridgePlan& bridge_plan = {})
 {
     PreparationProfile prep_profile("local_z_plan");
     PreparationTimer   plan_timer(&prep_profile, "total");
@@ -4272,70 +3516,14 @@ static void build_local_z_plan(PrintObject &print_object,
         return false;
     };
 
-    // Bridges between mixes with independent heights phase-lock every planar
-    // direct cadence to shared windows of whole layers (see LocalZBridgeWindow).
-    // The window spans as few layers as hold the longest cycle used on the
-    // object, counted from the first layer Local-Z subdivides.
-    std::vector<uint8_t> bridge_phase_locked_rows(mixed_definitions.size(), uint8_t(0));
-    size_t               bridge_window_layers = 1;
-    size_t               bridge_window_anchor = 0;
-    size_t               bridge_window_count  = 0;
-    if (local_z_continuous_bridges && local_z_independent_layer_height) {
-        std::vector<uint8_t> row_used(mixed_definitions.size(), uint8_t(0));
-        for (const std::vector<ExPolygons> &channels : segmentation)
-            for (size_t channel_idx = 0; channel_idx < channels.size(); ++channel_idx) {
-                if (channels[channel_idx].empty())
-                    continue;
-                const unsigned int state_id = segmentation_channel_filament_id(channel_idx);
-                if (!mixed_mgr.is_mixed(state_id, num_physical))
-                    continue;
-                const int mixed_idx = mixed_mgr.mixed_index_from_filament_id(state_id, num_physical);
-                if (mixed_idx >= 0 && size_t(mixed_idx) < row_used.size())
-                    row_used[size_t(mixed_idx)] = uint8_t(1);
-            }
-        double longest_cycle = 0.;
-        for (size_t row_idx = 0; row_idx < mixed_definitions.size(); ++row_idx) {
-            if (row_used[row_idx] == 0 || row_uses_local_z[row_idx] == 0 || row_is_gradient_definition[row_idx] != 0 ||
-                (row_idx < adaptive_independent_rows.size() && adaptive_independent_rows[row_idx] != 0) ||
-                row_independent_direct_cadences[row_idx].empty())
-                continue;
-            double cycle = 0.;
-            for (const LocalZIndependentDirectPass &pass : row_independent_direct_cadences[row_idx])
-                cycle += pass.height;
-            if (cycle <= EPSILON)
-                continue;
-            bridge_phase_locked_rows[row_idx] = uint8_t(1);
-            longest_cycle                     = std::max(longest_cycle, cycle);
-        }
-        while (bridge_window_anchor < print_object.layer_count() &&
-               !mixed_filament_local_z_should_subdivide_layer(bridge_window_anchor, local_z_whole_objects, local_z_preserve_first_layer))
-            ++bridge_window_anchor;
-        if (longest_cycle > EPSILON && bridge_window_anchor < print_object.layer_count()) {
-            bridge_window_layers = std::max<size_t>(1, size_t(std::ceil(longest_cycle / adaptive_nominal_layer_height - 1e-6)));
-            bridge_window_count  = std::max<size_t>(1, (print_object.layer_count() - bridge_window_anchor) / bridge_window_layers);
-        }
-    }
-    std::vector<std::unique_ptr<LocalZBridgeWindow>> bridge_windows(bridge_window_count);
-    auto local_z_bridge_window_for_layer = [&](size_t layer_id) -> const LocalZBridgeWindow & {
+    const auto&  bridge_phase_locked_rows        = bridge_plan.phase_locked_rows;
+    const size_t bridge_window_layers            = bridge_plan.layout.layers;
+    const size_t bridge_window_anchor            = bridge_plan.layout.anchor;
+    const size_t bridge_window_count             = bridge_plan.layout.count;
+    auto         local_z_bridge_window_for_layer = [&](size_t layer_id) -> const LocalZBridgeWindow& {
         const size_t index = std::min((std::max(layer_id, bridge_window_anchor) - bridge_window_anchor) / bridge_window_layers,
                                       bridge_window_count - 1);
-        if (!bridge_windows[index]) {
-            // The last window also takes the layers left over at the top.
-            const size_t first_layer = bridge_window_anchor + index * bridge_window_layers;
-            const size_t last_layer  = index + 1 == bridge_window_count ? print_object.layer_count() - 1 :
-                                                                          first_layer + bridge_window_layers - 1;
-            std::vector<uint8_t> rows_in_window(mixed_definitions.size(), uint8_t(0));
-            for (size_t row_idx = 0; row_idx < rows_in_window.size(); ++row_idx)
-                for (size_t window_layer = first_layer; bridge_phase_locked_rows[row_idx] != 0 && window_layer <= last_layer; ++window_layer)
-                    if (row_is_active_on_layer(row_idx, window_layer)) {
-                        rows_in_window[row_idx] = uint8_t(1);
-                        break;
-                    }
-            bridge_windows[index] = std::make_unique<LocalZBridgeWindow>(
-                build_local_z_bridge_window(print_object, first_layer, last_layer, row_independent_direct_cadences, rows_in_window,
-                                            num_physical, print_cfg));
-        }
-        return *bridge_windows[index];
+        return bridge_plan.windows[index];
     };
     // A row whose paint starts or ends inside a window prints only from the
     // bottom of its first layer to the top of its last one, like a cadence
@@ -6980,14 +6168,20 @@ void PrintObject::slice_volumes()
             local_z_planner_segmentation_with_whole_object_mixed_wall(
                 *this, mm_segmentation, local_z_enabled_rows, has_whole_object_local_z_scope);
         LocalZBridgeRegionMerges bridge_region_merges;
-        build_local_z_plan(*this,
-                           local_z_segmentation,
-                           has_whole_object_local_z_scope,
-                           local_z_enabled_rows,
-                           adaptive_independent_local_z_rows,
-                           [print]() { print->throw_if_canceled(); },
-                           &bridge_region_merges,
-                           &mm_segmentation);
+        const LocalZBridgePlan   bridge_plan = prepare_local_z_bridge_plan(*this, local_z_segmentation, has_whole_object_local_z_scope,
+                                                                           local_z_enabled_rows, adaptive_independent_local_z_rows);
+        if (bridge_plan.layout.count > 0 && bridge_plan.layout.layers > 1) {
+            // Keep authored paint available while deriving only participating regions.
+            auto aligned_segmentation = mm_segmentation;
+            align_local_z_segmentation_to_bridge_windows(*this, aligned_segmentation, bridge_plan,
+                                                         [print]() { print->throw_if_canceled(); });
+            mm_segmentation      = std::move(aligned_segmentation);
+            local_z_segmentation = local_z_planner_segmentation_with_whole_object_mixed_wall(
+                *this, mm_segmentation, local_z_enabled_rows, has_whole_object_local_z_scope);
+        }
+        build_local_z_plan(
+            *this, local_z_segmentation, has_whole_object_local_z_scope, local_z_enabled_rows, adaptive_independent_local_z_rows,
+            [print]() { print->throw_if_canceled(); }, &bridge_region_merges, &mm_segmentation, bridge_plan);
         merge_local_z_bridge_regions(mm_segmentation, bridge_region_merges);
         apply_mm_segmentation(*this, std::move(mm_segmentation), [print]() { print->throw_if_canceled(); });
     }

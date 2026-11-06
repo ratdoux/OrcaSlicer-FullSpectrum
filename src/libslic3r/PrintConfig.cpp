@@ -4649,9 +4649,10 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Others");
     def->tooltip = L("With independent Local-Z layer heights, a bridged layer that slopes across a transition band prints "
                      "in parts on neighboring nominal layers, cut where its top crosses a layer boundary. When on, both "
-                     "parts continue across a 1 mm overlap with flow ramping in opposite directions, like a scarf seam, so "
-                     "the joint has no gap.\n\n"
-                     "When off, the parts stop and start exactly at the cut.");
+                     "parts of a wall continue across a 1 mm overlap with flow ramping in opposite directions, like a "
+                     "scarf seam, so the joint has no gap. Infill always stops and starts exactly at the cut, since it "
+                     "changes direction from layer to layer.\n\n"
+                     "When off, walls also stop and start exactly at the cut.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(true));
 

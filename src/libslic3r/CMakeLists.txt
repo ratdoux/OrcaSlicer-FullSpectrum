@@ -359,6 +359,13 @@ set(lisbslic3r_sources
     LocalZPathRouter.cpp
     LocalZBridge.hpp
     LocalZBridge.cpp
+    LocalZBridgePlanner.hpp
+    LocalZBridgePlanner.cpp
+    LocalZBridgePaths.hpp
+    LocalZBridgePaths.cpp
+    LocalZBridgeProjector.hpp
+    LocalZBridgeProjector.cpp
+    LocalZPassScheduler.hpp
     LocalZClipper.hpp
     LocalZClipAcceleration.cpp
     LocalZClipAcceleration.hpp

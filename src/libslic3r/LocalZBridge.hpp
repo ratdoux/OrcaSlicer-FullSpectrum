@@ -58,9 +58,10 @@ public:
         // Resamples paths at least 8 times across the transition band instead
         // of every 0.2 mm.
         bool fine_sampling{false};
-        // Where a top range cuts a path, both sides continue across a short
+        // Where a top range cuts a wall, both sides continue across a short
         // overlap with flow ramping in opposite directions, so the parts
-        // printed on neighboring layers join like a scarf seam.
+        // printed on neighboring layers join like a scarf seam. Other paths
+        // are cut plainly.
         bool scarf_cuts{false};
     };
 
@@ -131,6 +132,18 @@ private:
     std::vector<std::vector<bool>>                   m_shares;
     std::vector<AABBTreeLines::LinesDistancer<Line>> m_distancers;
 };
+
+// The part of a slot island at least `inset` (scaled) inside its outline, where
+// its walls and infill go. Every point of the result keeps that distance, so a
+// small sharp notch in a painted edge cannot pull a wall far into the island.
+ExPolygons bridge_island_inset(const ExPolygons& island, double inset);
+
+// The area whose outline is the centerline of a wall `inset` (scaled) inside a
+// slot island. Where that area is narrower than one wall `spacing` (scaled), as
+// in the tip of a sharp wedge, the loop would come back along itself and print
+// the same place twice. Like the classic wall generator, those parts are left
+// out and added to `narrow`, so one bead along their middle can fill them.
+ExPolygons bridge_island_wall_area(const ExPolygons& island, double inset, double spacing, ExPolygons* narrow = nullptr);
 
 } // namespace Slic3r
 

@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <sstream>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -1614,6 +1616,8 @@ struct BridgeSliceResult
     std::vector<SubLayerPlan> plans;
     // Per layer, the wall filaments of regions that own slices.
     std::vector<std::set<int>> regions_by_layer;
+    std::vector<std::map<int, double>>                 region_areas_by_layer;
+    std::vector<std::pair<unsigned int, unsigned int>> planned_toolchanges;
     std::string                gcode;
     std::vector<float>         local_z_extrusion_heights;
     // Extruder and role of every Local-Z extrusion whose height differs from a whole layer.
@@ -1682,6 +1686,9 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
     model_object->ensure_on_bed();
 
     Print print;
+    // The desktop supplies these explicitly; standalone slicing needs a fixed origin.
+    print.set_plate_origin(Vec3d::Zero());
+    print.is_BBL_printer() = false;
     print.auto_assign_extruders(model_object);
     print.apply(model, config);
     print.validate();
@@ -1692,12 +1699,19 @@ BridgeSliceResult slice_bridge_scenario(const std::vector<MixedFilamentDefinitio
     BridgeSliceResult  result;
     const PrintObject& print_object = *print.objects().front();
     result.plans                    = print_object.local_z_sublayer_plan();
+    for (const auto& layer_changes : print.wipe_tower_data().local_z_tool_changes)
+        for (const auto& change : layer_changes)
+            result.planned_toolchanges.emplace_back(change.initial_tool, change.new_tool);
     for (const Layer* layer : print_object.layers()) {
         std::set<int> regions;
+        std::map<int, double> region_areas;
         for (const LayerRegion* layerm : layer->regions())
-            if (!layerm->slices.empty())
+            if (!layerm->slices.empty()) {
                 regions.insert(layerm->region().config().wall_filament.value);
+                region_areas[layerm->region().config().wall_filament.value] += area(to_expolygons(layerm->slices.surfaces));
+            }
         result.regions_by_layer.emplace_back(std::move(regions));
+        result.region_areas_by_layer.emplace_back(std::move(region_areas));
     }
 
     const boost::filesystem::path gcode_path =
@@ -1750,6 +1764,47 @@ bool local_z_has_xyz_extrusion(const std::string& gcode)
     return false;
 }
 
+// Per tool, the most times one block of Local-Z passes moves the nozzle more
+// than `min_dx` mm along X between two extrusions.
+std::map<int, int> most_local_z_x_crossings(const std::string& gcode, double min_dx)
+{
+    std::map<int, int>    most;
+    std::map<int, int>    in_block;
+    bool                  in_passes = false;
+    int                   tool      = 0;
+    double                x         = 0.;
+    std::optional<double> last_end_x;
+    std::istringstream    lines(gcode);
+    std::string           line;
+    while (std::getline(lines, line)) {
+        if (line.rfind("; local-z phase-b path passes begin", 0) == 0) {
+            in_passes = true;
+            in_block.clear();
+            last_end_x.reset();
+        } else if (line.rfind("; local-z phase-b path passes end", 0) == 0) {
+            in_passes = false;
+        } else if (line.size() > 1 && line[0] == 'T' && std::isdigit(static_cast<unsigned char>(line[1]))) {
+            tool = std::atoi(line.c_str() + 1);
+            last_end_x.reset();
+        } else if (line.rfind("G0 ", 0) == 0 || line.rfind("G1 ", 0) == 0) {
+            const std::string move    = line.substr(0, line.find(';'));
+            const size_t      x_pos   = move.find(" X");
+            const size_t      e_pos   = move.find(" E");
+            const double      start_x = x;
+            if (x_pos != std::string::npos)
+                x = std::atof(move.c_str() + x_pos + 2);
+            const bool extrudes = e_pos != std::string::npos && std::atof(move.c_str() + e_pos + 2) > 0. &&
+                                  (x_pos != std::string::npos || move.find(" Y") != std::string::npos);
+            if (in_passes && extrudes) {
+                if (last_end_x && std::abs(start_x - *last_end_x) > min_dx)
+                    most[tool] = std::max(most[tool], ++in_block[tool]);
+                last_end_x = x;
+            }
+        }
+    }
+    return most;
+}
+
 std::map<size_t, std::vector<const SubLayerPlan*>> bridge_passes_by_layer(const std::vector<SubLayerPlan>& plans)
 {
     std::map<size_t, std::vector<const SubLayerPlan*>> passes;
@@ -1771,6 +1826,25 @@ void check_bridged_extrusion(const BridgeSliceResult& result)
     // Layers that only one side has taper toward nothing but never vanish mid-bead.
     CHECK(std::none_of(result.local_z_extrusion_heights.begin(), result.local_z_extrusion_heights.end(),
                        [](float height) { return height <= 0.f; }));
+    // Islands hold no zero-width holes and no outlines that double back, so
+    // walls inset from them keep a full inset from every edge.
+    const double sliver_area = sqr(scale_(0.01));
+    for (const SubLayerPlan& plan : result.plans) {
+        if (plan.bridge_field == nullptr)
+            continue;
+        ExPolygons island;
+        for (const ExPolygons& masks : plan.painted_masks_by_extruder)
+            append(island, masks);
+        island = union_ex(island);
+        INFO("layer " << plan.layer_id << " slot " << plan.bridge_slot_index);
+        for (const ExPolygon& piece : island)
+            for (const Polygon& hole : piece.holes)
+                CHECK(std::abs(hole.area()) >= sliver_area);
+        for (const double inset : {0.225, 0.625}) {
+            const ExPolygons near_edge = diff_ex(offset_ex(island, -float(scale_(inset))), offset_ex(island, -float(scale_(inset - 0.05))));
+            CHECK(std::abs(area(near_edge)) < sliver_area);
+        }
+    }
 }
 
 // A bridged layer prints as an island with its own walls: an outer wall and
@@ -1873,6 +1947,29 @@ TEST_CASE("Continuous mix bridges connect a mix to the object's own filament",
         REQUIRE(layer_id < bridged.regions_by_layer.size());
         CHECK(bridged.regions_by_layer[layer_id].count(3) == 0);
     }
+    check_bridged_extrusion(bridged);
+    check_island_walls(bridged, 1);
+}
+
+TEST_CASE("Continuous mix bridges print each part of an island's infill in turn",
+          "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
+{
+    // A 1:3 cyan/magenta mix at most 3 mm deep on both X faces of a cyan
+    // object leaves the magenta layers two strips about 10 mm apart. Most
+    // lines of the object's monotonic infill leave a piece in each strip.
+    const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757586, {{1, 25}, {2, 75}}, "#BF40FF")};
+    const std::vector<std::string>             colors{"#00FFFF", "#FF00FF"};
+    const std::vector<std::pair<int, int>>     painted{{4, 3}, {5, 3}, {8, 3}, {9, 3}};
+    DynamicPrintConfig                         overrides;
+    overrides.set_key_value("mmu_segmented_region_max_width", new ConfigOptionFloat(3.));
+
+    const BridgeSliceResult bridged = slice_bridge_scenario(mixes, colors, painted, true, false, 0.2, &overrides);
+    REQUIRE(bridge_passes_by_layer(bridged.plans).size() >= 2);
+    // Walls and infill of one strip, then of the other: a few crossings per
+    // layer instead of one for every line.
+    const std::map<int, int> crossings         = most_local_z_x_crossings(bridged.gcode, 8.);
+    const int                magenta_crossings = crossings.count(1) == 1 ? crossings.at(1) : 0;
+    CHECK(magenta_crossings <= 4);
     check_bridged_extrusion(bridged);
     check_island_walls(bridged, 1);
 }
@@ -2056,6 +2153,104 @@ TEST_CASE("Continuous mix bridge comparison settings reach the bridges", "[Print
     CHECK(std::any_of(refined_layers.begin(), refined_layers.end(),
                       [](const auto& entry) { return entry.second.size() > 1; }));
     check_bridged_extrusion(refined);
+}
+
+TEST_CASE("Phase-locked bridge windows give every layer of a window the same zones",
+          "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
+{
+    // The 1:3 mix painted on one triangle of the -Y face: its boundary runs
+    // diagonally, moving 0.6 mm along the face per 0.06 mm layer. Windows are
+    // 3 layers of 0.18 mm.
+    const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757585, {{1, 25}, {2, 75}}, "#BF40FF")};
+    const std::vector<std::string>             colors{"#00FFFF", "#FF00FF"};
+    const std::vector<std::pair<int, int>>     painted{{6, 3}};
+    constexpr double                           layer_height = 0.06;
+
+    const BridgeSliceResult bridged = slice_bridge_scenario(mixes, colors, painted, true, true, layer_height);
+    // Per window bottom, the area of the mix zone on each layer that bridges.
+    std::map<long, std::map<size_t, double>> mix_area_by_window;
+    for (const SubLayerPlan& plan : bridged.plans) {
+        if (plan.bridge_field == nullptr)
+            continue;
+        double     window_bottom = std::numeric_limits<double>::infinity();
+        ExPolygons mix_masks;
+        for (const LocalZBridgeField::Row& row : plan.bridge_field->rows()) {
+            window_bottom = std::min(window_bottom, row.bounds.front());
+            if (row.filaments == std::vector<unsigned int>{1, 2})
+                append(mix_masks, row.masks);
+        }
+        mix_area_by_window[std::lround(window_bottom * 1e4)][plan.layer_id] = std::abs(area(union_ex(mix_masks)));
+    }
+    REQUIRE(mix_area_by_window.size() >= 3);
+    std::set<long> window_areas;
+    size_t         multi_layer_windows = 0;
+    for (const auto& [window_bottom, areas] : mix_area_by_window) {
+        INFO("window from " << double(window_bottom) / 1e4);
+        const double first = areas.begin()->second;
+        for (const auto& [layer_id, mix_area] : areas) {
+            INFO("layer " << layer_id);
+            CHECK_THAT(mix_area, Catch::Matchers::WithinRel(first, 1e-6));
+        }
+        multi_layer_windows += areas.size() > 1;
+        // In units of 0.01 mm2.
+        window_areas.insert(std::lround(first / scale_(scale_(0.01))));
+    }
+    CHECK(multi_layer_windows >= 2);
+    // The boundary still moves from window to window.
+    CHECK(window_areas.size() >= 3);
+    check_bridged_extrusion(bridged);
+}
+
+TEST_CASE("Bridge windows preserve unrelated single-filament paint", "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
+{
+    const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757589, {{1, 25}, {2, 75}}, "#BF40FF")};
+    const std::vector<std::string>             colors{"#00FFFF", "#FF00FF", "#FFFF00"};
+    // The mix covers +X. Filament 3 on one -X triangle shares no component
+    // with the mix or the body, so its moving boundary must remain unchanged.
+    const std::vector<std::pair<int, int>> painted{{4, 4}, {5, 4}, {8, 3}};
+    const BridgeSliceResult                plain   = slice_bridge_scenario(mixes, colors, painted, false, true, 0.06);
+    const BridgeSliceResult                bridged = slice_bridge_scenario(mixes, colors, painted, true, true, 0.06);
+    REQUIRE(plain.region_areas_by_layer.size() == bridged.region_areas_by_layer.size());
+    for (size_t layer = 0; layer < plain.region_areas_by_layer.size(); ++layer) {
+        const auto pure_area = [](const std::map<int, double>& areas) { return areas.count(3) ? areas.at(3) : 0.; };
+        INFO("layer " << layer);
+        CHECK_THAT(pure_area(bridged.region_areas_by_layer[layer]),
+                   Catch::Matchers::WithinAbs(pure_area(plain.region_areas_by_layer[layer]), sqr(scale_(0.001))));
+    }
+}
+
+TEST_CASE("Bridge export consumes the planned wipe-tower tool sequence", "[PrintObject][MixedFilament][LocalZ][LocalZBridge]")
+{
+    const std::vector<MixedFilamentDefinition> mixes{make_bridge_test_mix(757590, {{1, 75}, {2, 25}}, "#40BFFF"),
+                                                     make_bridge_test_mix(757591, {{1, 20}, {2, 20}, {3, 60}}, "#A0A060")};
+    const std::vector<std::string>             colors{"#00FFFF", "#FF00FF", "#FFFF00"};
+    const std::vector<std::pair<int, int>>     painted{{6, 4}, {7, 4}, {8, 4}, {9, 4}, {4, 5}, {5, 5}, {10, 5}, {11, 5}};
+    DynamicPrintConfig                         overrides;
+    overrides.set_key_value("enable_prime_tower", new ConfigOptionBool(true));
+    overrides.set_key_value("flush_volumes_matrix", new ConfigOptionFloats({0., 100., 100., 100., 0., 100., 100., 100., 0.}));
+    overrides.set_key_value("flush_volumes_vector", new ConfigOptionFloats({100., 100., 100., 100., 100., 100.}));
+    const auto result = slice_bridge_scenario(mixes, colors, painted, true, true, 0.06, &overrides);
+    REQUIRE_FALSE(result.planned_toolchanges.empty());
+    std::vector<std::pair<unsigned int, unsigned int>> emitted;
+    std::istringstream                                 gcode(result.gcode);
+    std::string                                        line;
+    int                                                active_tool      = -1;
+    bool                                               in_bridge_passes = false;
+    while (std::getline(gcode, line)) {
+        if (line.find("; local-z phase-b path passes begin") == 0)
+            in_bridge_passes = true;
+        else if (line.find("; local-z phase-b path passes end") == 0)
+            in_bridge_passes = false;
+        else if (line.size() > 1 && line.front() == 'T' && std::isdigit(static_cast<unsigned char>(line[1]))) {
+            const int tool = std::stoi(line.substr(1));
+            if (in_bridge_passes && active_tool >= 0 && tool != active_tool)
+                emitted.emplace_back(unsigned(active_tool), unsigned(tool));
+            active_tool = tool;
+        }
+    }
+    // Trailing or fallback tower changes must not compensate for missing passes.
+    CHECK(emitted == result.planned_toolchanges);
+    check_bridged_extrusion(result);
 }
 
 TEST_CASE("Gradient Local-Z preserves configured and painted seam placement", "[PrintObject][MixedFilament][LocalZ][Seam]")

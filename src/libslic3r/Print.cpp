@@ -9,6 +9,8 @@
 #include "Geometry/ConvexHull.hpp"
 #include "I18N.hpp"
 #include "LocalZOrderOptimizer.hpp"
+#include "LocalZPassScheduler.hpp"
+#include "LocalZBridgePaths.hpp"
 #include "LocalZClipper.hpp"
 #include "ShortestPath.hpp"
 #include "Thread.hpp"
@@ -201,6 +203,19 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
             if (!plan.split_interval)
                 continue;
 
+            if (plan.bridge_field != nullptr) {
+                if (prepare_local_z_bridge_pass(*layer_to_print.object_layer, plan).has_extrusions) {
+                    LocalZWipeTowerPassRef ref;
+                    ref.layer_to_print_idx = layer_to_print_idx;
+                    ref.plan               = &plan;
+                    for (size_t tool = 0; tool < plan.painted_masks_by_extruder.size(); ++tool)
+                        if (!plan.painted_masks_by_extruder[tool].empty())
+                            ref.extruders.push_back(unsigned(tool));
+                    pass_refs.push_back(std::move(ref));
+                }
+                continue;
+            }
+
             const size_t plan_mask_slots = std::max(plan.painted_masks_by_extruder.size(), plan.fixed_painted_masks_by_extruder.size());
             std::vector<ExPolygons> compensated_masks_by_extruder(plan_mask_slots, ExPolygons());
 
@@ -252,9 +267,7 @@ static std::vector<LocalZWipeTowerPassRef> collect_local_z_wipe_tower_passes(con
                 const ExPolygons& pass_masks = compensated_masks_by_extruder[extruder_id];
                 if (pass_masks.empty())
                     continue;
-                // Bridge passes generate walls for their whole island at export.
-                if (plan.bridge_field != nullptr ||
-                    layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks), local_z_infill_enabled))
+                if (layer_has_local_z_extrusions(*layer_to_print.object_layer, LocalZClipper(pass_masks), local_z_infill_enabled))
                     pass_ref.extruders.push_back(unsigned(extruder_id));
             }
 
@@ -332,184 +345,22 @@ static std::vector<LocalZWipeTowerToolchange> collect_local_z_wipe_tower_toolcha
     if (!dependency_chain_mode)
         return collect_toolchanges_legacy(start_extruder);
 
-    struct ChainKey {
-        size_t layer_to_print_idx { 0 };
-        size_t dependency_group { 0 };
-
-        bool operator<(const ChainKey &rhs) const
-        {
-            if (layer_to_print_idx != rhs.layer_to_print_idx)
-                return layer_to_print_idx < rhs.layer_to_print_idx;
-            return dependency_group < rhs.dependency_group;
-        }
-    };
-    struct PassState {
-        const LocalZWipeTowerPassRef *pass_ref { nullptr };
-        std::vector<unsigned int>     remaining_extruders;
-        size_t                        chain_idx { 0 };
-        size_t                        chain_pos { 0 };
-        bool                          ready { false };
-        bool                          completed { false };
-    };
-
-    std::map<ChainKey, size_t> chain_index_by_key;
-    std::vector<std::vector<size_t>> chains;
-    std::vector<PassState>           pass_states;
-    pass_states.reserve(pass_refs.size());
-    for (const LocalZWipeTowerPassRef &pass_ref : pass_refs) {
-        ChainKey chain_key { pass_ref.layer_to_print_idx, pass_ref.plan->dependency_group };
-        auto [it_chain, inserted] = chain_index_by_key.emplace(chain_key, chains.size());
-        if (inserted)
-            chains.emplace_back();
-
-        const size_t chain_idx = it_chain->second;
-        const size_t pass_state_idx = pass_states.size();
-        pass_states.push_back(PassState{ &pass_ref, pass_ref.extruders, chain_idx, 0, false, false });
-        chains[chain_idx].push_back(pass_state_idx);
+    std::vector<LocalZSchedulePass> schedule_inputs;
+    for (const auto& ref : pass_refs) {
+        const SubLayerPlan& plan = *ref.plan;
+        schedule_inputs.push_back(
+            {ref.layer_to_print_idx, plan.dependency_group, plan.dependency_order, plan.pass_index, plan.print_z, ref.extruders});
     }
-
-    for (std::vector<size_t> &chain : chains) {
-        std::sort(chain.begin(), chain.end(), [&pass_states](size_t lhs_idx, size_t rhs_idx) {
-            const SubLayerPlan &lhs = *pass_states[lhs_idx].pass_ref->plan;
-            const SubLayerPlan &rhs = *pass_states[rhs_idx].pass_ref->plan;
-            if (lhs.dependency_order != rhs.dependency_order)
-                return lhs.dependency_order < rhs.dependency_order;
-            if (std::abs(lhs.print_z - rhs.print_z) > EPSILON)
-                return lhs.print_z < rhs.print_z;
-            return lhs.pass_index < rhs.pass_index;
-        });
-        for (size_t chain_pos = 0; chain_pos < chain.size(); ++chain_pos)
-            pass_states[chain[chain_pos]].chain_pos = chain_pos;
-        if (!chain.empty())
-            pass_states[chain.front()].ready = true;
-    }
-
-    auto pass_contains_extruder = [](const PassState &pass_state, unsigned int extruder_id) {
-        return std::find(pass_state.remaining_extruders.begin(), pass_state.remaining_extruders.end(), extruder_id) !=
-               pass_state.remaining_extruders.end();
-    };
-
-    auto lowest_ready_print_z = [&]() {
-        double print_z = std::numeric_limits<double>::infinity();
-        for (const PassState &pass_state : pass_states) {
-            if (!pass_state.ready || pass_state.completed)
-                continue;
-            print_z = std::min(print_z, pass_state.pass_ref->plan->print_z);
-        }
-        return print_z;
-    };
-
-    auto choose_ready_extruder = [&](int active_extruder, double ready_print_z) -> int {
-        std::vector<unsigned int> ready_extruders;
-        for (const PassState &pass_state : pass_states) {
-            if (!pass_state.ready || pass_state.completed ||
-                std::abs(pass_state.pass_ref->plan->print_z - ready_print_z) > EPSILON)
-                continue;
-            for (unsigned int extruder_id : pass_state.remaining_extruders)
-                if (std::find(ready_extruders.begin(), ready_extruders.end(), extruder_id) == ready_extruders.end())
-                    ready_extruders.push_back(extruder_id);
-        }
-        if (ready_extruders.empty())
-            return -1;
-        if (active_extruder >= 0 &&
-            std::find(ready_extruders.begin(), ready_extruders.end(), unsigned(active_extruder)) != ready_extruders.end()) {
-            return active_extruder;
-        }
-
-        int    best_extruder = -1;
-        size_t best_ready_count = 0;
-        size_t best_future_count = 0;
-        for (unsigned int extruder_id : ready_extruders) {
-            size_t ready_count = 0;
-            size_t future_count = 0;
-            for (const PassState &pass_state : pass_states) {
-                if (pass_state.completed || !pass_contains_extruder(pass_state, extruder_id))
-                    continue;
-                ++future_count;
-                if (pass_state.ready &&
-                    std::abs(pass_state.pass_ref->plan->print_z - ready_print_z) <= EPSILON)
-                    ++ready_count;
-            }
-
-            if (best_extruder < 0 ||
-                ready_count > best_ready_count ||
-                (ready_count == best_ready_count && future_count > best_future_count) ||
-                (ready_count == best_ready_count && future_count == best_future_count && extruder_id < unsigned(best_extruder))) {
-                best_extruder = int(extruder_id);
-                best_ready_count = ready_count;
-                best_future_count = future_count;
-            }
-        }
-        return best_extruder;
-    };
-
+    const auto schedule = schedule_local_z_passes(schedule_inputs, start_extruder);
+    if (!schedule)
+        return collect_toolchanges_legacy(start_extruder);
     std::vector<LocalZWipeTowerToolchange> toolchanges;
-    int                                    active_extruder = start_extruder;
-    size_t                                 completed_passes = 0;
-    while (completed_passes < pass_states.size()) {
-        const double ready_print_z = lowest_ready_print_z();
-        const int chosen_extruder = choose_ready_extruder(active_extruder, ready_print_z);
-        if (chosen_extruder < 0) {
-            BOOST_LOG_TRIVIAL(warning) << "Local-Z wipe tower dependency scheduler deadlocked, falling back"
-                                       << " start_extruder=" << start_extruder
-                                       << " pass_count=" << pass_refs.size();
-            return collect_toolchanges_legacy(start_extruder);
-        }
-
-        if (active_extruder >= 0 && active_extruder != chosen_extruder)
-            toolchanges.push_back(LocalZWipeTowerToolchange{unsigned(active_extruder), unsigned(chosen_extruder)});
-        active_extruder = chosen_extruder;
-
-        bool                completed_any = false;
-        std::vector<size_t> newly_completed;
-        for (size_t pass_state_idx = 0; pass_state_idx < pass_states.size(); ++pass_state_idx) {
-            PassState &pass_state = pass_states[pass_state_idx];
-            if (!pass_state.ready || pass_state.completed ||
-                std::abs(pass_state.pass_ref->plan->print_z - ready_print_z) > EPSILON)
-                continue;
-
-            auto it_extruder = std::find(pass_state.remaining_extruders.begin(),
-                                         pass_state.remaining_extruders.end(),
-                                         unsigned(chosen_extruder));
-            if (it_extruder == pass_state.remaining_extruders.end())
-                continue;
-
-            pass_state.remaining_extruders.erase(it_extruder);
-            completed_any = true;
-            if (pass_state.remaining_extruders.empty())
-                newly_completed.push_back(pass_state_idx);
-        }
-
-        if (!completed_any) {
-            BOOST_LOG_TRIVIAL(warning) << "Local-Z wipe tower dependency scheduler made no progress, falling back"
-                                       << " start_extruder=" << start_extruder
-                                       << " active_extruder=" << active_extruder
-                                       << " chosen_extruder=" << chosen_extruder
-                                       << " pass_count=" << pass_refs.size();
-            return collect_toolchanges_legacy(start_extruder);
-        }
-
-        for (size_t pass_state_idx : newly_completed) {
-            PassState &pass_state = pass_states[pass_state_idx];
-            if (pass_state.completed)
-                continue;
-
-            pass_state.ready = false;
-            pass_state.completed = true;
-            ++completed_passes;
-
-            const std::vector<size_t> &chain = chains[pass_state.chain_idx];
-            const size_t next_chain_pos = pass_state.chain_pos + 1;
-            if (next_chain_pos < chain.size())
-                pass_states[chain[next_chain_pos]].ready = true;
-        }
+    int                                    active = start_extruder;
+    for (const auto& phase : *schedule) {
+        if (active >= 0 && unsigned(active) != phase.extruder_id)
+            toolchanges.push_back({unsigned(active), phase.extruder_id});
+        active = int(phase.extruder_id);
     }
-
-    BOOST_LOG_TRIVIAL(info) << "Local-Z wipe tower dependency scheduler"
-                            << " start_extruder=" << start_extruder
-                            << " pass_count=" << pass_refs.size()
-                            << " chain_count=" << chains.size()
-                            << " toolchanges=" << toolchanges.size();
     return toolchanges;
 }
 

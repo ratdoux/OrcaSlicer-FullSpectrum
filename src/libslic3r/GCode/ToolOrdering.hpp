@@ -137,6 +137,8 @@ public:
     // Number of wipe tower partitions to support the required number of tool switches
     // and to support the wipe tower partitions above this one.
     size_t                      wipe_tower_partitions = 0;
+    // Bridge tools print outside the nominal extruder list but still need a tower at this height.
+    bool                        has_local_z_bridges     = false;
     coordf_t 					wipe_tower_layer_height = 0.;
     // Custom G-code (color change, extruder switch, pause) to be performed before this layer starts to print.
     const CustomGCode::Item    *custom_gcode = nullptr;

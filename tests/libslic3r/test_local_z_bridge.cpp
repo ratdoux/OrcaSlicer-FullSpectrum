@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/LocalZBridge.hpp"
+#include "libslic3r/LocalZBridgePlanner.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +11,20 @@
 
 using namespace Slic3r;
 using Catch::Matchers::WithinAbs;
+
+TEST_CASE("Bridge window layout preserves its anchor and includes the final partial cycle", "[LocalZ][LocalZBridge]")
+{
+    const auto layout = compute_local_z_bridge_window_layout(12, 1, 0.06, 0.18);
+    REQUIRE(layout.count == 3);
+    CHECK(layout.layers == 3);
+    CHECK(layout.first_layer(0) == 1);
+    CHECK(layout.last_layer(0, 12) == 3);
+    CHECK(layout.first_layer(2) == 7);
+    CHECK(layout.last_layer(2, 12) == 11);
+    CHECK(compute_local_z_bridge_window_layout(0, 0, 0.06, 0.18).count == 0);
+    CHECK(compute_local_z_bridge_window_layout(12, 12, 0.06, 0.18).count == 0);
+    CHECK(compute_local_z_bridge_window_layout(12, 1, 0.06, 0.).count == 0);
+}
 
 namespace {
 
@@ -43,7 +59,41 @@ LocalZBridgeField make_field(std::vector<unsigned int> slots,
     return LocalZBridgeField(transition_width_mm, std::move(slots), std::move(rows));
 }
 
+// A mix (x < 10) next to a cyan body (x > 10) with a 0.5 mm band. Painting
+// follows mesh triangles, so their edge is a row of teeth, here 0.1 mm deep
+// every 0.2 mm.
+LocalZBridgeField make_toothed_field(std::vector<unsigned int> slots, std::vector<double> mix_heights, std::vector<double> body_heights)
+{
+    Points teeth;
+    for (int tooth = 0; tooth < 50; ++tooth) {
+        teeth.push_back(Point::new_scale(10., 0.2 * tooth));
+        teeth.push_back(Point::new_scale(10.1, 0.2 * tooth + 0.1));
+    }
+    teeth.push_back(Point::new_scale(10., 10.));
+    Points mix{Point::new_scale(0., 0.)};
+    append(mix, teeth);
+    mix.push_back(Point::new_scale(0., 10.));
+    Points body{Point::new_scale(20., 0.), Point::new_scale(20., 10.)};
+    body.insert(body.end(), teeth.rbegin(), teeth.rend());
+
+    std::vector<LocalZBridgeField::Row> rows(2);
+    rows[0].masks              = {ExPolygon(mix)};
+    rows[0].bounds             = stack_bounds(0.20, mix_heights);
+    rows[1].masks              = {ExPolygon(body)};
+    rows[1].bounds             = stack_bounds(0.20, body_heights);
+    rows[1].absorbs_transition = true;
+    return LocalZBridgeField(0.5, std::move(slots), std::move(rows));
+}
+
 // Cyan-heavy mix on the left, magenta-heavy mix on the right.
+double distance_to_contour(const ExPolygon& expolygon, const Point& point)
+{
+    double distance = std::numeric_limits<double>::infinity();
+    for (const Line& line : expolygon.contour.lines())
+        distance = std::min(distance, line.distance_to(point));
+    return distance;
+}
+
 LocalZBridgeField make_two_mix_field(double transition_width_mm)
 {
     return make_field({1, 2}, {0.15, 0.05}, {0.05, 0.15}, transition_width_mm);
@@ -246,6 +296,115 @@ TEST_CASE("Continuous mix bridge keeps a thin painted shell at its own ratio", "
     const std::vector<double> wall = field.heights_at(Point::new_scale(0.225, 5.));
     CHECK_THAT(wall[0], WithinAbs(0.05, 1e-9));
     CHECK_THAT(wall[1], WithinAbs(0.15, 1e-9));
+}
+
+TEST_CASE("Continuous mix bridge island ends where its taper does along a toothed edge", "[LocalZ][LocalZBridge]")
+{
+    const LocalZBridgeField field    = make_toothed_field({1, 2}, {0.15, 0.05}, {0.20, 0.});
+    const Lines             mix_edge = to_lines(field.rows().front().masks);
+
+    // Magenta tapers to nothing half a millimeter into the body. Its island
+    // ends there along the whole edge, so walls inset from it follow the
+    // taper instead of the teeth.
+    const ExPolygons island = field.slot_island(1, {rectangle_mm(0., 0., 20., 10.)});
+    REQUIRE(island.size() == 1);
+    size_t checked = 0;
+    for (const Point& point : island.front().contour.points) {
+        if (unscale<double>(point.x()) < 10.2 || unscale<double>(point.y()) < 1. || unscale<double>(point.y()) > 9.)
+            continue;
+        double distance = std::numeric_limits<double>::infinity();
+        for (const Line& line : mix_edge)
+            distance = std::min(distance, line.distance_to(point));
+        CHECK_THAT(unscale<double>(distance), WithinAbs(0.5, 0.015));
+        ++checked;
+    }
+    CHECK(checked > 40);
+}
+
+TEST_CASE("Continuous mix bridge walls keep their inset along a notched edge", "[LocalZ][LocalZBridge]")
+{
+    // Neighboring zones leave narrow sharp notches in an island's edge, here
+    // 0.15 mm deep and 0.06 mm wide every 0.5 mm.
+    Points contour{Point::new_scale(0., 0.), Point::new_scale(10., 0.)};
+    for (int notch = 1; notch < 20; ++notch) {
+        contour.push_back(Point::new_scale(10., 0.5 * notch - 0.03));
+        contour.push_back(Point::new_scale(9.85, 0.5 * notch));
+        contour.push_back(Point::new_scale(10., 0.5 * notch + 0.03));
+    }
+    contour.push_back(Point::new_scale(10., 10.));
+    contour.push_back(Point::new_scale(0., 10.));
+    const ExPolygons island{ExPolygon(contour)};
+    const Lines      edge = to_lines(island);
+
+    // Along the whole notched side, the outer wall runs 0.225 mm inside the
+    // edge instead of reaching into the island behind every notch.
+    const ExPolygons rings = bridge_island_inset(island, scale_(0.225));
+    REQUIRE(rings.size() == 1);
+    size_t checked = 0;
+    for (const Line& wall : rings.front().contour.lines()) {
+        const size_t steps = size_t(std::ceil(unscale<double>(wall.length()) / 0.02));
+        for (size_t step = 0; step < steps; ++step) {
+            const Vec2d sample = wall.a.cast<double>() + (wall.b - wall.a).cast<double>() * (double(step) / double(steps));
+            if (unscale<double>(sample.x()) < 5. || unscale<double>(sample.y()) < 1. || unscale<double>(sample.y()) > 9.)
+                continue;
+            const Point point(sample.x(), sample.y());
+            double      distance = std::numeric_limits<double>::infinity();
+            for (const Line& line : edge)
+                distance = std::min(distance, line.distance_to(point));
+            CHECK_THAT(unscale<double>(distance), WithinAbs(0.225, 0.015));
+            ++checked;
+        }
+    }
+    CHECK(checked > 100);
+}
+
+TEST_CASE("Continuous mix bridge walls stop where a wedge gets too narrow for a loop", "[LocalZ][LocalZBridge]")
+{
+    // Zones meeting in a point leave islands like this 22 degree slice.
+    const double     half_angle = 11. * PI / 180.;
+    const double     far_y      = 15. * std::tan(half_angle);
+    const ExPolygons island{ExPolygon(Points{Point::new_scale(0., 0.), Point::new_scale(15., -far_y), Point::new_scale(15., far_y)})};
+    const double     inset   = scale_(0.65);
+    const double     spacing = scale_(0.44);
+    const ExPolygons plain   = bridge_island_inset(island, inset);
+    ExPolygons       narrow;
+    const ExPolygons wall_area = bridge_island_wall_area(island, inset, spacing, &narrow);
+    REQUIRE(wall_area.size() == 1);
+    REQUIRE_FALSE(narrow.empty());
+
+    // A plain inset reaches 0.65 / sin(11) = 3.41 mm into the tip, where the
+    // loop would run out and back along itself. The wall instead turns where
+    // the wedge is one spacing wide, its centerline rounding a 0.22 mm arc.
+    const double plain_tip = 0.65 / std::sin(half_angle);
+    CHECK_THAT(unscale<double>(get_extents(plain).min.x()), WithinAbs(plain_tip, 0.01));
+    CHECK_THAT(unscale<double>(get_extents(wall_area).min.x()), WithinAbs(plain_tip + 0.22 / std::sin(half_angle) - 0.22, 0.02));
+    // The cut tip goes to `narrow` for gap fill, and the 79 degree corners at
+    // the wide end keep their tips.
+    CHECK_THAT(area(plain) - area(wall_area) - area(narrow), WithinAbs(0., 1e-3 * area(plain)));
+    for (const Point& corner : plain.front().contour.points)
+        if (unscale<double>(corner.x()) > 10.)
+            CHECK(unscale<double>(distance_to_contour(wall_area.front(), corner)) < 0.005);
+}
+
+TEST_CASE("Continuous mix bridge walls keep corners of 40 degrees or more", "[LocalZ][LocalZBridge]")
+{
+    // A right triangle with 30, 60 and 90 degree corners.
+    const ExPolygons island{ExPolygon(Points{Point::new_scale(0., 0.), Point::new_scale(10., 0.), Point::new_scale(0., 10. * std::tan(PI / 6.))})};
+    const double     inset   = scale_(0.225);
+    const double     spacing = scale_(0.42);
+    const ExPolygons plain   = bridge_island_inset(island, inset);
+    ExPolygons       narrow;
+    const ExPolygons wall_area = bridge_island_wall_area(island, inset, spacing, &narrow);
+    REQUIRE(wall_area.size() == 1);
+    // Only the 30 degree tip, at x = 10, is cut.
+    REQUIRE(narrow.size() == 1);
+    CHECK(unscale<double>(get_extents(narrow).min.x()) > 8.);
+    // Nothing else of the plain inset is lost.
+    CHECK(area(diff_ex(intersection_ex(plain, ExPolygons{rectangle_mm(-1., -1., 8., 10.)}), wall_area)) < sqr(scale_(0.01)));
+    // The 90 and 60 degree corners keep their tips.
+    for (const Point& corner : plain.front().contour.points)
+        if (unscale<double>(corner.x()) < 5.)
+            CHECK(unscale<double>(distance_to_contour(wall_area.front(), corner)) < 0.005);
 }
 
 TEST_CASE("Continuous mix bridge connects mixes with different filament sets", "[LocalZ][LocalZBridge]")
@@ -484,6 +643,52 @@ TEST_CASE("Continuous mix bridge scarf joins the parts of a cut slot", "[LocalZ]
     }
     // Without a top range nothing is cut, so nothing is scarfed.
     CHECK_THAT(volume_of(whole), WithinAbs(volume_of(LocalZBridgeField(2.0, {1, 2}, rows).modulate_path(path, 0, 0.)), 1e-9));
+
+    // Infill turns from layer to layer, so its parts meet at the cut at full flow.
+    ExtrusionPath infill = path;
+    infill.set_extrusion_role(erSolidInfill);
+    const std::vector<ExtrusionPathSloped> infill_lower = field.modulate_path(infill, 0, 0., {0.20, 0.30});
+    const std::vector<ExtrusionPathSloped> infill_upper = field.modulate_path(infill, 0, 0., {0.30, 0.40});
+    REQUIRE_FALSE(infill_lower.empty());
+    REQUIRE_FALSE(infill_upper.empty());
+    CHECK_THAT(unscale<double>(infill_upper.back().polyline.points.back().x()), WithinAbs(10., 0.01));
+    CHECK_THAT(unscale<double>(infill_lower.front().polyline.points.front().x()), WithinAbs(10., 0.01));
+    CHECK_THAT(volume_of(infill_lower) + volume_of(infill_upper), WithinAbs(volume_of(whole), 1e-6 * volume_of(whole)));
+    for (const ExtrusionPathSloped& segment : infill_upper)
+        CHECK_THAT(segment.mm3_per_mm / double(segment.height), WithinAbs(full_flow, 1e-6));
+}
+
+TEST_CASE("Bridge scarf partitions conserve volume across multiple nearby cuts", "[LocalZ][LocalZBridge]")
+{
+    std::vector<LocalZBridgeField::Row> rows(2);
+    rows[0].masks  = {rectangle_mm(0., 0., 10., 10.)};
+    rows[0].bounds = {0.20, 0.44, 0.50};
+    rows[1].masks  = {rectangle_mm(10., 0., 20., 10.)};
+    rows[1].bounds = {0.20, 0.26, 0.50};
+    auto volume    = [](const std::vector<ExtrusionPathSloped>& paths) {
+        double result = 0.;
+        for (const auto& path : paths)
+            result += unscale<double>(path.polyline.length()) * path.mm3_per_mm;
+        return result;
+    };
+    for (const bool scarf : {false, true}) {
+        const LocalZBridgeField field(0.5, {1, 2}, rows, {true, scarf});
+        // Exercise both travel directions and repeated crossings of the band.
+        for (const Points& points :
+             {Points{Point::new_scale(9., 5.), Point::new_scale(11., 5.)}, Points{Point::new_scale(11., 5.), Point::new_scale(9., 5.)},
+              Points{Point::new_scale(9.8, 5.), Point::new_scale(10.2, 5.), Point::new_scale(9.8, 5.1)},
+              Points{Point::new_scale(9.8, 5.), Point::new_scale(10.2, 5.), Point::new_scale(10.2, 5.2), Point::new_scale(9.8, 5.2),
+                     Point::new_scale(9.8, 5.)}}) {
+            ExtrusionPath path = horizontal_path(9., 11.);
+            path.polyline      = Polyline(points);
+            const double whole = volume(field.modulate_path(path, 0, 0.));
+            double       parts = 0.;
+            for (int layer = 0; layer < 5; ++layer)
+                parts += volume(field.modulate_path(path, 0, 0., {0.20 + layer * 0.06, 0.26 + layer * 0.06}));
+            CAPTURE(scarf, whole, parts);
+            CHECK_THAT(parts, Catch::Matchers::WithinRel(whole, 1e-5));
+        }
+    }
 }
 
 TEST_CASE("Continuous mix bridge fine sampling resolves short transitions", "[LocalZ][LocalZBridge]")
